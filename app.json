@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Smart POS",
+    "slug": "pos-1",
+    "version": "3.0.0",
+    "orientation": "default",
+    "android": {
+      "package": "com.javi06.pos1",
+      "versionCode": 3
+    },
+    "extra": {
+    },
+    "owner": "javi06"
+  }
+}
