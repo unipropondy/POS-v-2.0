@@ -85,7 +85,7 @@ export default function QRGeneratorScreen() {
   };
 
   const fetchQrAsBase64 = async (qrUrl: string): Promise<string> => {
-    const qrImgUrl = QR_API(qrUrl, 250);
+    const qrImgUrl = QR_API(qrUrl, 450);
     const response = await fetch(qrImgUrl);
     if (!response.ok) throw new Error("Failed to fetch QR image");
     const blob = await response.blob();
@@ -163,8 +163,8 @@ export default function QRGeneratorScreen() {
               .card {
                 border: 2px dashed #0F172A;
                 border-radius: 12px;
-                padding: 16px;
-                width: 260px;
+                padding: 24px;
+                width: 380px;
                 box-sizing: border-box;
                 display: flex;
                 flex-direction: column;
@@ -173,40 +173,40 @@ export default function QRGeneratorScreen() {
                 margin: 10px auto;
               }
               .qr-image {
-                width: 180px;
-                height: 180px;
-                margin-bottom: 12px;
+                width: 320px;
+                height: 320px;
+                margin-bottom: 16px;
               }
               .title {
-                font-size: 22px;
+                font-size: 28px;
                 font-weight: 800;
-                margin: 6px 0 4px 0;
+                margin: 8px 0 6px 0;
                 color: #0F172A;
               }
               .section {
-                font-size: 13px;
+                font-size: 16px;
                 font-weight: 600;
                 color: #475569;
                 background: #F1F5F9;
-                padding: 3px 8px;
-                border-radius: 6px;
-                margin-bottom: 8px;
+                padding: 4px 12px;
+                border-radius: 8px;
+                margin-bottom: 10px;
                 display: inline-block;
               }
               .hint {
-                font-size: 12px;
+                font-size: 16px;
                 color: #0284c7;
                 font-weight: 700;
-                margin-top: 4px;
+                margin-top: 6px;
                 text-transform: uppercase;
                 letter-spacing: 1px;
               }
               .url {
-                font-size: 9px;
+                font-size: 12px;
                 color: #64748B;
                 word-break: break-all;
                 max-width: 100%;
-                margin-top: 6px;
+                margin-top: 8px;
                 font-family: monospace;
               }
             </style>

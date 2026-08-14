@@ -1,4 +1,4 @@
-const { poolPromise } = require("c:/Users/UNIPRO/Desktop/KINDEE POS+QR/backend/config/db.js");
+const { poolPromise } = require("c:/Users/UNIPRO/Desktop/POS/backend/config/db.js");
 
 async function check() {
   const pool = await poolPromise;

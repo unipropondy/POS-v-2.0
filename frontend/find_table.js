@@ -1,5 +1,5 @@
 const fs = require("fs");
-const content = fs.readFileSync("c:/Users/UNIPRO/Desktop/POS + QR/frontend/components/UniversalPrinter.ts", "utf8");
+const content = fs.readFileSync("c:/Users/UNIPRO/Desktop/POS/frontend/components/UniversalPrinter.ts", "utf8");
 const lines = content.split("\n");
 
 lines.forEach((line, idx) => {

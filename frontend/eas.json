@@ -11,14 +11,14 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://kindee-2026-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://pos-v-20-production.up.railway.app"
 
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://kindee-2026-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://pos-v-20-production.up.railway.app"
 
       },
       "android": {

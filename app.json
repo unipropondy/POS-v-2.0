@@ -5,11 +5,11 @@
     "version": "3.0.0",
     "orientation": "default",
     "android": {
-      "package": "com.javi06.pos1",
+      "package": "com.unipro.pos",
       "versionCode": 3
     },
     "extra": {
     },
-    "owner": "javi06"
+    "owner": "unipro"
   }
 }
