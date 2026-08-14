@@ -106,6 +106,9 @@ export default function GeneralSettingsScreen() {
   const [enableComboPrint, setEnableComboPrint] = useState(settings.enableComboPrint !== undefined ? settings.enableComboPrint : false);
   const [enableRequestService, setEnableRequestService] = useState(settings.enableRequestService !== undefined ? settings.enableRequestService : true);
   const [enableCookingInstructions, setEnableCookingInstructions] = useState(settings.enableCookingInstructions !== undefined ? settings.enableCookingInstructions : true);
+  const [enableDirectPaymentToProcess, setEnableDirectPaymentToProcess] = useState(settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false);
+  const [enableSkipSummaryScreen, setEnableSkipSummaryScreen] = useState(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
+  const [enableReceiptPrint, setEnableReceiptPrint] = useState(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
@@ -135,6 +138,9 @@ export default function GeneralSettingsScreen() {
     setEnableComboPrint(settings.enableComboPrint !== undefined ? settings.enableComboPrint : false);
     setEnableRequestService(settings.enableRequestService !== undefined ? settings.enableRequestService : true);
     setEnableCookingInstructions(settings.enableCookingInstructions !== undefined ? settings.enableCookingInstructions : true);
+    setEnableDirectPaymentToProcess(settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false);
+    setEnableSkipSummaryScreen(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
+    setEnableReceiptPrint(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
 
     let initialCheckoutFlow = settings.enableCheckoutFlow;
     let initialDirectProcess = settings.enableDirectProcessToPay;
@@ -225,6 +231,9 @@ export default function GeneralSettingsScreen() {
       enableComboPrint,
       enableRequestService,
       enableCookingInstructions,
+      enableDirectPaymentToProcess,
+      enableSkipSummaryScreen,
+      enableReceiptPrint,
     });
     setSaving(false);
 
@@ -331,11 +340,32 @@ export default function GeneralSettingsScreen() {
           onToggle: handleToggleDirectProcessToPay,
         },
         {
+          title: "Enable Direct Payment to Process",
+          desc: "Skip the Checkout screen and directly proceed to Process Payment.",
+          icon: "arrow-forward-outline",
+          value: enableDirectPaymentToProcess,
+          onToggle: setEnableDirectPaymentToProcess,
+        },
+        {
+          title: "Skip Summary Screen",
+          desc: "Skip the Summary screen and continue directly to the checkout/payment flow.",
+          icon: "play-forward-outline",
+          value: enableSkipSummaryScreen,
+          onToggle: setEnableSkipSummaryScreen,
+        },
+        {
           title: "Enable Cash Drawer Module",
           desc: "Enable checkout cashbox opening triggers.",
           icon: "cash-outline",
           value: enableCashDrawer,
           onToggle: handleToggleCashDrawer,
+        },
+        {
+          title: "Print Receipt",
+          desc: "Automatically print receipt on payment without showing prompt. If OFF, skip printing and prompt.",
+          icon: "print-outline",
+          value: enableReceiptPrint,
+          onToggle: setEnableReceiptPrint,
         },
       ]
     },

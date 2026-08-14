@@ -1234,12 +1234,35 @@ export default function Category() {
           ? tableData.entryStatus
           : item.entryStatus;
       if (tableEntryStatus === "q" && tablePaymentStatus === 1) {
-        showToast({
-          type: "info",
-          message: "Order Paid",
-          subtitle:
-            "This QR order is already paid. Waiting for kitchen to serve.",
-        });
+        Alert.alert(
+          "Order Already Paid",
+          `Table ${item.label} order has been paid. What would you like to do?`,
+          [
+            {
+              text: "Clear Table (Reset)",
+              style: "destructive",
+              onPress: async () => {
+                await updateTableStatus(item.id, 0);
+                (useCartStore.getState() as any).clearTableSession(item.id);
+                showToast({
+                  type: "success",
+                  message: "Table Cleared",
+                  subtitle: `Table ${item.label} has been reset.`,
+                });
+              },
+            },
+            {
+              text: "Go to KDS",
+              onPress: () => {
+                router.push("/kds" as any);
+              },
+            },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+          ]
+        );
         return;
       }
 
@@ -1665,6 +1688,16 @@ export default function Category() {
 
   const renderLicenseView = (isFloating: boolean) => {
     if (!companyInfo) return null;
+    
+    const fromDate = (user?.licenseFromDate || companyInfo.LicenseFromDate) 
+      ? (user?.licenseFromDate || companyInfo.LicenseFromDate).split("T")[0] 
+      : "N/A";
+    const toDate = (user?.licenseToDate || companyInfo.LicenseToDate) 
+      ? (user?.licenseToDate || companyInfo.LicenseToDate).split("T")[0] 
+      : "N/A";
+
+    const hasLicense = (user?.licenseFromDate || user?.licenseToDate || companyInfo.LicenseFromDate || companyInfo.LicenseToDate);
+
     return (
       <View style={isFloating ? {
         position: "absolute",
@@ -1681,50 +1714,97 @@ export default function Category() {
         justifyContent: "center",
         marginTop: 12,
       }}>
-        <View style={{
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: "#F8FAFC",
-          borderRadius: 12,
-          padding: 12,
-          borderWidth: 1.2,
-          borderColor: "#E2E8F0",
-          maxWidth: 420,
-          width: isFloating ? 320 : "100%",
-          gap: 12,
-          shadowColor: "#0F172A",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.04,
-          shadowRadius: 4,
-          elevation: 1,
-        }}>
+        <LinearGradient
+          colors={["#FFFFFF", "#F8FAFC"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            borderRadius: 16,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            maxWidth: 420,
+            width: isFloating ? 330 : "100%",
+            gap: 14,
+            shadowColor: "#6366F1",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.06,
+            shadowRadius: 10,
+            elevation: 2,
+          }}
+        >
           {companyInfo.CompanyLogoUrl ? (
-            <Image
-              source={{ uri: companyInfo.CompanyLogoUrl }}
-              style={{ width: 56, height: 56, borderRadius: 8 }}
-              contentFit="contain"
-            />
-          ) : (
             <View style={{
-              width: 56,
-              height: 56,
-              borderRadius: 8,
-              backgroundColor: "#F1F5F9",
-              alignItems: "center",
-              justifyContent: "center",
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              padding: 2,
+              backgroundColor: "#FFFFFF",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.05,
+              shadowRadius: 2,
+              elevation: 1,
             }}>
-              <Ionicons name="storefront-outline" size={24} color="#94A3B8" />
+              <Image
+                source={{ uri: companyInfo.CompanyLogoUrl }}
+                style={{ width: 54, height: 54, borderRadius: 10 }}
+                contentFit="contain"
+              />
             </View>
+          ) : (
+            <LinearGradient
+              colors={["#EEF2FF", "#E0E7FF"]}
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 12,
+                alignItems: "center",
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: "#E0E7FF",
+              }}
+            >
+              <Ionicons name="storefront" size={26} color="#4F46E5" />
+            </LinearGradient>
           )}
           
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{
-              fontFamily: Fonts.bold,
-              fontSize: 14,
-              color: "#0F172A",
-            }}>
-              {companyInfo.CompanyName || "Smart POS"}
-            </Text>
+          <View style={{ flex: 1, gap: 3 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+              <Text style={{
+                fontFamily: Fonts.bold,
+                fontSize: 14,
+                color: "#1E293B",
+                letterSpacing: 0.1,
+              }}>
+                {companyInfo.CompanyName || "Smart POS"}
+              </Text>
+              
+              {hasLicense && (
+                <View style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "#DCFCE7",
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: 10,
+                  gap: 3.5,
+                }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#15803D" }} />
+                  <Text style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 8.5,
+                    color: "#166534",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}>
+                    Active
+                  </Text>
+                </View>
+              )}
+            </View>
             
             {companyInfo.Address ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
@@ -1740,29 +1820,39 @@ export default function Category() {
               </View>
             ) : null}
 
-            {(user?.licenseFromDate || user?.licenseToDate || companyInfo.LicenseFromDate || companyInfo.LicenseToDate) ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 }}>
-                <Ionicons name="shield-checkmark-outline" size={11} color="#22C55E" />
+            {hasLicense ? (
+              <View style={{ 
+                flexDirection: "row", 
+                alignItems: "center", 
+                gap: 5, 
+                marginTop: 2,
+                backgroundColor: "#F1F5F9",
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 8,
+                alignSelf: "flex-start"
+              }}>
+                <Ionicons name="shield-checkmark" size={12} color="#10B981" />
                 <Text style={{
                   fontFamily: Fonts.semiBold,
-                  fontSize: 10,
-                  color: "#334155",
+                  fontSize: 9.5,
+                  color: "#475569",
                 }}>
-                  License: <Text style={{ color: "#22C55E", fontFamily: Fonts.bold }}>{(user?.licenseFromDate || companyInfo.LicenseFromDate) ? (user?.licenseFromDate || companyInfo.LicenseFromDate).split("T")[0] : "N/A"}</Text> to <Text style={{ color: "#22C55E", fontFamily: Fonts.bold }}>{(user?.licenseToDate || companyInfo.LicenseToDate) ? (user?.licenseToDate || companyInfo.LicenseToDate).split("T")[0] : "N/A"}</Text>
+                  Valid: <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{fromDate}</Text> to <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{toDate}</Text>
                 </Text>
               </View>
             ) : null}
             
             <Text style={{
               fontFamily: Fonts.medium,
-              fontSize: 9,
+              fontSize: 8.5,
               color: "#94A3B8",
               marginTop: 2,
             }}>
-              @ 2026 UNIPRO . All rights reserved.
+              © 2026 UNIPRO. All rights reserved.
             </Text>
           </View>
-        </View>
+        </LinearGradient>
       </View>
     );
   };

@@ -18,6 +18,7 @@ import BillPrompt from "../components/BillPrompt";
 import UniversalPrinter from "../components/UniversalPrinter";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCompanySettingsStore } from "../stores/companySettingsStore";
+import { useGeneralSettingsStore } from "../stores/generalSettingsStore";
 import { CustomerDisplaySync } from "../utils/CustomerDisplaySync";
 import CashDrawerService from "../services/CashDrawerService";
 
@@ -58,7 +59,7 @@ export default function PaymentSuccess() {
     }
   }, [paymentsRaw]);
 
-  const [promptVisible, setPromptVisible] = React.useState(true);
+  const [promptVisible, setPromptVisible] = React.useState(false);
   const [showSplitConfirmModal, setShowSplitConfirmModal] = React.useState(false);
 
   React.useEffect(() => {
@@ -203,6 +204,66 @@ export default function PaymentSuccess() {
       console.error("Print error:", error);
     }
   };
+
+  React.useEffect(() => {
+    const runAutoPrintFlow = async () => {
+      const settings = useGeneralSettingsStore.getState().settings;
+      const enableReceiptPrint = settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true;
+      
+      if (enableReceiptPrint) {
+        await handlePrint();
+      } else {
+        await openDrawerForCash();
+      }
+    };
+    runAutoPrintFlow();
+
+    // Speak thank you voice (Female version if available)
+    const speakThankYou = () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        const speak = () => {
+          const utterance = new SpeechSynthesisUtterance("Thank you. Have a nice day.");
+          const voices = window.speechSynthesis.getVoices();
+          
+          // Prioritized English female voice identifiers
+          const priorities = ["zira", "samantha", "hazel", "heera", "female", "google uk english female", "google us english", "english"];
+          let selectedVoice = null;
+          
+          for (const pattern of priorities) {
+            const match = voices.find(v => 
+              v.name.toLowerCase().includes(pattern) && 
+              v.lang.toLowerCase().startsWith("en")
+            );
+            if (match) {
+              selectedVoice = match;
+              break;
+            }
+          }
+
+          if (selectedVoice) {
+            utterance.voice = selectedVoice;
+          }
+          utterance.rate = 0.95; // slightly slower for natural pacing
+          utterance.pitch = 1.15; // slightly higher pitch to enhance female tone
+          window.speechSynthesis.speak(utterance);
+        };
+
+        if (window.speechSynthesis.getVoices().length === 0) {
+          window.speechSynthesis.onvoiceschanged = speak;
+        } else {
+          speak();
+        }
+      }
+    };
+    speakThankYou();
+
+    // Auto-redirect to main screen after 3 seconds
+    const timer = setTimeout(() => {
+      handleDone();
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea}>

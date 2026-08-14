@@ -1035,6 +1035,8 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
   const enableCheckoutBill = useGeneralSettingsStore((s: any) => s.settings.enableCheckoutBill);
   const enableCheckoutFlow = useGeneralSettingsStore((s: any) => s.settings.enableCheckoutFlow !== undefined ? s.settings.enableCheckoutFlow : true);
   const enableDirectProcessToPay = useGeneralSettingsStore((s: any) => s.settings.enableDirectProcessToPay !== undefined ? s.settings.enableDirectProcessToPay : false);
+  const enableDirectPaymentToProcess = useGeneralSettingsStore((s: any) => s.settings.enableDirectPaymentToProcess !== undefined ? s.settings.enableDirectPaymentToProcess : false);
+  const enableSkipSummaryScreen = useGeneralSettingsStore((s: any) => s.settings.enableSkipSummaryScreen !== undefined ? s.settings.enableSkipSummaryScreen : false);
 
   const unsentCount = useMemo(() => {
     return cart.filter((i: any) => !isItemSent(i)).length;
@@ -1427,10 +1429,22 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
           duration: 1500,
         });
 
-        if (enableCheckoutFlow !== false) {
-          router.replace(`/(tabs)/category?section=${orderContext.section}`);
+        if (enableDirectPaymentToProcess) {
+          if (enableSkipSummaryScreen) {
+            router.push("/payment");
+          } else {
+            router.push("/summary");
+          }
         } else {
-          router.push("/payment");
+          if (enableSkipSummaryScreen) {
+            router.push("/payment");
+          } else {
+            if (enableCheckoutFlow !== false) {
+              router.replace(`/(tabs)/category?section=${orderContext.section}`);
+            } else {
+              router.push("/payment");
+            }
+          }
         }
       } else {
         showToast({
@@ -1511,8 +1525,10 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
       );
     })();
 
+    const shouldSkipRedirect = skipRedirect || enableDirectPaymentToProcess;
+
     // 3. Close Sidebar & Redirect instantly
-    if (!skipRedirect) {
+    if (!shouldSkipRedirect) {
       router.replace(`/(tabs)/category?section=${orderContext.section}`);
     }
 
@@ -1983,7 +1999,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                                 await useCartStore.getState().fetchCartFromDB(tableId);
                                 await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
 
-                                router.push("/summary");
+                                router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                               } catch (err) {
                                 console.error("Direct process to pay error:", err);
                                 showToast({ type: "error", message: "Error", subtitle: "Failed to process payment." });
@@ -2012,7 +2028,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             { flex: 1, backgroundColor: "#10B981" },
                           ]}
                           onPress={() => {
-                            router.push("/summary");
+                            router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                           }}
                         >
                           <Ionicons name="card-outline" size={iconSize} color="#fff" />
@@ -2028,7 +2044,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             { flex: 1, backgroundColor: "#10B981" },
                           ]}
                           onPress={() => {
-                            router.push("/summary");
+                            router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                           }}
                         >
                           <Ionicons
@@ -2048,7 +2064,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             { flex: 1, backgroundColor: "#10B981" },
                           ]}
                           onPress={() => {
-                            router.push("/summary");
+                            router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                           }}
                         >
                           <Ionicons
@@ -2125,7 +2141,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                                 await useCartStore.getState().fetchCartFromDB(tableId);
                                 await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
 
-                                router.push("/summary");
+                                router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                               } catch (err) {
                                 console.error("Takeaway Direct process to pay error:", err);
                                 showToast({ type: "error", message: "Error", subtitle: "Failed to process payment." });
@@ -2153,7 +2169,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             { flex: 1, backgroundColor: "#10B981" },
                           ]}
                           onPress={() => {
-                            router.push("/summary");
+                            router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                           }}
                         >
                           <Ionicons name="card-outline" size={iconSize} color="#fff" />
@@ -2287,7 +2303,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                               await useCartStore.getState().fetchCartFromDB(tableId);
                               await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
 
-                              router.push("/summary");
+                              router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                             } catch (err) {
                               console.error("Direct process to pay error:", err);
                               showToast({ type: "error", message: "Error", subtitle: "Failed to process payment." });
@@ -2387,7 +2403,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             <Ionicons name="receipt-outline" size={iconSize} color="#fff" />
                           )}
                           <Text style={styles.btnText}>
-                            {isCheckingOut ? "Checking out..." : "Checkout"}
+                            {isCheckingOut ? "Checking out..." : (enableDirectPaymentToProcess ? "Proceed to Pay" : "Checkout")}
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -2403,7 +2419,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             },
                           ]}
                           onPress={() => {
-                            router.push("/summary");
+                            router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                           }}
                         >
                           <Ionicons name="card-outline" size={iconSize} color="#fff" />
@@ -2421,7 +2437,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             },
                           ]}
                           onPress={() => {
-                            router.push("/summary");
+                            router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                           }}
                         >
                           <Ionicons name="card-outline" size={iconSize} color="#fff" />
@@ -2441,7 +2457,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                       ]}
                       onPress={() => {
                         if (enableCheckoutFlow !== false) {
-                          router.push("/summary");
+                          router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                         } else {
                           router.push("/payment");
                         }
@@ -2466,7 +2482,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                       ]}
                       onPress={() => {
                         if (enableCheckoutFlow !== false) {
-                          router.push("/summary");
+                          router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
                         } else {
                           router.push("/payment");
                         }

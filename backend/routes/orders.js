@@ -800,17 +800,29 @@ async function syncTableStatus(req, tableId) {
   const pool = await poolPromise;
   const res = await pool.request().input("tid", sql.VarChar(50), cleanId)
     .query(`
-    DECLARE @ActualOrderId UNIQUEIDENTIFIER, @ActualOrderNo NVARCHAR(50), @TableNo VARCHAR(50), @count INT, @total DECIMAL(18,2);
-    
-    SELECT TOP 1 @TableNo = TableNumber FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER));
+    DECLARE @TableNo VARCHAR(50);
+    DECLARE @TableId UNIQUEIDENTIFIER;
+    DECLARE @CurrentOrderId NVARCHAR(50);
+
+    IF TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL
+    BEGIN
+      SELECT TOP 1 @TableNo = TableNumber, @TableId = TableId, @CurrentOrderId = CurrentOrderId FROM TableMaster WHERE TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER);
+    END
+    ELSE
+    BEGIN
+      SELECT TOP 1 @TableNo = TableNumber, @TableId = TableId, @CurrentOrderId = CurrentOrderId FROM TableMaster WHERE TableNumber = @tid;
+    END
+
     IF @TableNo IS NULL SET @TableNo = @tid;
+
+    DECLARE @ActualOrderId UNIQUEIDENTIFIER, @ActualOrderNo NVARCHAR(50), @count INT, @total DECIMAL(18,2);
 
     -- 🚀 ROBUST LOOKUP: Prioritize the CurrentOrderId stored in TableMaster to avoid ghost orders
     SELECT TOP 1 @ActualOrderId = OrderId, @ActualOrderNo = OrderNumber
     FROM RestaurantOrderCur 
-    WHERE (OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur h2 WHERE h2.OrderNumber = (SELECT CurrentOrderId FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))) AND h2.isOrderClosed = 0))
-    OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@TableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL))
-    ORDER BY CASE WHEN OrderNumber = (SELECT CurrentOrderId FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))) THEN 0 ELSE 1 END, CreatedOn DESC;
+    WHERE (OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur h2 WHERE h2.OrderNumber = @CurrentOrderId AND h2.isOrderClosed = 0))
+       OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@TableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL))
+    ORDER BY CASE WHEN OrderNumber = @CurrentOrderId THEN 0 ELSE 1 END, CreatedOn DESC;
 
     DECLARE @TakeawayOverride INT = 0;
     DECLARE @SCOverride INT = 0;
@@ -1877,10 +1889,27 @@ router.post("/checkout", async (req, res) => {
           SET DEADLOCK_PRIORITY LOW;
 
           DECLARE @TableNo VARCHAR(50);
-          SELECT @TableNo = TableNumber FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER));
+          DECLARE @TableId UNIQUEIDENTIFIER;
+          IF TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL
+          BEGIN
+             SELECT TOP 1 @TableNo = TableNumber, @TableId = TableId FROM TableMaster WHERE TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER);
+          END
+          ELSE
+          BEGIN
+             SELECT TOP 1 @TableNo = TableNumber, @TableId = TableId FROM TableMaster WHERE TableNumber = @tid;
+          END
+
+          IF @TableNo IS NULL SET @TableNo = @tid;
 
           -- 1. Update Table Status to Checkout (2)
-          UPDATE TableMaster SET Status = 2, ModifiedOn = GETDATE() WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER));
+          IF @TableId IS NOT NULL
+          BEGIN
+             UPDATE TableMaster SET Status = 2, ModifiedOn = GETDATE() WHERE TableId = @TableId;
+          END
+          ELSE
+          BEGIN
+             UPDATE TableMaster SET Status = 2, ModifiedOn = GETDATE() WHERE TableNumber = @tid;
+          END
 
           -- 2. Expire VOIDED items (StatusCode 0) from KDS instantly
           UPDATE d
