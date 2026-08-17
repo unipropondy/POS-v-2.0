@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
+import { useGeneralSettingsStore } from "../stores/generalSettingsStore";
 
 let isAudioModeSet = false;
 
@@ -97,6 +98,10 @@ function generateChimeWav(): string {
  */
 export async function playNotificationSound() {
   try {
+    const settings = useGeneralSettingsStore.getState().settings;
+    if (settings && settings.enableNotificationSound === false) {
+      return;
+    }
     if (Platform.OS === "web") {
       // 🎹 Web: Use Web Audio API synthesis for zero latency and zero download dependencies
       const AudioContextClass =

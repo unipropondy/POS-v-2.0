@@ -109,6 +109,8 @@ export default function GeneralSettingsScreen() {
   const [enableDirectPaymentToProcess, setEnableDirectPaymentToProcess] = useState(settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false);
   const [enableSkipSummaryScreen, setEnableSkipSummaryScreen] = useState(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
   const [enableReceiptPrint, setEnableReceiptPrint] = useState(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
+  const [enableVoiceSuccess, setEnableVoiceSuccess] = useState(settings.enableVoiceSuccess !== undefined ? settings.enableVoiceSuccess : true);
+  const [enableNotificationSound, setEnableNotificationSound] = useState(settings.enableNotificationSound !== undefined ? settings.enableNotificationSound : true);
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
@@ -138,20 +140,34 @@ export default function GeneralSettingsScreen() {
     setEnableComboPrint(settings.enableComboPrint !== undefined ? settings.enableComboPrint : false);
     setEnableRequestService(settings.enableRequestService !== undefined ? settings.enableRequestService : true);
     setEnableCookingInstructions(settings.enableCookingInstructions !== undefined ? settings.enableCookingInstructions : true);
-    setEnableDirectPaymentToProcess(settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false);
-    setEnableSkipSummaryScreen(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
-    setEnableReceiptPrint(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
+    let initialCheckoutFlow = settings.enableCheckoutFlow !== undefined ? settings.enableCheckoutFlow : true;
+    let initialDirectProcess = settings.enableDirectProcessToPay !== undefined ? settings.enableDirectProcessToPay : false;
+    let initialDirectPayment = settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false;
 
-    let initialCheckoutFlow = settings.enableCheckoutFlow;
-    let initialDirectProcess = settings.enableDirectProcessToPay;
-
-    if ((initialCheckoutFlow && initialDirectProcess) || (!initialCheckoutFlow && !initialDirectProcess)) {
+    // Enforce mutual exclusivity on load: if more than one is true, resolve conflict
+    if (initialCheckoutFlow) {
+      initialDirectProcess = false;
+      initialDirectPayment = false;
+    } else if (initialDirectProcess) {
+      initialCheckoutFlow = false;
+      initialDirectPayment = false;
+    } else if (initialDirectPayment) {
+      initialCheckoutFlow = false;
+      initialDirectProcess = false;
+    } else {
+      // If all are false, default to standard Checkout Flow
       initialCheckoutFlow = true;
       initialDirectProcess = false;
+      initialDirectPayment = false;
     }
 
     setEnableCheckoutFlow(initialCheckoutFlow);
     setEnableDirectProcessToPay(initialDirectProcess);
+    setEnableDirectPaymentToProcess(initialDirectPayment);
+    setEnableSkipSummaryScreen(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
+    setEnableReceiptPrint(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
+    setEnableVoiceSuccess(settings.enableVoiceSuccess !== undefined ? settings.enableVoiceSuccess : true);
+    setEnableNotificationSound(settings.enableNotificationSound !== undefined ? settings.enableNotificationSound : true);
   }, [settings]);
 
   const handleToggleCashDrawer = (val: boolean) => {
@@ -193,9 +209,7 @@ export default function GeneralSettingsScreen() {
     if (val) {
       setEnableCheckoutFlow(true);
       setEnableDirectProcessToPay(false);
-    } else {
-      setEnableCheckoutFlow(false);
-      setEnableDirectProcessToPay(true);
+      setEnableDirectPaymentToProcess(false);
     }
   };
 
@@ -203,9 +217,15 @@ export default function GeneralSettingsScreen() {
     if (val) {
       setEnableDirectProcessToPay(true);
       setEnableCheckoutFlow(false);
-    } else {
+      setEnableDirectPaymentToProcess(false);
+    }
+  };
+
+  const handleToggleDirectPaymentToProcess = (val: boolean) => {
+    if (val) {
+      setEnableDirectPaymentToProcess(true);
+      setEnableCheckoutFlow(false);
       setEnableDirectProcessToPay(false);
-      setEnableCheckoutFlow(true);
     }
   };
 
@@ -234,6 +254,8 @@ export default function GeneralSettingsScreen() {
       enableDirectPaymentToProcess,
       enableSkipSummaryScreen,
       enableReceiptPrint,
+      enableVoiceSuccess,
+      enableNotificationSound,
     });
     setSaving(false);
 
@@ -344,7 +366,7 @@ export default function GeneralSettingsScreen() {
           desc: "Skip the Checkout screen and directly proceed to Process Payment.",
           icon: "arrow-forward-outline",
           value: enableDirectPaymentToProcess,
-          onToggle: setEnableDirectPaymentToProcess,
+          onToggle: handleToggleDirectPaymentToProcess,
         },
         {
           title: "Skip Summary Screen",
@@ -421,6 +443,26 @@ export default function GeneralSettingsScreen() {
           icon: "pricetag-outline",
           value: showPromoCode,
           onToggle: setShowPromoCode,
+        },
+      ]
+    },
+    {
+      title: "Audio & Voice Alerts",
+      icon: "volume-high-outline",
+      items: [
+        {
+          title: "Voice Announcements",
+          desc: "Play customer success 'Thank you' voice message on successful payment.",
+          icon: "mic-outline",
+          value: enableVoiceSuccess,
+          onToggle: setEnableVoiceSuccess,
+        },
+        {
+          title: "Notification Sounds",
+          desc: "Play chime sounds when new orders or notifications are received.",
+          icon: "notifications-outline",
+          value: enableNotificationSound,
+          onToggle: setEnableNotificationSound,
         },
       ]
     }

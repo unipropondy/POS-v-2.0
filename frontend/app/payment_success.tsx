@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
   Modal,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Theme } from "../constants/theme";
@@ -61,6 +62,72 @@ export default function PaymentSuccess() {
 
   const [promptVisible, setPromptVisible] = React.useState(false);
   const [showSplitConfirmModal, setShowSplitConfirmModal] = React.useState(false);
+  const [floatingFoods, setFloatingFoods] = React.useState<any[]>([]);
+  const spinValue = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    // Spin animation for background dish
+    Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 35000,
+        useNativeDriver: true,
+      })
+    ).start();
+
+    // Floating food icons
+    const icons = [
+      "pizza-outline",
+      "cafe-outline",
+      "ice-cream-outline",
+      "restaurant-outline",
+      "beer-outline",
+      "fast-food-outline",
+    ];
+
+    const interval = setInterval(() => {
+      const id = Math.random().toString();
+      const icon = icons[Math.floor(Math.random() * icons.length)];
+      const x = Math.random() * 80 + 10;
+      const y = Math.random() * 70 + 15;
+
+      const scale = new Animated.Value(0);
+      const translateY = new Animated.Value(0);
+      const opacity = new Animated.Value(1);
+
+      const newItem = { id, icon, x, y, scale, translateY, opacity };
+      setFloatingFoods((prev) => [...prev, newItem].slice(-15));
+
+      Animated.parallel([
+        Animated.spring(scale, {
+          toValue: 1.2,
+          tension: 30,
+          friction: 4,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: -85 - Math.random() * 60,
+          duration: 3800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          delay: 2400,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setFloatingFoods((prev) => prev.filter((item) => item.id !== id));
+      });
+    }, 850);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
 
   React.useEffect(() => {
     CustomerDisplaySync.syncPaymentSuccess({
@@ -206,9 +273,9 @@ export default function PaymentSuccess() {
   };
 
   React.useEffect(() => {
+    const generalSettings = useGeneralSettingsStore.getState().settings;
     const runAutoPrintFlow = async () => {
-      const settings = useGeneralSettingsStore.getState().settings;
-      const enableReceiptPrint = settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true;
+      const enableReceiptPrint = generalSettings.enableReceiptPrint !== undefined ? generalSettings.enableReceiptPrint : true;
       
       if (enableReceiptPrint) {
         await handlePrint();
@@ -218,49 +285,51 @@ export default function PaymentSuccess() {
     };
     runAutoPrintFlow();
 
-    // Speak thank you voice (Female version if available)
-    const speakThankYou = () => {
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        const speak = () => {
-          const utterance = new SpeechSynthesisUtterance("Thank you. Have a nice day.");
-          const voices = window.speechSynthesis.getVoices();
-          
-          // Prioritized English female voice identifiers
-          const priorities = ["zira", "samantha", "hazel", "heera", "female", "google uk english female", "google us english", "english"];
-          let selectedVoice = null;
-          
-          for (const pattern of priorities) {
-            const match = voices.find(v => 
-              v.name.toLowerCase().includes(pattern) && 
-              v.lang.toLowerCase().startsWith("en")
-            );
-            if (match) {
-              selectedVoice = match;
-              break;
-            }
-          }
-
-          if (selectedVoice) {
-            utterance.voice = selectedVoice;
-          }
-          utterance.rate = 0.95; // slightly slower for natural pacing
-          utterance.pitch = 1.15; // slightly higher pitch to enhance female tone
-          window.speechSynthesis.speak(utterance);
-        };
-
-        if (window.speechSynthesis.getVoices().length === 0) {
-          window.speechSynthesis.onvoiceschanged = speak;
+    // Play custom voice audio asset
+    const playSuccessAudio = async () => {
+      try {
+        if (Platform.OS === "web") {
+          const audioAsset = require("../assets/Voice/Thank you, have a nice day.mp3");
+          const uri = typeof audioAsset === "object" && audioAsset.default ? audioAsset.default : audioAsset;
+          const audio = new window.Audio(uri);
+          audio.volume = 1.0;
+          await audio.play();
         } else {
-          speak();
+          const { Audio } = require("expo-av");
+          try {
+            await Audio.setAudioModeAsync({
+              playsInSilentModeIOS: true,
+              staysActiveInBackground: true,
+              shouldDuckAndroid: false,
+              allowsRecordingIOS: false,
+            });
+          } catch (_) {}
+          
+          const thankYouSound = require("../assets/Voice/Thank you, have a nice day.mp3");
+          const { sound } = await Audio.Sound.createAsync(
+            thankYouSound,
+            { shouldPlay: true, volume: 1.0 }
+          );
+          if (sound) {
+            sound.setOnPlaybackStatusUpdate((status: any) => {
+              if (status.didJustFinish) {
+                sound.unloadAsync().catch(() => {});
+              }
+            });
+          }
         }
+      } catch (err) {
+        console.warn("Failed to play custom success voice audio:", err);
       }
     };
-    speakThankYou();
+    if (generalSettings.enableVoiceSuccess !== false) {
+      playSuccessAudio();
+    }
 
-    // Auto-redirect to main screen after 3 seconds
+    // Auto-redirect to main screen after 1.2 seconds
     const timer = setTimeout(() => {
       handleDone();
-    }, 3000);
+    }, 1200);
 
     return () => clearTimeout(timer);
   }, []);
@@ -270,6 +339,35 @@ export default function PaymentSuccess() {
       <StatusBar barStyle="dark-content" backgroundColor={Theme.bgMain} />
       
       <View style={styles.container}>
+        {/* Infinite Spinning Background Dishes/Plates */}
+        <Animated.View style={[styles.bgDishContainer, { transform: [{ rotate: spin }] }]}>
+          <Ionicons name="restaurant" size={320} color="rgba(255, 107, 0, 0.04)" />
+        </Animated.View>
+        <Animated.View style={[styles.bgDishContainer2, { transform: [{ rotate: spin }] }]}>
+          <Ionicons name="pizza" size={240} color="rgba(22, 163, 74, 0.03)" />
+        </Animated.View>
+
+        {/* Floating food particles */}
+        {floatingFoods.map((item) => (
+          <Animated.View
+            key={item.id}
+            style={[
+              styles.floatingFood,
+              {
+                left: `${item.x}%`,
+                top: `${item.y}%`,
+                transform: [
+                  { scale: item.scale },
+                  { translateY: item.translateY },
+                ],
+                opacity: item.opacity,
+              },
+            ]}
+          >
+            <Ionicons name={item.icon} size={42} color={Theme.primary + "20"} />
+          </Animated.View>
+        ))}
+
         <View style={styles.card}>
           <View style={styles.iconContainer}>
             <Ionicons name="checkmark-circle" size={80} color={Theme.success} />
@@ -339,10 +437,6 @@ export default function PaymentSuccess() {
               <Text style={[styles.value, { color: Theme.primary }]}>{currencySymbol}{change}</Text>
             </View>
           </View>
-
-          <TouchableOpacity style={styles.doneBtn} onPress={handleDone} activeOpacity={0.8}>
-            <Text style={styles.doneText}>Done</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -419,6 +513,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    position: "relative",
+    overflow: "hidden",
+  },
+  floatingFood: {
+    position: "absolute",
+    zIndex: 1,
+  },
+  bgDishContainer: {
+    position: "absolute",
+    zIndex: 0,
+    top: "-5%",
+    left: "-15%",
+    opacity: 0.8,
+  },
+  bgDishContainer2: {
+    position: "absolute",
+    zIndex: 0,
+    bottom: "-5%",
+    right: "-10%",
+    opacity: 0.8,
   },
   card: {
     width: "100%",
@@ -480,7 +594,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: Theme.textSecondary,
-    fontFamily: Fonts.medium,
+    fontFamily: Fonts.black,
     fontSize: 15,
   },
   value: {
