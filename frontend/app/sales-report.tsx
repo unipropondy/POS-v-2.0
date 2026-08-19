@@ -440,6 +440,7 @@ export default function SalesReport() {
                   row.categoryName || row.CategoryName || "Unmapped",
                 Sold: row.totalQty ?? row.totalQuantitySold ?? 0,
                 Voided: row.voidQty ?? 0,
+                DiscountAmount: row.discountAmount ?? 0,
                 SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
               }))
               : [],
@@ -458,6 +459,7 @@ export default function SalesReport() {
                   row.subCategoryName || row.SubCategoryName || "Unmapped",
                 Sold: row.totalQty ?? row.quantitySold ?? 0,
                 Voided: row.voidQty ?? 0,
+                DiscountAmount: row.discountAmount ?? 0,
                 SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
               }))
               : [],
@@ -567,11 +569,7 @@ export default function SalesReport() {
       if (!response.ok) throw new Error("Failed to fetch sales");
       const data = await response.json();
       if (Array.isArray(data)) {
-        // Deduplicate sales by SettlementID to prevent duplicate key errors
-        const uniqueSales = Array.from(
-          new Map(data.map((s: any) => [s.SettlementID, s])).values()
-        );
-        setSales(uniqueSales);
+        setSales(data);
       } else {
         setSales([]);
       }
@@ -1146,6 +1144,7 @@ export default function SalesReport() {
           acc.TotalVoidAmount += s.VoidAmount || 0;
           acc.ServiceCharge += Number(s.ServiceCharge) || 0;
           acc.TotalTax += Number(s.TotalTax) || 0;
+          acc.TotalDiscount += Number(s.DiscountAmount) || 0;
         }
 
         const mode = s.PayMode?.trim().toUpperCase() || "";
@@ -1190,6 +1189,7 @@ export default function SalesReport() {
         CreditOutstanding: 0,
         ServiceCharge: 0,
         TotalTax: 0,
+        TotalDiscount: 0,
       },
     );
   }, [dateScopedSales]);
@@ -1671,7 +1671,7 @@ export default function SalesReport() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ minWidth: "100%" }}
           >
-            <View style={[styles.reportTable, isArtistTarget && { minWidth: 700 }, isDishReport && { minWidth: 600 }]}>
+            <View style={[styles.reportTable, isArtistTarget && { minWidth: 700 }, isDishReport ? { minWidth: 690 } : { minWidth: 500 }]}>
               <View style={styles.reportTableHeader}>
                 <Text style={[styles.reportCell, styles.snoCell]}>S/N</Text>
                 {isSettlement ? (
@@ -1755,6 +1755,15 @@ export default function SalesReport() {
                       ]}
                     >
                       VOID
+                    </Text>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.discountCell,
+                        { color: "#f59e0b" },
+                      ]}
+                    >
+                      Discount
                     </Text>
                     <Text style={[styles.reportCell, styles.amountCell]}>
                       Sales
@@ -1911,6 +1920,16 @@ export default function SalesReport() {
                         style={[
                           styles.reportCell,
                           styles.reportCellText,
+                          styles.discountCell,
+                          { color: "#f59e0b", fontWeight: "600" },
+                        ]}
+                      >
+                        {formatCurrency(Number(row.DiscountAmount || 0))}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.reportCell,
+                          styles.reportCellText,
                           styles.amountCell,
                           { color: Theme.success, fontWeight: "bold" },
                         ]}
@@ -1941,6 +1960,7 @@ export default function SalesReport() {
                   const groupRows = groups[category]!;
                   const catQty = groupRows.reduce((sum, r) => sum + Number(r.Sold || 0), 0);
                   const catVoid = groupRows.reduce((sum, r) => sum + Number(r.Voided || 0), 0);
+                  const catDiscount = groupRows.reduce((sum, r) => sum + Number(r.DiscountAmount || 0), 0);
                   const catSales = groupRows.reduce((sum, r) => sum + Number(r.SalesAmount || 0), 0);
 
                   return (
@@ -2004,6 +2024,16 @@ export default function SalesReport() {
                           ]}
                         >
                           {catVoid}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.reportCell,
+                            styles.reportCellText,
+                            styles.discountCell,
+                            { fontFamily: Fonts.black, fontSize: 13, color: "#f59e0b" },
+                          ]}
+                        >
+                          {formatCurrency(catDiscount)}
                         </Text>
                         <Text
                           style={[
@@ -2076,6 +2106,16 @@ export default function SalesReport() {
                               ]}
                             >
                               {Number(row.Voided || 0).toFixed(0)}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.reportCell,
+                                styles.reportCellText,
+                                styles.discountCell,
+                                { color: "#f59e0b", fontWeight: "600" },
+                              ]}
+                            >
+                              {formatCurrency(Number(row.DiscountAmount || 0))}
                             </Text>
                             <Text
                               style={[
@@ -2297,6 +2337,12 @@ export default function SalesReport() {
           formatCurrency(filteredMetrics.TotalTax),
           "receipt-outline",
           Theme.warning,
+        )}
+        {renderMetricTile(
+          "Discount Sales",
+          formatCurrency(filteredMetrics.TotalDiscount),
+          "pricetag-outline",
+          "#f97316",
         )}
         {renderMetricTile(
           "Total Orders",
@@ -4394,6 +4440,11 @@ const styles = StyleSheet.create({
   },
   amountCell: {
     width: 130,
+    textAlign: "right",
+    flexShrink: 0,
+  },
+  discountCell: {
+    width: 90,
     textAlign: "right",
     flexShrink: 0,
   },

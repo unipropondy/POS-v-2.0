@@ -192,31 +192,48 @@ export default function DiscountModal({
             </TouchableOpacity>
           </View>
 
-          {dbDiscounts.length > 0 && (
-            <>
-              <Text style={styles.sectionLabel}>Available Promotions</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.promoScroll}>
-                {dbDiscounts.map((disc) => (
-                  <TouchableOpacity key={disc.DiscountId} style={styles.discountCard} onPress={() => handleApplyDbDiscount(disc)}>
-                    <Text style={styles.discountCardLabel}>
-                      {(disc.isGuestMeal === true || parseInt(disc.isGuestMeal) === 1)
-                        ? "100%"
-                        : parseFloat(disc.DiscountPercentage) > 0
-                          ? `${parseFloat(disc.DiscountPercentage)}%`
-                          : `$${parseFloat(disc.DiscountAmount) || 0}`}
-                    </Text>
-                    <Text style={styles.discountCardSmall} numberOfLines={2}>
-                      {disc.Description || disc.DiscountCode}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {loading && dbDiscounts.length === 0 && (
-            <ActivityIndicator color={Theme.primary} style={{ marginBottom: 20 }} />
-          )}
+          <Text style={styles.sectionLabel}>Available Promotions</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.promoScroll}>
+            {discountType === "percentage" ? (
+              <>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("10"); setPreviewDiscount((currentTotal * 10) / 100); }}>
+                  <Text style={styles.discountCardLabel}>10%</Text>
+                  <Text style={styles.discountCardSmall}>Promo 10%</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("25"); setPreviewDiscount((currentTotal * 25) / 100); }}>
+                  <Text style={styles.discountCardLabel}>25%</Text>
+                  <Text style={styles.discountCardSmall}>Promo 25%</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("50"); setPreviewDiscount((currentTotal * 50) / 100); }}>
+                  <Text style={styles.discountCardLabel}>50%</Text>
+                  <Text style={styles.discountCardSmall}>Promo 50%</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("100"); setPreviewDiscount(currentTotal); }}>
+                  <Text style={styles.discountCardLabel}>100%</Text>
+                  <Text style={styles.discountCardSmall}>FOC 100%</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("5"); setPreviewDiscount(Math.min(currentTotal, 5)); }}>
+                  <Text style={styles.discountCardLabel}>$5</Text>
+                  <Text style={styles.discountCardSmall}>$5 Off</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("10"); setPreviewDiscount(Math.min(currentTotal, 10)); }}>
+                  <Text style={styles.discountCardLabel}>$10</Text>
+                  <Text style={styles.discountCardSmall}>$10 Off</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("25"); setPreviewDiscount(Math.min(currentTotal, 25)); }}>
+                  <Text style={styles.discountCardLabel}>$25</Text>
+                  <Text style={styles.discountCardSmall}>$25 Off</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("50"); setPreviewDiscount(Math.min(currentTotal, 50)); }}>
+                  <Text style={styles.discountCardLabel}>$50</Text>
+                  <Text style={styles.discountCardSmall}>$50 Off</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
 
 
 

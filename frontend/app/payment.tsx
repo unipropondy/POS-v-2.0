@@ -1221,6 +1221,7 @@ export default function PaymentScreen() {
       referenceNo?: string;
     }>,
     memberOverride?: any,
+    focAmount?: number,
   ) => {
     if (processing) return;
     setProcessing(true);
@@ -1325,62 +1326,66 @@ export default function PaymentScreen() {
     const tableState = context?.tableId
       ? useTableStatusStore.getState().tableMap[context.tableId.toLowerCase()]
       : null;
-    const saleData = {
-      settlementId: checkoutSessionId,
-      orderId: displayOrderId || activeOrder?.orderId,
-      orderType:
-        context?.orderType === "DINE_IN"
-          ? "DINE-IN"
-          : context?.orderType || "DINE-IN",
-      tableNo:
-        context?.orderType === "TAKEAWAY"
-          ? context?.takeawayNo
-          : context?.tableNo,
-      section: context?.section,
-      items: finalItems.map((item: any) => ({
-        lineItemId: item.lineItemId,
-        dishId: item.dishId || item.DishId || item.id,
-        name: item.name,
-        songName: item.songName || item.SongName || "",
-        qty: item.qty,
-        price: item.price,
-        status: item.status,
-        discountAmount: item.discountAmount ?? item.discount ?? null,
-        discountType: item.discountType ?? null,
-        isDishReward: item.isDishReward || false,
-        rewardRuleId: item.rewardRuleId || null,
-        rewardDishId: item.rewardDishId || null,
-        modifiers: item.modifiers || null,
-        comboSelections: item.comboSelections || null,
-      })),
-      subTotal: subtotal,
-      taxAmount: displayedTax,
-      serviceCharge: displayedServiceCharge,
-      takeawayCharge: currentTakeawayCharge,
-      discountAmount: discountAmount + payItemDiscount,
-      discountType: discount?.type || "fixed",
-      totalAmount: total,
-      paymentMethod: payments && payments.length > 0 ? "SPLIT" : method.trim(),
-      payments: payments || null,
-      memberId: memberOverride?.MemberId || selectedMember?.MemberId || null,
-      roundOff: displayedRoundOff,
-      cashierId: user?.userId,
-      tableId: context?.tableId,
-      serverId: context?.serverId,
-      serverName: context?.serverName,
-      isSplit: !!splitItems,
-      splitItems: splitItems,
-      discountId: discount?.discountId || null,
-      discountPercentage:
-        discount?.type === "percentage" ? discount.value : null,
-      discountRemarks: discount?.label || null,
-      orderDiscountAmount: discountAmount,
-      itemDiscountAmount: payItemDiscount,
-      customerName: loyaltyName || tableState?.customerName || null,
-      mobileNo: loyaltyPhone || null,
-      pax: tableState?.pax || null,
-      rewardMemberId: rewardMemberId || null,
-    };
+      // FOC discount: add on top of any existing cart discount
+      const effectiveFocAmount = focAmount || 0;
+      const effectiveDiscountAmount = discountAmount + payItemDiscount + effectiveFocAmount;
+      const effectiveTotalAmount = total - effectiveFocAmount;
+
+      const saleData = {
+        settlementId: checkoutSessionId,
+        orderId: displayOrderId || activeOrder?.orderId,
+        orderType:
+          context?.orderType === "DINE_IN"
+            ? "DINE-IN"
+            : context?.orderType || "DINE-IN",
+        tableNo:
+          context?.orderType === "TAKEAWAY"
+            ? context?.takeawayNo
+            : context?.tableNo,
+        section: context?.section,
+        items: finalItems.map((item: any) => ({
+          lineItemId: item.lineItemId,
+          dishId: item.dishId || item.DishId || item.id,
+          name: item.name,
+          songName: item.songName || item.SongName || "",
+          qty: item.qty,
+          price: item.price,
+          status: item.status,
+          discountAmount: item.discountAmount ?? item.discount ?? null,
+          discountType: item.discountType ?? null,
+          isDishReward: item.isDishReward || false,
+          rewardRuleId: item.rewardRuleId || null,
+          rewardDishId: item.rewardDishId || null,
+          modifiers: item.modifiers || null,
+          comboSelections: item.comboSelections || null,
+        })),
+        subTotal: subtotal,
+        taxAmount: displayedTax,
+        serviceCharge: displayedServiceCharge,
+        takeawayCharge: currentTakeawayCharge,
+        discountAmount: effectiveDiscountAmount,
+        discountType: effectiveFocAmount > 0 ? "fixed" : (discount?.type || "fixed"),
+        totalAmount: effectiveTotalAmount,
+        paymentMethod: payments && payments.length > 0 ? "SPLIT" : method.trim(),
+        payments: payments || null,
+        memberId: memberOverride?.MemberId || selectedMember?.MemberId || null,
+        roundOff: displayedRoundOff,
+        cashierId: user?.userId,
+        tableId: context?.tableId,
+        serverId: context?.serverId,
+        serverName: context?.serverName,
+        isSplit: !!splitItems,
+        splitItems: splitItems,
+        discountId: effectiveFocAmount > 0 ? null : (discount?.discountId || null),
+        discountPercentage: effectiveFocAmount > 0 ? null : (discount?.type === "percentage" ? discount.value : null),
+        discountRemarks: effectiveFocAmount > 0 ? "FOC" : (discount?.label || null),
+        orderDiscountAmount: effectiveFocAmount > 0 ? effectiveFocAmount : discountAmount,
+        itemDiscountAmount: payItemDiscount,
+        customerName: loyaltyName || tableState?.customerName || null,
+        mobileNo: loyaltyPhone || null,
+        pax: tableState?.pax || null,
+        rewardMemberId: rewardMemberId || null,
+      };
 
     try {
       const response = await fetch(`${API_URL}/api/sales/save`, {
@@ -1410,9 +1415,11 @@ export default function PaymentScreen() {
             section: context?.section ?? "",
             orderType: context?.orderType ?? "",
             discountInfo: JSON.stringify(
-              discount?.applied && discountAmount > 0
-                ? { ...discount, amount: discountAmount, subtotal }
-                : {},
+              effectiveFocAmount > 0
+                ? { applied: true, type: "fixed", value: effectiveFocAmount, amount: effectiveFocAmount, label: "FOC", subtotal }
+                : (discount?.applied && discountAmount > 0
+                  ? { ...discount, amount: discountAmount, subtotal }
+                  : {})
             ),
             items: JSON.stringify(finalItems || []),
             roundOff: displayedRoundOff.toFixed(2),
@@ -1429,37 +1436,17 @@ export default function PaymentScreen() {
         const splitSnapshot = splitItems;
         const orderIdSnapshot = displayOrderId;
         const isOrderClosedFromResponse = !!result.isOrderClosed;
-        // Delay cleanup so the success screen renders before store mutations
-        setTimeout(() => {
-          if (ctxSnapshot) {
-            if (splitSnapshot) {
-              const { splitPartsCount, setSplitPartsCount, setActiveSplitItems } =
-                useCartStore.getState();
+        
+        if (ctxSnapshot) {
+          if (splitSnapshot) {
+            const { splitPartsCount, setSplitPartsCount, setActiveSplitItems } =
+              useCartStore.getState();
 
-              if (isOrderClosedFromResponse || splitPartsCount === 1) {
-                // All items paid/closed, do full table cleanup
-                setSplitPartsCount(null);
-                setActiveSplitItems(null);
+            if (isOrderClosedFromResponse || splitPartsCount === 1) {
+              // All items paid/closed, do full table cleanup
+              setSplitPartsCount(null);
+              setActiveSplitItems(null);
 
-                if (ctxSnapshot.orderType === "DINE_IN") {
-                  clearTable(ctxSnapshot.section!, ctxSnapshot.tableNo!);
-                }
-
-                if (ctxSnapshot.tableId) {
-                  useCartStore.getState().clearTableSession(ctxSnapshot.tableId);
-                  closeActiveOrder(orderIdSnapshot || "");
-                }
-
-                useOrderContextStore.getState().clearOrderContext();
-              } else {
-                // Still has items or parts left: decrement parts count if split by parts
-                if (splitPartsCount && splitPartsCount > 1) {
-                  setSplitPartsCount(splitPartsCount - 1);
-                }
-                setActiveSplitItems(null);
-              }
-            } else {
-              // Normal payment cleanup
               if (ctxSnapshot.orderType === "DINE_IN") {
                 clearTable(ctxSnapshot.section!, ctxSnapshot.tableNo!);
               }
@@ -1470,9 +1457,27 @@ export default function PaymentScreen() {
               }
 
               useOrderContextStore.getState().clearOrderContext();
+            } else {
+              // Still has items or parts left: decrement parts count if split by parts
+              if (splitPartsCount && splitPartsCount > 1) {
+                setSplitPartsCount(splitPartsCount - 1);
+              }
+              setActiveSplitItems(null);
             }
+          } else {
+            // Normal payment cleanup
+            if (ctxSnapshot.orderType === "DINE_IN") {
+              clearTable(ctxSnapshot.section!, ctxSnapshot.tableNo!);
+            }
+
+            if (ctxSnapshot.tableId) {
+              useCartStore.getState().clearTableSession(ctxSnapshot.tableId);
+              closeActiveOrder(orderIdSnapshot || "");
+            }
+
+            useOrderContextStore.getState().clearOrderContext();
           }
-        }, 800);
+        }
       } else {
         showToast({ type: "error", message: "Failed", subtitle: result.error });
       }
@@ -2416,8 +2421,8 @@ export default function PaymentScreen() {
                       if (mode) setMethod(mode);
                       setShowMemberModal(true);
                     }}
-                    onComplete={(finalPayments) => {
-                      executeFinalPayment(finalPayments);
+                    onComplete={(finalPayments, focAmount) => {
+                      executeFinalPayment(finalPayments, undefined, focAmount);
                     }}
                     onCancel={() => setIsSplitActive(false)}
                     processing={processing}

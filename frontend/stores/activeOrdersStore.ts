@@ -487,7 +487,7 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
     {
       name: "active-orders-storage",
       storage: createJSONStorage(() => 
-        Platform.OS === 'web' ? window.sessionStorage : AsyncStorage
+        Platform.OS === 'web' ? window.localStorage : AsyncStorage
       ),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

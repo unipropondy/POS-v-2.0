@@ -30,7 +30,7 @@ export const useOrderContextStore = create<OrderContextState>()(
     {
       name: "order-context-storage",
       storage: createJSONStorage(() => 
-        Platform.OS === 'web' ? window.sessionStorage : AsyncStorage
+        Platform.OS === 'web' ? window.localStorage : AsyncStorage
       ),
     }
   )

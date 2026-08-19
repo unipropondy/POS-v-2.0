@@ -3126,27 +3126,7 @@ export default function SummaryScreen() {
                     <Text style={styles.billOptionText}>Merge Bill</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.billOptionItem}
-                    onPress={() => {
-                      setShowBillOptions(false);
-                      handleFOC();
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.billOptionIcon,
-                        { backgroundColor: Theme.warningBg },
-                      ]}
-                    >
-                      <Ionicons
-                        name="gift-outline"
-                        size={20}
-                        color={Theme.warning}
-                      />
-                    </View>
-                    <Text style={styles.billOptionText}>FOC</Text>
-                  </TouchableOpacity>
+
 
 
                   <TouchableOpacity

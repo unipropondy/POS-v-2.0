@@ -1687,15 +1687,16 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: "cart-storage",
-      storage: createJSONStorage(() => 
-        Platform.OS === 'web' ? window.sessionStorage : AsyncStorage
+      storage: createJSONStorage(() =>
+        Platform.OS === 'web' ? window.localStorage : AsyncStorage
       ),
-      // 🚀 PERF: Only persist session-critical fields. Cart items are always re-fetched from DB
-      // on table open. Persisting carts/discounts/shields caused heavy AsyncStorage writes on
-      // every mutation (4+ writes per cart item add). Now: ~0 writes during normal operation.
+      // Persist session-critical fields + cart items/discounts so checkout
+      // survives a page refresh on web
       partialize: (state) => ({
         tableOrderIds: state.tableOrderIds,
         currentContextId: state.currentContextId,
+        carts: state.carts,
+        discounts: state.discounts,
       }),
       merge: (persistedState: any, currentState) => {
         const merged = { ...currentState, ...persistedState };
