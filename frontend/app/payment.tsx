@@ -971,8 +971,9 @@ export default function PaymentScreen() {
       }
     } else {
       // Clear 100% FOC discount if switching away from FOC
-      const currentDiscount = useCartStore.getState().currentContextId
-        ? useCartStore.getState().discounts[useCartStore.getState().currentContextId]
+      const currentContextId = useCartStore.getState().currentContextId;
+      const currentDiscount = currentContextId
+        ? useCartStore.getState().discounts[currentContextId]
         : null;
       if (currentDiscount?.applied && currentDiscount?.value === 100) {
         const clearedDiscount = {
