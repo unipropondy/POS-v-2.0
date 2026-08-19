@@ -13,7 +13,9 @@
   },
   "name": "POS-1",
   "version": "3.0.0",
-  "scripts": {},
+  "scripts": {
+    "build": "node scripts/build-all.js"
+  },
   "devDependencies": {
     "@types/react": "~19.2.10",
     "typescript": "~5.9.2"

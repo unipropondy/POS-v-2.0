@@ -1431,7 +1431,34 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
         }
       })();
 
-      // 🚀 VERIFIED CHECKOUT: Wait for server response
+      if (enableCheckoutFlow !== false) {
+        // 🚀 INSTANT REDIRECT: Go back to Floor Plan immediately for hyper-speed UX
+        useOrderContextStore.getState().clearOrderContext();
+        router.replace("/(tabs)/category");
+
+        // Fire API call and sync in background
+        (async () => {
+          try {
+            const res = await useCartStore.getState().checkoutOrder(tableId);
+            if (res && res.success) {
+              useActiveOrdersStore.getState().fetchActiveKitchenOrders().catch(() => {});
+            }
+          } catch (e) {
+            console.error("Background checkout failed:", e);
+          }
+        })();
+
+        showToast({
+          type: "success",
+          message: "Success",
+          subtitle: enableCheckoutBill ? "Order finalized & Printing..." : "Checkout completed successfully.",
+          duration: 1000,
+        });
+        setIsCheckingOut(false);
+        return;
+      }
+
+      // 🚀 VERIFIED CHECKOUT: Wait for server response (for other flows)
       const res = await useCartStore.getState().checkoutOrder(tableId);
 
       if (res && res.success) {
@@ -1450,12 +1477,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
           if (enableSkipSummaryScreen) {
             router.push("/payment");
           } else {
-            if (enableCheckoutFlow !== false) {
-              useOrderContextStore.getState().clearOrderContext();
-              router.replace("/(tabs)/category");
-            } else {
-              router.push("/payment");
-            }
+            router.push("/payment");
           }
         }
 

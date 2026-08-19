@@ -50,7 +50,7 @@ import {
 } from "@/stores/cartStore";
 import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 import { getHeldOrders } from "@/stores/heldOrdersStore";
-import { OrderContext, setOrderContext } from "@/stores/orderContextStore";
+import { OrderContext, setOrderContext, clearOrderContext } from "@/stores/orderContextStore";
 import { usePaymentSettingsStore } from "@/stores/paymentSettingsStore";
 import {
   TableStatusType,
@@ -1139,7 +1139,8 @@ export default function Category() {
             tableId: id,
           });
           if (checkoutFlowEnabled) {
-            router.push("/summary");
+            clearOrderContext();
+            router.replace("/(tabs)/category");
           } else {
             router.push("/payment");
           }
