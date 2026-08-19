@@ -615,7 +615,6 @@ export default function PaymentScreen() {
     return unsubscribe;
   }, []);
 
-  // 🖥️ CUSTOMER DISPLAY REAL-TIME SYNC
   useEffect(() => {
     CustomerDisplaySync.isPaymentActive = true;
     return () => {
@@ -623,8 +622,6 @@ export default function PaymentScreen() {
       CustomerDisplaySync.syncIdle();
     };
   }, []);
-
-
 
   const takeawayCharges = settingsStore.takeawayCharges || 0;
 
@@ -635,6 +632,8 @@ export default function PaymentScreen() {
     scEligibleSubtotal,
     calcTakeawayChargeAmt,
     takeawayQty,
+    hasMixedTWCharges,
+    singleTWRate,
   } = useMemo(() => {
     if (isLedgerCollection) {
       return {
@@ -644,11 +643,18 @@ export default function PaymentScreen() {
         scEligibleSubtotal: 0,
         calcTakeawayChargeAmt: 0,
         takeawayQty: 0,
+        hasMixedTWCharges: false,
+        singleTWRate: takeawayCharges,
       };
     }
-    const nonVoided = finalItems.filter((i: any) => i.status !== "VOIDED");
-    return nonVoided.reduce(
+
+    let firstRate: number | null = null;
+    let mixed = false;
+
+    const reduced = finalItems.reduce(
       (acc: any, item: any) => {
+        const isVoided = (item as any).status === "VOIDED";
+        if (isVoided) return acc;
         const baseTotal = (item.price || 0) * (item.qty || 0);
         let itemDiscount = 0;
         const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
@@ -667,7 +673,20 @@ export default function PaymentScreen() {
         const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
         const isSC =
           !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true);
-        const itemTWCharge = isTakeawayItem ? (item.qty || 1) * takeawayCharges : 0;
+        
+        let itemTWCharge = 0;
+        if (isTakeawayItem) {
+          const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
+          const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayCharges;
+          itemTWCharge = (item.qty || 1) * effectiveTWRate;
+
+          if (firstRate === null) {
+            firstRate = effectiveTWRate;
+          } else if (firstRate !== effectiveTWRate) {
+            mixed = true;
+          }
+        }
+
         return {
           grossTotal: acc.grossTotal + baseTotal,
           totalItemDiscount: acc.totalItemDiscount + itemDiscount,
@@ -687,6 +706,12 @@ export default function PaymentScreen() {
         takeawayQty: 0,
       },
     );
+
+    return {
+      ...reduced,
+      hasMixedTWCharges: mixed,
+      singleTWRate: firstRate !== null ? firstRate : takeawayCharges,
+    };
   }, [finalItems, isLedgerCollection, collectAmount, takeawayCharges]);
 
   const allItemsHaveSC = useMemo(() => {
@@ -3023,7 +3048,7 @@ export default function PaymentScreen() {
                       {currentTakeawayCharge > 0 && (
                         <View style={styles.breakRow}>
                           <Text style={styles.breakLabel}>
-                            Takeaway Charges ({currencySymbol}{takeawayCharges.toFixed(2)} * {takeawayQty})
+                            Takeaway Charges {hasMixedTWCharges ? "" : `(${currencySymbol}${singleTWRate.toFixed(2)} * ${takeawayQty})`}
                           </Text>
                           <Text style={styles.breakValue}>
                             {currencySymbol}

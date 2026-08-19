@@ -42,6 +42,7 @@ export type CartItem = {
   discountType?: string;    // 'percentage' | 'fixed' | null
   basePrice?: number;
   isTakeaway?: boolean;
+  takeawayCharge?: number;
   isVoided?: boolean;
   categoryName?: string; 
   status?: "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED" | "HOLD";
@@ -277,6 +278,7 @@ const normalizeCartItem = (item: any, fallback: Partial<CartItem> = {}): CartIte
     basePrice: finalBasePrice,
     note,
     isTakeaway,
+    takeawayCharge: Number(item.takeawayCharge ?? item.TakeawayCharge ?? fallback.takeawayCharge ?? 0),
     discount,
     modifiers,
     splitMembers,

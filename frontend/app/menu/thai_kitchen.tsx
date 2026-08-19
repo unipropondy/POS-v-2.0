@@ -945,6 +945,7 @@ export default function MenuScreen() {
           KitchenTypeCode: dish.KitchenTypeCode || currentKitchenCode,
           isServiceCharge: dish.isServiceCharge,
           IsOpenItem: dish.IsOpenItem,
+          takeawayCharge: dish.takeawayCharge ?? dish.TakeawayCharge,
         });
       };
 
@@ -1196,6 +1197,7 @@ export default function MenuScreen() {
         KitchenTypeCode: selectedDish.KitchenTypeCode || currentKitchenCode,
         splitMembers: selectedDish.splitMembers || undefined,
         isServiceCharge: selectedDish.isServiceCharge,
+        takeawayCharge: selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge,
       } as any);
 
     }
@@ -1233,6 +1235,7 @@ export default function MenuScreen() {
       KitchenTypeCode: dish.KitchenTypeCode || dish._kitchenCode,
       IsOpenItem: dish.IsOpenItem,
       isServiceCharge: dish.isServiceCharge,
+      takeawayCharge: dish.takeawayCharge ?? dish.TakeawayCharge,
     });
 
     // Reset
@@ -1564,6 +1567,7 @@ export default function MenuScreen() {
                       name: `${selectedSplitDish.Name} - ${member.Name}`,
                       songName: songName,
                       price: shareAmount,
+                      takeawayCharge: selectedSplitDish.takeawayCharge ?? selectedSplitDish.TakeawayCharge,
                     } as any);
                   });
 

@@ -1924,22 +1924,38 @@ class UniversalPrinter {
     const companySettings = useCompanySettingsStore.getState().settings;
     const takeawayRateFromSettings = companySettings?.takeawayCharges || 0;
     let takeawayCharge = saleData.takeawayCharge !== undefined ? parseFloat(String(saleData.takeawayCharge)) : 0;
-    let takeawayQty = (saleData.items || []).reduce((sum: number, item: any) => {
+    
+    let firstRate: number | null = null;
+    let mixed = false;
+    let calculatedTWCharge = 0;
+    let takeawayQty = 0;
+
+    (saleData.items || []).forEach((item: any) => {
       const isTW = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
       const isVoided = item.status === "VOIDED" || item.StatusCode === 0;
       if (isTW && !isVoided) {
-        return sum + (item.qty || item.quantity || 1);
+        const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
+        takeawayQty += qtyNum;
+
+        const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
+        const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayRateFromSettings;
+        calculatedTWCharge += qtyNum * effectiveTWRate;
+
+        if (firstRate === null) {
+          firstRate = effectiveTWRate;
+        } else if (firstRate !== effectiveTWRate) {
+          mixed = true;
+        }
       }
-      return sum;
-    }, 0);
+    });
 
     if (takeawayQty === 0 && takeawayCharge > 0) {
       const effectiveRate = takeawayRateFromSettings > 0 ? takeawayRateFromSettings : takeawayCharge;
       takeawayQty = Math.round(takeawayCharge / effectiveRate) || 1;
     } else if (takeawayQty > 0 && takeawayCharge === 0) {
-      takeawayCharge = takeawayQty * takeawayRateFromSettings;
+      takeawayCharge = calculatedTWCharge > 0 ? calculatedTWCharge : takeawayQty * takeawayRateFromSettings;
     }
-    const takeawayRate = takeawayQty > 0 ? (takeawayCharge / takeawayQty) : takeawayRateFromSettings;
+    const takeawayRate = takeawayQty > 0 ? (firstRate !== null && !mixed ? firstRate : takeawayCharge / takeawayQty) : takeawayRateFromSettings;
     const taxableAmount = currentSubtotal + serviceChargeAmount + takeawayCharge;
     const gstAmountRaw = hasGST ? taxableAmount * (gstRate / 100) : 0;
     const gstAmount = Math.round(gstAmountRaw * 100) / 100;
@@ -1958,7 +1974,7 @@ class UniversalPrinter {
     }
 
     if (takeawayCharge > 0) {
-      text += this.formatTwoCols48(`Takeaway Charges (${symbol}${takeawayRate.toFixed(2)}*${takeawayQty}):`, `${symbol}${takeawayCharge.toFixed(2)}`);
+      text += this.formatTwoCols48("Takeaway Charges:", `${symbol}${takeawayCharge.toFixed(2)}`);
     }
 
     if (hasGST && gstAmount > 0) {

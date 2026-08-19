@@ -1210,8 +1210,11 @@ export default function SummaryScreen() {
 
   const takeawayCharges = settings.takeawayCharges || 0;
 
-  const { grossTotal, totalItemDiscount, scEligibleSubtotal, calcTakeawayChargeAmt, takeawayQty } = useMemo(() => {
-    return finalItems.reduce((acc: any, item: any) => {
+  const { grossTotal, totalItemDiscount, scEligibleSubtotal, calcTakeawayChargeAmt, takeawayQty, hasMixedTWCharges, singleTWRate } = useMemo(() => {
+    let firstRate: number | null = null;
+    let mixed = false;
+
+    const reduced = finalItems.reduce((acc: any, item: any) => {
       const isVoided = (item as any).status === "VOIDED";
       if (isVoided) return acc;
       
@@ -1233,7 +1236,19 @@ export default function SummaryScreen() {
       const itemSubtotal = baseTotal - itemDiscount;
       const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway || (item as any).isTakeaway === true || (item as any).IsTakeaway === true || String((item as any).isTakeaway) === "1" || String((item as any).IsTakeaway) === "1";
       const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true || Number(item.IsServiceCharge) === 1 || item.IsServiceCharge === true);
-      const itemTWCharge = isTakeawayItem ? item.qty * takeawayCharges : 0;
+      
+      let itemTWCharge = 0;
+      if (isTakeawayItem) {
+        const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
+        const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayCharges;
+        itemTWCharge = item.qty * effectiveTWRate;
+
+        if (firstRate === null) {
+          firstRate = effectiveTWRate;
+        } else if (firstRate !== effectiveTWRate) {
+          mixed = true;
+        }
+      }
 
       return {
         grossTotal: acc.grossTotal + baseTotal,
@@ -1243,6 +1258,12 @@ export default function SummaryScreen() {
         takeawayQty: acc.takeawayQty + (isTakeawayItem ? item.qty : 0),
       };
     }, { grossTotal: 0, totalItemDiscount: 0, scEligibleSubtotal: 0, calcTakeawayChargeAmt: 0, takeawayQty: 0 });
+
+    return {
+      ...reduced,
+      hasMixedTWCharges: mixed,
+      singleTWRate: firstRate !== null ? firstRate : takeawayCharges
+    };
   }, [finalItems, takeawayCharges]);
 
   const subtotal = useMemo(() => grossTotal - totalItemDiscount, [grossTotal, totalItemDiscount]);
@@ -2201,7 +2222,7 @@ export default function SummaryScreen() {
                         isPhone && !isLandscape && { fontSize: 13 },
                       ]}
                     >
-                      Takeaway Charges ({currencySymbol}{takeawayCharges.toFixed(2)} * {takeawayQty})
+                      Takeaway Charges {hasMixedTWCharges ? "" : `(${currencySymbol}${singleTWRate.toFixed(2)} * ${takeawayQty})`}
                     </Text>
                     <Text
                       style={[

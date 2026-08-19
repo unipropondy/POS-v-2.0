@@ -1196,8 +1196,11 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
 
   const takeawayCharges = settings.takeawayCharges || 0;
 
-  const { grossTotal, totalDiscount, scEligibleSubtotal, takeawayChargeAmt, takeawayQty } = useMemo(() => {
-    return displayItems.reduce(
+  const { grossTotal, totalDiscount, scEligibleSubtotal, takeawayChargeAmt, takeawayQty, hasMixedTWCharges, singleTWRate } = useMemo(() => {
+    let firstRate: number | null = null;
+    let mixed = false;
+
+    const reduced = displayItems.reduce(
       (acc, item) => {
         const isVoided = "status" in item && item.status === "VOIDED";
         if (isVoided) return acc;
@@ -1220,7 +1223,19 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
         const itemSubtotal = baseTotal - itemDiscount;
         const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
         const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true);
-        const itemTWCharge = isTakeawayItem ? item.qty * takeawayCharges : 0;
+        
+        let itemTWCharge = 0;
+        if (isTakeawayItem) {
+          const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
+          const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayCharges;
+          itemTWCharge = item.qty * effectiveTWRate;
+
+          if (firstRate === null) {
+            firstRate = effectiveTWRate;
+          } else if (firstRate !== effectiveTWRate) {
+            mixed = true;
+          }
+        }
 
         return {
           grossTotal: acc.grossTotal + baseTotal,
@@ -1232,6 +1247,12 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
       },
       { grossTotal: 0, totalDiscount: 0, scEligibleSubtotal: 0, takeawayChargeAmt: 0, takeawayQty: 0 },
     );
+
+    return {
+      ...reduced,
+      hasMixedTWCharges: mixed,
+      singleTWRate: firstRate !== null ? firstRate : takeawayCharges
+    };
   }, [displayItems, takeawayCharges]);
 
   const subtotal = grossTotal - totalDiscount;
@@ -1847,7 +1868,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
               {takeawayChargeAmt > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>
-                    TW Charges ({currencySymbol}{takeawayCharges.toFixed(2)} * {takeawayQty})
+                    TW Charges {hasMixedTWCharges ? "" : `(${currencySymbol}${singleTWRate.toFixed(2)} * ${takeawayQty})`}
                   </Text>
                   <Text style={styles.summaryValue}>
                     {currencySymbol}

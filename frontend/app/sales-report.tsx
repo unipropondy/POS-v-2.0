@@ -432,7 +432,7 @@ export default function SalesReport() {
           data,
         });
 
-        if (reportType === "CATEGORY") {
+         if (reportType === "CATEGORY") {
           setCategoryReport(
             Array.isArray(data)
               ? data.map((row: any) => ({
@@ -441,6 +441,7 @@ export default function SalesReport() {
                 Sold: row.totalQty ?? row.totalQuantitySold ?? 0,
                 Voided: row.voidQty ?? 0,
                 DiscountAmount: row.discountAmount ?? 0,
+                TakeawayCharge: row.takeawayCharge ?? 0,
                 SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
               }))
               : [],
@@ -460,6 +461,7 @@ export default function SalesReport() {
                 Sold: row.totalQty ?? row.quantitySold ?? 0,
                 Voided: row.voidQty ?? 0,
                 DiscountAmount: row.discountAmount ?? 0,
+                TakeawayCharge: row.takeawayCharge ?? 0,
                 SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
               }))
               : [],
@@ -1145,6 +1147,7 @@ export default function SalesReport() {
           acc.ServiceCharge += Number(s.ServiceCharge) || 0;
           acc.TotalTax += Number(s.TotalTax) || 0;
           acc.TotalDiscount += Number(s.DiscountAmount) || 0;
+          acc.TakeawayCharge += Number(s.TakeawayCharge) || 0;
         }
 
         const mode = s.PayMode?.trim().toUpperCase() || "";
@@ -1190,6 +1193,7 @@ export default function SalesReport() {
         ServiceCharge: 0,
         TotalTax: 0,
         TotalDiscount: 0,
+        TakeawayCharge: 0,
       },
     );
   }, [dateScopedSales]);
@@ -1765,6 +1769,15 @@ export default function SalesReport() {
                     >
                       Discount
                     </Text>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.discountCell,
+                        { color: "#ec4899" },
+                      ]}
+                    >
+                      Takeaway
+                    </Text>
                     <Text style={[styles.reportCell, styles.amountCell]}>
                       Sales
                     </Text>
@@ -1925,6 +1938,16 @@ export default function SalesReport() {
                         ]}
                       >
                         {formatCurrency(Number(row.DiscountAmount || 0))}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.reportCell,
+                          styles.reportCellText,
+                          styles.discountCell,
+                          { color: "#ec4899", fontWeight: "600" },
+                        ]}
+                      >
+                        {formatCurrency(Number(row.TakeawayCharge || 0))}
                       </Text>
                       <Text
                         style={[
@@ -2116,6 +2139,16 @@ export default function SalesReport() {
                               ]}
                             >
                               {formatCurrency(Number(row.DiscountAmount || 0))}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.reportCell,
+                                styles.reportCellText,
+                                styles.discountCell,
+                                { color: "#ec4899", fontWeight: "600" },
+                              ]}
+                            >
+                              {formatCurrency(Number(row.TakeawayCharge || 0))}
                             </Text>
                             <Text
                               style={[
@@ -2337,6 +2370,12 @@ export default function SalesReport() {
           formatCurrency(filteredMetrics.TotalTax),
           "receipt-outline",
           Theme.warning,
+        )}
+        {renderMetricTile(
+          "Takeaway Charge",
+          formatCurrency(filteredMetrics.TakeawayCharge),
+          "basket-outline",
+          "#ec4899",
         )}
         {renderMetricTile(
           "Discount Sales",

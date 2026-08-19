@@ -855,11 +855,22 @@ async function syncTableStatus(req, tableId) {
 
     SELECT 
         @count = COUNT(*), 
-        @subtotal = ISNULL(SUM(ActualAmount), 0),
-        @serviceCharge = CASE WHEN @SCOverride = 1 THEN 0 ELSE ISNULL(SUM(ServiceCharge), 0) END,
-        @takeawayCharge = CASE WHEN @TakeawayOverride = 1 THEN 0 ELSE ISNULL(SUM(Quantity * CASE WHEN isTakeAway = 1 THEN @takeawayRate ELSE 0 END), 0) END
-    FROM RestaurantOrderDetailCur 
-    WHERE OrderId = @ActualOrderId AND StatusCode <> 0;
+        @subtotal = ISNULL(SUM(d.ActualAmount), 0),
+        @serviceCharge = CASE WHEN @SCOverride = 1 THEN 0 ELSE ISNULL(SUM(d.ServiceCharge), 0) END,
+        @takeawayCharge = CASE 
+            WHEN @TakeawayOverride = 1 THEN 0 
+            ELSE ISNULL(SUM(d.Quantity * CASE 
+                WHEN d.isTakeAway = 1 THEN 
+                    CASE 
+                        WHEN ISNULL(dish.TakeawayCharge, 0) > 0 THEN dish.TakeawayCharge 
+                        ELSE @takeawayRate 
+                    END
+                ELSE 0 
+            END), 0) 
+        END
+    FROM RestaurantOrderDetailCur d
+    LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+    WHERE d.OrderId = @ActualOrderId AND d.StatusCode <> 0;
 
     SELECT TOP 1 @discountAmount = ISNULL(DiscountAmount, 0) FROM RestaurantOrderCur WHERE OrderId = @ActualOrderId;
 
@@ -1206,6 +1217,8 @@ router.post("/send", async (req, res) => {
             ISNULL(d.DiscountAmount, 0) as discount,
             ISNULL(d.DiscountType, NULL) as discountType,
             CAST(ISNULL(dish.IsDiscountAllowed, 1) AS INT) as IsDiscountAllowed,
+            ISNULL(dish.TakeawayCharge, 0) as takeawayCharge,
+            ISNULL(dish.TakeawayCharge, 0) as TakeawayCharge,
             ISNULL(ckt.KitchenTypeCode, '2') as KitchenTypeCode, 
             ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
             pm.PrinterPath as PrinterIP
@@ -1288,6 +1301,8 @@ router.post("/send", async (req, res) => {
               d.OrderDetailId as lineItemId, d.DishId as id, ISNULL(d.SongName,'') as songName, d.Quantity as qty, 
               d.PricePerUnit as price, d.PricePerUnit as basePrice, ISNULL(NULLIF(d.DishName,''), dish.Name) as name,
               d.ModifiersJSON, d.ComboDetailsJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
+              ISNULL(dish.TakeawayCharge, 0) as takeawayCharge,
+              ISNULL(dish.TakeawayCharge, 0) as TakeawayCharge,
               ISNULL(d.DiscountAmount, 0) as discount, ISNULL(d.DiscountType, NULL) as discountType,
               CASE d.StatusCode 
                 WHEN 1 THEN 'NEW' WHEN 2 THEN 'SENT' WHEN 3 THEN 'READY' 
@@ -1559,6 +1574,8 @@ router.get("/cart/:tableId", async (req, res) => {
           ISNULL(d.DiscountAmount, 0) as discount,
           ISNULL(d.DiscountType, NULL) as discountType,
           CAST(ISNULL(dish.IsDiscountAllowed, 1) AS INT) as IsDiscountAllowed,
+          ISNULL(dish.TakeawayCharge, 0) as takeawayCharge,
+          ISNULL(dish.TakeawayCharge, 0) as TakeawayCharge,
           d.CreatedOn as DateCreated,
           CASE d.StatusCode 
             WHEN 1 THEN 'NEW' WHEN 2 THEN 'SENT' WHEN 3 THEN 'READY' 

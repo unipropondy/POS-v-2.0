@@ -366,6 +366,7 @@ router.get("/all", async (req, res) => {
              sh.DiscountType as DiscountType,
              ISNULL(sh.ServiceCharge, 0) as ServiceCharge,
              ISNULL(sh.TotalTax, 0) as TotalTax,
+             ISNULL(sh.TakeawayCharge, 0) as TakeawayCharge,
              ISNULL(sts.ReceiptCount, 0) as ReceiptCount,
              ISNULL(sh.VoidItemQty, 0) as VoidQty,
              ISNULL(sh.VoidItemAmount, 0) as VoidAmount,
@@ -413,6 +414,7 @@ router.get("/all", async (req, res) => {
             NULL AS DiscountType,
             0 AS ServiceCharge,
             0 AS TotalTax,
+            0 AS TakeawayCharge,
             1 AS ReceiptCount,
             0 AS VoidQty,
             0 AS VoidAmount,
@@ -896,9 +898,13 @@ router.get("/dish", async (req, res) => {
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') = 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.DiscountAmount, 0) + (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.DiscountAmount, 0) / NULLIF(sh.SubTotal, 0))) AS decimal(18, 2)) ELSE 0 END) AS discountAmount,
-            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST((ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) - (ISNULL(sid.DiscountAmount, 0) + (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.DiscountAmount, 0) / NULLIF(sh.SubTotal, 0)))) AS decimal(18, 2)) ELSE 0 END) AS totalAmount
+            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST((ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) - (ISNULL(sid.DiscountAmount, 0) + (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.DiscountAmount, 0) / NULLIF(sh.SubTotal, 0)))) AS decimal(18, 2)) ELSE 0 END) AS totalAmount,
+            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' AND ISNULL(rod.isTakeAway, 0) = 1 THEN 
+              CAST(ISNULL(sid.Qty, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE (SELECT TOP 1 ISNULL(TakeawayCharges, 0) FROM CompanySettings) END AS decimal(18, 2))
+              ELSE 0 END) AS takeawayCharge
           FROM SettlementHeader sh
           INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID
+          LEFT JOIN RestaurantOrderDetail rod ON sid.OrderDetailId = rod.OrderDetailId
           LEFT JOIN DishMaster d ON sid.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON COALESCE(sid.DishGroupId, d.DishGroupId) = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON COALESCE(sid.CategoryId, dg.CategoryId) = cm.CategoryId
@@ -917,7 +923,10 @@ router.get("/dish", async (req, res) => {
             SUM(CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3))) AS totalQty,
             CAST(0 AS decimal(18, 3)) AS voidQty,
             CAST(0 AS decimal(18, 2)) AS discountAmount,
-            SUM(CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18, 2))) AS totalAmount
+            SUM(CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18, 2))) AS totalAmount,
+            SUM(CASE WHEN ISNULL(rod.isTakeAway, 0) = 1 THEN 
+              CAST(ISNULL(rod.Quantity, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE (SELECT TOP 1 ISNULL(TakeawayCharges, 0) FROM CompanySettings) END AS decimal(18, 2))
+              ELSE 0 END) AS takeawayCharge
           FROM RestaurantOrderDetail rod
           INNER JOIN (
             SELECT OrderId, RestaurantBillId, InvoiceDate, start_date 
@@ -952,7 +961,10 @@ router.get("/dish", async (req, res) => {
             SUM(CASE WHEN rod.StatusCode <> 0 THEN CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN rod.StatusCode = 0 THEN CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
             CAST(0 AS decimal(18, 2)) AS discountAmount,
-            SUM(CASE WHEN rod.StatusCode <> 0 THEN CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18, 2)) ELSE 0 END) AS totalAmount
+            SUM(CASE WHEN rod.StatusCode <> 0 THEN CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18, 2)) ELSE 0 END) AS totalAmount,
+            SUM(CASE WHEN rod.StatusCode <> 0 AND ISNULL(rod.isTakeAway, 0) = 1 THEN 
+              CAST(ISNULL(rod.Quantity, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE (SELECT TOP 1 ISNULL(TakeawayCharges, 0) FROM CompanySettings) END AS decimal(18, 2))
+              ELSE 0 END) AS takeawayCharge
           FROM RestaurantOrderDetail rod
           INNER JOIN RestaurantOrder ro ON rod.OrderId = ro.OrderId
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
@@ -969,13 +981,13 @@ router.get("/dish", async (req, res) => {
             ISNULL(cm.CategoryName, 'Unmapped'), 
             ISNULL(dg.DishGroupName, 'Unmapped')
         )
-        SELECT dishName, categoryName, subCategoryName, SUM(totalQty) AS totalQty, SUM(voidQty) AS voidQty, SUM(discountAmount) AS discountAmount, SUM(totalAmount) AS totalAmount
+        SELECT dishName, categoryName, subCategoryName, SUM(totalQty) AS totalQty, SUM(voidQty) AS voidQty, SUM(discountAmount) AS discountAmount, SUM(totalAmount) AS totalAmount, SUM(takeawayCharge) AS takeawayCharge
         FROM (
-          SELECT CAST(dishName AS NVARCHAR(255)) AS dishName, CAST(categoryName AS NVARCHAR(255)) AS categoryName, CAST(subCategoryName AS NVARCHAR(255)) AS subCategoryName, CAST(totalQty AS decimal(18,3)) AS totalQty, CAST(voidQty AS decimal(18,3)) AS voidQty, CAST(discountAmount AS decimal(18,2)) AS discountAmount, CAST(totalAmount AS decimal(18,2)) AS totalAmount FROM AppReport
+          SELECT CAST(dishName AS NVARCHAR(255)) AS dishName, CAST(categoryName AS NVARCHAR(255)) AS categoryName, CAST(subCategoryName AS NVARCHAR(255)) AS subCategoryName, CAST(totalQty AS decimal(18,3)) AS totalQty, CAST(voidQty AS decimal(18,3)) AS voidQty, CAST(discountAmount AS decimal(18,2)) AS discountAmount, CAST(totalAmount AS decimal(18,2)) AS totalAmount, CAST(takeawayCharge AS decimal(18,2)) AS takeawayCharge FROM AppReport
           UNION ALL
-          SELECT CAST(dishName AS NVARCHAR(255)) AS dishName, CAST(categoryName AS NVARCHAR(255)) AS categoryName, CAST(subCategoryName AS NVARCHAR(255)) AS subCategoryName, CAST(totalQty AS decimal(18,3)) AS totalQty, CAST(voidQty AS decimal(18,3)) AS voidQty, CAST(discountAmount AS decimal(18,2)) AS discountAmount, CAST(totalAmount AS decimal(18,2)) AS totalAmount FROM LegacyReport
+          SELECT CAST(dishName AS NVARCHAR(255)) AS dishName, CAST(categoryName AS NVARCHAR(255)) AS categoryName, CAST(subCategoryName AS NVARCHAR(255)) AS subCategoryName, CAST(totalQty AS decimal(18,3)) AS totalQty, CAST(voidQty AS decimal(18,3)) AS voidQty, CAST(discountAmount AS decimal(18,2)) AS discountAmount, CAST(totalAmount AS decimal(18,2)) AS totalAmount, CAST(takeawayCharge AS decimal(18,2)) AS takeawayCharge FROM LegacyReport
           UNION ALL
-          SELECT CAST(dishName AS NVARCHAR(255)) AS dishName, CAST(categoryName AS NVARCHAR(255)) AS categoryName, CAST(subCategoryName AS NVARCHAR(255)) AS subCategoryName, CAST(totalQty AS decimal(18,3)) AS totalQty, CAST(voidQty AS decimal(18,3)) AS voidQty, CAST(discountAmount AS decimal(18,2)) AS discountAmount, CAST(totalAmount AS decimal(18,2)) AS totalAmount FROM ProfessionalReport
+          SELECT CAST(dishName AS NVARCHAR(255)) AS dishName, CAST(categoryName AS NVARCHAR(255)) AS categoryName, CAST(subCategoryName AS NVARCHAR(255)) AS subCategoryName, CAST(totalQty AS decimal(18,3)) AS totalQty, CAST(voidQty AS decimal(18,3)) AS voidQty, CAST(discountAmount AS decimal(18,2)) AS discountAmount, CAST(totalAmount AS decimal(18,2)) AS totalAmount, CAST(takeawayCharge AS decimal(18,2)) AS takeawayCharge FROM ProfessionalReport
         ) ReportRows
         GROUP BY dishName, categoryName, subCategoryName
         HAVING SUM(totalQty) > 0 OR SUM(totalAmount) > 0 OR SUM(voidQty) > 0
