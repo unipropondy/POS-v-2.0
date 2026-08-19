@@ -956,6 +956,38 @@ export default function PaymentScreen() {
 
   const handleSelectMethod = (m: PaymentMethod) => {
     setMethod(m.payMode);
+    
+    // Apply 100% discount if FOC is selected
+    if (m.payMode.toUpperCase().trim() === "FOC") {
+      const discountData = {
+        applied: true,
+        type: "percentage" as const,
+        value: 100,
+      };
+      useCartStore.getState().applyDiscount(discountData);
+      const currentContext = useOrderContextStore.getState().currentOrder;
+      if (currentContext) {
+        useActiveOrdersStore.getState().updateOrderDiscount(currentContext, discountData);
+      }
+    } else {
+      // Clear 100% FOC discount if switching away from FOC
+      const currentDiscount = useCartStore.getState().currentContextId
+        ? useCartStore.getState().discounts[useCartStore.getState().currentContextId]
+        : null;
+      if (currentDiscount?.applied && currentDiscount?.value === 100) {
+        const clearedDiscount = {
+          applied: false,
+          type: "percentage" as const,
+          value: 0,
+        };
+        useCartStore.getState().applyDiscount(clearedDiscount);
+        const currentContext = useOrderContextStore.getState().currentOrder;
+        if (currentContext) {
+          useActiveOrdersStore.getState().updateOrderDiscount(currentContext, clearedDiscount);
+        }
+      }
+    }
+
     if (!isCashMethod(m.payMode)) {
       setRoundOff(0);
       setRoundType(null);
