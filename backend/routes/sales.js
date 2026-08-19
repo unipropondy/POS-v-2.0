@@ -800,6 +800,8 @@ router.get("/category", async (req, res) => {
           LEFT JOIN CategoryMaster cm ON COALESCE(sid.CategoryId, dg.CategoryId) = cm.CategoryId
           WHERE ${appDateWhereSql}
             AND ISNULL(sid.Qty, 0) > 0
+            AND ISNULL(sh.IsCancelled, 0) = 0
+            AND EXISTS (SELECT 1 FROM SettlementTotalSales WHERE SettlementID = sh.SettlementID)
           GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped'))
         ),
         LegacyReport AS (
@@ -896,7 +898,8 @@ router.get("/dish", async (req, res) => {
           LEFT JOIN DishMaster d ON sid.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON COALESCE(sid.DishGroupId, d.DishGroupId) = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON COALESCE(sid.CategoryId, dg.CategoryId) = cm.CategoryId
-          WHERE ${appDateWhereSql}
+          WHERE ${appDateWhereSql} AND ISNULL(sh.IsCancelled, 0) = 0
+            AND EXISTS (SELECT 1 FROM SettlementTotalSales WHERE SettlementID = sh.SettlementID)
           GROUP BY 
             ISNULL(NULLIF(LTRIM(RTRIM(sid.DishName)), ''), ISNULL(d.Name, 'Unknown')), 
             ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped')), 
