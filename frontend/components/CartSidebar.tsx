@@ -2114,6 +2114,42 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                                 // 🚀 Auto-trigger sending to kitchen/printing KOT in background
                                 await handleSendOrder(true);
                                 
+                                // 🚀 Print checkout bill if Checkout Bill setting is ON
+                                if (enableCheckoutBill) {
+                                  try {
+                                    let displayOrderId = activeOrder?.orderId || currentTableOrderId || "NEW";
+                                    if (
+                                      displayOrderId === "NEW" ||
+                                      displayOrderId === "PENDING" ||
+                                      displayOrderId === "#NEW"
+                                    ) {
+                                      const timestamp = new Date().getTime().toString().slice(-6);
+                                      displayOrderId = `ORD-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${timestamp}`;
+                                    }
+                                    const printData = {
+                                      id: displayOrderId,
+                                      invoiceNumber: displayOrderId,
+                                      date: new Date(),
+                                      items: cart.filter(
+                                        (i: any) => i.status !== "VOIDED" && i.statusCode !== 0,
+                                      ),
+                                      total: payableAmount,
+                                      totalAmount: payableAmount,
+                                      subTotal: grossTotal,
+                                      taxAmount: taxAmount,
+                                      discountAmount: 0,
+                                      serviceCharge: serviceChargeAmt,
+                                      tableNo: orderContext.tableNo,
+                                      section: orderContext.section,
+                                      serverName: user?.userName || "Staff",
+                                      paymentMethod: "CASH",
+                                    };
+                                    UniversalPrinter.printCheckoutBill(printData, user?.userId);
+                                  } catch (e) {
+                                    console.error("Direct Pay Print Error:", e);
+                                  }
+                                }
+
                                 await useCartStore.getState().fetchCartFromDB(tableId);
                                 await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
                                 router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
@@ -2235,6 +2271,42 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                               try {
                                 // 🚀 Auto-trigger sending to kitchen/printing KOT in background
                                 await handleSendOrder(true);
+
+                                // 🚀 Print checkout bill if Checkout Bill setting is ON
+                                if (enableCheckoutBill) {
+                                  try {
+                                    let displayOrderId = activeOrder?.orderId || currentTableOrderId || "NEW";
+                                    if (
+                                      displayOrderId === "NEW" ||
+                                      displayOrderId === "PENDING" ||
+                                      displayOrderId === "#NEW"
+                                    ) {
+                                      const timestamp = new Date().getTime().toString().slice(-6);
+                                      displayOrderId = `ORD-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${timestamp}`;
+                                    }
+                                    const printData = {
+                                      id: displayOrderId,
+                                      invoiceNumber: displayOrderId,
+                                      date: new Date(),
+                                      items: cart.filter(
+                                        (i: any) => i.status !== "VOIDED" && i.statusCode !== 0,
+                                      ),
+                                      total: payableAmount,
+                                      totalAmount: payableAmount,
+                                      subTotal: grossTotal,
+                                      taxAmount: taxAmount,
+                                      discountAmount: 0,
+                                      serviceCharge: serviceChargeAmt,
+                                      tableNo: orderContext.tableNo,
+                                      section: orderContext.section,
+                                      serverName: user?.userName || "Staff",
+                                      paymentMethod: "CASH",
+                                    };
+                                    UniversalPrinter.printCheckoutBill(printData, user?.userId);
+                                  } catch (e) {
+                                    console.error("Direct Pay Print Error:", e);
+                                  }
+                                }
 
                                 await useCartStore.getState().fetchCartFromDB(tableId);
                                 await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
