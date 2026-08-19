@@ -2097,39 +2097,12 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             />
                           </TouchableOpacity>
 
-                          {/* KOT button (Indigo, text 'KOT', 50px) */}
-                          <TouchableOpacity
-                            disabled={isCheckingOut}
-                            style={[
-                              styles.compactIconBtn,
-                              { backgroundColor: "#4F46E5" },
-                              isCheckingOut && { opacity: 0.6 }
-                            ]}
-                            onPress={async () => {
-                              if (isCheckingOut) return;
-                              setIsCheckingOut(true);
-                              try {
-                                await handleSendOrder(true);
-                              } catch (err) {
-                                console.error("KOT send error:", err);
-                              } finally {
-                                setIsCheckingOut(false);
-                              }
-                            }}
-                          >
-                            {isCheckingOut ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <Text style={{ color: "#fff", fontFamily: Fonts.black, fontSize: 13 }}>KOT</Text>
-                            )}
-                          </TouchableOpacity>
-
                           {/* Pay button (Green, flex-grow) */}
                           <TouchableOpacity
                             disabled={isCheckingOut}
                             style={[
                               styles.proceedBtn,
-                              { backgroundColor: "#10B981" },
+                              { flex: 1, backgroundColor: "#10B981" },
                               isCheckingOut && { opacity: 0.6 }
                             ]}
                             onPress={async () => {
@@ -2138,20 +2111,9 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                               if (!tableId) return;
                               setIsCheckingOut(true);
                               try {
-                                const targetOrderId = activeOrder?.orderId || currentTableOrderId || "NEW";
-                                const officialOrderId = await saveCartHelper(tableId, targetOrderId, true);
-
-                                updateTableStatus(
-                                  tableId,
-                                  orderContext.section!,
-                                  orderContext.tableNo!,
-                                  officialOrderId || targetOrderId,
-                                  "SENT",
-                                  new Date().toISOString(),
-                                  undefined,
-                                  payableAmount,
-                                );
-
+                                // 🚀 Auto-trigger sending to kitchen/printing KOT in background
+                                await handleSendOrder(true);
+                                
                                 await useCartStore.getState().fetchCartFromDB(tableId);
                                 await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
                                 router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
@@ -2256,33 +2218,6 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                     if (unsentCount > 0) {
                       return (
                         <>
-                          {/* KOT button (Indigo, text 'KOT', 50px) */}
-                          <TouchableOpacity
-                            disabled={isCheckingOut}
-                            style={[
-                              styles.compactIconBtn,
-                              { backgroundColor: "#4F46E5", marginRight: 8 },
-                              isCheckingOut && { opacity: 0.6 }
-                            ]}
-                            onPress={async () => {
-                              if (isCheckingOut) return;
-                              setIsCheckingOut(true);
-                              try {
-                                await handleSendOrder(true);
-                              } catch (err) {
-                                console.error("KOT send error:", err);
-                              } finally {
-                                setIsCheckingOut(false);
-                              }
-                            }}
-                          >
-                            {isCheckingOut ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <Text style={{ color: "#fff", fontFamily: Fonts.black, fontSize: 13 }}>KOT</Text>
-                            )}
-                          </TouchableOpacity>
-
                           {/* Proceed to Pay (Green, flex-grow) */}
                           <TouchableOpacity
                             disabled={isCheckingOut}
@@ -2293,25 +2228,13 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                             ]}
                             onPress={async () => {
                               if (isCheckingOut) return;
-                              useCartStore.getState().cancelPendingSync();
                               const tableId = orderContext.tableId;
                               if (!tableId) return;
 
                               setIsCheckingOut(true);
                               try {
-                                const targetOrderId = activeOrder?.orderId || currentTableOrderId || "NEW";
-                                const officialOrderId = await saveCartHelper(tableId, targetOrderId, true);
-
-                                updateTableStatus(
-                                  tableId,
-                                  orderContext.section || "TAKEAWAY",
-                                  orderContext.takeawayNo!,
-                                  officialOrderId || targetOrderId,
-                                  "SENT",
-                                  new Date().toISOString(),
-                                  undefined,
-                                  payableAmount,
-                                );
+                                // 🚀 Auto-trigger sending to kitchen/printing KOT in background
+                                await handleSendOrder(true);
 
                                 await useCartStore.getState().fetchCartFromDB(tableId);
                                 await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
