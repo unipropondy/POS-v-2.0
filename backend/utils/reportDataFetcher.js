@@ -216,8 +216,8 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
   const totalCollections = (paymentBreakdownTotal - (breakdown["CREDIT"] || 0)) + memberPaymentsCollected + creditPaymentsCollected;
 
   const avgCheck = totalTransactions > 0 ? totalSales / totalTransactions : 0;
-  const avgItems = totalTransactions > 0 ? totalItems / totalTransactions : 0;
-  const perItem = totalItems > 0 ? totalSales / totalItems : 0;
+  let avgItems = totalTransactions > 0 ? totalItems / totalTransactions : 0;
+  let perItem = totalItems > 0 ? totalSales / totalItems : 0;
 
   const orderTypesTotal = dineInCount + takeawayCount;
   const dineInPct = orderTypesTotal > 0 ? (dineInCount / orderTypesTotal) * 100 : 0;
@@ -388,6 +388,11 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
 
   const dishResult = await pool.request().query(dishQuery);
   const itemsList = dishResult.recordset || [];
+
+  // Recalculate totalItems based on the actual sum of category quantities to ensure 100% consistency across cards and reports
+  totalItems = categoriesList.reduce((sum, c) => sum + (Number(c.Qty) || 0), 0);
+  avgItems = totalTransactions > 0 ? totalItems / totalTransactions : 0;
+  perItem = totalItems > 0 ? totalSales / totalItems : 0;
 
   const artistQuery = `
     SELECT 
