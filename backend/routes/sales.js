@@ -792,7 +792,7 @@ router.get("/category", async (req, res) => {
             ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped')) AS categoryName,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') = 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
-            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) AS decimal(18, 2)) ELSE 0 END) AS totalAmount
+            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.SysAmount, 0) / NULLIF(sh.SubTotal, 0)) AS decimal(18, 2)) ELSE 0 END) AS totalAmount
           FROM SettlementHeader sh
           INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID
           LEFT JOIN DishMaster d ON sid.DishId = d.DishId
@@ -892,7 +892,7 @@ router.get("/dish", async (req, res) => {
             ISNULL(NULLIF(LTRIM(RTRIM(sid.SubCategoryName)), ''), ISNULL(dg.DishGroupName, 'Unmapped')) AS subCategoryName,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') = 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
-            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) AS decimal(18, 2)) ELSE 0 END) AS totalAmount
+            SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.SysAmount, 0) / NULLIF(sh.SubTotal, 0)) AS decimal(18, 2)) ELSE 0 END) AS totalAmount
           FROM SettlementHeader sh
           INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID
           LEFT JOIN DishMaster d ON sid.DishId = d.DishId
@@ -1433,6 +1433,27 @@ router.post("/save", async (req, res) => {
     }
     const activeStartDate = activeDayRes.recordset[0].StartDate;
     const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : activeStartDate;
+
+    // Convert FOC split payments to discounts automatically
+    let focDiscountAmount = 0;
+    if (req.body.payments && Array.isArray(req.body.payments)) {
+      const focPayments = req.body.payments.filter(p => {
+        const modeName = String(p.payMode || p.PaymentMethod || "").trim().toUpperCase();
+        return modeName === "FOC";
+      });
+      focPayments.forEach(p => {
+        focDiscountAmount += parseFloat(p.amount) || 0;
+      });
+      if (focDiscountAmount > 0) {
+        req.body.payments = req.body.payments.filter(p => {
+          const modeName = String(p.payMode || p.PaymentMethod || "").trim().toUpperCase();
+          return modeName !== "FOC";
+        });
+        req.body.discountAmount = (parseFloat(req.body.discountAmount) || 0) + focDiscountAmount;
+        req.body.orderDiscountAmount = (parseFloat(req.body.orderDiscountAmount) || 0) + focDiscountAmount;
+        req.body.totalAmount = Math.max(0, (parseFloat(req.body.totalAmount) || 0) - focDiscountAmount);
+      }
+    }
 
     const {
       settlementId: clientSettlementId,
