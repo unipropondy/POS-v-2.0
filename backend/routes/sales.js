@@ -1434,6 +1434,27 @@ router.post("/save", async (req, res) => {
     const activeStartDate = activeDayRes.recordset[0].StartDate;
     const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : activeStartDate;
 
+    // Convert FOC split payments to discounts automatically
+    let focDiscountAmount = 0;
+    if (req.body.payments && Array.isArray(req.body.payments)) {
+      const focPayments = req.body.payments.filter(p => {
+        const modeName = String(p.payMode || p.PaymentMethod || "").trim().toUpperCase();
+        return modeName === "FOC";
+      });
+      focPayments.forEach(p => {
+        focDiscountAmount += parseFloat(p.amount) || 0;
+      });
+      if (focDiscountAmount > 0) {
+        req.body.payments = req.body.payments.filter(p => {
+          const modeName = String(p.payMode || p.PaymentMethod || "").trim().toUpperCase();
+          return modeName !== "FOC";
+        });
+        req.body.discountAmount = (parseFloat(req.body.discountAmount) || 0) + focDiscountAmount;
+        req.body.orderDiscountAmount = (parseFloat(req.body.orderDiscountAmount) || 0) + focDiscountAmount;
+        req.body.totalAmount = Math.max(0, (parseFloat(req.body.totalAmount) || 0) - focDiscountAmount);
+      }
+    }
+
     const {
       settlementId: clientSettlementId,
       totalAmount, paymentMethod, items, subTotal, taxAmount,
