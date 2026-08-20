@@ -601,8 +601,12 @@ export default function PaymentScreen() {
           if (data.success && oid) {
             useCartStore.getState().setTableOrderId(context.tableId, oid);
           }
+          // Fetch the cart items from the database to ensure they are loaded on direct routing
+          if (cart.length === 0) {
+            await useCartStore.getState().fetchCartFromDB(context.tableId);
+          }
         } catch (err) {
-          console.error("Failed to sync official Order ID:", err);
+          console.error("Failed to sync official Order ID and Cart:", err);
         }
       }
     };
