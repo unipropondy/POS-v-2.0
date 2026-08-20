@@ -1427,9 +1427,9 @@ export default function PaymentScreen() {
         router.push({
           pathname: "/payment_success" as any,
           params: {
-            total: total.toFixed(2),
+            total: effectiveTotalAmount.toFixed(2),
             paidNum: (payments && payments.length > 0
-              ? total
+              ? effectiveTotalAmount
               : paidNum
             ).toFixed(2),
             change: (payments && payments.length > 0 ? 0 : change).toFixed(2),
@@ -1441,7 +1441,7 @@ export default function PaymentScreen() {
             orderType: context?.orderType ?? "",
             discountInfo: JSON.stringify(
               effectiveFocAmount > 0
-                ? { applied: true, type: "fixed", value: effectiveFocAmount, amount: effectiveFocAmount, label: "FOC", subtotal }
+                ? { applied: true, type: "fixed", value: effectiveFocAmount + discountAmount, amount: effectiveFocAmount + discountAmount, label: "FOC", subtotal }
                 : (discount?.applied && discountAmount > 0
                   ? { ...discount, amount: discountAmount, subtotal }
                   : {})
@@ -2446,8 +2446,10 @@ export default function PaymentScreen() {
                       if (mode) setMethod(mode);
                       setShowMemberModal(true);
                     }}
-                    onComplete={(finalPayments, focAmount) => {
-                      executeFinalPayment(finalPayments, undefined, focAmount);
+                    onComplete={(finalPayments) => {
+                      const focRow = finalPayments.find(p => p.payMode.toUpperCase().trim() === "FOC");
+                      const focAmt = focRow ? focRow.amount : undefined;
+                      executeFinalPayment(finalPayments, undefined, focAmt);
                     }}
                     onCancel={() => setIsSplitActive(false)}
                     processing={processing}
@@ -3048,7 +3050,7 @@ export default function PaymentScreen() {
                       {currentTakeawayCharge > 0 && (
                         <View style={styles.breakRow}>
                           <Text style={styles.breakLabel}>
-                            Takeaway Charges {hasMixedTWCharges ? "" : `(${currencySymbol}${singleTWRate.toFixed(2)} * ${takeawayQty})`}
+                            Takeaway Charges
                           </Text>
                           <Text style={styles.breakValue}>
                             {currencySymbol}

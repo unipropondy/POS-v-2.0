@@ -1868,7 +1868,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
               {takeawayChargeAmt > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>
-                    TW Charges {hasMixedTWCharges ? "" : `(${currencySymbol}${singleTWRate.toFixed(2)} * ${takeawayQty})`}
+                    TW Charges
                   </Text>
                   <Text style={styles.summaryValue}>
                     {currencySymbol}

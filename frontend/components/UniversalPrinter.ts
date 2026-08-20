@@ -1844,24 +1844,25 @@ class UniversalPrinter {
             }
           : null);
 
+    const focPayment = (saleData.payments || []).find((p: any) => String(p.payMode || p.payModeName || p.Remarks || '').trim().toUpperCase() === 'FOC');
+    const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
     const orderDiscount = finalDiscountInfo?.amount || 0;
+    const normalDiscount = Math.max(0, orderDiscount - focAmt);
     const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;
-    let currentSubtotal = grossTotal;
+    let currentSubtotal = grossTotal - totalItemDiscount - orderDiscount;
 
     text += this.formatTwoCols48("Sub Total:", `${symbol}${grossTotal.toFixed(2)}`);
 
     if (totalItemDiscount > 0) {
       text += this.formatTwoCols48("Item Discounts:", `-${symbol}${totalItemDiscount.toFixed(2)}`);
-      currentSubtotal -= totalItemDiscount;
     }
 
-    if (orderDiscount > 0) {
+    if (normalDiscount > 0) {
       const discLabel =
         finalDiscountInfo?.type === "percentage"
           ? `Discount (${finalDiscountInfo.value}%):`
           : "Discount:";
-      text += this.formatTwoCols48(discLabel, `-${symbol}${orderDiscount.toFixed(2)}`);
-      currentSubtotal -= orderDiscount;
+      text += this.formatTwoCols48(discLabel, `-${symbol}${normalDiscount.toFixed(2)}`);
     }
 
     if (hasAnyDiscount) {
@@ -1993,13 +1994,17 @@ class UniversalPrinter {
       if (saleData.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0) {
         text += "[L]Payment Details:\n";
         saleData.payments.forEach((p: any) => {
-          const modeLabel = `  ${String(p.payMode || p.payModeName || p.Remarks || "Payment")}`;
+          let modeText = String(p.payMode || p.payModeName || p.Remarks || "Payment");
+          if (modeText.toUpperCase().trim() === "FOC") modeText = "FOC (Discount)";
+          const modeLabel = `  ${modeText}`;
           const amountVal = `${symbol}${parseFloat(p.amount).toFixed(2)}`;
           text += this.formatTwoCols48(modeLabel, amountVal);
         });
         text += "[L]------------------------------------------------\n";
       } else {
-        const methodLabel = `  ${String(saleData.paymentMethod || "Payment")}`;
+        let methodText = String(saleData.paymentMethod || "Payment");
+        if (methodText.toUpperCase().trim() === "FOC") methodText = "FOC (Discount)";
+        const methodLabel = `  ${methodText}`;
         const amountVal = `${symbol}${parseFloat(finalTotal).toFixed(2)}`;
         text += this.formatTwoCols48(methodLabel, amountVal);
         text += "[L]------------------------------------------------\n";

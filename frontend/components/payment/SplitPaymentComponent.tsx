@@ -123,20 +123,17 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
     return paymentMethods;
   }, [paymentMethods, memberFlow]);
 
-  // Helper: FOC rows are discounts, not real payments
-  const isFocRow = (r: SplitPaymentRow) => r.payMode.toUpperCase().trim() === "FOC";
+  // Helper: FOC rows are discounts, not real payments (Disabled: FOC is now a regular paymode)
+  const isFocRow = (r: SplitPaymentRow) => false;
 
   // Sum of ALL rows (including FOC) — used for validation and balance
-  // FOC covers its portion of the bill as a discount; all rows together must equal targetTotal
   const totalAllRows = useMemo(() => {
     return rows.reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0);
   }, [rows]);
 
-  // Sum of non-FOC rows only — actual cash/card collected (for display)
+  // Sum of all rows — actual payment collected (including FOC)
   const totalPaid = useMemo(() => {
-    return rows
-      .filter(r => !isFocRow(r))
-      .reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0);
+    return rows.reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0);
   }, [rows]);
 
   // Remaining balance: how much of the bill is still uncovered by any row
@@ -260,9 +257,6 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
     }, 0);
 
     for (const r of rows) {
-      // Skip FOC rows in amount validation — they represent a discount, not a payment
-      if (r.payMode.toUpperCase().trim() === "FOC") continue;
-
       const amt = parseFloat(r.amount);
       if (isNaN(amt) || amt <= 0) {
         return "Please enter a valid amount greater than zero in all rows.";
@@ -353,27 +347,21 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
 
       if (updates.amount !== undefined) {
         const parsedVal = parseFloat(updates.amount) || 0;
-        const currentRowIsFoc = updatedRow.payMode.toUpperCase().trim() === "FOC";
+        const otherEditableRows = nextRows.filter(
+          r => r.id !== id && !isRowLocked(r)
+        );
 
-        // FOC rows represent discounts — don't auto-balance other rows based on FOC amount.
-        // Only auto-balance non-FOC rows against targetTotal.
-        if (!currentRowIsFoc) {
-          const otherEditableRows = nextRows.filter(
-            r => r.id !== id && !isRowLocked(r) && r.payMode.toUpperCase().trim() !== "FOC"
-          );
-
-          if (otherEditableRows.length === 1) {
-            const otherRow = otherEditableRows[0];
-            const otherVal = Math.max(0, targetTotal - parsedVal);
-            nextRows = nextRows.map(r => r.id === otherRow.id ? { ...r, amount: otherVal.toFixed(2) } : r);
-          } else if (otherEditableRows.length > 1) {
-            const lastOtherRow = otherEditableRows[otherEditableRows.length - 1];
-            const sumOfOthersExceptLast = nextRows
-              .filter(r => r.id !== id && r.id !== lastOtherRow.id && r.payMode.toUpperCase().trim() !== "FOC")
-              .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-            const lastVal = Math.max(0, targetTotal - parsedVal - sumOfOthersExceptLast);
-            nextRows = nextRows.map(r => r.id === lastOtherRow.id ? { ...r, amount: lastVal.toFixed(2) } : r);
-          }
+        if (otherEditableRows.length === 1) {
+          const otherRow = otherEditableRows[0];
+          const otherVal = Math.max(0, targetTotal - parsedVal);
+          nextRows = nextRows.map(r => r.id === otherRow.id ? { ...r, amount: otherVal.toFixed(2) } : r);
+        } else if (otherEditableRows.length > 1) {
+          const lastOtherRow = otherEditableRows[otherEditableRows.length - 1];
+          const sumOfOthersExceptLast = nextRows
+            .filter(r => r.id !== id && r.id !== lastOtherRow.id)
+            .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+          const lastVal = Math.max(0, targetTotal - parsedVal - sumOfOthersExceptLast);
+          nextRows = nextRows.map(r => r.id === lastOtherRow.id ? { ...r, amount: lastVal.toFixed(2) } : r);
         }
       }
 
@@ -536,21 +524,14 @@ const response = await fetch(`${API_URL}${endpoint}`, {
     }
 
 
-    // Detect FOC row — treat as a write-off discount, not a payment
-    const focRow = rows.find(r => r.payMode.toUpperCase().trim() === "FOC");
-    const nonFocRows = rows.filter(r => r.payMode.toUpperCase().trim() !== "FOC");
-    const focAmount = focRow ? (parseFloat(focRow.amount) || 0) : 0;
-
-    const finalPayments = nonFocRows.map((r) => ({
+    const finalPayments = rows.map((r) => ({
       payModeId: r.payModeId,
       payMode: r.payMode,
       amount: parseFloat(r.amount) || 0,
       referenceNo: r.referenceNo || undefined,
     }));
 
-    // Pass focAmount directly through callback — executeFinalPayment injects it
-    // into saleData without touching the cart store (avoids stale closure issues)
-    onComplete(finalPayments, focAmount > 0 ? focAmount : undefined);
+    onComplete(finalPayments, undefined);
   };
 
   const activeRowForDropdown = rows.find(r => r.id === activeDropdownRowId);

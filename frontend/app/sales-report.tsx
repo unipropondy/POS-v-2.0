@@ -1042,8 +1042,14 @@ export default function SalesReport() {
       let row = { ...group[0] };
 
       if (group.length > 1) {
-        const totalSysAmount = group.reduce((sum, r) => sum + (r.SysAmount || 0), 0);
-        const totalManualAmount = group.reduce((sum, r) => sum + (r.ManualAmount || 0), 0);
+        const totalSysAmount = group.reduce((sum, r) => {
+          const isFoc = String(r.PayMode || "").toUpperCase().trim() === "FOC";
+          return sum + (isFoc ? 0 : (r.SysAmount || 0));
+        }, 0);
+        const totalManualAmount = group.reduce((sum, r) => {
+          const isFoc = String(r.PayMode || "").toUpperCase().trim() === "FOC";
+          return sum + (isFoc ? 0 : (r.ManualAmount || 0));
+        }, 0);
         const payModes = group.map((r) => String(r.PayMode || "CASH").trim()).filter(Boolean);
         const uniquePayModes = Array.from(new Set(payModes));
 
@@ -1060,6 +1066,11 @@ export default function SalesReport() {
         } else {
           row.isSplit = false;
           row.splitNo = "";
+        }
+        // FOC is a write-off / discount, so its cash/collected amount is 0
+        if (String(row.PayMode || "").toUpperCase().trim() === "FOC") {
+          row.SysAmount = 0;
+          row.ManualAmount = 0;
         }
       }
       grouped.push(row);
@@ -1117,12 +1128,14 @@ export default function SalesReport() {
   }, [baseFilteredSales, showCancelledOrders, sortOrder]);
 
   const filteredMetrics = useMemo(() => {
+    const processedBills = new Set<string>();
     return dateScopedSales.reduce(
       (acc, s) => {
         const isSubsequentSplit = s.SettlementID && s.SettlementID.includes("-") && s.SettlementID.split("-").length > 5 && s.SettlementID.split("-").pop().match(/^\d+$/);
 
         if (s.IsCancelled) {
-          if (!isSubsequentSplit) {
+          if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
+            processedBills.add(s.SettlementID);
             acc.CancelledCount += 1;
             acc.CancelledAmount += s.VoidAmount || 0;
           }
@@ -1138,8 +1151,29 @@ export default function SalesReport() {
           return acc;
         }
 
-        acc.TotalSales += s.SysAmount || 0;
-        if (!isSubsequentSplit) {
+        const mode = s.PayMode?.trim().toUpperCase() || "";
+        const isFoc = mode === "FOC";
+
+        if (!isFoc) {
+          acc.TotalSales += s.SysAmount || 0;
+          const isUpi = mode.includes("UPI") || mode.includes("GPAY");
+          if (mode === "CASH") acc.Cash += s.SysAmount;
+          else if (mode === "CARD") acc.Card += s.SysAmount;
+          else if (mode === "NETS") acc.Nets += s.SysAmount;
+          else if (mode === "PAYNOW") acc.PayNow += s.SysAmount;
+          else if (mode === "GRAB") acc.Grab += s.SysAmount;
+          else if (mode === "FOODPANDA") acc.Foodpanda += s.SysAmount;
+          else if (isUpi) acc.Upi += s.SysAmount;
+          else if (mode === "MEMBER") {
+            acc.Member += s.SysAmount;
+          } else if (mode === "CREDIT") {
+            acc.Credit += s.SysAmount;
+            acc.CreditOutstanding += Number(s.OutstandingAmount) || 0;
+          }
+        }
+
+        if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
+          processedBills.add(s.SettlementID);
           acc.TotalTransactions += 1;
           acc.TotalItems += (s.ReceiptCount || 0);
           acc.TotalVoids += s.VoidQty || 0;
@@ -1148,23 +1182,6 @@ export default function SalesReport() {
           acc.TotalTax += Number(s.TotalTax) || 0;
           acc.TotalDiscount += Number(s.DiscountAmount) || 0;
           acc.TakeawayCharge += Number(s.TakeawayCharge) || 0;
-        }
-
-        const mode = s.PayMode?.trim().toUpperCase() || "";
-        const isUpi = mode.includes("UPI") || mode.includes("GPAY");
-        if (mode === "CASH") acc.Cash += s.SysAmount;
-        else if (mode === "CARD") acc.Card += s.SysAmount;
-        else if (mode === "NETS") acc.Nets += s.SysAmount;
-        else if (mode === "PAYNOW") acc.PayNow += s.SysAmount;
-        else if (mode === "GRAB") acc.Grab += s.SysAmount;
-        else if (mode === "FOODPANDA") acc.Foodpanda += s.SysAmount;
-        else if (isUpi) acc.Upi += s.SysAmount;
-        else if (mode === "MEMBER") {
-          acc.Member += s.SysAmount;
-          // Members are PREPAID — never accumulate outstanding
-        } else if (mode === "CREDIT") {
-          acc.Credit += s.SysAmount;
-          acc.CreditOutstanding += Number(s.OutstandingAmount) || 0;
         }
 
         return acc;
@@ -1271,6 +1288,10 @@ export default function SalesReport() {
         }
 
         const salePayMode = s.PayMode?.trim().toUpperCase() || "";
+        if (salePayMode === "FOC") {
+          return acc;
+        }
+
         // First pass: try exact match
         let matchedMode = dbPaymentModes.find((m) => {
           const dbName = String(m.payMode || "").toUpperCase().trim();
@@ -3399,25 +3420,43 @@ export default function SalesReport() {
                       </Text>
                     </View>
                   )}
-                  {selectedOrder?.DiscountAmount > 0 && (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.success }}>Discount</Text>
-                        {selectedOrder?.DiscountType && (
-                          <View style={{ backgroundColor: Theme.success + "15", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text style={{ fontSize: 9, fontFamily: Fonts.black, color: Theme.success }}>
-                              {selectedOrder.DiscountType === "percentage"
-                                ? `${selectedOrder.DiscountAmount}%`
-                                : "FIXED"}
+                  {(() => {
+                    const focPayment = displayedPayments.find(p => (p.PayModeName || 'CASH').trim().toUpperCase() === 'FOC');
+                    const focDiscountAmt = focPayment ? Number(focPayment.Amount || 0) : 0;
+                    const regularDiscountAmt = Number(selectedOrder?.DiscountAmount || 0) - focDiscountAmt;
+
+                    return (
+                      <>
+                        {regularDiscountAmt > 0 && (
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.success }}>Discount</Text>
+                              {selectedOrder?.DiscountType && (
+                                <View style={{ backgroundColor: Theme.success + "15", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                                  <Text style={{ fontSize: 9, fontFamily: Fonts.black, color: Theme.success }}>
+                                    {selectedOrder.DiscountType === "percentage"
+                                      ? `${selectedOrder.DiscountPercentage}%`
+                                      : "FIXED"}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.success }}>
+                              -{formatCurrency(regularDiscountAmt)}
                             </Text>
                           </View>
                         )}
-                      </View>
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.success }}>
-                        -{formatCurrency(selectedOrder?.DiscountAmount)}
-                      </Text>
-                    </View>
-                  )}
+                        {focDiscountAmt > 0 && (
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                            <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.success }}>FOC Discount</Text>
+                            <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.success }}>
+                              -{formatCurrency(focDiscountAmt)}
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
                   {Number(selectedOrder?.ServiceCharge) > 0 && (
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.textSecondary }}>Item Service Charge</Text>

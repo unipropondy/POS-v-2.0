@@ -321,10 +321,13 @@ private static escapeHtml(str: string): string {
       totalItemDiscount += itemDiscount;
     });
 
+    const focPayment = (saleData.payments || []).find((p: any) => String(p.payMode || p.payModeName || p.Remarks || '').trim().toUpperCase() === 'FOC');
+    const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
     const orderDiscount = finalDiscountInfo?.amount || 0;
+    const normalDiscount = Math.max(0, orderDiscount - focAmt);
+    const hasOrderDiscount = normalDiscount > 0;
+    const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;
     const currentSubtotal = grossTotal - totalItemDiscount - orderDiscount;
-    const hasOrderDiscount = finalDiscountInfo?.applied && finalDiscountInfo.amount > 0;
-    const hasAnyDiscount = totalItemDiscount > 0 || hasOrderDiscount;
     const originalSubTotal = grossTotal;
 
     const activeItems = (saleData.items || []).filter((i: any) => i.status !== 'VOIDED' && i.statusCode !== 0);
@@ -831,7 +834,7 @@ private static escapeHtml(str: string): string {
             ${hasOrderDiscount ? `
             <div class="total-row">
               <span>Discount${finalDiscountInfo?.type === 'percentage' ? ` (${finalDiscountInfo?.value}%)` : ''}:</span>
-              <span>-${currencySymbol}${finalDiscountInfo?.amount.toFixed(2)}</span>
+              <span>-${currencySymbol}${normalDiscount.toFixed(2)}</span>
             </div>
             ` : ''}
             <div class="total-row" style="margin-top: 1.5mm; border-top: 1px dashed #ccc; padding-top: 1.5mm;">
@@ -884,12 +887,16 @@ private static escapeHtml(str: string): string {
             ` : `
               ${saleData.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0 ? `
                 <div style="font-weight: bold; border-top: 1px dashed #ccc; margin-top: 2mm; padding-top: 2mm; font-size: 10px; text-align: left; text-transform: uppercase; margin-bottom: 1.5mm;">PAYMENT DETAILS</div>
-                ${saleData.payments.map((p: any) => `
+                ${saleData.payments.map((p: any) => {
+                  let mode = String(p.payMode || p.payModeName || p.Remarks || 'Payment').toUpperCase();
+                  if (mode.trim() === "FOC") mode = "FOC (DISCOUNT)";
+                  return `
                   <div class="payment-row" style="font-size: 10px; font-weight: 700; display: flex; justify-content: space-between;">
-                    <span>${String(p.payMode || p.payModeName || p.Remarks || 'Payment').toUpperCase()}</span>
+                    <span>${mode}</span>
                     <span>${currencySymbol}${parseFloat(p.amount).toFixed(2)}</span>
                   </div>
-                `).join('')}
+                  `;
+                }).join('')}
               ` : `
                 <div class="payment-row">
                   <span>PAYMENT:</span>
