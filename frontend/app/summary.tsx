@@ -1719,7 +1719,7 @@ export default function SummaryScreen() {
               windowSize={5}
               removeClippedSubviews={true}
               renderItem={({ item }: { item: any }) => {
-                const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
+                const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway || (item as any).isTakeaway === true || (item as any).IsTakeaway === true || String((item as any).isTakeaway) === "1" || String((item as any).IsTakeaway) === "1";
                 const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true) && useGeneralSettingsStore.getState().settings.SVCIdentification !== false;
                 return (
                   <View style={[
@@ -1734,7 +1734,7 @@ export default function SummaryScreen() {
                   <View style={styles.qtyBadge}>
                     <Text style={styles.qtyBadgeText}>{formatQty(item.qty)}</Text>
                   </View>
-
+ 
                   <View style={styles.rowContent}>
                     <Text
                       style={[
@@ -1744,6 +1744,7 @@ export default function SummaryScreen() {
                       numberOfLines={2}
                     >
                       {item.name}
+                      {isTakeawayItem && " (Takeaway 🛍️)"}
                       {item.isDishReward && " (Loyalty Reward 🎁)"}
                       {(item as any).status === "VOIDED" && " (VOIDED)"}
                     </Text>

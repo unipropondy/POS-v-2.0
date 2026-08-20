@@ -1557,17 +1557,28 @@ export default function SalesReport() {
         subtotal: Number(selectedOrder.SubTotal ?? 0),
       };
 
+      // ✅ Reprint Fix: Resolve paymentMethod from displayedPayments for multi-split orders
+      const reprintPayMode = displayedPayments.length > 0
+        ? (displayedPayments.length === 1
+            ? (displayedPayments[0].PayModeName || selectedOrder.PayMode || "CASH")
+            : "SPLIT")
+        : (selectedOrder.PayMode || "CASH");
+
       const saleData = {
         invoiceNumber: formatOrderId(selectedOrder),
         tableNo: selectedOrder.TableNo ?? "",
         total: selectedOrder.SysAmount,
-        paymentMethod: selectedOrder.PayMode || "CASH",
+        paymentMethod: reprintPayMode,
         cashPaid: selectedOrder.SysAmount,
         change: 0,
         items: mappedItems,
         roundOff: Number(selectedOrder.RoundedBy ?? 0),
+        // ✅ Reprint Fix: use originalDate so the receipt shows the original bill date not today
         date: selectedOrder.SettlementDate || new Date(),
+        originalDate: selectedOrder.SettlementDate || null,
         isReprint: true,
+        // ✅ Reprint Fix: waiterName was missing — add it for receipt display
+        waiterName: selectedOrder.WaiterName || selectedOrder.ServerName || selectedOrder.CashierName || "",
         // Sunmi template details
         discountAmount: Number(selectedOrder.DiscountAmount ?? 0),
         discountType: selectedOrder.DiscountType || null,
@@ -1590,6 +1601,42 @@ export default function SalesReport() {
       console.error("Reprint error:", error);
     } finally {
       setIsReprinting(false);
+    }
+  };
+
+  // ✅ Settlement Report Printing
+  const handlePrintSettlementReport = async () => {
+    try {
+      const company = await (async () => {
+        const { useCompanySettingsStore } = await import("../stores/companySettingsStore");
+        return useCompanySettingsStore.getState().settings;
+      })();
+      const period = rangeStart && rangeEnd
+        ? `${rangeStart} – ${rangeEnd}`
+        : selectedDate
+          ? `Date: ${selectedDate}`
+          : "Current Period";
+      const html = UniversalPrinter.generateSettlementReportHTML(settlementReport, company, period);
+
+      if (Platform.OS === "web") {
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        document.body.appendChild(iframe);
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          doc.open(); doc.write(html); doc.close();
+          setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => document.body.removeChild(iframe), 2000);
+          }, 400);
+        }
+      } else {
+        const { Print } = await import("expo-print");
+        await Print.printAsync({ html });
+      }
+    } catch (err) {
+      console.error("Settlement report print error:", err);
     }
   };
 
@@ -1658,6 +1705,15 @@ export default function SalesReport() {
               size={18}
               color={Theme.primary}
             />
+            {/* ✅ Settlement Report Print Button */}
+            {isSettlement && rows.length > 0 && (
+              <TouchableOpacity
+                onPress={handlePrintSettlementReport}
+                style={[styles.reportCloseBtn, { marginRight: 4, backgroundColor: Theme.primary + "15" }]}
+              >
+                <Ionicons name="print-outline" size={17} color={Theme.primary} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               onPress={() => {
                 if (Platform.OS !== "web") {

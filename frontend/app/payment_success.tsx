@@ -236,16 +236,30 @@ export default function PaymentSuccess() {
       const items = isLedger ? [{ name: "Member Outstanding Payment", qty: 1, price: parseFloat(total) || 0 }] : JSON.parse(itemsRaw || "[]");
       const userId = await AsyncStorage.getItem("userId") || "1";
 
+      const isFocPayment = method?.trim().toUpperCase() === 'FOC' ||
+        (payments && payments.some((p: any) => String(p.payMode || p.payModeName || '').trim().toUpperCase() === 'FOC'));
+      const parsedTotal = parseFloat(total) || 0;
+      // ✅ FOC Fix: For full-FOC orders, total param is 0 (effectiveTotalAmount = total - focAmount).
+      // We still need to print a receipt. Use discountInfo.subtotal as the display total.
+      const isSplitPayment = params.isSplit === "true";
+      const displayTotal = parsedTotal > 0 ? parsedTotal
+        : (discountInfo?.subtotal || discountInfo?.amount || parsedTotal);
+
+      // ✅ Split Fix: For split receipts, add a unique suffix to prevent duplicate cache blocking
+      const invoiceNum = isSplitPayment
+        ? `${orderId}-S${Date.now().toString(36).toUpperCase()}`
+        : orderId;
+
       // Compute subTotal from items so Sunmi printer can show Sub Total → Discount → Grand Total
       const computedSubTotal = isLedger ? (parseFloat(total) || 0) : (discountInfo?.subtotal 
         ?? items.filter((i: any) => i.status !== 'VOIDED')
                .reduce((s: number, i: any) => s + (i.price || 0) * (i.qty || i.quantity || 1), 0));
       
       const saleData = {
-        invoiceNumber: orderId,
+        invoiceNumber: invoiceNum,
         tableNo: isLedger ? "LEDGER" : tableNo,
-        total: parseFloat(total) || 0,
-        paymentMethod: method,
+        total: displayTotal,
+        paymentMethod: isFocPayment ? "FOC" : method,
         cashPaid: parseFloat(paid) || 0,
         change: parseFloat(change) || 0,
         items: items,

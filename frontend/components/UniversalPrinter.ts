@@ -878,20 +878,20 @@ class UniversalPrinter {
           .header-box { 
             background: #000 !important; 
             color: #fff !important; 
-            padding: 5px 8px; 
+            padding: 4px 6px; 
             text-align: center; 
             font-weight: bold; 
-            font-size: 32px; 
+            font-size: 22px; 
             display: block;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
             text-transform: uppercase;
             -webkit-print-color-adjust: exact;
           }
           
           .timestamp {
-            font-size: 18px;
+            font-size: 13px;
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
             color: #333;
             text-align: center;
           }
@@ -900,25 +900,25 @@ class UniversalPrinter {
             display: flex;
             justify-content: space-between;
             border-bottom: 2px dashed #000;
-            padding: 3px 0;
-            margin-bottom: 6px;
-            font-size: 28px;
+            padding: 2px 0;
+            margin-bottom: 4px;
+            font-size: 19px;
             font-weight: 900;
           }
           
           .headers {
             display: flex;
             border-bottom: 1.5px dashed #000;
-            padding: 3px 0;
-            font-size: 22px;
+            padding: 2px 0;
+            font-size: 14px;
             font-weight: bold;
             text-transform: uppercase;
           }
-          .qty-head { width: 50px; margin-right: 8px; }
+          .qty-head { width: 36px; margin-right: 6px; }
           
           .item-row {
-            border-bottom: 1.5px solid #000;
-            padding: 8px 0;
+            border-bottom: 1px solid #000;
+            padding: 5px 0;
           }
           
           .item-main {
@@ -927,55 +927,55 @@ class UniversalPrinter {
           }
           
           .item-qty {
-            font-size: 32px;
+            font-size: 22px;
             font-weight: 900;
-            width: 50px;
+            width: 36px;
             line-height: 1;
-            margin-right: 8px;
+            margin-right: 6px;
           }
           
           .item-name {
-            font-size: 30px;
+            font-size: 20px;
             font-weight: 900;
             flex: 1;
             line-height: 1.1;
           }
           
           .modifier-list {
-            margin-left: 58px;
-            margin-top: 3px;
+            margin-left: 42px;
+            margin-top: 2px;
           }
           
           .modifier-item {
-            font-size: 26px;
+            font-size: 17px;
             font-weight: 900;
             color: #000;
             display: block;
           }
           
           .remarks {
-            margin-left: 58px;
-            font-size: 26px;
+            margin-left: 42px;
+            font-size: 17px;
             font-weight: 900;
-            margin-top: 4px;
+            margin-top: 3px;
           }
           
           .footer {
-            margin-top: 10px;
-            font-size: 18px;
+            margin-top: 8px;
+            font-size: 13px;
             font-weight: bold;
             font-family: monospace;
           }
           
           .kitchen-name {
             text-align: center;
-            font-size: 32px;
+            font-size: 20px;
             font-weight: bold;
-            margin-top: 16px;
+            margin-top: 10px;
             text-transform: uppercase;
             border-top: 2px dashed #000;
             border-bottom: 2px dashed #000;
-            padding: 8px 0;
+            padding: 5px 0;
           }
           
           @media print {
@@ -1014,7 +1014,7 @@ class UniversalPrinter {
 
                 return Object.entries(kitchenGroups).map(([kName, groupItems]) => {
                   return `
-                    <div style="font-size: 24px; font-weight: bold; margin-top: 15px; border-bottom: 2px solid #000; padding-bottom: 3px; text-transform: uppercase;">
+                    <div style="font-size: 16px; font-weight: bold; margin-top: 10px; border-bottom: 1.5px solid #000; padding-bottom: 2px; text-transform: uppercase;">
                       <b>${kName}</b>
                     </div>
                     ${groupItems.map((item: any) => {
@@ -1198,19 +1198,19 @@ class UniversalPrinter {
       const qtyNum   = item.quantity || item.qty || 1;
       const itemName = item.name || item.DishName || "";
 
-      // Item name: big font (double height + width), wrapped at 20 chars
+      // Item name: tall font (double height only), wrapped at 20 chars
       wrapText(itemName.replace(/\n/g, " "), DISH_WRAP).forEach((chunk: string, idx: number) => {
-        if (idx === 0) t += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
-        else           t += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+        if (idx === 0) t += `[L]<font size='tall'><B>[${qtyNum}] ${chunk}</B></font>\n`;
+        else           t += `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
       });
 
       // Song name
       const songName = item.songName || item.SongName || "";
-      if (songName) t += `[L]<font size='big'><B>  ♪ ${songName}</B></font>\n`;
+      if (songName) t += `[L]<font size='tall'><B>  ♪ ${songName}</B></font>\n`;
 
       // Takeaway flag
       const isTw = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
-      if (isTw) t += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
+      if (isTw) t += `[L]<font size='tall'><B>  >> TAKEAWAY <<</B></font>\n`;
 
       // Modifiers: big font, wraps at 20 chars
       if (item.modifiers && item.modifiers.length > 0) {
@@ -1218,7 +1218,7 @@ class UniversalPrinter {
           const modName = m.ModifierName || m.modifierName || m.name || m.ModifierNameEn || "";
           if (modName) {
             wrapText(modName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-              t += idx === 0 ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+              t += idx === 0 ? `[L]<font size='tall'><B>  + ${chunk}</B></font>\n` : `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
             });
           }
         });
@@ -1252,7 +1252,7 @@ class UniversalPrinter {
               const optName = opt.name || opt.DishName || opt.itemName || "";
               if (optName) {
                 wrapText(optName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-                  t += idx === 0 ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+                  t += idx === 0 ? `[L]<font size='tall'><B>  - ${chunk}</B></font>\n` : `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
                 });
               }
             });
@@ -1264,7 +1264,7 @@ class UniversalPrinter {
       const noteText = item.note || item.notes || item.Remarks || item.remarks;
       if (noteText) {
         wrapText(noteText, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-          t += idx === 0 ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+          t += idx === 0 ? `[L]<font size='tall'><B>  * ${chunk}</B></font>\n` : `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
         });
       }
 
@@ -1275,20 +1275,20 @@ class UniversalPrinter {
     let text = "";
     // 25mm top side white space (approx 6 empty lines)
     text += "[L]\n".repeat(6);
-    text += `[C]<font size='big'><B>${title}</B></font>\n`;
-    text += `[C]<font size='big'><B>${kotDateStr}  ${kotTimeStr}</B></font>\n`;
+    text += `[C]<font size='tall'><B>${title}</B></font>\n`;
+    text += `[C]<font size='tall'><B>${kotDateStr}  ${kotTimeStr}</B></font>\n`;
     text += DIV;
 
     // TABLE visible at top for both KOT and KDS
     if (type === "KDS_PRINT") {
-      text += `[C]<font size='big'><B>TABLE NO : ${tableNo}</B></font>\n`;
+      text += `[C]<font size='tall'><B>TABLE NO : ${tableNo}</B></font>\n`;
       text += DIV;
     } else {
-      text += `[C]<font size='big'><B>TABLE : ${tableNo}</B></font>\n`;
+      text += `[C]<font size='tall'><B>TABLE : ${tableNo}</B></font>\n`;
       text += DIV;
     }
 
-    text += "[L]<font size='big'><B>QTY  ITEM</B></font>\n";
+    text += "[L]<font size='tall'><B>QTY  ITEM</B></font>\n";
     text += DIV;
 
     // ── ITEMS ─────────────────────────────────────────────────────────
@@ -1302,7 +1302,7 @@ class UniversalPrinter {
       });
 
       for (const [kName, groupItems] of Object.entries(groups)) {
-        text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
+        text += `[C]<font size='tall'><B>--- ${kName} ---</B></font>\n`;
         text += DIV;
         groupItems.forEach((item: any, idx: number) => {
           text += formatItem(item);
@@ -1323,7 +1323,7 @@ class UniversalPrinter {
       kotGroupEntries.forEach(([kName, groupItems]: [string, any[]], gIdx: number) => {
         // Only show section header if there are multiple kitchens
         if (kotGroupEntries.length > 1) {
-          text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
+          text += `[C]<font size='tall'><B>--- ${kName} ---</B></font>\n`;
           text += DIV;
         }
         groupItems.forEach((item: any, idx: number) => {
@@ -1335,8 +1335,8 @@ class UniversalPrinter {
     }
 
     // ── FOOTER ────────────────────────────────────────────────────────
-    text += `[L]<font size='big'><B>Order By : ${waiter}</B></font>\n`;
-    text += `[L]<font size='big'><B>Order No : ${orderNo}</B></font>\n`;
+    text += `[L]<font size='tall'><B>Order By : ${waiter}</B></font>\n`;
+    text += `[L]<font size='tall'><B>Order No : ${orderNo}</B></font>\n`;
 
     if (type !== "KDS_PRINT") {
       // KOT: Kitchen Name + Table Number always at the very bottom
@@ -1349,7 +1349,7 @@ class UniversalPrinter {
             : "");
       if (kotLabel) {
         text += DIV;
-        text += `[C]<font size='big'><B>${kotLabel}</B></font>\n`;
+        text += `[C]<font size='tall'><B>${kotLabel}</B></font>\n`;
         text += DIV;
       }
     }
@@ -1849,7 +1849,9 @@ class UniversalPrinter {
     const orderDiscount = finalDiscountInfo?.amount || 0;
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
     const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;
-    let currentSubtotal = grossTotal - totalItemDiscount - orderDiscount;
+    let currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - orderDiscount);
+    // ✅ FOC Fix: if entire bill is FOC, currentSubtotal may be 0 but grossTotal is > 0.
+    // We still need to show items correctly — keep grossTotal for display.
 
     text += this.formatTwoCols48("Sub Total:", `${symbol}${grossTotal.toFixed(2)}`);
 
@@ -1964,6 +1966,9 @@ class UniversalPrinter {
     if (finalTotal === 0 || isCheckout) {
       finalTotal = taxableAmount + gstAmount;
     }
+    // ✅ FOC Fix: if still 0 but grossTotal > 0, it's a full-FOC bill. Use 0 as the paid total but
+    // ensure the receipt still prints (do not suppress). finalTotal=0 is valid for full FOC.
+    // Force at least showing the bill even if total is zero.
     
     const printedRoundOff = saleData.roundOff && saleData.roundOff !== 0
       ? parseFloat((finalTotal - (taxableAmount + gstAmount)).toFixed(2))
@@ -2473,7 +2478,18 @@ class UniversalPrinter {
       }
 
       const targetIp = cashierIp || company.printerIp || "";
+
+      // ✅ QR Fix: If no LAN IP configured, try Sunmi built-in printer QR printing
       if (!targetIp || targetIp.trim().length === 0) {
+        try {
+          const sunmiPrinted = await SunmiPrinterService.printQR(qrUrl, tableLabel, sectionName);
+          if (sunmiPrinted) {
+            console.log("✅ QR printed via Sunmi built-in printer");
+            return true;
+          }
+        } catch (sunmiErr) {
+          console.warn("Sunmi QR print failed:", sunmiErr);
+        }
         return false;
       }
 
@@ -2497,6 +2513,67 @@ class UniversalPrinter {
       console.warn("Native printQRDirect failed:", e);
       return false;
     }
+  }
+
+  // ==================== SETTLEMENT REPORT HTML ====================
+  static generateSettlementReportHTML(settlementRows: any[], company: any, period?: string): string {
+    const symbol = company.currencySymbol || "$";
+    const now = new Date();
+    const printDate = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+    // Aggregate totals by payment mode
+    const paymentTotals: Record<string, number> = {};
+    let grandTotal = 0;
+    let totalOrders = 0;
+    const orderSet = new Set<string>();
+    settlementRows.forEach((row: any) => {
+      const sId = row.SettlementID || row.settlementId || "";
+      if (sId && !orderSet.has(sId)) {
+        orderSet.add(sId);
+        totalOrders++;
+        grandTotal += Number(row.SysAmount || row.Amount || 0);
+      }
+      const mode = String(row.PayMode || row.PayModeName || row.payMode || "CASH").trim().toUpperCase();
+      const amt = Number(row.Amount || row.SysAmount || 0);
+      paymentTotals[mode] = (paymentTotals[mode] || 0) + amt;
+    });
+
+    const paymentRows = Object.entries(paymentTotals)
+      .map(([mode, amt]) => `<tr><td>${mode}</td><td class="amount">${symbol}${(amt as number).toFixed(2)}</td></tr>`)
+      .join("");
+
+    return `<!DOCTYPE html><html><head><style>
+      body { font-family: monospace; padding: 20px; max-width: 800px; margin: 0 auto; }
+      .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+      .company-name { font-size: 22px; font-weight: bold; }
+      .report-title { font-size: 18px; font-weight: bold; margin: 10px 0; }
+      .section-title { font-size: 14px; font-weight: bold; margin: 12px 0 6px; background: #f0f0f0; padding: 4px 6px; }
+      table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+      th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; }
+      .amount { text-align: right; font-weight: bold; }
+      .grand-total { font-size: 16px; font-weight: bold; border-top: 2px solid #000; padding-top: 8px; }
+      .footer { margin-top: 20px; text-align: center; font-size: 11px; border-top: 1px solid #ddd; padding-top: 8px; }
+      .summary-grid { display: flex; gap: 12px; margin: 10px 0; }
+      .summary-box { flex: 1; padding: 8px; background: #f9f9f9; text-align: center; border-radius: 4px; }
+    </style></head><body>
+      <div class="header">
+        <div class="company-name">${company.name || "POS SYSTEM"}</div>
+        <div>${company.address || ""}</div>
+        ${company.gstNo ? `<div>GST: ${company.gstNo}</div>` : ""}
+        <div class="report-title">SETTLEMENT REPORT</div>
+        <div>${period || "Current Period"}</div>
+        <div>Printed: ${printDate}</div>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-box"><div>Total Orders</div><div style="font-size:20px;font-weight:bold">${totalOrders}</div></div>
+        <div class="summary-box"><div>Grand Total</div><div style="font-size:20px;font-weight:bold">${symbol}${grandTotal.toFixed(2)}</div></div>
+      </div>
+      <div class="section-title">💳 PAYMENT MODE BREAKDOWN</div>
+      <table><thead><tr><th>Payment Mode</th><th class="amount">Amount</th></tr></thead><tbody>${paymentRows}</tbody>
+        <tfoot><tr class="grand-total"><td>GRAND TOTAL</td><td class="amount">${symbol}${grandTotal.toFixed(2)}</td></tr></tfoot>
+      </table>
+      <div class="footer"><p>© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
+    </body></html>`;
   }
 
   static async testAllPrinters(): Promise<void> {

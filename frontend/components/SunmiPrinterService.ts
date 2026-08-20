@@ -673,6 +673,84 @@ class SunmiPrinterService {
     }
   }
 
+  // ✅ QR Fix: Print a scannable QR code using Sunmi built-in printer
+  static async printQR(qrUrl: string, tableLabel: string, sectionName: string): Promise<boolean> {
+    try {
+      if (!SunmiModule) {
+        const initialized = await this.init();
+        if (!initialized) return false;
+      }
+
+      await SunmiPrinterManager.init();
+      const formatter = SunmiPrinterManager.getFormatter();
+
+      await SunmiModule.printText(formatter.doubleDivider("="));
+      await SunmiModule.lineWrap(1);
+
+      try {
+        if (SunmiModule.setFontSize) await SunmiModule.setFontSize(28);
+        if (SunmiModule.setBold) await SunmiModule.setBold(true);
+      } catch (_) {}
+
+      await SunmiModule.printText(formatter.center("TABLE QR CODE"));
+      await SunmiModule.lineWrap(1);
+
+      try {
+        if (SunmiModule.setFontSize) await SunmiModule.setFontSize(24);
+      } catch (_) {}
+
+      if (tableLabel) await SunmiModule.printText(formatter.center(`Table: ${tableLabel}`));
+      if (sectionName) await SunmiModule.printText(formatter.center(sectionName));
+      await SunmiModule.lineWrap(1);
+
+      try {
+        if (SunmiModule.setBold) await SunmiModule.setBold(false);
+      } catch (_) {}
+
+      // Try native printBarCode2 (QR code command) first if available
+      try {
+        if (SunmiModule.printBarCode2) {
+          // Sunmi SDK: printBarCode2(data, symbology, height, width, textPosition)
+          // symbology 8 = QR Code
+          await SunmiModule.printBarCode2(qrUrl, 8, 200, 200, 0);
+          await SunmiModule.lineWrap(2);
+          console.log("✅ QR printed via Sunmi printBarCode2");
+        } else if (SunmiModule.printQRCode) {
+          await SunmiModule.printQRCode(qrUrl, 8, 0);
+          await SunmiModule.lineWrap(2);
+          console.log("✅ QR printed via Sunmi printQRCode");
+        } else {
+          throw new Error("No native QR method available");
+        }
+      } catch (nativeQrErr) {
+        console.warn("Native QR method failed, trying image fallback:", nativeQrErr);
+        // Fallback: download QR as bitmap from API and print as image
+        try {
+          const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`;
+          const base64Qr = await this.urlToBase64(qrApiUrl);
+          await SunmiModule.printImageBase64(base64Qr);
+          await SunmiModule.lineWrap(2);
+          console.log("✅ QR printed via image bitmap fallback");
+        } catch (imgErr) {
+          console.warn("QR image fallback also failed:", imgErr);
+          // Last resort: just print the URL as text for scanning
+          await SunmiModule.printText(formatter.center("SCAN URL:"));
+          await SunmiModule.printText(formatter.left(qrUrl));
+          await SunmiModule.lineWrap(1);
+        }
+      }
+
+      await SunmiModule.printText(formatter.center("Scan to Order"));
+      await SunmiModule.printText(formatter.doubleDivider("="));
+      await SunmiModule.lineWrap(3);
+      await SunmiModule.cutPaper();
+      return true;
+    } catch (error) {
+      console.log("❌ Sunmi QR print error:", error);
+      return false;
+    }
+  }
+
   static async printKOT(data: any, type: "NEW" | "ADDITIONAL" | "REPRINT" | "KDS_PRINT" = "NEW"): Promise<boolean> {
     try {
       if (!SunmiModule) {
