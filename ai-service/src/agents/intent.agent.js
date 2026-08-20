@@ -74,7 +74,7 @@ function getLocalFallbackIntent(userMessage) {
     return { intent: 'get_discount_analysis', params: { startDate, endDate, titlePeriod } };
   }
 
-  if (msg.includes('cancel') || msg.includes('void') || msg.includes('refund') || msg.includes('reject')) {
+  if (msg.includes('cancel') || msg.includes('cancle') || msg.includes('void') || msg.includes('refund') || msg.includes('reject')) {
     return { intent: 'get_cancelled_orders', params: { startDate, endDate, titlePeriod } };
   }
 

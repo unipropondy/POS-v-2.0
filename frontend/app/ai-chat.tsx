@@ -363,6 +363,7 @@ export default function AIChatScreen() {
       MEMBER: { name: "Member", amount: 0, count: 0 },
       UPI: { name: "UPI", amount: 0, count: 0 },
       CARD: { name: "Card", amount: 0, count: 0 },
+      FOC: { name: "FOC", amount: 0, count: 0 },
       OTHER: { name: "Other payment methods", amount: 0, count: 0 },
     };
 
@@ -380,6 +381,9 @@ export default function AIChatScreen() {
       if (mode.includes("CASH")) {
         paymentGroups.CASH.amount += amount;
         paymentGroups.CASH.count += count;
+      } else if (mode.includes("FOC")) {
+        paymentGroups.FOC.amount += amount;
+        paymentGroups.FOC.count += count;
       } else if (mode.includes("PAYNOW")) {
         paymentGroups.PAYNOW.amount += amount;
         paymentGroups.PAYNOW.count += count;
@@ -579,6 +583,25 @@ export default function AIChatScreen() {
               ))}
             </ScrollView>
           )}
+        </View>
+
+        {/* Dynamic User Input Bar */}
+        <View style={styles.inputBar}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type your custom analytical query..."
+            placeholderTextColor="#868E96"
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={() => handleSendMessage(inputText)}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
+            onPress={() => handleSendMessage(inputText)}
+            disabled={!inputText.trim()}
+          >
+            <Ionicons name="send" size={16} color="#fff" />
+          </TouchableOpacity>
         </View>
 
       </KeyboardAvoidingView>

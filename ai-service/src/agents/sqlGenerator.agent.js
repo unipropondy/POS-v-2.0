@@ -14,7 +14,7 @@ const STATIC_TEMPLATES = {
         THEN ISNULL(SUM(SysAmount), 0) / COUNT(SettlementID) 
         ELSE 0 END AS AvgTicketSize
     FROM SettlementHeader 
-    WHERE CAST(LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}';
+    WHERE CAST(start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}';
   `,
   get_top_selling_items: (params) => `
     SELECT TOP (${params.limit || 5})
@@ -23,7 +23,7 @@ const STATIC_TEMPLATES = {
       SUM(sid.Qty * sid.Price) AS TotalRevenue
     FROM SettlementItemDetail sid
     INNER JOIN SettlementHeader sh ON sid.SettlementID = sh.SettlementID
-    WHERE CAST(sh.LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
+    WHERE CAST(sh.start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
     GROUP BY sid.DishName
     ORDER BY TotalQuantity DESC;
   `,
@@ -34,7 +34,7 @@ const STATIC_TEMPLATES = {
       ISNULL(SUM(SysAmount), 0) AS TotalRevenue,
       ISNULL(SUM(SysAmount), 0) / NULLIF(COUNT(SettlementID), 0) AS AvgBillAmount
     FROM SettlementHeader
-    WHERE CAST(LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
+    WHERE CAST(start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
       AND SER_NAME IS NOT NULL
     GROUP BY SER_NAME
     ORDER BY TotalRevenue DESC;
@@ -47,14 +47,14 @@ const STATIC_TEMPLATES = {
       ISNULL(AVG(CASE WHEN DiscountAmount > 0 THEN DiscountAmount END), 0) AS AvgDiscountPerBill,
       COUNT(SettlementID) AS TotalBills
     FROM SettlementHeader
-    WHERE CAST(LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}';
+    WHERE CAST(start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}';
   `,
   get_cancelled_orders: (params) => `
     SELECT 
       COUNT(SettlementID) AS CancelledCount,
       ISNULL(SUM(SysAmount), 0) AS CancelledAmount
     FROM SettlementHeader
-    WHERE CAST(LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
+    WHERE CAST(start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
       AND IsCancelled = 1;
   `,
   get_unsold_items: (params) => `
@@ -65,7 +65,7 @@ const STATIC_TEMPLATES = {
     FROM DishMaster d
     LEFT JOIN SettlementItemDetail sid ON d.Name = sid.DishName
     LEFT JOIN SettlementHeader sh ON sid.SettlementID = sh.SettlementID 
-      AND CAST(sh.LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
+      AND CAST(sh.start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
     WHERE d.IsActive = 1
     GROUP BY d.Name
     ORDER BY TotalQuantity ASC;
@@ -76,7 +76,7 @@ const STATIC_TEMPLATES = {
       ISNULL(SUM(SysAmount), 0) AS TotalRevenue,
       CASE WHEN SUM(SysAmount) > 0 THEN (SUM(TotalTax) / SUM(SysAmount)) * 100 ELSE 0 END AS TaxPercentage
     FROM SettlementHeader
-    WHERE CAST(LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}';
+    WHERE CAST(start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}';
   `,
   get_payment_distribution: (params) => `
     SELECT 
@@ -85,7 +85,7 @@ const STATIC_TEMPLATES = {
       ISNULL(SUM(sts.SysAmount), 0) AS TotalRevenue
     FROM SettlementHeader sh
     INNER JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
-    WHERE CAST(sh.LastSettlementDate AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
+    WHERE CAST(sh.start_date AS DATE) BETWEEN '${params.startDate}' AND '${params.endDate}'
     GROUP BY sts.PayMode;
   `
 };
@@ -116,8 +116,9 @@ Follow these rules:
 2. The query must be purely read-only (SELECT queries).
 3. Be mindful of existing table schemas:
 ${schemaRep}
-4. When writing dates, format them as YYYY-MM-DD strings.
-5. Limit results appropriately based on the request (e.g. SELECT TOP 5).`;
+4. Crucially, when querying SettlementHeader or SettlementItemDetail by date range, always filter by the "start_date" column (e.g., CAST(start_date AS DATE) BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD') rather than LastSettlementDate, as start_date represents the business date.
+5. When writing dates, format them as YYYY-MM-DD strings.
+6. Limit results appropriately based on the request (e.g. SELECT TOP 5).`;
 
     const response = await axios.post(
       OPENROUTER_API_URL,

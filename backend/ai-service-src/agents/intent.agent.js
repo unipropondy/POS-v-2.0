@@ -53,8 +53,8 @@ function getLocalFallbackIntent(userMessage) {
   }
 
   // Intent Detection for Chat & Greetings (Tanglish & English)
-  const isGreeting = msg === 'hi' || msg === 'hello' || msg === 'good morning' || msg === 'good afternoon' || msg === 'good evening' || msg === 'vanakkam';
-  const isCasualChat = (msg.includes('macha') || msg.includes('bro') || msg.includes('da') || msg.includes('dude') ||
+  const isGreeting = /^hi+$/i.test(msg) || /^hello+$/i.test(msg) || /^hey+$/i.test(msg) || msg === 'hlo' || msg === 'good morning' || msg === 'good afternoon' || msg === 'good evening' || msg === 'vanakkam';
+  const isCasualChat = (msg.includes('macha') || msg.includes('bro') || /\bda\b/.test(msg) || msg.includes('dude') ||
     msg.includes('how are you') || msg.includes('who are you') || msg.includes('thank you') || msg.includes('thanks') ||
     msg.includes('chat panna') || msg.includes('chat history') || msg.includes('help')) && 
     !msg.includes('sale') && !msg.includes('report') && !msg.includes('item') && !msg.includes('payment') && !msg.includes('revenue') && !msg.includes('performance') && !msg.includes('discount') && !msg.includes('cancel');
@@ -88,7 +88,7 @@ function getLocalFallbackIntent(userMessage) {
     return { intent: 'get_voided_items', params: { startDate, endDate, titlePeriod } };
   }
 
-  if (msg.includes('cancel')) {
+  if (msg.includes('cancel') || msg.includes('cancle')) {
     return { intent: 'get_cancelled_orders', params: { startDate, endDate, titlePeriod } };
   }
 
@@ -121,7 +121,7 @@ async function extractIntent(userMessage) {
   const msg = userMessage.toLowerCase().trim();
   
   // 1. Force match greetings, spelling variations, chat requests, and casual words locally
-  const isGreeting = msg === 'hi' || msg === 'hello' || msg === 'hlo' || msg === 'hey' || msg === 'vanakkam' ||
+  const isGreeting = /^hi+$/i.test(msg) || /^hello+$/i.test(msg) || /^hey+$/i.test(msg) || msg === 'hlo' || msg === 'vanakkam' ||
     msg === 'good morning' || msg === 'good moring' || msg === 'good mng' || msg === 'gm' ||
     msg === 'good afternoon' || msg === 'good evening';
   

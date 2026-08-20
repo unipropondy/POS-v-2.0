@@ -1,5 +1,7 @@
 const { poolPromise } = require("../config/db");
 
+const { extractIntent } = require("../ai-service-src/agents/intent.agent");
+
 async function main() {
   try {
     const pool = await poolPromise;
