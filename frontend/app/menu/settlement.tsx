@@ -1255,6 +1255,51 @@ const loadDishes = async () => {
       const toDateStr = formatDateOnly(toDate);
       const cashInTotalSum = totalCashInEntries + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
 
+      // 2.5 Try silent Z-Report printing via the print bridge first if on web
+      if (Platform.OS === 'web') {
+        try {
+          const { useCompanySettingsStore } = require("../../stores/companySettingsStore");
+          const companySettings = useCompanySettingsStore.getState().settings;
+          const UniversalPrinter = require("../../components/UniversalPrinter").default;
+          const isOnline = await UniversalPrinter.isBridgeOnline();
+          if (isOnline) {
+            const company = {
+              name: companySettings?.name || "POS SYSTEM",
+              address: companySettings?.address || "",
+              currencySymbol: formatCurrency(1).substring(0, 1) || "$"
+            };
+            const period = `${fromDateStr} – ${toDateStr}`;
+            
+            // Format data rows exactly like UniversalPrinter expects:
+            const reportRows = [
+              { PayMode: "Gross Sales", Amount: totalSales.SubTotal },
+              { PayMode: "Discount", Amount: totalSales.DiscountAmount },
+              { PayMode: "Service Charge", Amount: totalSales.ServiceCharge },
+              { PayMode: "GST Collected", Amount: totalSales.TotalTax },
+              { PayMode: "Tips", Amount: totalSales.Tips },
+              { PayMode: "NET SALES", Amount: netSales }
+            ];
+            
+            payments.forEach(p => {
+              reportRows.push({ PayMode: p.PaymodeName, Amount: p.Amount });
+            });
+
+            reportRows.push(
+              { PayMode: "Opening Float", Amount: displayOpeningAmount },
+              { PayMode: "Cash Sales", Amount: salesCash },
+              { PayMode: "Cash In", Amount: cashInTotalSum },
+              { PayMode: "Cash Out", Amount: totalCashOutSum },
+              { PayMode: "EXPECTED CASH", Amount: (totalCashIn - totalCashOutSum) }
+            );
+
+            const success = await UniversalPrinter.printSettlementReportDirect(reportRows, company, period);
+            if (success) return;
+          }
+        } catch (bridgeErr) {
+          console.warn("Print bridge silent Z-Report failed, falling back:", bridgeErr);
+        }
+      }
+
       // 2. Format HTML aligned to 80mm width with centered print-out look
       const html = `
         <html>

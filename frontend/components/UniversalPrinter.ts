@@ -1848,8 +1848,9 @@ class UniversalPrinter {
     const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
     const orderDiscount = finalDiscountInfo?.amount || 0;
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
-    const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;
-    let currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - orderDiscount);
+    // ✅ FOC is a payment method, not a pre-tax discount — exclude from subtotal calculation
+    const hasAnyDiscount = totalItemDiscount > 0 || normalDiscount > 0;
+    let currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - normalDiscount);
     // âœ… FOC Fix: if entire bill is FOC, currentSubtotal may be 0 but grossTotal is > 0.
     // We still need to show items correctly â€” keep grossTotal for display.
 
@@ -1963,7 +1964,10 @@ class UniversalPrinter {
     const gstAmountRaw = hasGST ? taxableAmount * (gstRate / 100) : 0;
     const gstAmount = Math.round(gstAmountRaw * 100) / 100;
     
-    if (finalTotal === 0 || isCheckout) {
+    // ✅ FOC Fix: When FOC is involved, always recompute finalTotal from
+    // taxableAmount + GST so payments (FOC + Cash) add up to the displayed total.
+    // e.g. Sub=$12, GST=$1.08 → Total=$13.08, FOC=$8.08 + Cash=$5.00 = $13.08 ✓
+    if (finalTotal === 0 || isCheckout || focAmt > 0) {
       finalTotal = taxableAmount + gstAmount;
     }
     // âœ… FOC Fix: if still 0 but grossTotal > 0, it's a full-FOC bill. Use 0 as the paid total but
