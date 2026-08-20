@@ -1,4 +1,4 @@
-// frontend/src/components/UniversalPrinter.ts - COMPLETE WITH DISCOUNT SUPPORT ✅
+// frontend/src/components/UniversalPrinter.ts - COMPLETE WITH DISCOUNT SUPPORT âœ…
 
 import { format } from "date-fns";
 import * as Print from "expo-print";
@@ -82,11 +82,11 @@ class UniversalPrinter {
     for (const [key, ts] of this.printedOrdersCache.entries()) {
       if (now - ts > TTL) this.printedOrdersCache.delete(key);
     }
-    // Composite key: orderId + exact item set — allows additional KOTs for the same order
+    // Composite key: orderId + exact item set â€” allows additional KOTs for the same order
     const cacheKey = `${orderId}:${this.buildItemFingerprint(items)}`;
     if (this.printedOrdersCache.has(cacheKey)) {
       console.log(
-        `🛡️ [UniversalPrinter] Duplicate print blocked | Order: ${orderId} | Items: ${items.length}`
+        `ðŸ›¡ï¸ [UniversalPrinter] Duplicate print blocked | Order: ${orderId} | Items: ${items.length}`
       );
       return true;
     }
@@ -101,7 +101,7 @@ class UniversalPrinter {
       if (now - ts > TTL) this.printedReceiptsCache.delete(key);
     }
     if (this.printedReceiptsCache.has(orderId)) {
-      console.log(`🛡️ [UniversalPrinter] Duplicate receipt print blocked for Order: ${orderId}`);
+      console.log(`ðŸ›¡ï¸ [UniversalPrinter] Duplicate receipt print blocked for Order: ${orderId}`);
       return true;
     }
     this.printedReceiptsCache.set(orderId, now);
@@ -183,15 +183,15 @@ class UniversalPrinter {
         headers: { "Cache-Control": "no-cache" }
       });
       clearTimeout(timer);
-      console.log(`🔌 [isIpReachable] Connected/Alive: ${cleanIp}`);
+      console.log(`ðŸ”Œ [isIpReachable] Connected/Alive: ${cleanIp}`);
       return true;
     } catch (err: any) {
       clearTimeout(timer);
       if (err.name === "AbortError") {
-        console.log(`🔌 [isIpReachable] Offline/Timeout on ${cleanIp}`);
+        console.log(`ðŸ”Œ [isIpReachable] Offline/Timeout on ${cleanIp}`);
         return false;
       }
-      console.log(`🔌 [isIpReachable] Host responded (alive): ${cleanIp}`);
+      console.log(`ðŸ”Œ [isIpReachable] Host responded (alive): ${cleanIp}`);
       return true;
     }
   }
@@ -206,11 +206,11 @@ class UniversalPrinter {
       const company = await BillPDFGenerator.loadSettings(userId);
       const html = this.generateSalesReportHTML(reportData, company);
 
-      // ✅ Save as PDF (no preview)
+      // âœ… Save as PDF (no preview)
       const { uri } = await Print.printToFileAsync({ html });
-      console.log("📄 Sales report saved at:", uri);
+      console.log("ðŸ“„ Sales report saved at:", uri);
 
-      // ✅ Optionally share the PDF
+      // âœ… Optionally share the PDF
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
       }
@@ -239,9 +239,9 @@ class UniversalPrinter {
       <div style="text-align:center"><div class="summary-box"><div>Total Sales</div><div style="font-size:24px">${data.summary?.totalSales || 0}</div></div>
       <div class="summary-box"><div>Total Items</div><div style="font-size:24px">${data.summary?.totalItems || 0}</div></div>
       <div class="summary-box"><div>Total Revenue</div><div style="font-size:24px">${symbol}${(data.summary?.totalRevenue || 0).toFixed(2)}</div></div></div>
-      <div class="section-title">💳 PAYMENT BREAKDOWN</div>${this.generateTableFromObject(data.paymentBreakdown || {}, symbol)}</div>
-      ${data.items && data.items.length > 0 ? `<div class="section-title">📋 ITEM WISE SALES</div>${this.generateItemsTable(data.items, symbol)}` : ""}
-      <div class="footer"><p>© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
+      <div class="section-title">ðŸ’³ PAYMENT BREAKDOWN</div>${this.generateTableFromObject(data.paymentBreakdown || {}, symbol)}</div>
+      ${data.items && data.items.length > 0 ? `<div class="section-title">ðŸ“‹ ITEM WISE SALES</div>${this.generateItemsTable(data.items, symbol)}` : ""}
+      <div class="footer"><p>Â© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
     </body></html>`;
   }
 
@@ -267,11 +267,11 @@ class UniversalPrinter {
           )
         : this.generateAllCategoriesHTML(categories, company, options);
 
-      // ✅ Save as PDF (no preview)
+      // âœ… Save as PDF (no preview)
       const { uri } = await Print.printToFileAsync({ html });
-      console.log("📄 Category report saved at:", uri);
+      console.log("ðŸ“„ Category report saved at:", uri);
 
-      // ✅ Optionally share the PDF
+      // âœ… Optionally share the PDF
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
       }
@@ -324,19 +324,19 @@ class UniversalPrinter {
       .footer { margin-top: 30px; text-align: center; font-size: 12px; border-top: 1px solid #ddd; padding-top: 10px; }
     </style></head><body>
       <div class="header"><div class="company-name">${company.name || "Store"}</div><div>${company.address || ""}</div><div>GST: ${company.gstNo || "N/A"}</div></div>
-      <div class="category-title">📦 ${categoryName}</div>
+      <div class="category-title">ðŸ“¦ ${categoryName}</div>
       <div style="display:flex;justify-content:space-around;margin:20px 0;padding:15px;background:#f9f9f9;border-radius:5px">
         <div><div>Total Items</div><div style="font-size:18px;font-weight:bold">${items.length}</div></div>
         <div><div>Quantity Sold</div><div style="font-size:18px;font-weight:bold">${items.reduce((s, i) => s + (i.quantity || 0), 0)}</div></div>
         <div><div>Total Revenue</div><div style="font-size:18px;font-weight:bold">${symbol}${items.reduce((s, i) => s + (i.revenue || 0), 0).toFixed(2)}</div></div>
       </div>
-      <div class="section-title">📋 Items Sold</div>${this.generateItemsTable(items, symbol)}
-      <div class="section-title">📄 Transaction History</div>${
+      <div class="section-title">ðŸ“‹ Items Sold</div>${this.generateItemsTable(items, symbol)}
+      <div class="section-title">ðŸ“„ Transaction History</div>${
         transactions.length
           ? groupTransactions(transactions)
               .map(
                 (sale: any) =>
-                  `<div class="transaction-card"><div><strong>#${sale.id}</strong> - ${symbol}${sale.total.toFixed(2)}</div><div>${formatToSingaporeDateTime(sale.date)}</div>${sale.items.map((item: any) => `<div>• ${item.name} x${item.quantity} - ${symbol}${(item.price * item.quantity).toFixed(2)}</div>`).join("")}</div>`,
+                  `<div class="transaction-card"><div><strong>#${sale.id}</strong> - ${symbol}${sale.total.toFixed(2)}</div><div>${formatToSingaporeDateTime(sale.date)}</div>${sale.items.map((item: any) => `<div>â€¢ ${item.name} x${item.quantity} - ${symbol}${(item.price * item.quantity).toFixed(2)}</div>`).join("")}</div>`,
               )
               .join("")
           : "<p>No transactions</p>"
@@ -368,9 +368,9 @@ class UniversalPrinter {
       .amount { text-align: right; }
       .footer { margin-top: 30px; text-align: center; font-size: 12px; border-top: 1px solid #ddd; padding-top: 10px; }
     </style></head><body>
-      <div class="header"><div class="company-name">${company.name || "Store"}</div><div>${company.address || ""}</div><div>GST: ${company.gstNo || "N/A"}</div><div class="report-title">📊 CATEGORY WISE SALES</div></div>
+      <div class="header"><div class="company-name">${company.name || "Store"}</div><div>${company.address || ""}</div><div>GST: ${company.gstNo || "N/A"}</div><div class="report-title">ðŸ“Š CATEGORY WISE SALES</div></div>
       <div class="summary-section"><div><div>Total Sales</div><div>${summary.totalSales}</div></div><div><div>Total Items</div><div>${summary.totalItems}</div></div><div><div>Total Revenue</div><div>${symbol}${summary.totalRevenue.toFixed(2)}</div></div></div>
-      <div><h3>💳 PAYMENT BREAKDOWN</h3>${Object.entries(
+      <div><h3>ðŸ’³ PAYMENT BREAKDOWN</h3>${Object.entries(
         summary.paymentBreakdown,
       )
         .map(
@@ -378,7 +378,7 @@ class UniversalPrinter {
         )
         .join("")}</div>
       ${categories.map((cat) => `<div class="category-card"><div class="category-name">${cat.name}</div><div>Revenue: ${symbol}${(cat.totalRevenue || 0).toFixed(2)} | Items: ${cat.totalQuantity || 0}</div>${this.generateItemsTable(cat.items || [], symbol)}</div>`).join("")}
-      <div class="footer"><p>© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
+      <div class="footer"><p>Â© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
     </body></html>`;
   }
 
@@ -441,11 +441,11 @@ class UniversalPrinter {
           const statusRes = await fetch(`${API_URL}/api/print-jobs/status/${jobId}`);
           const statusData = await statusRes.json();
           if (statusData.success && statusData.status === 'COMPLETED') {
-            console.log(`✅ [UniversalPrinter] Print job ${jobId} completed successfully on bridge`);
+            console.log(`âœ… [UniversalPrinter] Print job ${jobId} completed successfully on bridge`);
             return true;
           }
           if (statusData.success && statusData.status === 'FAILED') {
-            console.warn(`❌ [UniversalPrinter] Print job ${jobId} failed on bridge side:`, statusData.error);
+            console.warn(`âŒ [UniversalPrinter] Print job ${jobId} failed on bridge side:`, statusData.error);
             return false;
           }
         } catch (err) {
@@ -480,7 +480,7 @@ class UniversalPrinter {
           isHold: false,
         }),
       });
-      console.log("📝 Print job logged to PrintReport");
+      console.log("ðŸ“ Print job logged to PrintReport");
     } catch (logErr) {
       console.warn("Failed to log print to DB:", logErr);
     }
@@ -495,7 +495,7 @@ class UniversalPrinter {
       try {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) {
-          console.log("📡 [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
+          console.log("ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
           const html = this.generateKOTHTML(orderData, "KDS_PRINT");
           let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
           if (!frame) {
@@ -524,7 +524,7 @@ class UniversalPrinter {
         }
 
         const text = this.formatKOTThermalText(orderData, "KDS_PRINT");
-        console.log(`📡 [Web Print Bridge] Queueing KDS print`);
+        console.log(`ðŸ“¡ [Web Print Bridge] Queueing KDS print`);
         const success = await this.queuePrintJob(4, undefined, text);
         if (success) {
           await this.logPrintJob(orderData.orderId, orderData.orderNo, "REPRINT");
@@ -532,7 +532,7 @@ class UniversalPrinter {
         }
 
         // Web Fallback: If Print Bridge failed, trigger iframe preview
-        console.log("⚠️ [Web KDS Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        console.log("âš ï¸ [Web KDS Print] Print Bridge queue failed. Falling back to iframe print preview.");
         const html = this.generateKOTHTML(orderData, "KDS_PRINT");
         let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
         if (!frame) {
@@ -604,7 +604,7 @@ class UniversalPrinter {
     printerIpOverride?: string,
   ): Promise<boolean> {
     if (type !== "KDS_PRINT" && (!printerIpOverride || String(printerIpOverride).trim() === "")) {
-      console.log(`🖨️ [UniversalPrinter] Skipping KOT print for "${orderData.kitchenName || 'Unknown Kitchen'}" - IP is empty/disabled.`);
+      console.log(`ðŸ–¨ï¸ [UniversalPrinter] Skipping KOT print for "${orderData.kitchenName || 'Unknown Kitchen'}" - IP is empty/disabled.`);
       return true;
     }
 
@@ -612,7 +612,7 @@ class UniversalPrinter {
       try {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) {
-          console.log("📡 [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
+          console.log("ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
           const html = this.generateKOTHTML(orderData, type);
           let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
           if (!frame) {
@@ -646,15 +646,15 @@ class UniversalPrinter {
         const text = this.formatKOTThermalText(orderData, type);
         // Map kitchenCode or kitchenTypeValue
         const kitchenTypeValue = orderData.kitchenCode || orderData.KitchenCode || orderData.kitchenTypeValue || orderData.KitchenTypeValue || "0";
-        console.log(`📡 [Web Print Bridge] Queueing KOT to Kitchen type: ${kitchenTypeValue}`);
+        console.log(`ðŸ“¡ [Web Print Bridge] Queueing KOT to Kitchen type: ${kitchenTypeValue}`);
         const success = await this.queuePrintJob(2, kitchenTypeValue, text);
         if (success) {
           await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
           return true;
         }
 
-        // 🚀 Fallback: If Print Bridge failed or printer not detected on web, trigger iframe print preview immediately
-        console.log("⚠️ [Web KOT Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        // ðŸš€ Fallback: If Print Bridge failed or printer not detected on web, trigger iframe print preview immediately
+        console.log("âš ï¸ [Web KOT Print] Print Bridge queue failed. Falling back to iframe print preview.");
         const html = this.generateKOTHTML(orderData, type);
         let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
         if (!frame) {
@@ -742,7 +742,7 @@ class UniversalPrinter {
         }
       }
 
-      // ✅ 1. Try Hardware Printer (WiFi or Bluetooth)
+      // âœ… 1. Try Hardware Printer (WiFi or Bluetooth)
       const hasConfiguredIp = targetIp && targetIp.trim().length > 0;
       if (hasConfiguredIp) {
         let isReachable = false;
@@ -758,7 +758,7 @@ class UniversalPrinter {
             const text = this.formatKOTThermalText(orderData, type);
 
             if (isIp) {
-              console.log(`🌐 KOT WiFi print to: ${targetIp}`);
+              console.log(`ðŸŒ KOT WiFi print to: ${targetIp}`);
               const printPromise = ThermalPrinter.printTcp({
                 ip: targetIp,
                 port: 9100,
@@ -770,7 +770,7 @@ class UniversalPrinter {
               );
               await Promise.race([printPromise, timeoutPromise]);
             } else {
-              console.log(`🔵 KOT Bluetooth print to: ${targetIp}`);
+              console.log(`ðŸ”µ KOT Bluetooth print to: ${targetIp}`);
               const printPromise = ThermalPrinter.printBluetooth({
                 macAddress: targetIp,
                 payload: text,
@@ -784,13 +784,13 @@ class UniversalPrinter {
             await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
             return true;
           } catch (printError) {
-            console.warn("❌ Hardware KOT failed/timeout, falling back directly to PDF...");
+            console.warn("âŒ Hardware KOT failed/timeout, falling back directly to PDF...");
           }
         } else {
-          console.warn(`❌ configured printer IP ${targetIp} not reachable, falling back directly to PDF...`);
+          console.warn(`âŒ configured printer IP ${targetIp} not reachable, falling back directly to PDF...`);
         }
       } else {
-        // ✅ 2. Try Sunmi direct print (Silent) (Only if IP is NOT entered)
+        // âœ… 2. Try Sunmi direct print (Silent) (Only if IP is NOT entered)
         const sunmiReady = await SunmiPrinterService.init().catch(() => false);
         if (sunmiReady) {
           try {
@@ -801,20 +801,20 @@ class UniversalPrinter {
             const printed = await Promise.race([printPromise, timeoutPromise]);
 
             if (printed) {
-              console.log("✅ KOT Printed with Sunmi - NO PREVIEW");
+              console.log("âœ… KOT Printed with Sunmi - NO PREVIEW");
               await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
               return true;
             }
           } catch (sunmiErr) {
-            console.warn("❌ Sunmi KOT failed/timeout:", sunmiErr);
+            console.warn("âŒ Sunmi KOT failed/timeout:", sunmiErr);
           }
         }
       }
 
-      // ✅ 3. Mobile Fallback (Android/iOS)
+      // âœ… 3. Mobile Fallback (Android/iOS)
       const { uri } = await Print.printToFileAsync({
         html,
-        width: 302, // 80mm at 96dpi (80 × 3.7795 ≈ 302px)
+        width: 302, // 80mm at 96dpi (80 Ã— 3.7795 â‰ˆ 302px)
       });
 
       if (Platform.OS === "android" || Platform.OS === "ios") {
@@ -823,7 +823,7 @@ class UniversalPrinter {
         }
       }
 
-      // ✅ 4. LOG TO DATABASE (Audit Trail)
+      // âœ… 4. LOG TO DATABASE (Audit Trail)
       await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
       return true;
     } catch (error) {
@@ -1031,7 +1031,7 @@ class UniversalPrinter {
                             <div class="item-qty">${item.quantity || item.qty || 1}</div>
                             <div class="item-name">
                               ${(item.name || "").replace(/\n/g, '<br/>')}
-                              ${item.songName || item.SongName ? `<div style="font-size: 26px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
+                              ${item.songName || item.SongName ? `<div style="font-size: 26px; font-weight: normal; color: #555; margin-top: 4px;">ðŸŽµ ${item.songName || item.SongName}</div>` : ''}
                             </div>
                           </div>
                           ${
@@ -1077,7 +1077,7 @@ class UniversalPrinter {
                       <div class="item-qty">${item.quantity || item.qty || 1}</div>
                       <div class="item-name">
                         ${(item.name || "").replace(/\n/g, '<br/>')}
-                        ${item.songName || item.SongName ? `<div style="font-size: 26px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
+                        ${item.songName || item.SongName ? `<div style="font-size: 26px; font-weight: normal; color: #555; margin-top: 4px;">ðŸŽµ ${item.songName || item.SongName}</div>` : ''}
                       </div>
                     </div>
                     ${
@@ -1172,7 +1172,7 @@ class UniversalPrinter {
     const DISH_WRAP = 20;
     const BIG_MOD_WRAP = 20;   // big-font chars available for modifiers
 
-    // ── Helper: wrap text ─────────────────────────────────────────────
+    // â”€â”€ Helper: wrap text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const wrapText = (str: string, maxChars: number): string[] => {
       const words = String(str || "").split(" ");
       const result: string[] = [];
@@ -1192,7 +1192,7 @@ class UniversalPrinter {
       return result.length ? result : [""];
     };
 
-    // ── Helper: format one item ───────────────────────────────────────
+    // â”€â”€ Helper: format one item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const formatItem = (item: any): string => {
       let t = "";
       const qtyNum   = item.quantity || item.qty || 1;
@@ -1200,17 +1200,17 @@ class UniversalPrinter {
 
       // Item name: tall font (double height only), wrapped at 20 chars
       wrapText(itemName.replace(/\n/g, " "), DISH_WRAP).forEach((chunk: string, idx: number) => {
-        if (idx === 0) t += `[L]<font size='tall'><B>[${qtyNum}] ${chunk}</B></font>\n`;
-        else           t += `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
+        if (idx === 0) t += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
+        else           t += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
       });
 
       // Song name
       const songName = item.songName || item.SongName || "";
-      if (songName) t += `[L]<font size='tall'><B>  ♪ ${songName}</B></font>\n`;
+      if (songName) t += `[L]<font size='big'><B>  â™ª ${songName}</B></font>\n`;
 
       // Takeaway flag
       const isTw = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
-      if (isTw) t += `[L]<font size='tall'><B>  >> TAKEAWAY <<</B></font>\n`;
+      if (isTw) t += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
 
       // Modifiers: big font, wraps at 20 chars
       if (item.modifiers && item.modifiers.length > 0) {
@@ -1218,7 +1218,7 @@ class UniversalPrinter {
           const modName = m.ModifierName || m.modifierName || m.name || m.ModifierNameEn || "";
           if (modName) {
             wrapText(modName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-              t += idx === 0 ? `[L]<font size='tall'><B>  + ${chunk}</B></font>\n` : `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
+              t += idx === 0 ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
             });
           }
         });
@@ -1252,7 +1252,7 @@ class UniversalPrinter {
               const optName = opt.name || opt.DishName || opt.itemName || "";
               if (optName) {
                 wrapText(optName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-                  t += idx === 0 ? `[L]<font size='tall'><B>  - ${chunk}</B></font>\n` : `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
+                  t += idx === 0 ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
                 });
               }
             });
@@ -1264,34 +1264,34 @@ class UniversalPrinter {
       const noteText = item.note || item.notes || item.Remarks || item.remarks;
       if (noteText) {
         wrapText(noteText, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-          t += idx === 0 ? `[L]<font size='tall'><B>  * ${chunk}</B></font>\n` : `[L]<font size='tall'><B>    ${chunk}</B></font>\n`;
+          t += idx === 0 ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
         });
       }
 
       return t;
     };
 
-    // ── HEADER ────────────────────────────────────────────────────────
+    // â”€â”€ HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let text = "";
     // 25mm top side white space (approx 6 empty lines)
     text += "[L]\n".repeat(6);
-    text += `[C]<font size='tall'><B>${title}</B></font>\n`;
-    text += `[C]<font size='tall'><B>${kotDateStr}  ${kotTimeStr}</B></font>\n`;
+    text += `[C]<font size='big'><B>${title}</B></font>\n`;
+    text += `[C]<font size='big'><B>${kotDateStr}  ${kotTimeStr}</B></font>\n`;
     text += DIV;
 
     // TABLE visible at top for both KOT and KDS
     if (type === "KDS_PRINT") {
-      text += `[C]<font size='tall'><B>TABLE NO : ${tableNo}</B></font>\n`;
+      text += `[C]<font size='big'><B>TABLE NO : ${tableNo}</B></font>\n`;
       text += DIV;
     } else {
-      text += `[C]<font size='tall'><B>TABLE : ${tableNo}</B></font>\n`;
+      text += `[C]<font size='big'><B>TABLE : ${tableNo}</B></font>\n`;
       text += DIV;
     }
 
-    text += "[L]<font size='tall'><B>QTY  ITEM</B></font>\n";
+    text += "[L]<font size='big'><B>QTY  ITEM</B></font>\n";
     text += DIV;
 
-    // ── ITEMS ─────────────────────────────────────────────────────────
+    // â”€â”€ ITEMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (type === "KDS_PRINT") {
       // KDS: group by kitchen section
       const groups: Record<string, any[]> = {};
@@ -1302,7 +1302,7 @@ class UniversalPrinter {
       });
 
       for (const [kName, groupItems] of Object.entries(groups)) {
-        text += `[C]<font size='tall'><B>--- ${kName} ---</B></font>\n`;
+        text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
         text += DIV;
         groupItems.forEach((item: any, idx: number) => {
           text += formatItem(item);
@@ -1323,7 +1323,7 @@ class UniversalPrinter {
       kotGroupEntries.forEach(([kName, groupItems]: [string, any[]], gIdx: number) => {
         // Only show section header if there are multiple kitchens
         if (kotGroupEntries.length > 1) {
-          text += `[C]<font size='tall'><B>--- ${kName} ---</B></font>\n`;
+          text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
           text += DIV;
         }
         groupItems.forEach((item: any, idx: number) => {
@@ -1334,9 +1334,9 @@ class UniversalPrinter {
       });
     }
 
-    // ── FOOTER ────────────────────────────────────────────────────────
-    text += `[L]<font size='tall'><B>Order By : ${waiter}</B></font>\n`;
-    text += `[L]<font size='tall'><B>Order No : ${orderNo}</B></font>\n`;
+    // â”€â”€ FOOTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    text += `[L]<font size='big'><B>Order By : ${waiter}</B></font>\n`;
+    text += `[L]<font size='big'><B>Order No : ${orderNo}</B></font>\n`;
 
     if (type !== "KDS_PRINT") {
       // KOT: Kitchen Name + Table Number always at the very bottom
@@ -1349,12 +1349,12 @@ class UniversalPrinter {
             : "");
       if (kotLabel) {
         text += DIV;
-        text += `[C]<font size='tall'><B>${kotLabel}</B></font>\n`;
+        text += `[C]<font size='big'><B>${kotLabel}</B></font>\n`;
         text += DIV;
       }
     }
 
-    // ── FEED LINES at end to prevent last line being cut ──────────────
+    // â”€â”€ FEED LINES at end to prevent last line being cut â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     text += "[L]\n".repeat(6);
 
     return text;
@@ -1373,7 +1373,7 @@ class UniversalPrinter {
       try {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) {
-          console.log("📡 [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
+          console.log("ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
           return await this.offerPDFFallback(saleData, outletId, t, discountInfo);
         }
 
@@ -1391,12 +1391,12 @@ class UniversalPrinter {
           String(saleData.tableNo).toUpperCase() === "TAKE AWAY";
 
         const pType = isTakeaway ? 3 : 1;
-        console.log(`📡 [Web Print Bridge] Queueing receipt to printer type: ${pType}`);
+        console.log(`ðŸ“¡ [Web Print Bridge] Queueing receipt to printer type: ${pType}`);
         const success = await this.queuePrintJob(pType, undefined, text);
         if (success) return true;
 
-        // 🚀 Fallback: If Print Bridge failed or printer not detected on web, trigger iframe print preview immediately
-        console.log("⚠️ [Web Receipt Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        // ðŸš€ Fallback: If Print Bridge failed or printer not detected on web, trigger iframe print preview immediately
+        console.log("âš ï¸ [Web Receipt Print] Print Bridge queue failed. Falling back to iframe print preview.");
         return await this.offerPDFFallback(saleData, outletId, t, discountInfo);
       } catch (err) {
         console.warn("[Web Print Bridge] Receipt Queue failed, falling back to iframe print preview:", err);
@@ -1404,7 +1404,7 @@ class UniversalPrinter {
       }
     }
 
-    // 🚀 NON-BLOCKING BACKGROUND EXECUTION: Run printing in the background to prevent UI lag on APK
+    // ðŸš€ NON-BLOCKING BACKGROUND EXECUTION: Run printing in the background to prevent UI lag on APK
     (async () => {
       try {
         const company = await BillPDFGenerator.loadSettings(outletId);
@@ -1451,7 +1451,7 @@ class UniversalPrinter {
         const hasConfiguredIp = targetIp && targetIp.trim().length > 0;
 
         if (hasConfiguredIp) {
-          console.log(`🌐 Trying configured printer: ${targetIp}`);
+          console.log(`ðŸŒ Trying configured printer: ${targetIp}`);
           const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp.trim());
           let isReachable = false;
           if (isIp) {
@@ -1491,7 +1491,7 @@ class UniversalPrinter {
         }
 
         // If no IP is configured, print using the Sunmi built-in printer
-        console.log("🖨️ No printer IP configured. Printing to Sunmi built-in printer.");
+        console.log("ðŸ–¨ï¸ No printer IP configured. Printing to Sunmi built-in printer.");
         try {
           const printed = await this.printThermalReceipt(
             saleData,
@@ -1505,7 +1505,7 @@ class UniversalPrinter {
         }
 
         // Fallback to PDF/Web (Guaranteed)
-        console.log("🔄 Fallback to PDF Preview");
+        console.log("ðŸ”„ Fallback to PDF Preview");
         await this.offerPDFFallback(saleData, outletId, t, discountInfo);
       } catch (error) {
         console.log("SmartPrint error:", error);
@@ -1526,7 +1526,7 @@ class UniversalPrinter {
     discountInfo?: DiscountInfo,
   ): Promise<boolean> {
     try {
-      // ✅ FIX: Match the logic in PaymentSuccess by ensuring we have a valid ID
+      // âœ… FIX: Match the logic in PaymentSuccess by ensuring we have a valid ID
       const targetUserId = outletId || "1";
       const company = await BillPDFGenerator.loadSettings(targetUserId);
 
@@ -1550,7 +1550,7 @@ class UniversalPrinter {
         discountInfo,
       );
     } catch (error: any) {
-      console.error("❌ Checkout Print Error:", error);
+      console.error("âŒ Checkout Print Error:", error);
       return false;
     }
   }
@@ -1563,12 +1563,12 @@ class UniversalPrinter {
     discountInfo?: DiscountInfo,
   ): Promise<boolean> {
     try {
-      // ✅ STEP 1: Try Sunmi direct print (NO preview)
+      // âœ… STEP 1: Try Sunmi direct print (NO preview)
       const sunmiReady = await SunmiPrinterService.init();
       if (sunmiReady) {
         const company = await BillPDFGenerator.loadSettings(userId);
 
-        // ✅ Pass discount to saleData for Sunmi printer
+        // âœ… Pass discount to saleData for Sunmi printer
         const enhancedSaleData = { ...saleData };
         if (discountInfo?.applied && discountInfo.amount > 0) {
           enhancedSaleData.discountAmount = discountInfo.amount;
@@ -1582,12 +1582,12 @@ class UniversalPrinter {
           company,
         );
         if (printed) {
-          console.log("✅ Printed with Sunmi printer - NO PREVIEW");
+          console.log("âœ… Printed with Sunmi printer - NO PREVIEW");
           return true;
         }
       }
 
-      // ✅ STEP 2: If Sunmi fails, return false so smartPrint falls back to PDF dialog/share
+      // âœ… STEP 2: If Sunmi fails, return false so smartPrint falls back to PDF dialog/share
       return false;
     } catch (error: any) {
       console.log("Thermal print error:", error);
@@ -1673,7 +1673,7 @@ class UniversalPrinter {
       }
       return true;
     } catch (error: any) {
-      console.log("❌ Network print error:", error);
+      console.log("âŒ Network print error:", error);
       return false;
     }
   }
@@ -1698,7 +1698,7 @@ class UniversalPrinter {
     const symbol = company.currencySymbol || "$";
     const isCheckout = !!saleData.isCheckout;
 
-    // 📏 80mm standard is ~48 characters
+    // ðŸ“ 80mm standard is ~48 characters
     let text = "[C]================================================\n";
     if (isCheckout) {
       text += "[C]<font size='big'><B>CHECKOUT BILL</B></font>\n";
@@ -1728,7 +1728,7 @@ class UniversalPrinter {
     if (saleData.waiterName && saleData.waiterName !== "Staff") {
       text += `[L]Waiter: ${saleData.waiterName}\n`;
     }
-    // 🏆 Print Member Mobile Number on receipt
+    // ðŸ† Print Member Mobile Number on receipt
     if (saleData.mobileNo) {
       text += `[L]Member Phone: ${saleData.mobileNo}\n`;
     }
@@ -1748,7 +1748,7 @@ class UniversalPrinter {
     });
 
     printItems.forEach((item: any) => {
-      // 🛡️ Robust field mapping
+      // ðŸ›¡ï¸ Robust field mapping
       const name = (item.name || item.DishName || item.ProductName || "")
         .substring(0, 26)
         .padEnd(26);
@@ -1767,7 +1767,7 @@ class UniversalPrinter {
 
       const songName = item.songName || item.SongName || "";
       if (songName) {
-        text += `[L]   🎵 ${songName}\n`;
+        text += `[L]   ðŸŽµ ${songName}\n`;
       }
 
       // If name was truncated, print full name on next line
@@ -1850,8 +1850,8 @@ class UniversalPrinter {
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
     const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;
     let currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - orderDiscount);
-    // ✅ FOC Fix: if entire bill is FOC, currentSubtotal may be 0 but grossTotal is > 0.
-    // We still need to show items correctly — keep grossTotal for display.
+    // âœ… FOC Fix: if entire bill is FOC, currentSubtotal may be 0 but grossTotal is > 0.
+    // We still need to show items correctly â€” keep grossTotal for display.
 
     text += this.formatTwoCols48("Sub Total:", `${symbol}${grossTotal.toFixed(2)}`);
 
@@ -1966,7 +1966,7 @@ class UniversalPrinter {
     if (finalTotal === 0 || isCheckout) {
       finalTotal = taxableAmount + gstAmount;
     }
-    // ✅ FOC Fix: if still 0 but grossTotal > 0, it's a full-FOC bill. Use 0 as the paid total but
+    // âœ… FOC Fix: if still 0 but grossTotal > 0, it's a full-FOC bill. Use 0 as the paid total but
     // ensure the receipt still prints (do not suppress). finalTotal=0 is valid for full FOC.
     // Force at least showing the bill even if total is zero.
     
@@ -2022,7 +2022,7 @@ class UniversalPrinter {
     text += `[R]<font size=\'big\'><B>TOTAL: ${symbol}${finalTotal.toFixed(2)}</B></font>\n`;
     text += "[C]================================================\n";
 
-    // 🏆 Print Reward point transaction stats
+    // ðŸ† Print Reward point transaction stats
     if (parseFloat(saleData.rewardPointsEarned) > 0) {
       text += `[L]Reward Points Earned: +$${parseFloat(saleData.rewardPointsEarned).toFixed(2)}\n`;
     }
@@ -2045,7 +2045,7 @@ class UniversalPrinter {
     discountInfo?: DiscountInfo,
   ): Promise<boolean> {
     if (Platform.OS === "web") {
-      // ✅ WEB: Fail-proof Iframe printing
+      // âœ… WEB: Fail-proof Iframe printing
       try {
         const company = await BillPDFGenerator.loadSettings(userId);
         const html = await BillPDFGenerator.generateHTML(
@@ -2056,7 +2056,7 @@ class UniversalPrinter {
         );
         const invoiceName = `Invoice_${saleData.invoiceNumber || saleData.id}`;
 
-        // ✅ CRITICAL: Temporarily change main document title for the browser's Save dialog
+        // âœ… CRITICAL: Temporarily change main document title for the browser's Save dialog
         const originalTitle = document.title;
         document.title = invoiceName;
 
@@ -2154,7 +2154,7 @@ class UniversalPrinter {
       const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
       const { enableKOT, enableKDSPrint, enableComboPrint } = useGeneralSettingsStore.getState().settings;
       if (!isReprint && !enableKOT) {
-        if (__DEV__) console.log("🖨️ [UniversalPrinter] KOT printing is disabled in General Settings.");
+        if (__DEV__) console.log("ðŸ–¨ï¸ [UniversalPrinter] KOT printing is disabled in General Settings.");
         return false;
       }
 
@@ -2188,7 +2188,7 @@ class UniversalPrinter {
         }
       });
 
-      // 4. Group by KitchenTypeCode → one KOT per kitchen
+      // 4. Group by KitchenTypeCode â†’ one KOT per kitchen
       const kitchenGroups: Record<string, any[]> = {};
       expandedItems.forEach((item: any) => {
         const kCode = item.KitchenTypeCode || "0";
@@ -2205,7 +2205,7 @@ class UniversalPrinter {
       for (const [kCode, groupItems] of Object.entries(kitchenGroups)) {
         const printerIp = groupItems[0].PrinterIP;
         if (!printerIp || String(printerIp).trim() === "") {
-          console.log(`🖨️ [UniversalPrinter] Skipping routing KOT for kitchen "${groupItems[0].KitchenTypeName || kCode}" - IP is empty/disabled.`);
+          console.log(`ðŸ–¨ï¸ [UniversalPrinter] Skipping routing KOT for kitchen "${groupItems[0].KitchenTypeName || kCode}" - IP is empty/disabled.`);
           continue;
         }
         const kotData = {
@@ -2218,7 +2218,7 @@ class UniversalPrinter {
             groupItems[0].KitchenTypeName || (kCode === "0" ? "KITCHEN" : kCode),
         };
         try {
-          console.log(`🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
+          console.log(`ðŸ–¨ï¸ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
           await this.printKOT(
             kotData,
             "SYSTEM",
@@ -2226,7 +2226,7 @@ class UniversalPrinter {
             printerIp
           );
         } catch (grpErr: any) {
-          console.error(`❌ [UniversalPrinter] KOT print failed for kitchen group ${kCode} (${kotData.kitchenName}):`, grpErr.message);
+          console.error(`âŒ [UniversalPrinter] KOT print failed for kitchen group ${kCode} (${kotData.kitchenName}):`, grpErr.message);
         }
       }
 
@@ -2390,7 +2390,7 @@ class UniversalPrinter {
             console.log(`[PrintQueue] Printer connection started: PrinterIp=${PrinterIp}, Port=${PrinterPort || 9100}, JobId=${JobId}`);
 
             if (isIp) {
-              console.log(`🌐 [UniversalPrinter] WiFi print to: ${PrinterIp}`);
+              console.log(`ðŸŒ [UniversalPrinter] WiFi print to: ${PrinterIp}`);
               const printPromise = ThermalPrinter.printTcp({
                 ip: PrinterIp,
                 port: PrinterPort || 9100,
@@ -2403,7 +2403,7 @@ class UniversalPrinter {
               await Promise.race([printPromise, timeoutPromise]);
               printSuccess = true;
             } else {
-              console.log(`🔵 [UniversalPrinter] Bluetooth print to: ${PrinterIp}`);
+              console.log(`ðŸ”µ [UniversalPrinter] Bluetooth print to: ${PrinterIp}`);
               const printPromise = ThermalPrinter.printBluetooth({
                 macAddress: PrinterIp,
                 payload: Content,
@@ -2422,12 +2422,12 @@ class UniversalPrinter {
                 method: "POST",
                 headers
               });
-              console.log(`✅ [UniversalPrinter] Print job ${JobId} completed successfully`);
+              console.log(`âœ… [UniversalPrinter] Print job ${JobId} completed successfully`);
             }
           } catch (printErr: any) {
             const errorMsg = printErr.message || "Hardware print error";
             console.log(`[PrintQueue] Printer connection failed: ${errorMsg}. JobId=${JobId}`);
-            console.error(`❌ [UniversalPrinter] Failed to print job ${JobId}:`, printErr);
+            console.error(`âŒ [UniversalPrinter] Failed to print job ${JobId}:`, printErr);
             await fetch(`${API_URL}/api/print-jobs/${JobId}/failed`, {
               method: "POST",
               headers,
@@ -2444,18 +2444,145 @@ class UniversalPrinter {
     }
   }
 
+  /**
+   * Converts a QR URL into a raw ESC/POS binary buffer (base64-encoded).
+   * Downloads the QR as a PNG from qrserver.com, converts to monochrome bitmap,
+   * and wraps it in ESC/POS GS v 0 (raster bit image) commands.
+   * The print bridge detects base64 content and bypasses tag parsing.
+   */
+  private static async buildQREscPosBase64(
+    tableLabel: string,
+    sectionName: string,
+    qrUrl: string
+  ): Promise<string | null> {
+    try {
+      // Text helper: encode UTF-8 string to bytes
+      const enc = (s: string) => Array.from(new TextEncoder().encode(s));
+
+      // ESC/POS command bytes
+      const ESC = 0x1B;
+      const GS = 0x1D;
+      const LF = 0x0A;
+
+      const alignCenter = [ESC, 0x61, 0x01];
+      const alignLeft   = [ESC, 0x61, 0x00];
+      const boldOn      = [ESC, 0x45, 0x01];
+      const boldOff     = [ESC, 0x45, 0x00];
+      const dblSize     = [GS,  0x21, 0x11]; // double width + height
+      const normalSize  = [GS,  0x21, 0x00];
+      const cut         = [GS,  0x56, 0x42, 0x00];
+
+      // â”€â”€ Download QR image (200Ã—200 px PNG) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&format=png&margin=5`;
+      const imgRes = await fetch(qrImgUrl);
+      if (!imgRes.ok) throw new Error("QR image download failed");
+      const imgBlob = await imgRes.blob();
+
+      // Decode the PNG to raw pixel data via OffscreenCanvas (web only)
+      const imgBitmap = await createImageBitmap(imgBlob);
+      const W = imgBitmap.width;
+      const H = imgBitmap.height;
+      const canvas = new OffscreenCanvas(W, H);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(imgBitmap, 0, 0);
+      const { data: pixels } = ctx.getImageData(0, 0, W, H); // RGBA flat array
+
+      // Convert to 1-bit monochrome raster (1 = black, 0 = white)
+      // ESC/POS GS v 0: each byte holds 8 horizontal pixels, MSB first
+      const bytesPerRow = Math.ceil(W / 8);
+      const rasterBytes: number[] = [];
+      for (let row = 0; row < H; row++) {
+        for (let byteIdx = 0; byteIdx < bytesPerRow; byteIdx++) {
+          let byte = 0;
+          for (let bit = 0; bit < 8; bit++) {
+            const col = byteIdx * 8 + bit;
+            if (col < W) {
+              const px = (row * W + col) * 4;
+              // Luminance threshold: pixel is "black" if it's dark enough
+              const lum = 0.299 * pixels[px] + 0.587 * pixels[px + 1] + 0.114 * pixels[px + 2];
+              if (lum < 128) byte |= (0x80 >> bit);
+            }
+          }
+          rasterBytes.push(byte);
+        }
+      }
+
+      // GS v 0: [GS 0x76 0x30 m xL xH yL yH d1...dk]
+      //   m=0 (normal), xL/xH = bytes per row (little-endian), yL/yH = rows
+      const xL = bytesPerRow & 0xFF;
+      const xH = (bytesPerRow >> 8) & 0xFF;
+      const yL = H & 0xFF;
+      const yH = (H >> 8) & 0xFF;
+      const gsv0Header = [GS, 0x76, 0x30, 0x00, xL, xH, yL, yH];
+
+      // â”€â”€ Assemble full ESC/POS payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      const parts: number[][] = [
+        [LF],
+        alignCenter,
+        enc("================================\n"),
+        alignCenter, boldOn, dblSize,
+        enc(`TABLE QR CODE\n`),
+        normalSize, boldOff,
+        alignCenter,
+        enc("================================\n"),
+        [LF],
+        alignCenter, boldOn, dblSize,
+        enc(`Table ${tableLabel}\n`),
+        normalSize, boldOff,
+        alignCenter,
+        enc(`${sectionName}\n`),
+        [LF],
+        // QR bitmap
+        alignCenter,
+        gsv0Header,
+        rasterBytes,
+        [LF, LF],
+        alignCenter, boldOn,
+        enc(`Scan to Order\n`),
+        boldOff,
+        alignCenter,
+        enc(`${qrUrl}\n`),
+        alignCenter,
+        enc("================================\n"),
+        [LF, LF, LF],
+        cut,
+      ];
+
+      const allBytes = parts.reduce<number[]>((acc, arr) => acc.concat(arr), []);
+      const buf = new Uint8Array(allBytes);
+      // Base64-encode
+      let binary = "";
+      buf.forEach((b) => (binary += String.fromCharCode(b)));
+      return btoa(binary);
+    } catch (err) {
+      console.warn("[printQRDirect] ESC/POS QR bitmap build failed:", err);
+      return null;
+    }
+  }
+
   static async printQRDirect(
     tableLabel: string,
     sectionName: string,
     qrUrl: string,
     outletId?: string | number
   ): Promise<boolean> {
+    // Fallback text-only payload (used if image conversion fails or for BT/LAN path)
     const payload = `\n[C]================================================\n[C]<font size='big'><B>TABLE QR CODE</B></font>\n[C]================================================\n[C]<font size='big'><B>Table ${tableLabel}</B></font>\n[C]${sectionName}\n[C]\n[C]<qrcode size='15'>${qrUrl}</qrcode>\n[C]\n[C]<font size='normal'><B>Scan to Order</B></font>\n[C]${qrUrl}\n[C]================================================\n\n\n\n`;
 
     if (Platform.OS === "web") {
       try {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) return false;
+
+        // âœ… Build proper ESC/POS binary with QR bitmap â€” the bridge sends it raw
+        // bypassing parseFormatting() which doesn't understand <qrcode> tags
+        const escPosBase64 = await this.buildQREscPosBase64(tableLabel, sectionName, qrUrl);
+        if (escPosBase64) {
+          return await this.queuePrintJob(1, undefined, escPosBase64);
+        }
+
+        // Fallback: send text payload (QR won't be a real barcode image)
+        console.warn("[printQRDirect] Falling back to text payload â€” QR image will not print correctly");
         return await this.queuePrintJob(1, undefined, payload);
       } catch {
         return false;
@@ -2464,6 +2591,22 @@ class UniversalPrinter {
 
     // Native/Mobile (Android APK/iOS)
     try {
+      // âœ… QR Fix: Always try Sunmi native SDK first on Android.
+      // The XML <qrcode> payload is only understood by react-native-thermal-printer,
+      // NOT by the Sunmi built-in printer â€” sending it there prints raw text.
+      if (Platform.OS === "android") {
+        try {
+          const sunmiPrinted = await SunmiPrinterService.printQR(qrUrl, tableLabel, sectionName);
+          if (sunmiPrinted) {
+            console.log("âœ… QR printed via Sunmi built-in printer (native SDK)");
+            return true;
+          }
+        } catch (sunmiErr) {
+          console.warn("Sunmi QR print failed, trying LAN/BT fallback:", sunmiErr);
+        }
+      }
+
+      // Fallback: Try configured LAN/Bluetooth printer with ESCPOS XML payload
       const company = await BillPDFGenerator.loadSettings(outletId);
       let cashierIp = "";
       try {
@@ -2479,17 +2622,8 @@ class UniversalPrinter {
 
       const targetIp = cashierIp || company.printerIp || "";
 
-      // ✅ QR Fix: If no LAN IP configured, try Sunmi built-in printer QR printing
       if (!targetIp || targetIp.trim().length === 0) {
-        try {
-          const sunmiPrinted = await SunmiPrinterService.printQR(qrUrl, tableLabel, sectionName);
-          if (sunmiPrinted) {
-            console.log("✅ QR printed via Sunmi built-in printer");
-            return true;
-          }
-        } catch (sunmiErr) {
-          console.warn("Sunmi QR print failed:", sunmiErr);
-        }
+        console.warn("No LAN/BT printer IP configured and Sunmi SDK unavailable.");
         return false;
       }
 
@@ -2568,19 +2702,112 @@ class UniversalPrinter {
         <div class="summary-box"><div>Total Orders</div><div style="font-size:20px;font-weight:bold">${totalOrders}</div></div>
         <div class="summary-box"><div>Grand Total</div><div style="font-size:20px;font-weight:bold">${symbol}${grandTotal.toFixed(2)}</div></div>
       </div>
-      <div class="section-title">💳 PAYMENT MODE BREAKDOWN</div>
+      <div class="section-title">ðŸ’³ PAYMENT MODE BREAKDOWN</div>
       <table><thead><tr><th>Payment Mode</th><th class="amount">Amount</th></tr></thead><tbody>${paymentRows}</tbody>
         <tfoot><tr class="grand-total"><td>GRAND TOTAL</td><td class="amount">${symbol}${grandTotal.toFixed(2)}</td></tr></tfoot>
       </table>
-      <div class="footer"><p>© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
+      <div class="footer"><p>Â© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
     </body></html>`;
+  }
+  
+  static async printSettlementReportDirect(
+    settlementRows: any[],
+    company: any,
+    period: string
+  ): Promise<boolean> {
+    try {
+      const symbol = company.currencySymbol || "$";
+      const now = new Date();
+      const printDate = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+      // Aggregate totals by payment mode
+      const paymentTotals: Record<string, number> = {};
+      let grandTotal = 0;
+      let totalOrders = 0;
+      const orderSet = new Set<string>();
+      settlementRows.forEach((row: any) => {
+        const sId = row.SettlementID || row.settlementId || "";
+        if (sId && !orderSet.has(sId)) {
+          orderSet.add(sId);
+          totalOrders++;
+          grandTotal += Number(row.SysAmount || row.Amount || 0);
+        }
+        const mode = String(row.PayMode || row.PayModeName || row.payMode || "CASH").trim().toUpperCase();
+        const amt = Number(row.Amount || row.SysAmount || 0);
+        paymentTotals[mode] = (paymentTotals[mode] || 0) + amt;
+      });
+
+      let text = "";
+      text += "\n[C]================================================\n";
+      text += `[C]<font size='big'><B>${company.name || "POS SYSTEM"}</B></font>\n`;
+      if (company.address) {
+        text += `[C]${company.address.split("\n")[0]}\n`;
+      }
+      text += "[C]================================================\n";
+      text += "[C]<font size='big'><B>SETTLEMENT REPORT</B></font>\n";
+      text += `[C]${period}\n`;
+      text += `[C]Printed: ${printDate}\n`;
+      text += "------------------------------------------------\n";
+      text += `[L]Total Orders: ${totalOrders}\n`;
+      text += `[L]Grand Total: ${symbol}${grandTotal.toFixed(2)}\n`;
+      text += "------------------------------------------------\n";
+      text += "[C]💳 PAYMENT MODE BREAKDOWN\n";
+      text += "------------------------------------------------\n";
+      for (const [mode, amt] of Object.entries(paymentTotals)) {
+        text += `[L]${mode.padEnd(20, " ")}: ${symbol}${amt.toFixed(2)}\n`;
+      }
+      text += "------------------------------------------------\n";
+      text += `[C]<font size='big'><B>TOTAL: ${symbol}${grandTotal.toFixed(2)}</B></font>\n`;
+      text += "================================================\n\n\n\n";
+
+      if (Platform.OS === "web") {
+        try {
+          const isOnline = await this.isBridgeOnline();
+          if (isOnline) {
+            // Queue to Cashier printer (Type 1) via the bridge
+            return await this.queuePrintJob(1, undefined, text);
+          }
+        } catch (err) {
+          console.warn("Print Bridge failed for Z-Report:", err);
+        }
+        return false;
+      }
+
+      // Native Bluetooth/WiFi fallback
+      try {
+        let targetIp = company.printerIp || "";
+        if (!targetIp) return false;
+        const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp.trim());
+        if (isIp) {
+          await ThermalPrinter.printTcp({
+            ip: targetIp.trim(),
+            port: 9100,
+            payload: text,
+            mmFeedPaper: 25,
+          });
+        } else {
+          await ThermalPrinter.printBluetooth({
+            macAddress: targetIp.trim(),
+            payload: text,
+            mmFeedPaper: 25,
+          });
+        }
+        return true;
+      } catch (e) {
+        console.warn("Native printSettlementReportDirect failed:", e);
+        return false;
+      }
+    } catch (err) {
+      console.error("printSettlementReportDirect error:", err);
+      return false;
+    }
   }
 
   static async testAllPrinters(): Promise<void> {
     const printers = await this.detectAllPrinters();
-    let message = `📋 Found ${printers.length} printer(s):\n\n`;
+    let message = `ðŸ“‹ Found ${printers.length} printer(s):\n\n`;
     printers.forEach((p, i) => {
-      message += `${i + 1}. ${p.name}\n   Type: ${p.type}\n   Paper: ${p.paperSize || "Unknown"}\n   Default: ${p.isDefault ? "✅" : "❌"}\n\n`;
+      message += `${i + 1}. ${p.name}\n   Type: ${p.type}\n   Paper: ${p.paperSize || "Unknown"}\n   Default: ${p.isDefault ? "âœ…" : "âŒ"}\n\n`;
     });
     Alert.alert("Printer Detection", message);
   }

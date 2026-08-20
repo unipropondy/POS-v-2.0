@@ -1616,6 +1616,11 @@ export default function SalesReport() {
         : selectedDate
           ? `Date: ${selectedDate}`
           : "Current Period";
+
+      // ✅ Z-Report Fix: Try silent Z-report printing via bridge first
+      const printedDirect = await UniversalPrinter.printSettlementReportDirect(settlementReport, company, period);
+      if (printedDirect) return;
+
       const html = UniversalPrinter.generateSettlementReportHTML(settlementReport, company, period);
 
       if (Platform.OS === "web") {
@@ -1632,7 +1637,7 @@ export default function SalesReport() {
           }, 400);
         }
       } else {
-        const { Print } = await import("expo-print");
+        const Print = await import("expo-print");
         await Print.printAsync({ html });
       }
     } catch (err) {
