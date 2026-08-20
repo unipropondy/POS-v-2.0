@@ -1991,6 +1991,9 @@ class UniversalPrinter {
 
     // Payment Details (only print on settled receipts, hide on checkout bills)
     if (!isCheckout) {
+      if (!text.endsWith("[L]------------------------------------------------\n")) {
+        text += "[L]------------------------------------------------\n";
+      }
       if (saleData.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0) {
         text += "[L]Payment Details:\n";
         saleData.payments.forEach((p: any) => {
