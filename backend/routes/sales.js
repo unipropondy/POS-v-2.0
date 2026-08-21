@@ -892,6 +892,10 @@ router.get("/dish", async (req, res) => {
     const legacyDateWhereSql = await getReportDateWhereSql(filter, "InvoiceDate", date, startDate, endDate);
     console.log(`[REPORT API] type=dish filter=${filter} date=${date || 'today'} range=${startDate || ''}..${endDate || ''}`);
 
+    // Fetch takeaway charges configuration to avoid SQL subqueries within aggregation functions
+    const companySettingsResult = await pool.request().query("SELECT TOP 1 ISNULL(TakeawayCharges, 0) AS TakeawayCharges FROM CompanySettings");
+    const defaultTakeawayCharge = companySettingsResult.recordset[0]?.TakeawayCharges ?? 0;
+
     const result = await pool.request().query(`
         WITH AppReport AS (
           SELECT
@@ -903,7 +907,7 @@ router.get("/dish", async (req, res) => {
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.DiscountAmount, 0) + (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.DiscountAmount, 0) / NULLIF(sh.SubTotal, 0))) AS decimal(18, 2)) ELSE 0 END) AS discountAmount,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST((ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) - (ISNULL(sid.DiscountAmount, 0) + (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) * (ISNULL(sh.DiscountAmount, 0) / NULLIF(sh.SubTotal, 0)))) AS decimal(18, 2)) ELSE 0 END) AS totalAmount,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' AND ISNULL(rod.isTakeAway, 0) = 1 THEN 
-              CAST(ISNULL(sid.Qty, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE (SELECT TOP 1 ISNULL(TakeawayCharges, 0) FROM CompanySettings) END AS decimal(18, 2))
+              CAST(ISNULL(sid.Qty, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE ${defaultTakeawayCharge} END AS decimal(18, 2))
               ELSE 0 END) AS takeawayCharge
           FROM SettlementHeader sh
           INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID
@@ -928,7 +932,7 @@ router.get("/dish", async (req, res) => {
             CAST(0 AS decimal(18, 2)) AS discountAmount,
             SUM(CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18, 2))) AS totalAmount,
             SUM(CASE WHEN ISNULL(rod.isTakeAway, 0) = 1 THEN 
-              CAST(ISNULL(rod.Quantity, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE (SELECT TOP 1 ISNULL(TakeawayCharges, 0) FROM CompanySettings) END AS decimal(18, 2))
+              CAST(ISNULL(rod.Quantity, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE ${defaultTakeawayCharge} END AS decimal(18, 2))
               ELSE 0 END) AS takeawayCharge
           FROM RestaurantOrderDetail rod
           INNER JOIN (
@@ -966,7 +970,7 @@ router.get("/dish", async (req, res) => {
             CAST(0 AS decimal(18, 2)) AS discountAmount,
             SUM(CASE WHEN rod.StatusCode <> 0 THEN CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18, 2)) ELSE 0 END) AS totalAmount,
             SUM(CASE WHEN rod.StatusCode <> 0 AND ISNULL(rod.isTakeAway, 0) = 1 THEN 
-              CAST(ISNULL(rod.Quantity, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE (SELECT TOP 1 ISNULL(TakeawayCharges, 0) FROM CompanySettings) END AS decimal(18, 2))
+              CAST(ISNULL(rod.Quantity, 0) * CASE WHEN ISNULL(d.TakeawayCharge, 0) > 0 THEN d.TakeawayCharge ELSE ${defaultTakeawayCharge} END AS decimal(18, 2))
               ELSE 0 END) AS takeawayCharge
           FROM RestaurantOrderDetail rod
           INNER JOIN RestaurantOrder ro ON rod.OrderId = ro.OrderId

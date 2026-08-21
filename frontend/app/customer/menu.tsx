@@ -1078,7 +1078,87 @@ export default function CustomerMenuScreen() {
                 </View>
               </View>
 
-              {/* Order History Accordion Button Hidden */}
+              {/* Order History Accordion Button */}
+              <View style={{ marginBottom: 12 }}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setShowOrderHistorySection(!showOrderHistorySection)}
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    backgroundColor: showOrderHistorySection ? "#FFF5ED" : "#F8FAFC",
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    borderRadius: 14,
+                    borderWidth: 1.5,
+                    borderColor: showOrderHistorySection ? "#FF5E1A" : "#E2E8F0",
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <Ionicons name="time" size={18} color="#FF5E1A" />
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A", textTransform: "uppercase" }}>
+                      Order History
+                    </Text>
+                  </View>
+                  <Ionicons name={showOrderHistorySection ? "chevron-up" : "chevron-down"} size={20} color="#FF5E1A" />
+                </TouchableOpacity>
+
+                {showOrderHistorySection && (
+                  <View style={{ marginTop: 10, gap: 10 }}>
+                    {!userInfo?.Phone ? (
+                      <Text style={{ fontSize: 12, color: "#64748B", fontStyle: "italic", textAlign: "center", marginVertical: 8 }}>
+                        Please register or log in with your phone number to view order history.
+                      </Text>
+                    ) : ordersLoading ? (
+                      <ActivityIndicator size="small" color="#FF5E1A" style={{ marginVertical: 10 }} />
+                    ) : customerOrders.length > 0 ? (
+                      customerOrders.map((order, idx) => {
+                        const dateText = order.OrderDateTime 
+                          ? formatToSingaporeDate(order.OrderDateTime)
+                          : "N/A";
+                        const timeText = order.OrderDateTime
+                          ? formatToSingaporeTime(order.OrderDateTime)
+                          : "";
+                        return (
+                          <View
+                            key={order.SettlementID || idx}
+                            style={{
+                              backgroundColor: "#F8FAFC",
+                              padding: 12,
+                              borderRadius: 14,
+                              borderWidth: 1,
+                              borderColor: "#E2E8F0",
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center"
+                            }}
+                          >
+                            <View>
+                              <Text style={{ fontSize: 13, fontWeight: "800", color: "#1E293B" }}>
+                                Bill #{order.BillNo || "N/A"}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: "#64748B", fontWeight: "600", marginTop: 2 }}>
+                                {dateText} {timeText ? `• ${timeText}` : ""}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: "#FF5E1A", fontWeight: "700", marginTop: 2 }}>
+                                {order.PayMode || "Paid"}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 14, fontWeight: "800", color: "#1E293B" }}>
+                              ${Number(order.TotalAmount || 0).toFixed(2)}
+                            </Text>
+                          </View>
+                        );
+                      })
+                    ) : (
+                      <Text style={{ fontSize: 12, color: "#64748B", fontStyle: "italic", textAlign: "center", marginVertical: 8 }}>
+                        No past orders found.
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
 
               {/* Loyalty & Rewards Accordion Button (Hidden if ShowLoyalty setting is OFF or if guest) */}
               {!!userInfo?.Phone && generalSettings?.showLoyalty !== false && (

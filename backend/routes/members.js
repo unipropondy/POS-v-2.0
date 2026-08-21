@@ -393,7 +393,106 @@ router.get("/usage/:memberId", async (req, res) => {
     const { memberId } = req.params;
     const pool = await poolPromise;
 
+    // Fetch the member's phone number to query by either MemberId or Phone number
+    const memberRes = await pool.request()
+      .input("MemberId", sql.UniqueIdentifier, memberId)
+      .query("SELECT Phone FROM MemberMaster WHERE MemberId = @MemberId");
+    
+    const rawPhone = memberRes.recordset[0]?.Phone || "";
+    const phoneValue = rawPhone.trim();
+    const cleanDigits = phoneValue.replace(/\D/g, "");
+    const last8Digits = cleanDigits.length >= 8 ? cleanDigits.slice(-8) : cleanDigits;
+
     // 1. Summary
+    const summaryRes = await pool.request()
+      .input("MemberId", sql.UniqueIdentifier, memberId)
+      .input("Phone", sql.NVarChar(50), phoneValue)
+      .input("Last8", sql.NVarChar(50), last8Digits)
+      .query(`
+        SELECT 
+          ISNULL(SUM(SysAmount), 0) as TotalSpent, 
+          COUNT(*) as TotalOrders 
+        FROM SettlementHeader 
+        WHERE (MemberId = @MemberId 
+               OR (@Phone <> '' AND REPLACE(REPLACE(MobileNo, ' ', ''), '+', '') = @Phone)
+               OR (@Last8 <> '' AND RIGHT(REPLACE(REPLACE(MobileNo, ' ', ''), '+', ''), 8) = @Last8))
+          AND IsCancelled = 0
+      `);
+
+    // 2. Items Consumed
+    const itemsRes = await pool.request()
+      .input("MemberId", sql.UniqueIdentifier, memberId)
+      .input("Phone", sql.NVarChar(50), phoneValue)
+      .input("Last8", sql.NVarChar(50), last8Digits)
+      .query(`
+        SELECT 
+          sid.DishName, 
+          SUM(sid.Qty) as TotalQty, 
+          SUM(sid.Price * sid.Qty) as TotalAmount 
+        FROM SettlementHeader sh 
+        INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID 
+        WHERE (sh.MemberId = @MemberId 
+               OR (@Phone <> '' AND REPLACE(REPLACE(sh.MobileNo, ' ', ''), '+', '') = @Phone)
+               OR (@Last8 <> '' AND RIGHT(REPLACE(REPLACE(sh.MobileNo, ' ', ''), '+', ''), 8) = @Last8))
+          AND sh.IsCancelled = 0 
+        GROUP BY sid.DishName 
+        ORDER BY TotalQty DESC
+      `);
+
+    // 3. Transactions
+    const txsRes = await pool.request()
+      .input("MemberId", sql.UniqueIdentifier, memberId)
+      .input("Phone", sql.NVarChar(50), phoneValue)
+      .input("Last8", sql.NVarChar(50), last8Digits)
+      .query(`
+        SELECT 
+          SettlementID, 
+          BillNo, 
+          CONVERT(VARCHAR, LastSettlementDate, 126) + '+08:00' AS LastSettlementDate, 
+          SysAmount 
+        FROM SettlementHeader 
+        WHERE (MemberId = @MemberId 
+               OR (@Phone <> '' AND REPLACE(REPLACE(MobileNo, ' ', ''), '+', '') = @Phone)
+               OR (@Last8 <> '' AND RIGHT(REPLACE(REPLACE(MobileNo, ' ', ''), '+', ''), 8) = @Last8))
+          AND IsCancelled = 0 
+        ORDER BY LastSettlementDate DESC
+      `);
+      
+    res.json({
+        success: true,
+        summary: summaryRes.recordset[0],
+        items: itemsRes.recordset,
+        transactions: txsRes.recordset
+    });
+  } catch (err) {
+    console.error("[MEMBERS USAGE ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get("/usage-by-phone/:phone", async (req, res) => {
+  try {
+    const { phone } = req.params;
+    const pool = await poolPromise;
+    const cleanPhone = String(phone || "").trim();
+
+    // 1. Look up the member by phone number
+    const memberRes = await pool.request()
+      .input("Phone", sql.NVarChar(50), cleanPhone)
+      .query(`
+        SELECT TOP 1 MemberId, Name, Phone, Promocode, Promoamount
+        FROM MemberMaster
+        WHERE Phone = @Phone OR Phone LIKE '%' + @Phone OR REPLACE(Phone, '+', '') LIKE '%' + @Phone
+      `);
+
+    if (memberRes.recordset.length === 0) {
+      return res.status(404).json({ success: false, error: "Member not found for this phone number" });
+    }
+
+    const member = memberRes.recordset[0];
+    const memberId = member.MemberId;
+
+    // 2. Summary
     const summaryRes = await pool.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
       .query(`
@@ -402,11 +501,10 @@ router.get("/usage/:memberId", async (req, res) => {
           COUNT(*) as TotalOrders 
         FROM SettlementHeader 
         WHERE MemberId = @MemberId 
-          AND LastSettlementDate >= DATEADD(month, DATEDIFF(month, 0, GETDATE()), 0) 
           AND IsCancelled = 0
       `);
 
-    // 2. Items Consumed
+    // 3. Items Consumed
     const itemsRes = await pool.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
       .query(`
@@ -417,13 +515,12 @@ router.get("/usage/:memberId", async (req, res) => {
         FROM SettlementHeader sh 
         INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID 
         WHERE sh.MemberId = @MemberId 
-          AND sh.LastSettlementDate >= DATEADD(month, DATEDIFF(month, 0, GETDATE()), 0) 
           AND sh.IsCancelled = 0 
         GROUP BY sid.DishName 
         ORDER BY TotalQty DESC
       `);
 
-    // 3. Transactions
+    // 4. Transactions
     const txsRes = await pool.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
       .query(`
@@ -434,19 +531,20 @@ router.get("/usage/:memberId", async (req, res) => {
           SysAmount 
         FROM SettlementHeader 
         WHERE MemberId = @MemberId 
-          AND LastSettlementDate >= DATEADD(month, DATEDIFF(month, 0, GETDATE()), 0) 
           AND IsCancelled = 0 
         ORDER BY LastSettlementDate DESC
       `);
       
     res.json({
+        success: true,
+        member,
         summary: summaryRes.recordset[0],
         items: itemsRes.recordset,
         transactions: txsRes.recordset
     });
   } catch (err) {
-    console.error("[MEMBERS USAGE ERROR]", err);
-    res.status(500).json({ error: err.message });
+    console.error("[MEMBERS USAGE BY PHONE ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

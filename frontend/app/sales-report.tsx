@@ -1851,15 +1851,6 @@ export default function SalesReport() {
                     >
                       Discount
                     </Text>
-                    <Text
-                      style={[
-                        styles.reportCell,
-                        styles.discountCell,
-                        { color: "#ec4899" },
-                      ]}
-                    >
-                      Takeaway
-                    </Text>
                     <Text style={[styles.reportCell, styles.amountCell]}>
                       Sales
                     </Text>
@@ -2025,16 +2016,6 @@ export default function SalesReport() {
                         style={[
                           styles.reportCell,
                           styles.reportCellText,
-                          styles.discountCell,
-                          { color: "#ec4899", fontWeight: "600" },
-                        ]}
-                      >
-                        {formatCurrency(Number(row.TakeawayCharge || 0))}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.reportCell,
-                          styles.reportCellText,
                           styles.amountCell,
                           { color: Theme.success, fontWeight: "bold" },
                         ]}
@@ -2066,6 +2047,7 @@ export default function SalesReport() {
                   const catQty = groupRows.reduce((sum, r) => sum + Number(r.Sold || 0), 0);
                   const catVoid = groupRows.reduce((sum, r) => sum + Number(r.Voided || 0), 0);
                   const catDiscount = groupRows.reduce((sum, r) => sum + Number(r.DiscountAmount || 0), 0);
+                  const catTakeaway = groupRows.reduce((sum, r) => sum + Number(r.TakeawayCharge || 0), 0);
                   const catSales = groupRows.reduce((sum, r) => sum + Number(r.SalesAmount || 0), 0);
 
                   return (
@@ -2221,16 +2203,6 @@ export default function SalesReport() {
                               ]}
                             >
                               {formatCurrency(Number(row.DiscountAmount || 0))}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.reportCell,
-                                styles.reportCellText,
-                                styles.discountCell,
-                                { color: "#ec4899", fontWeight: "600" },
-                              ]}
-                            >
-                              {formatCurrency(Number(row.TakeawayCharge || 0))}
                             </Text>
                             <Text
                               style={[
