@@ -88,17 +88,6 @@ export default function WindowControls({ buttonStyle, iconSize = 20, showText = 
           {showText && <Text style={styles.btnText}>Home</Text>}
         </TouchableOpacity>
       )}
-
-      {showMinimize && (
-        <TouchableOpacity
-          style={[styles.btn, buttonStyle]}
-          onPress={handleMinimize}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="remove" size={iconSize} color={Theme.primary} />
-          {showText && <Text style={styles.btnText}>Minimize</Text>}
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
