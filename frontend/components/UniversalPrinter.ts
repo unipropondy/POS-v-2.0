@@ -396,13 +396,23 @@ class UniversalPrinter {
     return `<table><tbody>${entries.map(([k, v]) => `<tr><td>${k}</td><td class="amount">${symbol}${(v as number).toFixed(2)}</td></tr>`).join("")}</tbody></table>`;
   }
 
+  // Cache bridge status for 5s to avoid hammering the endpoint on every print
+  private static _bridgeOnlineCache: { value: boolean; at: number } | null = null;
+
   private static async isBridgeOnline(): Promise<boolean> {
+    const now = Date.now();
+    if (this._bridgeOnlineCache && now - this._bridgeOnlineCache.at < 5000) {
+      return this._bridgeOnlineCache.value;
+    }
     try {
       const response = await fetch(`${API_URL}/api/print-jobs/bridge-status`);
       const data = await response.json();
-      return !!(data && data.success && data.online);
+      const online = !!(data && data.success && data.online);
+      this._bridgeOnlineCache = { value: online, at: now };
+      return online;
     } catch (e) {
       console.warn("[UniversalPrinter] Failed to check print bridge status:", e);
+      this._bridgeOnlineCache = { value: false, at: now };
       return false;
     }
   }
@@ -429,31 +439,16 @@ class UniversalPrinter {
       });
       const data = await response.json();
       if (data.success !== true || !data.jobId) {
+        console.warn(`[UniversalPrinter] queuePrintJob failed — backend returned:`, data);
         return false;
       }
-
-      // Poll for bridge completion (up to 8.0 seconds)
-      const jobId = data.jobId;
-      const start = Date.now();
-      while (Date.now() - start < 8000) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        try {
-          const statusRes = await fetch(`${API_URL}/api/print-jobs/status/${jobId}`);
-          const statusData = await statusRes.json();
-          if (statusData.success && statusData.status === 'COMPLETED') {
-            console.log(`âœ… [UniversalPrinter] Print job ${jobId} completed successfully on bridge`);
-            return true;
-          }
-          if (statusData.success && statusData.status === 'FAILED') {
-            console.warn(`âŒ [UniversalPrinter] Print job ${jobId} failed on bridge side:`, statusData.error);
-            return false;
-          }
-        } catch (err) {
-          console.error("[UniversalPrinter] Status poll error:", err);
-        }
-      }
-      console.warn(`[UniversalPrinter] Print job ${jobId} timed out (bridge offline/no printer)`);
-      return false;
+      // ✅ Fire-and-forget: the print bridge / APK will poll and execute the job.
+      // Do NOT poll for completion here — that 8s wait caused silent drops on Android browser
+      // when the screen dimmed or focus was lost during the polling window.
+      console.log(`✅ [UniversalPrinter] Print job ${data.jobId} queued to bridge (Printer: ${data.printerName || data.printerIp || 'unknown'})`);
+      // Invalidate bridge cache so the next print reflects actual bridge state
+      this._bridgeOnlineCache = null;
+      return true;
     } catch (e) {
       console.warn("[UniversalPrinter] Failed to queue print job:", e);
       return false;
@@ -597,6 +592,37 @@ class UniversalPrinter {
     return this.printKOT(orderData, userId, "KDS_PRINT", kdsPrinterIp);
   }
 
+  /** Create a uniquely-named hidden iframe for each KOT print to avoid concurrent overwrites */
+  private static createKOTFrame(): HTMLIFrameElement {
+    const frameId = `kot-print-iframe-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const frame = document.createElement("iframe");
+    frame.id = frameId;
+    frame.style.display = "none";
+    document.body.appendChild(frame);
+    // Auto-remove after 15s
+    setTimeout(() => { try { frame.remove(); } catch (_) {} }, 15000);
+    return frame;
+  }
+
+  /** Print KOT HTML via a fresh hidden iframe */
+  private static printKOTViaFrame(html: string, delay = 50): void {
+    const frame = this.createKOTFrame();
+    const doc = frame.contentWindow?.document || frame.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    let printed = false;
+    const triggerPrint = () => {
+      if (printed) return;
+      printed = true;
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    };
+    frame.contentWindow?.addEventListener("load", triggerPrint);
+    setTimeout(triggerPrint, delay);
+  }
+
   static async printKOT(
     orderData: any,
     userId?: string | number,
@@ -613,32 +639,7 @@ class UniversalPrinter {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) {
           console.log("ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
-          const html = this.generateKOTHTML(orderData, type);
-          let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
-          if (!frame) {
-            frame = document.createElement("iframe");
-            frame.id = "kot-print-iframe";
-            frame.style.display = "none";
-            document.body.appendChild(frame);
-          }
-
-          const doc = frame.contentWindow?.document || frame.contentDocument;
-          if (doc) {
-            doc.open();
-            doc.write(html);
-            doc.close();
-
-            let printed = false;
-            const triggerPrint = () => {
-              if (printed) return;
-              printed = true;
-              frame.contentWindow?.focus();
-              frame.contentWindow?.print();
-            };
-
-            frame.contentWindow?.addEventListener("load", triggerPrint);
-            setTimeout(triggerPrint, 50);
-          }
+          this.printKOTViaFrame(this.generateKOTHTML(orderData, type), 50);
           await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
           return true;
         }
@@ -654,64 +655,14 @@ class UniversalPrinter {
         }
 
         // ðŸš€ Fallback: If Print Bridge failed or printer not detected on web, trigger iframe print preview immediately
-        console.log("âš ï¸ [Web KOT Print] Print Bridge queue failed. Falling back to iframe print preview.");
-        const html = this.generateKOTHTML(orderData, type);
-        let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
-        if (!frame) {
-          frame = document.createElement("iframe");
-          frame.id = "kot-print-iframe";
-          frame.style.display = "none";
-          document.body.appendChild(frame);
-        }
-
-        const doc = frame.contentWindow?.document || frame.contentDocument;
-        if (doc) {
-          doc.open();
-          doc.write(html);
-          doc.close();
-
-          let printed = false;
-          const triggerPrint = () => {
-            if (printed) return;
-            printed = true;
-            frame.contentWindow?.focus();
-            frame.contentWindow?.print();
-          };
-
-          frame.contentWindow?.addEventListener("load", triggerPrint);
-          setTimeout(triggerPrint, 800);
-        }
+        console.log("âš ï¸  [Web KOT Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        this.printKOTViaFrame(this.generateKOTHTML(orderData, type), 800);
         await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
         return true;
       } catch (err) {
         console.warn("[Web Print Bridge] KOT Queue failed, falling back to iframe print preview:", err);
         try {
-          const html = this.generateKOTHTML(orderData, type);
-          let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
-          if (!frame) {
-            frame = document.createElement("iframe");
-            frame.id = "kot-print-iframe";
-            frame.style.display = "none";
-            document.body.appendChild(frame);
-          }
-
-          const doc = frame.contentWindow?.document || frame.contentDocument;
-          if (doc) {
-            doc.open();
-            doc.write(html);
-            doc.close();
-
-            let printed = false;
-            const triggerPrint = () => {
-              if (printed) return;
-              printed = true;
-              frame.contentWindow?.focus();
-              frame.contentWindow?.print();
-            };
-
-            frame.contentWindow?.addEventListener("load", triggerPrint);
-            setTimeout(triggerPrint, 800);
-          }
+          this.printKOTViaFrame(this.generateKOTHTML(orderData, type), 800);
           await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
           return true;
         } catch (fallbackErr) {

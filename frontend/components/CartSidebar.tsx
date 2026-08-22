@@ -2171,9 +2171,13 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
                                   }
                                 }
 
-                                await useCartStore.getState().fetchCartFromDB(tableId);
-                                await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
+                                // Navigate immediately for fast UX, refresh cart data in background
                                 router.push(enableSkipSummaryScreen ? "/payment" : "/summary");
+                                // Fire-and-forget background refresh
+                                Promise.all([
+                                  useCartStore.getState().fetchCartFromDB(tableId),
+                                  useActiveOrdersStore.getState().fetchActiveKitchenOrders(),
+                                ]).catch(err => console.warn("Background refresh error:", err));
                               } catch (err) {
                                 console.error("Direct process to pay error:", err);
                                 showToast({ type: "error", message: "Error", subtitle: "Failed to process payment." });

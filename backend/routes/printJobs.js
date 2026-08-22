@@ -285,6 +285,17 @@ router.post('/', authenticateBridge, async (req, res) => {
       `);
 
     res.json({ success: true, message: 'Print job queued successfully', jobId, printerIp, printerName });
+
+    // Notify native APK clients to process the queue immediately (don't wait for 20s poll)
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('print_jobs_available', { storeId, jobId });
+        console.log(`[PrintQueue] Emitted print_jobs_available for JobId=${jobId}`);
+      }
+    } catch (emitErr) {
+      console.warn('[PrintQueue] Could not emit print_jobs_available:', emitErr.message);
+    }
   } catch (err) {
     console.error('Error queuing print job:', err);
     res.status(500).json({ success: false, error: err.message });

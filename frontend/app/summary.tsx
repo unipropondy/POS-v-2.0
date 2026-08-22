@@ -26,6 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useToast } from "../components/Toast";
 import { Fonts } from "../constants/Fonts";
 import { Theme } from "../constants/theme";
+import WindowControls from "../components/WindowControls";
 
 import { useAuthStore } from "@/stores/authStore";
 import CancelOrderModal from "../components/CancelOrderModal";
@@ -1545,24 +1546,20 @@ export default function SummaryScreen() {
               flexDirection: "column",
               alignItems: "stretch",
               minHeight: undefined,
-              gap: 8,
-              paddingBottom: 10,
+              gap: 2,
+              paddingBottom: 4,
             },
           ]}
         >
           {isPhone && !isLandscape ? (
             // MOBILE PORTRAIT LAYOUT
             <>
-              {/* Row 1: Back Button + Title + Actions */}
+              {/* Row 1: Back Button + Title + Home/Minimize */}
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Pressable
                     style={styles.iconBtn}
-                    onPress={() =>
-                      router.canGoBack()
-                        ? router.back()
-                        : router.replace("/(tabs)/category")
-                    }
+                    onPress={() => router.push("/menu/thai_kitchen")}
                   >
                     <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
                   </Pressable>
@@ -1570,52 +1567,64 @@ export default function SummaryScreen() {
                 </View>
 
                 {/* Actions Row */}
-                <View style={[styles.headerRight, { gap: 6 }]}>
-                  {headerActions}
+                <View style={{ marginRight: 6 }}>
+                  <WindowControls buttonStyle={{ height: 38, width: 38, borderRadius: 8 }} iconSize={20} />
                 </View>
               </View>
 
-              {/* Row 2: Badges + Order ID */}
-              <View
-                style={[
-                  styles.orderBadgeRow,
-                  { marginTop: 4, paddingLeft: 59, flexWrap: "wrap" },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.typeBadge,
-                    {
-                      backgroundColor:
-                        context.orderType === "DINE_IN"
-                          ? Theme.primaryLight
-                          : Theme.warningBg,
-                    },
-                  ]}
-                >
-                  <Text
+              {/* Row 2: Badges (Fixed Left) + Action Buttons (Scrollable Right) */}
+              <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 0, paddingRight: 12, marginTop: 2, width: "100%" }}>
+                {/* Fixed badges */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <View
                     style={[
-                      styles.typeBadgeText,
+                      styles.typeBadge,
                       {
-                        color:
+                        backgroundColor:
                           context.orderType === "DINE_IN"
-                            ? Theme.primary
-                            : Theme.warning,
+                            ? Theme.primaryLight
+                            : Theme.warningBg,
                       },
                     ]}
                   >
-                    {context.orderType === "DINE_IN" ? "DINE-IN" : "TAKEAWAY"}
-                  </Text>
-                </View>
-                {context.orderType === "DINE_IN" && (
-                  <View style={styles.tableBadge}>
-                    <Text style={styles.tableBadgeText}>
-                      {formatSection(context.section || "")} • T
-                      {context.tableNo}
+                    <Text
+                      style={[
+                        styles.typeBadgeText,
+                        {
+                          color:
+                            context.orderType === "DINE_IN"
+                              ? Theme.primary
+                              : Theme.warning,
+                        },
+                      ]}
+                    >
+                      {context.orderType === "DINE_IN" ? "DINE-IN" : "TAKEAWAY"}
                     </Text>
                   </View>
-                )}
-                <Text style={[styles.orderSub, { marginLeft: 8 }]}>
+                  {context.orderType === "DINE_IN" && (
+                    <View style={styles.tableBadge}>
+                      <Text style={styles.tableBadgeText}>
+                        {formatSection(context.section || "")} • T
+                        {context.tableNo}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Scrollable Action Buttons */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, alignItems: "center", paddingLeft: 8 }}
+                  style={{ flex: 1 }}
+                >
+                  {headerActions}
+                </ScrollView>
+              </View>
+
+              {/* Row 3: Order ID */}
+              <View style={{ paddingLeft: 0, marginTop: 0 }}>
+                <Text style={[styles.orderSub, { marginLeft: 0 }]}>
                   #{displayOrderId || "NEW"}
                 </Text>
               </View>
@@ -1626,23 +1635,16 @@ export default function SummaryScreen() {
               <View style={styles.headerLeft}>
                 <Pressable
                   style={styles.iconBtn}
-                  onPress={() =>
-                    router.canGoBack()
-                      ? router.back()
-                      : router.replace("/(tabs)/category")
-                  }
+                  onPress={() => router.push("/menu/thai_kitchen")}
                 >
                   <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
                 </Pressable>
 
                 <View style={styles.headerTitleContainer}>
                   <Text style={styles.title}>Summary</Text>
-                  <View
-                    style={[
-                      styles.orderBadgeRow,
-                      { flexWrap: "wrap", marginTop: 0 },
-                    ]}
-                  >
+                  
+                  {/* Badges line */}
+                  <View style={[styles.orderBadgeRow, { flexWrap: "wrap", marginTop: 4 }]}>
                     <View
                       style={[
                         styles.typeBadge,
@@ -1676,20 +1678,18 @@ export default function SummaryScreen() {
                         </Text>
                       </View>
                     )}
-                    <Text
-                      style={[
-                        styles.orderSub,
-                        { marginLeft: 8 },
-                      ]}
-                    >
-                      #{displayOrderId || "NEW"}
-                    </Text>
                   </View>
+
+                  {/* Order ID line */}
+                  <Text style={[styles.orderSub, { marginTop: 4, marginLeft: 8 }]}>
+                    #{displayOrderId || "NEW"}
+                  </Text>
                 </View>
               </View>
 
-              <View style={styles.headerRight}>
+              <View style={[styles.headerRight, { gap: 8 }]}>
                 {headerActions}
+                <WindowControls buttonStyle={{ height: 46, width: 46, borderRadius: 10, backgroundColor: Theme.bgCard, borderWidth: 1, borderColor: Theme.border, justifyContent: "center", alignItems: "center" }} iconSize={24} />
               </View>
             </>
           )}
@@ -4238,7 +4238,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     minHeight: 60,
-    paddingVertical: 6,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Theme.border,
     marginBottom: 5,

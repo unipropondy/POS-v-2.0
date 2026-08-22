@@ -149,7 +149,12 @@ export default function PaymentSuccess() {
     const cleanup = async () => {
       try {
         const { clearCart } = await import("../stores/cartStore");
-        const { clearOrderContext } = await import("../stores/orderContextStore");
+        const { getOrderContext, clearOrderContext } = await import("../stores/orderContextStore");
+        const context = getOrderContext();
+        if (context && context.tableId) {
+          const { useTableNavigationStore } = await import("../stores/tableNavigationStore");
+          useTableNavigationStore.getState().clearTableLastScreen(context.tableId);
+        }
         clearCart();
         clearOrderContext();
       } catch (err) {

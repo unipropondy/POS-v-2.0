@@ -25,6 +25,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useToast } from "../components/Toast";
 import { Fonts } from "../constants/Fonts";
 import { Theme } from "../constants/theme";
+import WindowControls from "../components/WindowControls";
 
 import PayNowPaymentModal from "../components/payment/PayNowPaymentModal";
 import SplitPaymentComponent from "../components/payment/SplitPaymentComponent";
@@ -2315,6 +2316,7 @@ export default function PaymentScreen() {
             </View>
           </View>
           <View style={{ flexDirection: "row", gap: 8 }}>
+            <WindowControls buttonStyle={styles.backBtn} />
             <TouchableOpacity
               style={[
                 styles.backBtn,
@@ -3352,15 +3354,12 @@ export default function PaymentScreen() {
                       <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Order Items</Text>
                       </View>
-                      <View style={{ maxHeight: 380 }}>
-                        <FlatList
-                          data={finalItems}
-                          keyExtractor={(_, index) => index.toString()}
-                          renderItem={renderItem}
-                          scrollEnabled={true}
-                          nestedScrollEnabled={true}
-                          showsVerticalScrollIndicator={true}
-                        />
+                      <View>
+                        {finalItems.map((item: any, index: number) => (
+                          <React.Fragment key={item.id || index.toString()}>
+                            {renderItem({ item })}
+                          </React.Fragment>
+                        ))}
                       </View>
                     </View>
                   )}

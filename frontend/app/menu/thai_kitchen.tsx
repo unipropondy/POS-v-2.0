@@ -28,6 +28,7 @@ import {
 } from "react-native-safe-area-context";
 import CartSidebar from "../../components/CartSidebar";
 import ComboCustomizer from "../../components/ComboCustomizer";
+import WindowControls from "../../components/WindowControls";
 import { useToast } from "../../components/Toast";
 import { Skeleton } from "../../components/ui/Skeleton";
 import UniversalPrinter from "../../components/UniversalPrinter";
@@ -656,6 +657,7 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.headerRightActions}>
+        <WindowControls buttonStyle={styles.headerBillBtn} />
         <TouchableOpacity
           style={[
             styles.headerBillBtn,

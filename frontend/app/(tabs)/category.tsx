@@ -29,6 +29,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { useToast } from "../../components/Toast";
+import WindowControls from "../../components/WindowControls";
 import {
   formatToSingaporeTime,
   getSingaporeDateString,
@@ -1313,7 +1314,16 @@ export default function Category() {
           );
         }
 
-        router.push("/menu/thai_kitchen");
+        // Check if there is a saved screen for this table
+        const { useTableNavigationStore } = require("../../stores/tableNavigationStore");
+        const lastScreen = useTableNavigationStore.getState().tableScreens[item.id];
+        if (lastScreen === "summary") {
+          router.push("/summary");
+        } else if (lastScreen === "payment") {
+          router.push("/payment");
+        } else {
+          router.push("/menu/thai_kitchen");
+        }
         return;
       }
 
@@ -1403,6 +1413,14 @@ export default function Category() {
       // 🚀 BUG FIX: If table is empty, clear local cart immediately to prevent "popping" stale data
       if (status === 0) {
         setCartItemsGlobal(contextId, [], true); // skipSync=true to avoid double sync
+        try {
+          const { useTableNavigationStore } = require("../../stores/tableNavigationStore");
+          if (newContext.tableId) {
+            useTableNavigationStore.getState().clearTableLastScreen(newContext.tableId);
+          }
+        } catch (err) {
+          console.warn("Failed to clear table navigation state:", err);
+        }
       }
     }
 
@@ -1420,7 +1438,16 @@ export default function Category() {
       }
     }
 
-    router.push("/menu/thai_kitchen");
+    // Check if there is a saved screen for this table
+    const { useTableNavigationStore } = require("../../stores/tableNavigationStore");
+    const lastScreen = newContext.tableId ? useTableNavigationStore.getState().tableScreens[newContext.tableId] : null;
+    if (lastScreen === "summary") {
+      router.push("/summary");
+    } else if (lastScreen === "payment") {
+      router.push("/payment");
+    } else {
+      router.push("/menu/thai_kitchen");
+    }
   };
 
   const handleGuestSubmit = async () => {
@@ -1969,23 +1996,6 @@ export default function Category() {
                 })}
               </View>
             </ScrollView>
-
-            {/* Consolidated Menu Button (Hamburger) */}
-            <TouchableOpacity
-              style={[
-                styles.headerActionBtn,
-                {
-                  backgroundColor: Theme.primaryLight,
-                  borderColor: Theme.primaryBorder,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                },
-              ]}
-              onPress={() => setIsMenuVisible(true)}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="menu-outline" size={20} color={Theme.primary} />
-            </TouchableOpacity>
           </View>
 
           {/* Row 2: Date Picker, Day Start, and Status Buttons */}
@@ -2158,6 +2168,24 @@ export default function Category() {
                   )}
                 </View>
               </TouchableOpacity>
+
+              <WindowControls buttonStyle={{ height: 32, width: 32, borderRadius: 8 }} iconSize={16} hideHome={true} />
+
+              <TouchableOpacity
+                style={[
+                  styles.headerActionBtn,
+                  {
+                    backgroundColor: Theme.primaryLight,
+                    borderColor: Theme.primaryBorder,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                  },
+                ]}
+                onPress={() => setIsMenuVisible(true)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="menu-outline" size={20} color={Theme.primary} />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -2265,8 +2293,8 @@ export default function Category() {
             </ScrollView>
 
             {/* RIGHT — Action Buttons */}
-            <View style={[styles.navRightGroup, { gap: isTablet ? 8 : 6 }]}>
-              {/* Kitchen Status — moved from menu */}
+            <View style={[styles.navRightGroup, { gap: isTablet ? 8 : 6, flexDirection: "row", alignItems: "center" }]}>
+              {/* Kitchen Status */}
               {enableKDS && (
                 <TouchableOpacity
                   style={[styles.headerActionBtn, { position: "relative" }]}
@@ -2300,11 +2328,6 @@ export default function Category() {
                         paddingHorizontal: 4,
                         borderWidth: 1.5,
                         borderColor: "#FFF",
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: 0.2,
-                        shadowRadius: 1,
-                        elevation: 2,
                       }}
                     >
                       <Text
@@ -2323,7 +2346,7 @@ export default function Category() {
                 </TouchableOpacity>
               )}
 
-              {/* KDS — gated by OPRSTK and General Settings */}
+              {/* KDS */}
               {canAccessKDS() && enableKDS && (
                 <TouchableOpacity
                   style={styles.headerActionBtn}
@@ -2341,37 +2364,33 @@ export default function Category() {
                 </TouchableOpacity>
               )}
 
-              {/* Alerts/Notifications Button */}
+              {/* Alerts/Notifications */}
               <TouchableOpacity
-                style={styles.headerActionBtn}
+                style={[styles.headerActionBtn, { width: 40, height: 40, justifyContent: "center", paddingHorizontal: 0 }]}
                 onPress={() => setIsNotifModalVisible(true)}
                 activeOpacity={0.75}
               >
-                <View style={{ position: "relative" }}>
-                  <Ionicons name="notifications-outline" size={20} color={Theme.primary} />
-                  {unreadCount > 0 && (
-                    <View style={{
-                      position: "absolute",
-                      top: -6,
-                      right: -6,
-                      backgroundColor: Theme.danger || "#ef4444",
-                      borderRadius: 7,
-                      minWidth: 14,
-                      height: 14,
-                      justifyContent: "center",
-                      alignItems: "center",
-                      borderWidth: 1,
-                      borderColor: "#FFF",
-                    }}>
-                      <Text style={{ color: "#fff", fontSize: 8, fontFamily: Fonts.bold }}>
-                        {unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+                <Ionicons name="notifications-outline" size={20} color={Theme.primary} />
+                {unreadCount > 0 && (
+                  <View style={{
+                    position: "absolute",
+                    top: 2,
+                    right: 2,
+                    backgroundColor: Theme.danger || "#ef4444",
+                    borderRadius: 6,
+                    minWidth: 12,
+                    height: 12,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: "#FFF",
+                  }} />
+                )}
               </TouchableOpacity>
 
-              {/* NEW CONSOLIDATED MENU BUTTON */}
+              <WindowControls buttonStyle={[styles.headerActionBtn, { width: 40, height: 40, justifyContent: "center", paddingHorizontal: 0 }]} iconSize={20} hideHome={true} />
+
+              {/* Menu */}
               <TouchableOpacity
                 style={[
                   styles.headerActionBtn,
@@ -2702,33 +2721,29 @@ export default function Category() {
 
             {/* Alerts/Notifications Button */}
             <TouchableOpacity
-              style={styles.headerActionBtn}
+              style={[styles.headerActionBtn, { width: 40, height: 40, justifyContent: "center", paddingHorizontal: 0 }]}
               onPress={() => setIsNotifModalVisible(true)}
               activeOpacity={0.75}
             >
-              <View style={{ position: "relative" }}>
-                <Ionicons name="notifications-outline" size={20} color={Theme.primary} />
-                {unreadCount > 0 && (
-                  <View style={{
-                    position: "absolute",
-                    top: -6,
-                    right: -6,
-                    backgroundColor: Theme.danger || "#ef4444",
-                    borderRadius: 7,
-                    minWidth: 14,
-                    height: 14,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    borderWidth: 1,
-                    borderColor: "#FFF",
-                  }}>
-                    <Text style={{ color: "#fff", fontSize: 8, fontFamily: Fonts.bold }}>
-                      {unreadCount}
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <Ionicons name="notifications-outline" size={20} color={Theme.primary} />
+              {unreadCount > 0 && (
+                <View style={{
+                  position: "absolute",
+                  top: 2,
+                  right: 2,
+                  backgroundColor: Theme.danger || "#ef4444",
+                  borderRadius: 6,
+                  minWidth: 12,
+                  height: 12,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: "#FFF",
+                }} />
+              )}
             </TouchableOpacity>
+
+            <WindowControls buttonStyle={[styles.headerActionBtn, { width: 40, height: 40, justifyContent: "center", paddingHorizontal: 0 }]} iconSize={20} hideHome={true} />
 
             {/* NEW CONSOLIDATED MENU BUTTON */}
             <TouchableOpacity
