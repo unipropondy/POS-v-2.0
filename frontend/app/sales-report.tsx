@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
+  Alert,
 } from "react-native";
 import { PieChart } from "react-native-gifted-charts";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -213,6 +214,13 @@ export default function SalesReport() {
     "SINGLE",
   );
   const [showCancelledOrders, setShowCancelledOrders] = useState(true);
+
+  // --- ORDER SETTINGS & DIALOG STATES ---
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showChangePaymentModal, setShowChangePaymentModal] = useState(false);
+  const [showVoidItemModal, setShowVoidItemModal] = useState(false);
+  const [showCancelOrderConfirm, setShowCancelOrderConfirm] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
 
   const finalBillAmount = selectedOrder
     ? Number(selectedOrder.SubTotal || 0) -
@@ -1524,6 +1532,114 @@ export default function SalesReport() {
     setSelectedOrder(order);
     fetchOrderDetails(order.SettlementID, order);
   };
+
+  const refreshOrder = async (settlementId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/sales/settlement/${settlementId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.header) {
+          setSelectedOrder(data.header);
+        }
+        await fetchOrderDetails(settlementId, data.header);
+      }
+    } catch (e) {
+      console.error("Refresh order error:", e);
+    }
+  };
+
+  const handleConfirmChangePayment = async (newPayMode: string) => {
+    if (!selectedOrder) return;
+    try {
+      setShowChangePaymentModal(false);
+      setLoadingDetails(true);
+      const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payMode: newPayMode }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast({ type: "success", message: "Payment mode updated successfully" });
+        await refreshOrder(selectedOrder.SettlementID);
+        fetchSales();
+      } else {
+        showToast({ type: "error", message: data.error || "Failed to update payment mode" });
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast({ type: "error", message: err.message || "An error occurred" });
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleConfirmVoidItem = async (item: any) => {
+    if (!selectedOrder) return;
+    Alert.alert(
+      "Void Item?",
+      `Are you sure you want to void "${item.DishName}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Void",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setShowVoidItemModal(false);
+              setLoadingDetails(true);
+              const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ orderDetailId: item.OrderDetailId || item.DishId }),
+              });
+              const data = await res.json();
+              if (res.ok && data.success) {
+                showToast({ type: "success", message: "Item voided successfully" });
+                await refreshOrder(selectedOrder.SettlementID);
+                fetchSales();
+              } else {
+                showToast({ type: "error", message: data.error || "Failed to void item" });
+              }
+            } catch (err: any) {
+              console.error(err);
+              showToast({ type: "error", message: err.message || "An error occurred" });
+            } finally {
+              setLoadingDetails(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleConfirmCancelOrder = async () => {
+    if (!selectedOrder) return;
+    try {
+      setShowCancelOrderConfirm(false);
+      setLoadingDetails(true);
+      const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: cancellationReason }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast({ type: "success", message: "Order cancelled successfully" });
+        setCancellationReason("");
+        await refreshOrder(selectedOrder.SettlementID);
+        fetchSales();
+      } else {
+        showToast({ type: "error", message: data.error || "Failed to cancel order" });
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast({ type: "error", message: err.message || "An error occurred" });
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
 
   const handleReprint = async () => {
     if (!selectedOrder || orderDetails.length === 0) return;
@@ -3628,6 +3744,17 @@ export default function SalesReport() {
                 </View>
 
                 <View style={{ flexDirection: "row", gap: 12 }}>
+                  {!selectedOrder?.IsCancelled && (
+                    <TouchableOpacity
+                      onPress={() => setShowSettingsMenu(true)}
+                      style={[
+                        styles.premiumSecondaryBtn,
+                        { width: 48, paddingVertical: 12, justifyContent: "center", alignItems: "center" },
+                      ]}
+                    >
+                      <Ionicons name="settings-outline" size={20} color={Theme.primary} />
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     onPress={() => {
                       setSelectedOrder(null);
@@ -3842,6 +3969,208 @@ export default function SalesReport() {
             }}
             total={String(selectedOrder?.SysAmount || 0)}
           />
+
+          {/* Settings Options Modal */}
+          <Modal visible={showSettingsMenu} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Order Settings</Text>
+                  <TouchableOpacity onPress={() => setShowSettingsMenu(false)}>
+                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+                
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowSettingsMenu(false);
+                    setShowChangePaymentModal(true);
+                  }}
+                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.border + "40", gap: 12 }}
+                >
+                  <Ionicons name="card-outline" size={20} color={Theme.primary} />
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: Theme.textPrimary }}>Change Payment Mode</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowSettingsMenu(false);
+                    setShowVoidItemModal(true);
+                  }}
+                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.border + "40", gap: 12 }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: Theme.textPrimary }}>Void Item</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowSettingsMenu(false);
+                    setShowCancelOrderConfirm(true);
+                  }}
+                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, gap: 12 }}
+                >
+                  <Ionicons name="close-circle-outline" size={20} color="#ef4444" />
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: "#ef4444" }}>Cancel Order</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Change Payment Mode Modal */}
+          <Modal visible={showChangePaymentModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Select Payment Mode</Text>
+                  <TouchableOpacity onPress={() => setShowChangePaymentModal(false)}>
+                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+                
+                <ScrollView style={{ maxHeight: 250 }}>
+                  {["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"].map((mode) => (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => handleConfirmChangePayment(mode)}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        borderRadius: 8,
+                        backgroundColor: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary + "15" : "transparent",
+                        marginBottom: 6,
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary : Theme.textPrimary }}>
+                        {mode}
+                      </Text>
+                      {(selectedOrder?.PayMode || '').toUpperCase() === mode && (
+                        <Ionicons name="checkmark" size={18} color={Theme.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Void Item Modal */}
+          <Modal visible={showVoidItemModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 360, padding: 20 }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Select Item to Void</Text>
+                  <TouchableOpacity onPress={() => setShowVoidItemModal(false)}>
+                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={{ maxHeight: 250 }}>
+                  {orderDetails
+                    .filter((item) => item.Status !== "VOIDED")
+                    .map((item) => (
+                      <TouchableOpacity
+                        key={item.OrderDetailId || item.DishId}
+                        onPress={() => handleConfirmVoidItem(item)}
+                        style={{
+                          paddingVertical: 12,
+                          paddingHorizontal: 10,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: Theme.border + "30",
+                          marginBottom: 8,
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center"
+                        }}
+                      >
+                        <View style={{ flex: 1, marginRight: 10 }}>
+                          <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                            {item.DishName}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
+                            Qty: {item.Qty} • Unit: ${(item.Price || 0).toFixed(2)}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                          ${((item.Price || 0) * (item.Qty || 1)).toFixed(2)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  {orderDetails.filter((item) => item.Status !== "VOIDED").length === 0 && (
+                    <Text style={{ textAlign: "center", color: Theme.textSecondary, marginVertical: 20 }}>
+                      No active items to void
+                    </Text>
+                  )}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Cancel Order Confirm Modal */}
+          <Modal visible={showCancelOrderConfirm} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
+                <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: "#ef4444", marginBottom: 10 }}>
+                  Cancel Order?
+                </Text>
+                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 15 }}>
+                  Are you sure you want to cancel Order #{selectedOrder ? formatOrderId(selectedOrder) : ""}? This action cannot be undone.
+                </Text>
+
+                <TextInput
+                  placeholder="Reason for cancellation"
+                  placeholderTextColor={Theme.textSecondary + "90"}
+                  value={cancellationReason}
+                  onChangeText={setCancellationReason}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: Theme.border + "50",
+                    borderRadius: 8,
+                    padding: 10,
+                    fontSize: 13,
+                    color: Theme.textPrimary,
+                    fontFamily: Fonts.bold,
+                    backgroundColor: Theme.border + "10",
+                    marginBottom: 20,
+                    minHeight: 40
+                  }}
+                />
+
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowCancelOrderConfirm(false);
+                      setCancellationReason("");
+                    }}
+                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                  >
+                    <Text style={styles.premiumSecondaryBtnText}>NO, KEEP</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleConfirmCancelOrder}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#ef4444",
+                      borderRadius: 10,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingVertical: 10
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>YES, CANCEL</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
 
           <Modal visible={showDownloadPanel} transparent animationType="fade">
             <View style={styles.modalOverlay}>

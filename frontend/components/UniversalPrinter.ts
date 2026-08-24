@@ -2383,7 +2383,18 @@ class UniversalPrinter {
             const errorMsg = printErr.message || "Hardware print error";
             console.log(`[PrintQueue] Printer connection failed: ${errorMsg}. JobId=${JobId}`);
             console.error(`âŒ [UniversalPrinter] Failed to print job ${JobId}:`, printErr);
-            await fetch(`${API_URL}/api/print-jobs/${JobId}/failed`, {
+            // If it's a network timeout/connection error, release the job back to queue so other local devices can print it
+            const isTimeoutOrNetworkError = 
+              errorMsg.toLowerCase().includes("timeout") || 
+              errorMsg.toLowerCase().includes("connect") || 
+              errorMsg.toLowerCase().includes("unreachable") ||
+              errorMsg.toLowerCase().includes("host");
+
+            const endpoint = isTimeoutOrNetworkError
+              ? `${API_URL}/api/print-jobs/${JobId}/release`
+              : `${API_URL}/api/print-jobs/${JobId}/failed`;
+
+            await fetch(endpoint, {
               method: "POST",
               headers,
               body: JSON.stringify({ errorMessage: errorMsg })

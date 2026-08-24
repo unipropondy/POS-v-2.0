@@ -477,16 +477,19 @@ export default function PaymentScreen() {
   const [payNowQrAmount, setPayNowQrAmount] = useState(0);
   const [upiQrAmount, setUpiQrAmount] = useState(0);
 
+  // ── Payment-mode normalizer (payment.tsx) ──────────────────────────────────
+  // All routing decisions use EXACT normalized comparisons — never .includes().
+  // This prevents "Yeahpay Paynow", "GPay", "QR" etc. from bleeding into the
+  // wrong flow.
+  const pmNormalize = (m: string) => (m ?? "").trim().toUpperCase();
+
   const calculatePayNowAmount = (paymentsList: any[]) => {
     return paymentsList.reduce((sum, p) => {
       const pm = paymentMethods.find((x) => x.position === p.payModeId);
       if (pm) {
-        const code = pm.payMode.toUpperCase().trim();
-        if (
-          code.includes("PAYNOW") ||
-          code.includes("QR") ||
-          code.includes("PAY-NOW")
-        ) {
+        // Only the exact payment mode "PAYNOW" (case-insensitive) counts
+        // as static-PayNow for display purposes.
+        if (pmNormalize(pm.payMode) === "PAYNOW") {
           return sum + p.amount;
         }
       }
@@ -498,12 +501,12 @@ export default function PaymentScreen() {
     return paymentsList.reduce((sum, p) => {
       const pm = paymentMethods.find((x) => x.position === p.payModeId);
       if (pm) {
-        const code = pm.payMode.toUpperCase().trim();
+        const code = pmNormalize(pm.payMode);
         if (
-          code.includes("UPI") ||
-          code.includes("GPAY") ||
-          code.includes("PHONE") ||
-          code.includes("PAYTM")
+          code === "UPI" ||
+          code === "GPAY" ||
+          code.startsWith("PHONE") ||
+          code === "PAYTM"
         ) {
           return sum + p.amount;
         }
@@ -613,6 +616,16 @@ export default function PaymentScreen() {
     };
     init();
   }, []);
+
+  // 🔄 AUTO-SYNC: Update the local paymentMethods list as soon as the cache finishes loading
+  const hasLoadedMethods = usePaymentSettingsStore((s: any) => s.hasLoadedMethods);
+  const cachedMethods = usePaymentSettingsStore((s: any) => s.paymentMethods);
+
+  useEffect(() => {
+    if (hasLoadedMethods && cachedMethods.length > 0) {
+      applyPaymentMethodsFromCache();
+    }
+  }, [hasLoadedMethods, cachedMethods]);
 
   // 💵 QUICK CASH REAL-TIME SYNC — updates instantly when any terminal changes amounts
   useEffect(() => {
@@ -824,20 +837,17 @@ export default function PaymentScreen() {
     CustomerDisplaySync.isPaymentActive = true;
 
     if (context && finalItems.length > 0) {
-      // Distinguish YeahPay PayNow and YeahPay Card from regular payment modes
-      // so the customer display shows custom cards and avoids static QRs.
-      const selectedMethodObj = paymentMethods.find((m: any) => m.payMode === method);
-      const isYeahPayMode = selectedMethodObj?.yeahPayEnabled === true;
-      const isPayNowPayMode = /PAYNOW|PAY-NOW/i.test(method);
-      const isCardPayMode = /CARD/i.test(method);
+      // Use exact normalized mode names — regex broad checks would confuse
+      // "Yeahpay Paynow" with plain "Paynow" and "Yeahpay Card" with plain "Card".
+      const _nm = pmNormalize(method);
+      const _isYeahPayPayNow = _nm === "YEAHPAY PAYNOW";
+      const _isYeahPayCard   = _nm === "YEAHPAY CARD";
 
       let displayPaymentMethod = method;
-      if (isYeahPayMode) {
-        if (isPayNowPayMode) {
-          displayPaymentMethod = 'YEAHPAY_PAYNOW';
-        } else if (isCardPayMode) {
-          displayPaymentMethod = 'YEAHPAY_CARD';
-        }
+      if (_isYeahPayPayNow) {
+        displayPaymentMethod = 'YEAHPAY_PAYNOW';
+      } else if (_isYeahPayCard) {
+        displayPaymentMethod = 'YEAHPAY_CARD';
       }
 
       // Include member name when MEMBER or CREDIT mode is selected
@@ -935,23 +945,24 @@ export default function PaymentScreen() {
       const filtered = deduped.filter((m) => {
         if (m.active === 0 || m.active === false || m.active === "0")
           return false;
-        const mUpper = m.payMode.toUpperCase().trim();
+        const mUpper = pmNormalize(m.payMode);
         if (
           isLedgerCollection &&
           (mUpper === "MEMBER" || mUpper === "CREDIT" || mUpper === "LEDGER")
         )
           return false;
+        // UPI-family: exact matches only
         const isUPI =
-          mUpper.includes("UPI") ||
-          mUpper.includes("GPAY") ||
-          mUpper.includes("PHONE") ||
-          mUpper.includes("PAYTM");
-        const isPayNow =
-          mUpper.includes("PAYNOW") ||
-          mUpper.includes("QR") ||
-          mUpper.includes("PAY-NOW");
+          mUpper === "UPI" ||
+          mUpper === "GPAY" ||
+          mUpper.startsWith("PHONE") ||
+          mUpper === "PAYTM";
+        // Static-PayNow QR: ONLY the exact mode "PAYNOW" requires the QR URL.
+        // "Yeahpay Paynow" is terminal-based and must NEVER be hidden by !hasPayNow.
+        // "QR" is an independent payment mode and must NOT be hidden either.
+        const isStaticPayNow = mUpper === "PAYNOW";
         if (isUPI && !hasUPI) return false;
-        if (isPayNow && !hasPayNow) return false;
+        if (isStaticPayNow && !hasPayNow) return false;
         return true;
       });
 
@@ -1037,10 +1048,14 @@ export default function PaymentScreen() {
     if (processing) return;
 
     const selectedMethod = paymentMethods.find(m => m.payMode === method);
-    const isYeahPay = selectedMethod?.yeahPayEnabled === true;
-    const isCard = method.trim().toUpperCase().includes("CARD") && !method.trim().toUpperCase().includes("PAYNOW");
+    // Use exact normalized mode names — ONLY "Yeahpay Paynow" and "Yeahpay Card"
+    // should trigger the YeahPay terminal and require Device SN.
+    const _methodNorm      = pmNormalize(method);
+    const isYeahPayPayNow  = _methodNorm === "YEAHPAY PAYNOW";
+    const isYeahPayCardMode = _methodNorm === "YEAHPAY CARD";
+    const isYeahPay        = isYeahPayPayNow || isYeahPayCardMode;
 
-    // ✅ YEAHPAY - Direct terminal call
+    // ✅ YEAHPAY - Direct terminal call (ONLY for "Yeahpay Paynow" / "Yeahpay Card")
     if (isYeahPay && total > 0) {
       setPaymentStatus("processing");
       setPaymentMessage("Processing payment...");
@@ -1062,7 +1077,8 @@ export default function PaymentScreen() {
           return;
         }
 
-        const endpoint = isCard ? '/api/yeahpay/card-payment' : '/api/yeahpay/paynow-payment';
+        // "Yeahpay Card" → card-payment endpoint; "Yeahpay Paynow" → paynow-payment
+        const endpoint = isYeahPayCardMode ? '/api/yeahpay/card-payment' : '/api/yeahpay/paynow-payment';
         const response = await fetch(`${API_URL}${endpoint}`, {
           method: 'POST',
           headers: {
@@ -1230,14 +1246,16 @@ export default function PaymentScreen() {
       return;
     }
 
-    // ✅ Only show QR for REGULAR PayNow (NOT YeahPay)
-    if (mUpper.includes("PAYNOW") && settings.payNowQrUrl) {
+    // Show static PayNow QR ONLY when the mode is exactly "PAYNOW" (case-insensitive).
+    // "Yeahpay Paynow" is already handled above by the isYeahPay block and must
+    // NEVER reach this point, but we use an exact match here as a belt-and-suspenders guard.
+    if (mUpper === "PAYNOW" && settings.payNowQrUrl) {
       setIsPayNowVisible(true);
       return;
     }
 
-    // ✅ Only show UPI for regular UPI
-    if (mUpper.includes("UPI") && settings.upiId) {
+    // Show UPI modal only for the exact UPI-family modes
+    if ((mUpper === "UPI") && settings.upiId) {
       setIsUPIVisible(true);
       return;
     }

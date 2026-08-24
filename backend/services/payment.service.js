@@ -88,16 +88,23 @@ async function processSplitPayments({
         clientPrivateKeyPem: config.clientPrivateKeyPem
       });
 
+      // ── Determine YeahPay action using EXACT mode name ──────────────────────
+      // Use exact normalized comparisons — never .includes() — so "Yeahpay Paynow"
+      // and "Yeahpay Card" never bleed into each other's API call.
+      const _pmNorm = payModeName.trim().toUpperCase();
+      const _isYeahPayPayNow = _pmNorm === 'YEAHPAY PAYNOW';
+      const _isYeahPayCard   = _pmNorm === 'YEAHPAY CARD';
+
       // ✅ DETERMINE ACTION
       let action;
-      if (payModeName.toLowerCase().includes('paynow')) {
+      if (_isYeahPayPayNow) {
         action = 'TRADE.QRCODE.PayNowPay';
         console.log(`🔄 [YEAHPAY] Action: PayNow Payment`);
-      } else if (payModeName.toLowerCase().includes('card')) {
+      } else if (_isYeahPayCard) {
         action = 'TRADE.CARD.CONSUME';
         console.log(`🔄 [YEAHPAY] Action: Card Payment`);
       } else {
-        throw new Error(`YeahPay not supported for ${payModeName}`);
+        throw new Error(`YeahPay not supported for payment mode: ${payModeName}`);
       }
 
       // ✅✅✅ CALL YEAHPAY API
@@ -106,22 +113,22 @@ async function processSplitPayments({
         console.log(`🔄 [YEAHPAY] Action: ${action}`);
         console.log(`🔄 [YEAHPAY] Amount: ${amount}`);
         console.log(`🔄 [YEAHPAY] bizOrderId: ${referenceId}`);
-        
-if (payModeName.toLowerCase().includes('paynow')) {
-    gatewayResponse = await yeahpay.processPayNowPayment({
-        amount: amount,
-        deviceSn: dbPaymode.DeviceSN,
-        salt: dbPaymode.DeviceSalt,
-        appId: config.appId
-    });
-} else if (payModeName.toLowerCase().includes('card')) {
-    gatewayResponse = await yeahpay.processCardPayment({
-        amount: amount,
-        deviceSn: dbPaymode.DeviceSN,
-        salt: dbPaymode.DeviceSalt,
-        appId: config.appId
-    });
-}
+
+        if (_isYeahPayPayNow) {
+            gatewayResponse = await yeahpay.processPayNowPayment({
+                amount: amount,
+                deviceSn: dbPaymode.DeviceSN,
+                salt: dbPaymode.DeviceSalt,
+                appId: config.appId
+            });
+        } else if (_isYeahPayCard) {
+            gatewayResponse = await yeahpay.processCardPayment({
+                amount: amount,
+                deviceSn: dbPaymode.DeviceSN,
+                salt: dbPaymode.DeviceSalt,
+                appId: config.appId
+            });
+        }
 
         console.log(`✅ [YEAHPAY] Response received:`, JSON.stringify(gatewayResponse));
 

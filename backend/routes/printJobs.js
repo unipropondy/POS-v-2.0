@@ -157,6 +157,27 @@ router.post('/:jobId/complete', authenticateBridge, async (req, res) => {
   }
 });
 
+// 3.5. POST /api/print-jobs/:jobId/release - Release job back to PENDING without consuming attempts (for network timeouts)
+router.post('/:jobId/release', authenticateBridge, async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const pool = getPool();
+    await pool.request()
+      .input('JobId', sql.UniqueIdentifier, jobId)
+      .query(`
+        UPDATE PrintJobQueue
+        SET Status = 'PENDING', 
+            Attempts = CASE WHEN Attempts > 0 THEN Attempts - 1 ELSE 0 END, 
+            ProcessedOn = NULL
+        WHERE JobId = @JobId
+      `);
+    res.json({ success: true, message: 'Job released back to queue' });
+  } catch (err) {
+    console.error('Error releasing print job:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 4. POST /api/print-jobs/:jobId/failed - Mark job as failed or schedule retry
 router.post('/:jobId/failed', authenticateBridge, async (req, res) => {
   try {

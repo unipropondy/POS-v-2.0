@@ -160,19 +160,32 @@ const parseCsv = (value) => String(value || "")
 
 const normalizePayMode = (paymentMethod = "CASH") => {
   const raw = String(paymentMethod || "CASH").toUpperCase().trim();
-  
-  if (raw.includes("CASH") || raw === "CAS") return "CASH";
-  if (raw.includes("YEAHPAY PAYNOW") || raw === "YEAHPAY PAYNOW") return "Yeahpay Paynow";
-  if (raw.includes("YEAHPAY CARD") || raw === "YEAHPAY CARD") return "Yeahpay Card";
-  if (raw.includes("CARD") || raw.includes("VISA") || raw.includes("MASTER") || raw.includes("AMEX") || raw.includes("DINERS")) return "CARD";
-  if (raw.includes("PAYNOW") || raw === "3") return "PAYNOW";
-  if (raw.includes("GRAB") || raw === "10") return "GRAB";
-  if (raw.includes("FOODPANDA") || raw === "9") return "FOODPANDA";
-  if (raw.includes("UPI") || raw.includes("GPAY") || raw.includes("PHONE") || raw.includes("PAYTM")) return "UPI";
-  if (raw.includes("NETS")) return "NETS";
-  if (raw.includes("MEMBER") || raw === "5") return "MEMBER";
-  if (raw.includes("CREDIT") || raw === "6") return "CREDIT";
-  
+
+  // ── Exact normalized comparisons only ───────────────────────────────────
+  // Broad .includes() checks are order-dependent and fragile: "Yeahpay Card"
+  // could fall into the generic CARD bucket if checked out of order.
+  // Exact matches are unambiguous regardless of order.
+
+  // Cash
+  if (raw === "CASH" || raw === "CAS") return "CASH";
+
+  // YeahPay terminal modes — MUST be exact; never fall through to generic CARD/PAYNOW
+  if (raw === "YEAHPAY PAYNOW") return "Yeahpay Paynow";
+  if (raw === "YEAHPAY CARD")   return "Yeahpay Card";
+
+  // Standard payment modes — exact matches
+  if (raw === "CARD" || raw === "VISA" || raw === "MASTER" || raw === "MASTERCARD" || raw === "AMEX" || raw === "DINERS") return "CARD";
+  if (raw === "PAYNOW" || raw === "3") return "PAYNOW";
+  if (raw === "GRAB"  || raw === "10") return "GRAB";
+  if (raw === "FOODPANDA" || raw === "9") return "FOODPANDA";
+  if (raw === "UPI"   || raw === "4" || raw === "GPAY" || raw === "PAYTM" || raw.startsWith("PHONE")) return "UPI";
+  if (raw === "NETS"  || raw === "2") return "NETS";
+  if (raw === "MEMBER" || raw === "5") return "MEMBER";
+  if (raw === "CREDIT" || raw === "6") return "CREDIT";
+  if (raw === "LEDGER" || raw === "LEDGER CREDIT") return "LEDGER";
+  if (raw === "FOC") return "FOC";
+
+  // Unknown mode — pass through as-is so it is stored verbatim in the DB
   return raw;
 };
 
@@ -3265,5 +3278,282 @@ async function logLoyaltyVisitAsync(pool, settlementId, billNo, phone, name, ite
     console.error("⚠️ [Loyalty Post-Save Sync Error] Failed:", err);
   }
 }
+
+
+// ==========================================
+// ⚙️ ORDER DETAILS ACTIONS & POPUP MODIFICATIONS
+// ==========================================
+
+router.post("/settlement/:id/change-payment", async (req, res) => {
+  try {
+    const { payMode } = req.body;
+    const settlementId = req.params.id;
+    if (!payMode) {
+      return res.status(400).json({ error: "payMode is required" });
+    }
+
+    const pool = await poolPromise;
+    
+    // Resolve new paymode from Paymode table
+    const pmResult = await pool.request()
+      .input("PayModeName", sql.NVarChar(50), payMode)
+      .query(`
+        SELECT Position, PayMode, Description FROM [dbo].[Paymode] 
+        WHERE LTRIM(RTRIM(PayMode)) = LTRIM(RTRIM(@PayModeName)) 
+           OR LTRIM(RTRIM(Description)) = LTRIM(RTRIM(@PayModeName))
+           OR CAST(Position AS VARCHAR(10)) = LTRIM(RTRIM(@PayModeName))
+      `);
+      
+    if (pmResult.recordset.length === 0) {
+      return res.status(400).json({ error: "Invalid payment mode specified" });
+    }
+    
+    const dbPaymode = pmResult.recordset[0];
+    const position = dbPaymode.Position;
+    const finalPayMode = dbPaymode.PayMode;
+    const payModeCode = finalPayMode === "CASH" ? 1 : finalPayMode === "CARD" ? 2 : 3;
+
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      // 1. Update SettlementTotalSales
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("PayMode", sql.NVarChar(50), finalPayMode)
+        .query("UPDATE SettlementTotalSales SET PayMode = @PayMode WHERE SettlementID = @Sid");
+
+      // 2. Update SettlementDetail
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("PayMode", sql.NVarChar(50), finalPayMode)
+        .query("UPDATE [dbo].[SettlementDetail] SET Paymode = @PayMode WHERE SettlementId = @Sid");
+
+      // 3. Update SettlementTranDetail
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("PayMode", sql.NVarChar(50), finalPayMode)
+        .query("UPDATE SettlementTranDetail SET PayMode = @PayMode WHERE SettlementID = @Sid");
+
+      // 4. Update PaymentDetailCur
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Position", sql.Int, position)
+        .input("Remarks", sql.VarChar(500), payMode)
+        .query("UPDATE [dbo].[PaymentDetailCur] SET Paymode = @Position, Remarks = @Remarks WHERE RestaurantBillId = @Sid");
+
+      // 5. Update PaymentDetail
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Position", sql.Int, position)
+        .input("Remarks", sql.VarChar(500), payMode)
+        .query("UPDATE [dbo].[PaymentDetail] SET Paymode = @Position, Remarks = @Remarks WHERE RestaurantBillId = @Sid OR SettlementId = @Sid");
+
+      // 6. Update PaymentTransactionDetails
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Position", sql.Int, position)
+        .query("UPDATE [dbo].[PaymentTransactionDetails] SET PayModeId = @Position WHERE ReferenceId = @Sid AND ReferenceType = 'BILL'");
+
+      // 7. Update RestaurantInvoice & RestaurantInvoiceCur (PaymentTermCode)
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("PayModeCode", sql.Int, payModeCode)
+        .query("UPDATE RestaurantInvoice SET PaymentTermCode = @PayModeCode WHERE RestaurantBillId = @Sid");
+
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("PayModeCode", sql.Int, payModeCode)
+        .query("UPDATE RestaurantInvoiceCur SET PaymentTermCode = @PayModeCode WHERE RestaurantBillId = @Sid");
+
+      // 8. Update SettlementHeader if PayMode column is present
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("PayMode", sql.NVarChar(50), finalPayMode)
+        .query(`
+          IF COL_LENGTH('SettlementHeader', 'PayMode') IS NOT NULL
+          BEGIN
+            EXEC('UPDATE SettlementHeader SET PayMode = ''' + @PayMode + ''' WHERE SettlementID = ''' + @Sid + '''')
+          END
+        `);
+
+      // 9. Handle SettlementCreditSales (CREDIT mode)
+      if (finalPayMode === 'CREDIT') {
+        const shRes = await transaction.request()
+          .input("Sid", sql.UniqueIdentifier, settlementId)
+          .query("SELECT SysAmount, ManualAmount FROM SettlementHeader WHERE SettlementID = @Sid");
+        if (shRes.recordset.length > 0) {
+          const { SysAmount, ManualAmount } = shRes.recordset[0];
+          await transaction.request()
+            .input("Sid", sql.UniqueIdentifier, settlementId)
+            .input("SysAmount", sql.Decimal(18, 2), SysAmount)
+            .input("ManualAmount", sql.Decimal(18, 2), ManualAmount)
+            .query(`
+              IF NOT EXISTS (SELECT 1 FROM SettlementCreditSales WHERE SettlementID = @Sid)
+              BEGIN
+                INSERT INTO SettlementCreditSales (SettlementID, PayMode, SysAmount, ManualAmount, AmountDiff)
+                VALUES (@Sid, 'CREDIT', @SysAmount, @ManualAmount, 0)
+              END
+            `);
+        }
+      } else {
+        await transaction.request()
+          .input("Sid", sql.UniqueIdentifier, settlementId)
+          .query("DELETE FROM SettlementCreditSales WHERE SettlementID = @Sid");
+      }
+
+      await transaction.commit();
+      res.json({ success: true, message: "Payment mode updated successfully" });
+    } catch (txErr) {
+      await transaction.rollback();
+      throw txErr;
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/settlement/:id/void-item", async (req, res) => {
+  try {
+    const settlementId = req.params.id;
+    const { orderDetailId } = req.body;
+    if (!orderDetailId) {
+      return res.status(400).json({ error: "orderDetailId is required" });
+    }
+
+    const pool = await poolPromise;
+
+    // Check item details
+    const itemQuery = await pool.request()
+      .input("Sid", sql.UniqueIdentifier, settlementId)
+      .input("Odid", sql.NVarChar(100), orderDetailId)
+      .query(`
+        SELECT Qty, Price, Status FROM SettlementItemDetail 
+        WHERE SettlementID = @Sid AND (OrderDetailId = @Odid OR DishId = @Odid)
+      `);
+
+    if (itemQuery.recordset.length === 0) {
+      return res.status(404).json({ error: "Item not found in order" });
+    }
+
+    const item = itemQuery.recordset[0];
+    if (item.Status === "VOIDED") {
+      return res.status(400).json({ error: "Item is already voided" });
+    }
+
+    const qty = Number(item.Qty || 0);
+    const price = Number(item.Price || 0);
+    const voidAmount = qty * price;
+
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      // 1. Update SettlementItemDetail Status
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Odid", sql.NVarChar(100), orderDetailId)
+        .query(`
+          UPDATE SettlementItemDetail SET Status = 'VOIDED' 
+          WHERE SettlementID = @Sid AND (OrderDetailId = @Odid OR DishId = @Odid)
+        `);
+
+      // 2. Update SettlementHeader VoidItemQty & VoidItemAmount
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Qty", sql.Int, qty)
+        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .query(`
+          UPDATE SettlementHeader 
+          SET VoidItemQty = ISNULL(VoidItemQty, 0) + @Qty,
+              VoidItemAmount = ISNULL(VoidItemAmount, 0) + @Amount
+          WHERE SettlementID = @Sid
+        `);
+
+      await transaction.commit();
+      res.json({ success: true, message: "Item voided successfully" });
+    } catch (txErr) {
+      await transaction.rollback();
+      throw txErr;
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/settlement/:id/cancel", async (req, res) => {
+  try {
+    const settlementId = req.params.id;
+    const { reason } = req.body;
+    const pool = await poolPromise;
+
+    // Get order info
+    const shQuery = await pool.request()
+      .input("Sid", sql.UniqueIdentifier, settlementId)
+      .query("SELECT SysAmount, IsCancelled FROM SettlementHeader WHERE SettlementID = @Sid");
+
+    if (shQuery.recordset.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const sh = shQuery.recordset[0];
+    if (sh.IsCancelled) {
+      return res.status(400).json({ error: "Order is already cancelled" });
+    }
+
+    // Get sum of qty
+    const itemsQuery = await pool.request()
+      .input("Sid", sql.UniqueIdentifier, settlementId)
+      .query("SELECT SUM(Qty) as TotalQty FROM SettlementItemDetail WHERE SettlementID = @Sid");
+    const totalQty = itemsQuery.recordset[0]?.TotalQty || 0;
+
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      // 1. Update SettlementHeader
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Reason", sql.NVarChar(255), reason || "Manual Cancellation")
+        .input("Qty", sql.Int, totalQty)
+        .input("Amount", sql.Decimal(18, 2), sh.SysAmount)
+        .query(`
+          UPDATE SettlementHeader 
+          SET IsCancelled = 1,
+              CancellationReason = @Reason,
+              VoidItemQty = @Qty,
+              VoidItemAmount = @Amount
+          WHERE SettlementID = @Sid
+        `);
+
+      // 2. Update RestaurantInvoice & RestaurantInvoiceCur (StatusCode = 4)
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .query("UPDATE RestaurantInvoice SET StatusCode = 4 WHERE RestaurantBillId = @Sid");
+
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .query("UPDATE RestaurantInvoiceCur SET StatusCode = 4 WHERE RestaurantBillId = @Sid");
+
+      // 3. Update SettlementItemDetail items to VOIDED
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .query("UPDATE SettlementItemDetail SET Status = 'VOIDED' WHERE SettlementID = @Sid");
+
+      // 4. Delete from LoyaltyVisit if exists
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .query("DELETE FROM LoyaltyVisit WHERE SettlementId = @Sid");
+
+      await transaction.commit();
+      res.json({ success: true, message: "Order cancelled successfully" });
+    } catch (txErr) {
+      await transaction.rollback();
+      throw txErr;
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;

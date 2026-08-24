@@ -1479,42 +1479,40 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
         return;
       }
 
-      // 🚀 VERIFIED CHECKOUT: Wait for server response (for other flows)
-      const res = await useCartStore.getState().checkoutOrder(tableId);
-
-      if (res && res.success) {
-        // 🚀 SYNC: Refresh kitchen and global status stores in background
-        setTimeout(() => {
-          useActiveOrdersStore.getState().fetchActiveKitchenOrders().catch(() => {});
-        }, 50);
-
-        if (enableDirectPaymentToProcess) {
-          if (enableSkipSummaryScreen) {
-            router.push("/payment");
-          } else {
-            router.push("/summary");
-          }
-        } else {
-          if (enableSkipSummaryScreen) {
-            router.push("/payment");
-          } else {
-            router.push("/payment");
-          }
-        }
-
-        showToast({
-          type: "success",
-          message: "Success",
-          subtitle: enableCheckoutBill ? "Order finalized & Printing..." : "Checkout completed successfully.",
-          duration: 1000,
-        });
+      // 🚀 INSTANT REDIRECT TO PAYMENT: Go to payment screen immediately for hyper-speed UX
+      if (enableSkipSummaryScreen) {
+        router.push("/payment");
       } else {
-        showToast({
-          type: "error",
-          message: "Checkout Failed",
-          subtitle: "Please try again or check connection.",
-        });
+        router.push("/summary");
       }
+
+      // Fire API call and sync in background
+      (async () => {
+        try {
+          const res = await useCartStore.getState().checkoutOrder(tableId);
+          if (res && res.success) {
+            useActiveOrdersStore.getState().fetchActiveKitchenOrders().catch(() => {});
+            // Broadcast new order to sync KDS screens instantly via sockets
+            socket.emit("new_order", { 
+              orderId: currentOrderId, 
+              context: orderContext, 
+              items: cart.filter((i: any) => i.status !== "VOIDED" && i.statusCode !== 0),
+              createdAt: Date.now() 
+            });
+          }
+        } catch (e) {
+          console.error("Background checkout failed:", e);
+        }
+      })();
+
+      showToast({
+        type: "success",
+        message: "Success",
+        subtitle: enableCheckoutBill ? "Order finalized & Printing..." : "Checkout completed successfully.",
+        duration: 1000,
+      });
+      setIsCheckingOut(false);
+      return;
     } catch (err) {
       console.error("Checkout flow error:", err);
       showToast({
