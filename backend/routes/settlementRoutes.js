@@ -2,6 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { getPool, sql } = require('../config/db');
 const { authenticateToken } = require('../middleware/auth');
+let processDayEndBonusCalculations;
+try {
+  processDayEndBonusCalculations = require('./artistBonus').processDayEndBonusCalculations;
+} catch (err) {
+  console.warn("⚠️ artistBonus module not found. Day-end bonus calculations will be stubbed.");
+  processDayEndBonusCalculations = async () => {
+    return { success: true, message: "Stubbed bonus calculation (module not found)" };
+  };
+}
 
 
 // ============================================
@@ -15,6 +24,18 @@ router.post("/day-start", async (req, res) => {
     }
     const pool = getPool();
     
+    // Check if there is already an active business day
+    const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
+    if (activeDayRes.recordset.length > 0) {
+      const activeDate = activeDayRes.recordset[0].StartDate;
+      const formattedDate = activeDate instanceof Date 
+        ? activeDate.toISOString().split("T")[0] 
+        : activeDate;
+      return res.status(400).json({ 
+        error: `Cannot start a new day. The previous business day (${formattedDate}) is still active. Please perform Day End first.` 
+      });
+    }
+
     // Clear previous active records
     await pool.request().query("DELETE FROM DateEntry");
     
@@ -27,6 +48,26 @@ router.post("/day-start", async (req, res) => {
         INSERT INTO DateEntry (username, StartDate, CreatedBy, CreatedDate)
         VALUES (@username, @startDate, @createdBy, GETDATE())
       `);
+
+    // Log Day Start in BusinessDayLog
+    await pool.request()
+      .input("username", sql.VarChar(30), username || "admin")
+      .input("startDate", sql.Date, startDate)
+      .query(`
+        IF EXISTS(SELECT 1 FROM BusinessDayLog WHERE BusinessDate = @startDate)
+          UPDATE BusinessDayLog SET StartedAt = GETDATE(), StartedBy = @username, EndedAt = NULL, EndedBy = NULL WHERE BusinessDate = @startDate
+        ELSE
+          INSERT INTO BusinessDayLog (BusinessDate, StartedAt, StartedBy) VALUES (@startDate, GETDATE(), @username)
+      `);
+
+    // Record append-only audit trail
+    await pool.request()
+      .input("username", sql.VarChar(30), username || "admin")
+      .input("startDate", sql.Date, startDate)
+      .query(`
+        INSERT INTO BusinessDayAuditLog (BusinessDate, EventType, EventTime, ActionBy)
+        VALUES (@startDate, 'DAY_START', GETDATE(), @username)
+      `);
       
     res.json({ success: true, message: "Day started successfully" });
   } catch (err) {
@@ -38,13 +79,66 @@ router.post("/day-start", async (req, res) => {
 router.post("/day-end", async (req, res) => {
   try {
     const pool = getPool();
+
+    // Fetch active start date before deleting DateEntry
+    const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
+    let activeStartDate = activeDayRes.recordset[0]?.StartDate;
+    if (!activeStartDate && req.body?.businessDate) {
+      activeStartDate = req.body.businessDate;
+    }
+
+    const actionUser = req.body?.username || 'admin';
+
+    // Log Day End in BusinessDayLog
+    if (activeStartDate) {
+      await pool.request()
+        .input("startDate", sql.Date, activeStartDate)
+        .input("username", sql.VarChar(30), actionUser)
+        .query(`
+          IF EXISTS (SELECT 1 FROM BusinessDayLog WHERE BusinessDate = @startDate)
+            UPDATE BusinessDayLog 
+            SET EndedAt = GETDATE(), EndedBy = @username 
+            WHERE BusinessDate = @startDate
+          ELSE
+            INSERT INTO BusinessDayLog (BusinessDate, StartedAt, StartedBy, EndedAt, EndedBy)
+            VALUES (@startDate, GETDATE(), @username, GETDATE(), @username)
+        `);
+
+      // Record append-only audit trail
+      await pool.request()
+        .input("startDate", sql.Date, activeStartDate)
+        .input("username", sql.VarChar(30), actionUser)
+        .query(`
+          INSERT INTO BusinessDayAuditLog (BusinessDate, EventType, EventTime, ActionBy)
+          VALUES (@startDate, 'DAY_END', GETDATE(), @username)
+        `);
+    }
+
+    // 1. Finalize artist bonus transactions for the active business day
+    //    This must happen BEFORE DateEntry is cleared (we need the active StartDate)
+    let bonusResult = null;
+    try {
+      bonusResult = await processDayEndBonusCalculations(pool);
+      console.log('[DayEnd] Artist bonus finalization:', bonusResult);
+    } catch (bonusErr) {
+      // Non-fatal: log but continue with Day End
+      console.error('[DayEnd] Artist bonus finalization error (non-fatal):', bonusErr.message);
+    }
+
+    // 2. Clear active business day — this officially ends the day
     await pool.request().query("DELETE FROM DateEntry");
-    res.json({ success: true, message: "Day ended successfully" });
+
+    res.json({
+      success: true,
+      message: "Day ended successfully",
+      bonusFinalization: bonusResult,
+    });
   } catch (err) {
     console.error("Day End Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 router.get("/active-day", async (req, res) => {
   try {
@@ -62,6 +156,88 @@ router.get("/active-day", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+router.get("/day-log", async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) {
+      return res.status(400).json({ error: "Date parameter is required" });
+    }
+    const pool = getPool();
+    const result = await pool.request()
+      .input("date", sql.Date, date)
+      .query("SELECT StartedAt, StartedBy, EndedAt, EndedBy FROM BusinessDayLog WHERE BusinessDate = @date");
+    
+    if (result.recordset.length > 0) {
+      res.json({ success: true, data: result.recordset[0] });
+    } else {
+      // Check if DateEntry has a started day for this date (Self-Healing)
+      const dateEntryRes = await pool.request()
+        .input("date", sql.Date, date)
+        .query("SELECT username, CreatedDate FROM DateEntry WHERE StartDate = @date");
+      
+      if (dateEntryRes.recordset.length > 0) {
+        const entry = dateEntryRes.recordset[0];
+        // Insert missing BusinessDayLog entry
+        await pool.request()
+          .input("date", sql.Date, date)
+          .input("username", sql.VarChar(30), entry.username || "admin")
+          .input("createdDate", sql.DateTime, entry.CreatedDate || new Date())
+          .query(`
+            INSERT INTO BusinessDayLog (BusinessDate, StartedAt, StartedBy)
+            VALUES (@date, @createdDate, @username)
+          `);
+        
+        res.json({
+          success: true,
+          data: {
+            StartedAt: entry.CreatedDate || new Date(),
+            StartedBy: entry.username || "admin",
+            EndedAt: null,
+            EndedBy: null
+          }
+        });
+      } else {
+        res.json({ success: true, data: null });
+      }
+    }
+  } catch (err) {
+    console.error("Day Log Fetch Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /day-history?date=YYYY-MM-DD or /day-history?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+router.get("/day-history", async (req, res) => {
+  try {
+    const { date, fromDate, toDate } = req.query;
+    const pool = getPool();
+    const request = pool.request();
+
+    let query = `
+      SELECT AuditId, BusinessDate, EventType, EventTime, ActionBy, Remarks
+      FROM BusinessDayAuditLog
+    `;
+
+    if (date) {
+      request.input("date", sql.Date, date);
+      query += ` WHERE BusinessDate = @date`;
+    } else if (fromDate && toDate) {
+      request.input("fromDate", sql.Date, fromDate);
+      request.input("toDate", sql.Date, toDate);
+      query += ` WHERE BusinessDate BETWEEN @fromDate AND @toDate`;
+    }
+
+    query += ` ORDER BY EventTime DESC`;
+
+    const result = await request.query(query);
+    res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    console.error("Day History Fetch Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ============================================
 // 1️⃣ CHECK IF DAY IS SETTLED
@@ -518,23 +694,18 @@ router.get('/cash-out/:terminal', authenticateToken, async (req, res) => {
     const pool = getPool();
     const request = pool.request();
 
-    let dateFilter = "CAST(CashOutDate as DATE) = CAST(GETDATE() as DATE)";
+    let dateFilter = "COALESCE(start_date, CAST(CashOutDate as DATE)) = CAST(GETDATE() as DATE)";
     if (fromDate && toDate) {
       request.input("fromDate", sql.Date, new Date(fromDate));
       request.input("toDate", sql.Date, new Date(toDate));
-      dateFilter = "CAST(CashOutDate as DATE) BETWEEN @fromDate AND @toDate";
+      dateFilter = "COALESCE(start_date, CAST(CashOutDate as DATE)) BETWEEN @fromDate AND @toDate";
     }
 
     let query = `
-      SELECT CashOutId, CashOutNo, CashOutDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn 
+      SELECT CashOutId, CashOutNo, CashOutDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn, start_date, AttachmentUrl
       FROM CashOutEntry 
       WHERE ${dateFilter}
     `;
-
-    if (terminal !== 'ALL') {
-      query += ` AND TerminalCode = @TerminalCode`;
-      request.input('TerminalCode', sql.VarChar, terminal);
-    }
 
     query += ` ORDER BY CreatedOn DESC`;
 
@@ -554,23 +725,18 @@ router.get('/cash-in/:terminal', authenticateToken, async (req, res) => {
     const pool = getPool();
     const request = pool.request();
 
-    let dateFilter = "CAST(CashInDate as DATE) = CAST(GETDATE() as DATE)";
+    let dateFilter = "COALESCE(start_date, CAST(CashInDate as DATE)) = CAST(GETDATE() as DATE)";
     if (fromDate && toDate) {
       request.input("fromDate", sql.Date, new Date(fromDate));
       request.input("toDate", sql.Date, new Date(toDate));
-      dateFilter = "CAST(CashInDate as DATE) BETWEEN @fromDate AND @toDate";
+      dateFilter = "COALESCE(start_date, CAST(CashInDate as DATE)) BETWEEN @fromDate AND @toDate";
     }
 
     let query = `
-      SELECT CashInId, CashInNo, CashInDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn 
+      SELECT CashInId, CashInNo, CashInDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn, start_date, AttachmentUrl 
       FROM CashInEntry 
       WHERE ${dateFilter}
     `;
-
-    if (terminal !== 'ALL') {
-      query += ` AND TerminalCode = @TerminalCode`;
-      request.input('TerminalCode', sql.VarChar, terminal);
-    }
 
     query += ` ORDER BY CreatedOn DESC`;
 
@@ -585,7 +751,7 @@ router.get('/cash-in/:terminal', authenticateToken, async (req, res) => {
 // POST new Cash In entry
 router.post('/cash-in', authenticateToken, async (req, res) => {
   try {
-    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode, date } = req.body;
+    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode, date, attachmentUrl } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valid amount is required' });
@@ -609,10 +775,11 @@ router.post('/cash-in', authenticateToken, async (req, res) => {
       .input('TerminalCode', sql.VarChar, terminalCode || '')
       .input('CreatedBy', sql.VarChar, createdBy)
       .input('targetDate', sql.Date, targetDate)
+      .input('AttachmentUrl', sql.VarChar(500), attachmentUrl || null)
       .query(`
-        INSERT INTO CashInEntry (CashInNo, CashInDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn)
+        INSERT INTO CashInEntry (CashInNo, CashInDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn, start_date, AttachmentUrl)
         OUTPUT inserted.*
-        VALUES (@CashInNo, @targetDate, @Amount, @Reason, @Remarks, @PaymentMode, @ReferenceNo, @TerminalCode, @CreatedBy, @targetDate)
+        VALUES (@CashInNo, @targetDate, @Amount, @Reason, @Remarks, @PaymentMode, @ReferenceNo, @TerminalCode, @CreatedBy, @targetDate, @targetDate, @AttachmentUrl)
       `);
 
     res.json({ success: true, data: result.recordset[0] });
@@ -641,7 +808,7 @@ router.delete('/cash-in/:id', authenticateToken, async (req, res) => {
 router.put('/cash-in/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode } = req.body;
+    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode, attachmentUrl } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valid amount is required' });
@@ -656,10 +823,11 @@ router.put('/cash-in/:id', authenticateToken, async (req, res) => {
       .input('PaymentMode', sql.VarChar, paymentMode || 'Cash')
       .input('ReferenceNo', referenceNo || '')
       .input('TerminalCode', sql.VarChar, terminalCode || '')
+      .input('AttachmentUrl', sql.VarChar(500), attachmentUrl || null)
       .query(`
         UPDATE CashInEntry
         SET Amount = @Amount, Reason = @Reason, Remarks = @Remarks, PaymentMode = @PaymentMode, 
-            ReferenceNo = @ReferenceNo, TerminalCode = @TerminalCode
+            ReferenceNo = @ReferenceNo, TerminalCode = @TerminalCode, AttachmentUrl = @AttachmentUrl
         OUTPUT inserted.*
         WHERE CashInId = @CashInId
       `);
@@ -678,7 +846,7 @@ router.put('/cash-in/:id', authenticateToken, async (req, res) => {
 // POST new Cash Out entry
 router.post('/cash-out', authenticateToken, async (req, res) => {
   try {
-    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode, date } = req.body;
+    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode, date, attachmentUrl } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valid amount is required' });
@@ -703,10 +871,11 @@ router.post('/cash-out', authenticateToken, async (req, res) => {
       .input('TerminalCode', sql.VarChar, terminalCode || '')
       .input('CreatedBy', sql.VarChar, createdBy)
       .input('targetDate', sql.Date, targetDate)
+      .input('AttachmentUrl', sql.VarChar(500), attachmentUrl || null)
       .query(`
-        INSERT INTO CashOutEntry (CashOutNo, CashOutDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn)
+        INSERT INTO CashOutEntry (CashOutNo, CashOutDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn, start_date, AttachmentUrl)
         OUTPUT inserted.*
-        VALUES (@CashOutNo, @targetDate, @Amount, @Reason, @Remarks, @PaymentMode, @ReferenceNo, @TerminalCode, @CreatedBy, @targetDate)
+        VALUES (@CashOutNo, @targetDate, @Amount, @Reason, @Remarks, @PaymentMode, @ReferenceNo, @TerminalCode, @CreatedBy, @targetDate, @targetDate, @AttachmentUrl)
       `);
 
     res.json({ success: true, data: result.recordset[0] });
@@ -720,7 +889,7 @@ router.post('/cash-out', authenticateToken, async (req, res) => {
 router.put('/cash-out/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode } = req.body;
+    const { amount, reason, remarks, paymentMode, referenceNo, terminalCode, attachmentUrl } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valid amount is required' });
@@ -735,10 +904,11 @@ router.put('/cash-out/:id', authenticateToken, async (req, res) => {
       .input('PaymentMode', sql.VarChar, paymentMode || 'Cash')
       .input('ReferenceNo', sql.VarChar, referenceNo || '')
       .input('TerminalCode', sql.VarChar, terminalCode || '')
+      .input('AttachmentUrl', sql.VarChar(500), attachmentUrl || null)
       .query(`
         UPDATE CashOutEntry
         SET Amount = @Amount, Reason = @Reason, Remarks = @Remarks, PaymentMode = @PaymentMode, 
-            ReferenceNo = @ReferenceNo, TerminalCode = @TerminalCode
+            ReferenceNo = @ReferenceNo, TerminalCode = @TerminalCode, AttachmentUrl = @AttachmentUrl
         OUTPUT inserted.*
         WHERE CashOutId = @CashOutId
       `);
@@ -773,6 +943,30 @@ router.delete('/cash-out/:id', authenticateToken, async (req, res) => {
     res.json({ success: true, message: 'Cash out entry deleted successfully' });
   } catch (err) {
     console.error('Error deleting cash out entry:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// GET Artist Cash Box entries
+router.get('/artist-cashbox', authenticateToken, async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const pool = getPool();
+    const request = pool.request();
+
+    let query = `SELECT * FROM ArtistCashBox`;
+    if (fromDate && toDate) {
+      request.input('fromDate', sql.Date, new Date(fromDate));
+      request.input('toDate', sql.Date, new Date(toDate));
+      query += ` WHERE ISNULL(start_date, CAST(CreatedDate AS DATE)) BETWEEN @fromDate AND @toDate`;
+    }
+    query += ` ORDER BY CreatedDate DESC`;
+
+    const result = await request.query(query);
+    res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    console.error('Error fetching artist cashbox:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -828,6 +1022,21 @@ router.post('/artist-cashbox', authenticateToken, async (req, res) => {
       const crypto = require('crypto');
 
       const settlementId = crypto.randomUUID();
+
+      console.log('[CASHBOX] STEP 2b: Inserting into ArtistCashBox...');
+      const cashboxId = crypto.randomUUID();
+      await transaction.request()
+        .input('CashBoxId', sql.UniqueIdentifier, cashboxId)
+        .input('ArtistName', sql.VarChar, ArtistName)
+        .input('Amount', sql.Decimal(18, 2), Amount)
+        .input('SettlementID', sql.UniqueIdentifier, settlementId)
+        .input('startDate', sql.Date, formattedStartDate)
+        .query(`
+          INSERT INTO ArtistCashBox (CashBoxId, ArtistName, Amount, CreatedDate, SettlementID, start_date)
+          VALUES (@CashBoxId, @ArtistName, @Amount, GETDATE(), @SettlementID, @startDate)
+        `);
+      console.log('[CASHBOX] STEP 2b OK');
+
       const dateStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Singapore' }).replace(/-/g, '');
       const billNo = `CB-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -892,13 +1101,13 @@ router.post('/artist-cashbox', authenticateToken, async (req, res) => {
         .input('Amount', sql.Money, Amount)
         .query(`
           INSERT INTO SettlementTotalSales (SettlementID, PayMode, SysAmount, ManualAmount, AmountDiff, ReceiptCount)
-          VALUES (@SettlementID, 'CASH', @Amount, @Amount, 0, 1);
+          VALUES (@SettlementID, 'Cash Box Entry', @Amount, @Amount, 0, 1);
 
           INSERT INTO SettlementDetail (SettlementId, Paymode, SysAmount, ManualAmount, SortageOrExces, ReceiptCount, IsCollected)
-          VALUES (@SettlementID, 'CASH', @Amount, @Amount, 0, 1, 0);
+          VALUES (@SettlementID, 'Cash Box Entry', @Amount, @Amount, 0, 1, 0);
 
           INSERT INTO SettlementTranDetail (SettlementID, PayMode, CashIn, CashOut)
-          VALUES (@SettlementID, 'CASH', @Amount, 0);
+          VALUES (@SettlementID, 'Cash Box Entry', @Amount, 0);
         `);
       console.log('[CASHBOX] STEP 5 OK');
 
@@ -957,6 +1166,54 @@ router.post('/artist-cashbox', authenticateToken, async (req, res) => {
     res.status(500).json({
       error: err.message
     });
+  }
+});
+
+// DELETE Artist Cash Box entry and its associated settlement records
+router.delete('/artist-cashbox/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params; // CashBoxId
+    const pool = getPool();
+    
+    // First, find the SettlementID associated with this CashBoxId
+    const findRes = await pool.request()
+      .input('CashBoxId', sql.UniqueIdentifier, id)
+      .query('SELECT SettlementID FROM ArtistCashBox WHERE CashBoxId = @CashBoxId');
+      
+    if (findRes.recordset.length === 0) {
+      return res.status(404).json({ error: 'Cash box entry not found' });
+    }
+    
+    const settlementId = findRes.recordset[0].SettlementID;
+    
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      const request = new sql.Request(transaction);
+      request.input('CashBoxId', sql.UniqueIdentifier, id);
+      request.input('SettlementID', sql.UniqueIdentifier, settlementId);
+      
+      // Delete from ArtistCashBox
+      await request.query('DELETE FROM ArtistCashBox WHERE CashBoxId = @CashBoxId');
+      
+      // Delete associated settlement records
+      await request.query('DELETE FROM SettlementHeader WHERE SettlementID = @SettlementID');
+      await request.query('DELETE FROM SettlementItemDetail WHERE SettlementID = @SettlementID');
+      await request.query('DELETE FROM SettlementTotalSales WHERE SettlementID = @SettlementID');
+      await request.query('DELETE FROM SettlementDetail WHERE SettlementId = @SettlementID');
+      await request.query('DELETE FROM SettlementTranDetail WHERE SettlementID = @SettlementID');
+      await request.query('DELETE FROM PaymentDetailCur WHERE RestaurantBillId = @SettlementID');
+      await request.query('DELETE FROM PaymentDetail WHERE RestaurantBillId = @SettlementID');
+      
+      await transaction.commit();
+      res.json({ success: true, message: 'Cash box entry and associated settlement deleted successfully' });
+    } catch (innerErr) {
+      try { await transaction.rollback(); } catch (e) {}
+      throw innerErr;
+    }
+  } catch (err) {
+    console.error('Error deleting artist cashbox:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1056,21 +1313,41 @@ router.get('/artist-target-live', authenticateToken, async (req, res) => {
       -- Live Entertainment sales (same query as Item Sales Report)
       WITH AppSales AS (
         SELECT
-          ISNULL(NULLIF(LTRIM(RTRIM(sid.DishName)), ''), ISNULL(d.Name, 'Unknown')) AS ArtistName,
+          ISNULL(
+            (SELECT TOP 1 LTRIM(RTRIM(target_a.CustomerName))
+             FROM dishOrderItemShare target_a
+             WHERE LTRIM(RTRIM(sid.DishName)) = LTRIM(RTRIM(target_a.CustomerName))
+                OR sid.DishName LIKE '%' + LTRIM(RTRIM(target_a.CustomerName)) + '%'),
+            ISNULL(d.Name, 'Unknown')
+          ) AS ArtistName,
           SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED'
-                   THEN CAST(ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0) AS decimal(18,2))
+                   THEN CAST(CASE WHEN (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) - (CASE WHEN sid.DiscountType = 'percentage' THEN (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) * (ISNULL(sid.DiscountAmount, 0) / 100.0) ELSE ISNULL(sid.Qty, 0) * (CASE WHEN ISNULL(sid.DiscountAmount, 0) > ISNULL(sid.Price, 0) THEN ISNULL(sid.Price, 0) ELSE ISNULL(sid.DiscountAmount, 0) END) END) - ISNULL(sid.VIPDiscountAmount, 0) < 0 THEN 0 ELSE (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) - (CASE WHEN sid.DiscountType = 'percentage' THEN (ISNULL(sid.Qty, 0) * ISNULL(sid.Price, 0)) * (ISNULL(sid.DiscountAmount, 0) / 100.0) ELSE ISNULL(sid.Qty, 0) * (CASE WHEN ISNULL(sid.DiscountAmount, 0) > ISNULL(sid.Price, 0) THEN ISNULL(sid.Price, 0) ELSE ISNULL(sid.DiscountAmount, 0) END) END) - ISNULL(sid.VIPDiscountAmount, 0) END AS decimal(18,2))
                    ELSE 0 END) AS totalAmount
         FROM SettlementHeader sh
         INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID
         LEFT JOIN DishMaster d ON sid.DishId = d.DishId
         WHERE sh.LastSettlementDate >= @sgtStart
           AND sh.LastSettlementDate <  @sgtEnd
+          AND ISNULL(sh.OrderType, '') <> 'CASHBOX'
           AND ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), 'Unmapped') = 'Entertainment'
-        GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(sid.DishName)), ''), ISNULL(d.Name, 'Unknown'))
+        GROUP BY 
+          ISNULL(
+            (SELECT TOP 1 LTRIM(RTRIM(target_a.CustomerName))
+             FROM dishOrderItemShare target_a
+             WHERE LTRIM(RTRIM(sid.DishName)) = LTRIM(RTRIM(target_a.CustomerName))
+                OR sid.DishName LIKE '%' + LTRIM(RTRIM(target_a.CustomerName)) + '%'),
+            ISNULL(d.Name, 'Unknown')
+          )
       ),
       ProfSales AS (
         SELECT
-          ISNULL(d.Name, 'Unknown') AS ArtistName,
+          ISNULL(
+            (SELECT TOP 1 LTRIM(RTRIM(target_b.CustomerName))
+             FROM dishOrderItemShare target_b
+             WHERE LTRIM(RTRIM(d.Name)) = LTRIM(RTRIM(target_b.CustomerName))
+                OR d.Name LIKE '%' + LTRIM(RTRIM(target_b.CustomerName)) + '%'),
+            ISNULL(d.Name, 'Unknown')
+          ) AS ArtistName,
           SUM(CASE WHEN rod.StatusCode <> 0
                    THEN CAST(ISNULL(rod.TotalDetailLineAmount, 0) AS decimal(18,2))
                    ELSE 0 END) AS totalAmount
@@ -1086,7 +1363,23 @@ router.get('/artist-target-live', authenticateToken, async (req, res) => {
           AND NOT EXISTS (
             SELECT 1 FROM SettlementHeader sh_dup WHERE sh_dup.BillNo = ro.OrderNumber
           )
-        GROUP BY ISNULL(d.Name, 'Unknown')
+        GROUP BY 
+          ISNULL(
+            (SELECT TOP 1 LTRIM(RTRIM(target_b.CustomerName))
+             FROM dishOrderItemShare target_b
+             WHERE LTRIM(RTRIM(d.Name)) = LTRIM(RTRIM(target_b.CustomerName))
+                OR d.Name LIKE '%' + LTRIM(RTRIM(target_b.CustomerName)) + '%'),
+            ISNULL(d.Name, 'Unknown')
+          )
+      ),
+      CashBoxSales AS (
+        SELECT
+          LTRIM(RTRIM(ArtistName)) AS ArtistName,
+          SUM(Amount) AS totalAmount
+        FROM ArtistCashBox
+        WHERE CAST(CreatedDate AS DATE) >= @fromDate
+          AND CAST(CreatedDate AS DATE) <= @toDate
+        GROUP BY LTRIM(RTRIM(ArtistName))
       ),
       CombinedSales AS (
         SELECT ArtistName, SUM(totalAmount) AS ActualSales
@@ -1094,6 +1387,8 @@ router.get('/artist-target-live', authenticateToken, async (req, res) => {
           SELECT ArtistName, totalAmount FROM AppSales
           UNION ALL
           SELECT ArtistName, totalAmount FROM ProfSales
+          UNION ALL
+          SELECT ArtistName, totalAmount FROM CashBoxSales
         ) t
         GROUP BY ArtistName
       ),

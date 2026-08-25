@@ -5,7 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useGeneralSettingsStore } from "../../stores/generalSettingsStore";
 import { useToast } from "../../components/Toast";
 import { Ionicons } from "@expo/vector-icons";
-import axios from "axios";
+import API from "../../api";
 import * as Print from "expo-print";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -13,6 +13,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -25,95 +26,39 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getSingaporeTimeTodayRange } from "../../utils/timezoneHelper";
+import { getSingaporeTimeTodayRange, formatToSingaporeDateTime } from "../../utils/timezoneHelper";
 
 
-interface CustomDateTimePickerProps {
+interface CustomDatePickerProps {
   visible: boolean;
   onClose: () => void;
   selectedDate: Date;
-  onApply: (date: Date) => void;
+  selectedEndDate: Date;
+  isRangeMode: boolean;
+  onApply: (startDate: Date, endDate: Date, isRange: boolean) => void;
   title: string;
 }
 
-function CustomDateTimePicker({ visible, onClose, selectedDate, onApply, title }: CustomDateTimePickerProps) {
+function CustomDatePicker({ visible, onClose, selectedDate, selectedEndDate, isRangeMode, onApply, title }: CustomDatePickerProps) {
   const { width } = useWindowDimensions();
   const isTablet = width >= 640;
 
-  const getSgtComponents = (d: Date) => {
-    const parts = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Singapore',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).formatToParts(d);
-    const yearVal = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
-    const monthVal = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
-    const dayVal = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
-    return { year: yearVal, month: monthVal, day: dayVal };
-  };
-
-  const [viewDate, setViewDate] = useState(() => {
-    const { year, month, day } = getSgtComponents(selectedDate);
-    return new Date(year, month, day);
-  });
-  const [selectedDay, setSelectedDay] = useState(() => {
-    const { year, month, day } = getSgtComponents(selectedDate);
-    return new Date(year, month, day);
-  });
-  
-  // Time states
-  const [hour, setHour] = useState(() => {
-    const parts = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Singapore',
-      hour: '2-digit',
-      hour12: false
-    }).formatToParts(selectedDate);
-    let h = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
-    h = h % 12;
-    return h === 0 ? 12 : h;
-  });
-  const [minute, setMinute] = useState(() => {
-    const parts = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Singapore',
-      minute: '2-digit'
-    }).formatToParts(selectedDate);
-    return parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
-  });
-  const [amPm, setAmPm] = useState<"AM" | "PM">(() => {
-    const parts = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Singapore',
-      hour: '2-digit',
-      hour12: false
-    }).formatToParts(selectedDate);
-    const h = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
-    return h >= 12 ? "PM" : "AM";
-  });
+  const [viewDate, setViewDate] = useState(() => new Date(selectedDate));
+  const [rangeStart, setRangeStart] = useState(() => new Date(selectedDate));
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(() => isRangeMode ? new Date(selectedEndDate) : null);
+  const [localIsRangeMode, setLocalIsRangeMode] = useState(isRangeMode);
 
   // Sync state when selectedDate changes or modal opens
   useEffect(() => {
     if (visible) {
-      const { year, month, day } = getSgtComponents(selectedDate);
-      setViewDate(new Date(year, month, day));
-      setSelectedDay(new Date(year, month, day));
-      
-      const parts = new Intl.DateTimeFormat('sv-SE', {
-        timeZone: 'Asia/Singapore',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      }).formatToParts(selectedDate);
-      let hSgt = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
-      const minSgt = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
-      
-      const ampm = hSgt >= 12 ? "PM" : "AM";
-      hSgt = hSgt % 12;
-      setHour(hSgt === 0 ? 12 : hSgt);
-      setMinute(minSgt);
-      setAmPm(ampm);
+      setViewDate(new Date(selectedDate));
+      setRangeStart(new Date(selectedDate));
+      setRangeEnd(isRangeMode ? new Date(selectedEndDate) : null);
+      setLocalIsRangeMode(isRangeMode);
     }
-  }, [visible, selectedDate]);
+  }, [visible, selectedDate, selectedEndDate, isRangeMode]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -167,44 +112,34 @@ function CustomDateTimePicker({ visible, onClose, selectedDate, onApply, title }
   }, [year, month]);
 
   const handleDaySelect = (dayObj: typeof days[0]) => {
-    setSelectedDay(new Date(dayObj.year, dayObj.month, dayObj.day));
-  };
+    const clickedDate = new Date(dayObj.year, dayObj.month, dayObj.day);
+    clickedDate.setHours(0, 0, 0, 0);
 
-  // Time adjustment helpers
-  const adjustHour = (amount: number) => {
-    setHour(prev => {
-      let next = prev + amount;
-      if (next > 12) return 1;
-      if (next < 1) return 12;
-      return next;
-    });
-  };
-
-  const adjustMinute = (amount: number) => {
-    setMinute(prev => {
-      let next = prev + amount;
-      if (next > 59) return 0;
-      if (next < 0) return 59;
-      return next;
-    });
+    if (!localIsRangeMode) {
+      setRangeStart(clickedDate);
+      setRangeEnd(null);
+    } else {
+      if (!rangeStart || (rangeStart && rangeEnd)) {
+        setRangeStart(clickedDate);
+        setRangeEnd(null);
+      } else {
+        if (clickedDate < rangeStart) {
+          setRangeStart(clickedDate);
+          setRangeEnd(null);
+        } else {
+          setRangeEnd(clickedDate);
+        }
+      }
+    }
   };
 
   const handleApply = () => {
-    const y = selectedDay.getFullYear();
-    const m = String(selectedDay.getMonth() + 1).padStart(2, '0');
-    const d = String(selectedDay.getDate()).padStart(2, '0');
-    const isTo = title.toLowerCase().includes("to") || title.toLowerCase().includes("end");
-    const timeSuffix = isTo ? "T23:59:59+08:00" : "T00:00:00+08:00";
-    const finalDate = new Date(`${y}-${m}-${d}${timeSuffix}`);
-    onApply(finalDate);
+    const finalStart = new Date(rangeStart);
+    finalStart.setHours(0, 0, 0, 0);
+    const finalEnd = rangeEnd ? new Date(rangeEnd) : new Date(finalStart);
+    finalEnd.setHours(0, 0, 0, 0);
+    onApply(finalStart, finalEnd, localIsRangeMode);
     onClose();
-  };
-
-  const formatSummaryStr = () => {
-    const d = selectedDay.getDate().toString().padStart(2, '0');
-    const m = (selectedDay.getMonth() + 1).toString().padStart(2, '0');
-    const y = selectedDay.getFullYear();
-    return `${d}-${m}-${y}`;
   };
 
   const monthNames = [
@@ -217,7 +152,7 @@ function CustomDateTimePicker({ visible, onClose, selectedDate, onApply, title }
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={pickerStyles.overlay}>
-        <View style={[pickerStyles.modalContainer, !isTablet && { width: '95%', padding: 16, maxHeight: '90%' }]}>
+        <View style={[pickerStyles.modalContainer, { width: isTablet ? 360 : '90%', padding: 16 }]}>
           {/* Header */}
           <View style={pickerStyles.header}>
             <Text style={pickerStyles.headerTitle}>{title}</Text>
@@ -226,87 +161,109 @@ function CustomDateTimePicker({ visible, onClose, selectedDate, onApply, title }
             </TouchableOpacity>
           </View>
 
-          <ScrollView 
-            style={{ flexShrink: 1 }} 
-            contentContainerStyle={{ paddingBottom: 10 }}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Columns Container */}
-            <View style={{ flexDirection: 'column', gap: 20 }}>
-              {/* Left Side: Calendar */}
-              <View style={{ flex: 1 }}>
-                {/* Calendar Navigator */}
-                <View style={pickerStyles.calNavigator}>
-                  <TouchableOpacity onPress={prevMonth} style={pickerStyles.navBtn}>
-                    <Ionicons name="chevron-back" size={16} color="#44403C" />
-                  </TouchableOpacity>
-                  <Text style={pickerStyles.monthYearText}>{monthNames[month]} {year}</Text>
-                  {(() => {
-                    const todayVal = new Date();
-                    const isCurrentMonthOrFuture = year > todayVal.getFullYear() || (year === todayVal.getFullYear() && month >= todayVal.getMonth());
-                    return (
-                      <TouchableOpacity 
-                        onPress={nextMonth} 
-                        disabled={isCurrentMonthOrFuture} 
-                        style={[pickerStyles.navBtn, isCurrentMonthOrFuture && { opacity: 0.25 }]}
-                      >
-                        <Ionicons name="chevron-forward" size={16} color="#44403C" />
-                      </TouchableOpacity>
-                    );
-                  })()}
-                </View>
+          {/* Mode Selector */}
+          <View style={{ flexDirection: 'row', backgroundColor: Theme.bgInput, borderRadius: 12, padding: 4, marginBottom: 16 }}>
+            <TouchableOpacity 
+              style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: !localIsRangeMode ? '#f97316' : 'transparent', borderRadius: 8 }}
+              onPress={() => {
+                setLocalIsRangeMode(false);
+                setRangeEnd(null);
+              }}
+            >
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: !localIsRangeMode ? '#fff' : Theme.textSecondary }}>Single Date</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: localIsRangeMode ? '#f97316' : 'transparent', borderRadius: 8 }}
+              onPress={() => {
+                setLocalIsRangeMode(true);
+              }}
+            >
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: localIsRangeMode ? '#fff' : Theme.textSecondary }}>Date Range</Text>
+            </TouchableOpacity>
+          </View>
 
-                {/* Weekdays Row */}
-                <View style={pickerStyles.weekdaysRow}>
-                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((wd, i) => (
-                    <Text key={i} style={pickerStyles.weekdayText}>{wd}</Text>
-                  ))}
-                </View>
-
-                {/* Days Grid */}
-                <View style={pickerStyles.daysGrid}>
-                  {days.map((dObj, idx) => {
-                    const isSelected = selectedDay.getDate() === dObj.day &&
-                      selectedDay.getMonth() === dObj.month &&
-                      selectedDay.getFullYear() === dObj.year;
-
-                    const today = new Date();
-                    today.setHours(23, 59, 59, 999);
-                    const cellDate = new Date(dObj.year, dObj.month, dObj.day);
-                    const isFuture = cellDate > today;
-
-                    return (
-                      <TouchableOpacity
-                        key={idx}
-                        onPress={() => handleDaySelect(dObj)}
-                        disabled={isFuture}
-                        style={[
-                          pickerStyles.dayBtn,
-                          isSelected && pickerStyles.dayBtnSelected,
-                          isFuture && { opacity: 0.25 }
-                        ]}
-                      >
-                        <Text style={[
-                          pickerStyles.dayText,
-                          !dObj.isCurrentMonth && pickerStyles.dayTextInactive,
-                          isSelected && pickerStyles.dayTextSelected,
-                          isFuture && { color: '#D1D5DB' }
-                        ]}>
-                          {dObj.day}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Summary Display */}
-                <View style={[pickerStyles.summaryCard, { marginTop: 16 }]}>
-                  <Text style={pickerStyles.summaryLabel}>Selected Date:</Text>
-                  <Text style={pickerStyles.summaryValue}>{formatSummaryStr()}</Text>
-                </View>
-              </View>
+          {/* Calendar */}
+          <View style={{ width: '100%' }}>
+            {/* Calendar Navigator */}
+            <View style={pickerStyles.calNavigator}>
+              <TouchableOpacity onPress={prevMonth} style={pickerStyles.navBtn}>
+                <Ionicons name="chevron-back" size={16} color="#44403C" />
+              </TouchableOpacity>
+              <Text style={pickerStyles.monthYearText}>{monthNames[month]} {year}</Text>
+              <TouchableOpacity onPress={nextMonth} style={pickerStyles.navBtn}>
+                <Ionicons name="chevron-forward" size={16} color="#44403C" />
+              </TouchableOpacity>
             </View>
-          </ScrollView>
+
+            {/* Weekdays Row */}
+            <View style={pickerStyles.weekdaysRow}>
+              {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((wd, i) => (
+                <Text key={i} style={pickerStyles.weekdayText}>{wd}</Text>
+              ))}
+            </View>
+
+            {/* Days Grid */}
+            <View style={pickerStyles.daysGrid}>
+              {days.map((dObj, idx) => {
+                const currentDate = new Date(dObj.year, dObj.month, dObj.day);
+                currentDate.setHours(0, 0, 0, 0);
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isFuture = currentDate > today;
+
+                let isSelected = false;
+                let isInRange = false;
+                let isStart = false;
+                let isEnd = false;
+
+                if (!localIsRangeMode) {
+                  isSelected = rangeStart && 
+                    rangeStart.getDate() === dObj.day &&
+                    rangeStart.getMonth() === dObj.month &&
+                    rangeStart.getFullYear() === dObj.year;
+                } else {
+                  isStart = rangeStart && 
+                    rangeStart.getDate() === dObj.day &&
+                    rangeStart.getMonth() === dObj.month &&
+                    rangeStart.getFullYear() === dObj.year;
+                  
+                  isEnd = !!(rangeEnd && 
+                    rangeEnd.getDate() === dObj.day &&
+                    rangeEnd.getMonth() === dObj.month &&
+                    rangeEnd.getFullYear() === dObj.year);
+                  
+                  isSelected = isStart || isEnd;
+
+                  if (rangeStart && rangeEnd) {
+                    isInRange = currentDate > rangeStart && currentDate < rangeEnd;
+                  }
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => !isFuture && handleDaySelect(dObj)}
+                    disabled={isFuture}
+                    style={[
+                      pickerStyles.dayBtn,
+                      isSelected && pickerStyles.dayBtnSelected,
+                      isInRange && { backgroundColor: '#f9731620', borderRadius: 0 },
+                      isFuture && { opacity: 0.3 }
+                    ]}
+                  >
+                    <Text style={[
+                      pickerStyles.dayText,
+                      (!dObj.isCurrentMonth || isFuture) && pickerStyles.dayTextInactive,
+                      isSelected && pickerStyles.dayTextSelected
+                    ]}>
+                      {dObj.day}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
 
           {/* Footer Actions */}
           <View style={pickerStyles.footer}>
@@ -336,9 +293,9 @@ const pickerStyles = StyleSheet.create({
     zIndex: 9999,
   },
   modalContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgCard,
     borderRadius: 20,
-    width: 380,
+    width: 620,
     maxWidth: '95%',
     padding: 24,
     ...Platform.select({
@@ -398,7 +355,7 @@ const pickerStyles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     fontFamily: Fonts.bold,
-    color: '#9CA3AF',
+    color: Theme.textMuted,
   },
   daysGrid: {
     flexDirection: 'row',
@@ -413,7 +370,7 @@ const pickerStyles = StyleSheet.create({
     borderRadius: 8,
   },
   dayBtnSelected: {
-    backgroundColor: '#F97316', // Orange theme
+    backgroundColor: '#f97316', // Orange theme
   },
   dayText: {
     fontSize: 13,
@@ -493,12 +450,12 @@ const pickerStyles = StyleSheet.create({
   ampmBtnTextActive: {
     fontSize: 15,
     fontFamily: Fonts.black,
-    color: '#F97316',
+    color: '#f97316',
   },
   timeLabel: {
     fontSize: 10,
     fontFamily: Fonts.medium,
-    color: '#9CA3AF',
+    color: Theme.textMuted,
     marginTop: 4,
   },
   summaryCard: {
@@ -513,13 +470,13 @@ const pickerStyles = StyleSheet.create({
   summaryLabel: {
     fontSize: 10,
     fontFamily: Fonts.medium,
-    color: '#9CA3AF',
+    color: Theme.textMuted,
     marginBottom: 2,
   },
   summaryValue: {
     fontSize: 13,
     fontFamily: Fonts.black,
-    color: '#F97316',
+    color: '#f97316',
   },
   footer: {
     flexDirection: 'row',
@@ -543,7 +500,7 @@ const pickerStyles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 10,
-    backgroundColor: '#F97316',
+    backgroundColor: '#f97316',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -571,20 +528,15 @@ export default function SettlementScreen() {
   const executeDayEnd = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/settlement/day-end`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          username: user?.userName || "admin"
-        })
+      const res = await API.post("/settlement/day-end", {
+        username: user?.userName || "admin",
+        businessDate: getLocalDateStr(selectedDate)
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = res.data;
+      if (data.success) {
         const AsyncStorage = require("@react-native-async-storage/async-storage").default;
         await AsyncStorage.removeItem("selected_business_date");
+        fetchData();
         showToast({
           type: "success",
           message: "Day Ended Successfully",
@@ -598,12 +550,12 @@ export default function SettlementScreen() {
           subtitle: data.error || "Failed to complete Day End."
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Day End Error:", err);
       showToast({
         type: "error",
-        message: "Network Error",
-        subtitle: "Failed to connect to the server."
+        message: "Day End Failed",
+        subtitle: err.response?.data?.error || err.message || "Failed to connect to the server."
       });
     } finally {
       setLoading(false);
@@ -611,6 +563,22 @@ export default function SettlementScreen() {
   };
 
   const handleDayEnd = () => {
+    if (!dayLog || !dayLog.StartedAt) {
+      showToast({
+        type: "warning",
+        message: "Day Not Started",
+        subtitle: "Please press Day Start before performing Day End."
+      });
+      return;
+    }
+    if (dayLog.EndedAt) {
+      showToast({
+        type: "warning",
+        message: "Day Already Ended",
+        subtitle: "The business day for this date has already been ended."
+      });
+      return;
+    }
     setShowConfirmModal(true);
   };
 
@@ -629,8 +597,13 @@ export default function SettlementScreen() {
     Reason: '',
     Remarks: '',
     PaymentMode: 'Cash',
-    ReferenceNo: ''
+    ReferenceNo: '',
+    AttachmentUrl: ''
   });
+
+  const [uploading, setUploading] = useState(false);
+  const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
+  const [showAllMediaModal, setShowAllMediaModal] = useState(false);
 
   // Cash In State
   const [cashInEntries, setCashInEntries] = useState<any[]>([]);
@@ -641,31 +614,68 @@ export default function SettlementScreen() {
     Reason: '',
     Remarks: '',
     PaymentMode: 'Cash',
-    ReferenceNo: ''
+    ReferenceNo: '',
+    AttachmentUrl: ''
   });
-const [cashBoxForm, setCashBoxForm] = useState({
-  ArtistName: '',
-  Amount: ''
-});
+
+  // Cash Box State
+  const [cashBoxEntries, setCashBoxEntries] = useState<any[]>([]);
+  const [cashBoxForm, setCashBoxForm] = useState({
+    ArtistName: '',
+    Amount: '',
+    CashBoxId: ''
+  });
+  
+  // Generic Confirm State
+  const [genericConfirm, setGenericConfirm] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // Supervisor Password Verification State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordValue, setPasswordValue] = useState("");
+  const [passwordAction, setPasswordAction] = useState<{
+    onSuccess: () => void;
+    title: string;
+    description: string;
+    role: string;
+  } | null>(null);
+
+  const promptPassword = (title: string, description: string, role: string, onSuccess: () => void) => {
+    setPasswordValue("");
+    setPasswordAction({ onSuccess, title, description, role });
+    setShowPasswordModal(true);
+  };
   const [lovMode, setLovMode] = useState<"OPEN" | "CLOSE">("OPEN");
 
   const [openingCash, setOpeningCash] = useState<string>("0");
 
   const [dishList, setDishList] = useState<any[]>([]);
-const [showDishLov, setShowDishLov] = useState(false);
-const [artistSearch, setArtistSearch] = useState("");
+  const [showDishLov, setShowDishLov] = useState(false);
+  const [artistSearch, setArtistSearch] = useState("");
 
-  const [fromDate, setFromDate] = useState<Date>(() => {
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const { from } = getSingaporeTimeTodayRange();
     return from;
   });
-  const [toDate, setToDate] = useState<Date>(() => {
-    const { to } = getSingaporeTimeTodayRange();
-    return to;
+  const [selectedEndDate, setSelectedEndDate] = useState<Date>(() => {
+    const { from } = getSingaporeTimeTodayRange();
+    return from;
   });
-
-  const [showFromPicker, setShowFromPicker] = useState(false);
-  const [showToPicker, setShowToPicker] = useState(false);
+  const [isRangeMode, setIsRangeMode] = useState<boolean>(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dayLog, setDayLog] = useState<{ StartedAt: string | null; StartedBy: string | null; EndedAt: string | null; EndedBy: string | null } | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const userId = user?.userId || "0";
 
@@ -681,70 +691,27 @@ const [artistSearch, setArtistSearch] = useState("");
   const [closingCounts, setClosingCounts] = useState<Record<string, string>>(initialCounts);
 
   const pad = (n: number) => n.toString().padStart(2, '0');
-  const formatLocal = (d: Date) => {
-    const parts = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Singapore',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).formatToParts(d);
-    const y = parts.find(p => p.type === 'year')?.value;
-    const m = parts.find(p => p.type === 'month')?.value;
-    const day = parts.find(p => p.type === 'day')?.value;
-    const h = parts.find(p => p.type === 'hour')?.value;
-    const min = parts.find(p => p.type === 'minute')?.value;
-    const s = parts.find(p => p.type === 'second')?.value;
-    return `${y}-${m}-${day}T${h}:${min}:${s}`;
-  };
-  const getLocalDateStr = (d: Date) => {
-    const parts = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Singapore',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).formatToParts(d);
-    const y = parts.find(p => p.type === 'year')?.value;
-    const m = parts.find(p => p.type === 'month')?.value;
-    const day = parts.find(p => p.type === 'day')?.value;
-    return `${y}-${m}-${day}`;
-  };
+  const formatLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+  const getLocalDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
   const formatDateTime = (date: Date) => {
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Singapore',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
-    const parts = formatter.formatToParts(date);
-    const day = parts.find(p => p.type === 'day')?.value || '00';
-    const month = parts.find(p => p.type === 'month')?.value || '00';
-    const year = parts.find(p => p.type === 'year')?.value || '0000';
-    const hour = parts.find(p => p.type === 'hour')?.value || '00';
-    const minute = parts.find(p => p.type === 'minute')?.value || '00';
-    const dayPeriod = (parts.find(p => p.type === 'dayPeriod')?.value || 'AM').toUpperCase();
-    return `${day}-${month}-${year} ${hour}:${minute} ${dayPeriod}`;
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const y = date.getFullYear();
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const h = hours.toString().padStart(2, '0');
+    return `${d}-${m}-${y} ${h}:${minutes} ${ampm}`;
   };
 
-  const formatDateOnly = (date: Date) => {
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Singapore',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-    const parts = formatter.formatToParts(date);
-    const day = parts.find(p => p.type === 'day')?.value || '00';
-    const month = parts.find(p => p.type === 'month')?.value || '00';
-    const year = parts.find(p => p.type === 'year')?.value || '0000';
-    return `${day}-${month}-${year}`;
+  // Uses the app-wide Singapore-time helper so timestamps always reflect SGT (UTC+8)
+  // regardless of the device's local timezone.
+  const formatTimeOnly = (isoStr: string | null): string => {
+    if (!isoStr) return "N/A";
+    return formatToSingaporeDateTime(isoStr); // e.g. "22 Jul • 09:05 PM"
   };
 
   const handleCountChange = (denomStr: string, val: string) => {
@@ -766,32 +733,24 @@ const [artistSearch, setArtistSearch] = useState("");
   const totalClosing = computeTotal(closingCounts);
 
   useEffect(() => {
-    const initDate = async () => {
+    const fetchActiveDay = async () => {
       try {
-        const savedBusinessDate = await require("@react-native-async-storage/async-storage").default.getItem("selected_business_date");
-        let activeDateStr = savedBusinessDate;
-        
-        try {
-          const res = await fetch(`${API_URL}/api/settlement/active-day`);
-          const data = await res.json();
-          if (data.success && data.active && data.startDate) {
-            activeDateStr = data.startDate;
+        const res = await API.get(`/settlement/active-day`);
+        if (res.data?.success && res.data?.active && res.data?.startDate) {
+          const parts = res.data.startDate.split("-");
+          if (parts.length === 3) {
+            setSelectedDate(new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+            setSelectedEndDate(new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+          } else {
+            setSelectedDate(new Date(res.data.startDate));
+            setSelectedEndDate(new Date(res.data.startDate));
           }
-        } catch (err) {
-          console.warn("Failed to fetch active business day inside Settlement:", err);
         }
-
-        if (activeDateStr) {
-          const activeFrom = new Date(`${activeDateStr}T00:00:00+08:00`);
-          const activeTo = new Date(`${activeDateStr}T23:59:59+08:00`);
-          setFromDate(activeFrom);
-          setToDate(activeTo);
-        }
-      } catch (e) {
-        console.error("Failed to load business date:", e);
+      } catch (err) {
+        console.error("Error fetching active day:", err);
       }
     };
-    initDate();
+    fetchActiveDay();
     loadTerminals();
     loadDishes();
     useGeneralSettingsStore.getState().fetchSettings();
@@ -800,7 +759,7 @@ const [artistSearch, setArtistSearch] = useState("");
   const loadTerminals = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_URL}/api/settlement/terminals`);
+      const res = await API.get(`/settlement/terminals`);
       const termData = res.data || [];
       setTerminals(termData);
       if (termData.length > 0) {
@@ -818,8 +777,8 @@ const [artistSearch, setArtistSearch] = useState("");
 
 const loadDishes = async () => {
   try {
-    const res = await axios.get(
-      `${API_URL}/api/settlement/artist-list`,
+    const res = await API.get(
+      `/settlement/artist-list`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -835,29 +794,47 @@ const loadDishes = async () => {
   }
 };
 
+const fetchDayHistory = async () => {
+  try {
+    setLoadingHistory(true);
+    const res = await API.get(`/settlement/day-history`);
+    if (res.data?.success) {
+      setHistoryLogs(res.data.data || []);
+    } else {
+      setHistoryLogs([]);
+    }
+  } catch (err) {
+    console.error("Error fetching day history:", err);
+    setHistoryLogs([]);
+  } finally {
+    setLoadingHistory(false);
+  }
+};
+
   useEffect(() => {
     if (selectedTerminal) fetchData();
-  }, [selectedTerminal, fromDate, toDate]);
+  }, [selectedTerminal, selectedDate, selectedEndDate, isRangeMode]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
 
-      const fromStr = formatLocal(fromDate);
-      const toStr = formatLocal(toDate);
+      const dateStr = getLocalDateStr(selectedDate); // e.g. "2026-07-22"
+      const endDateStr = isRangeMode ? getLocalDateStr(selectedEndDate) : dateStr;
 
-      const totalRes = await axios.get(`${API_URL}/api/settlement/total-sales/${selectedTerminal}?fromDate=${fromStr}&toDate=${toStr}`).catch(() => ({ data: {} }));
-      const payRes = await axios.get(`${API_URL}/api/settlement/payment/${selectedTerminal}/${userId}?fromDate=${fromStr}&toDate=${toStr}`).catch(() => ({ data: [] }));
-      const transRes = await axios.get(`${API_URL}/api/settlement/transactions/${selectedTerminal}/${userId}?fromDate=${fromStr}&toDate=${toStr}`).catch(() => ({ data: [] }));
-      const salesRes = await axios.get(`${API_URL}/api/settlement/sales-summary/${selectedTerminal}?fromDate=${fromStr}&toDate=${toStr}`).catch(() => ({ data: [] }));
+      const totalRes = await API.get(`/settlement/total-sales/${selectedTerminal}?fromDate=${dateStr}&toDate=${endDateStr}`).catch(() => ({ data: {} }));
+      const payRes = await API.get(`/settlement/payment/${selectedTerminal}/${userId}?fromDate=${dateStr}&toDate=${endDateStr}`).catch(() => ({ data: [] }));
+      const transRes = await API.get(`/settlement/transactions/${selectedTerminal}/${userId}?fromDate=${dateStr}&toDate=${endDateStr}`).catch(() => ({ data: [] }));
+      const salesRes = await API.get(`/settlement/sales-summary/${selectedTerminal}?fromDate=${dateStr}&toDate=${endDateStr}`).catch(() => ({ data: [] }));
 
       const outId = selectedTerminal === "ALL" ? 1 : selectedTerminal;
-      const dateStr = getLocalDateStr(fromDate); // Fetch opening cash for the fromDate
-      const openRes = await axios.get(`${API_URL}/api/settlement/opening-cash?outletId=${outId}&date=${dateStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
-      const denomsRes = await axios.get(`${API_URL}/api/settlement/denominations?type=OPEN&date=${dateStr}&screenType=CB`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
-      const closeDenomsRes = await axios.get(`${API_URL}/api/settlement/denominations?type=CLOSE&date=${dateStr}&screenType=CB`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
-      const cashOutRes = await axios.get(`${API_URL}/api/settlement/cash-out/${selectedTerminal}?fromDate=${fromStr}&toDate=${toStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
-      const cashInRes = await axios.get(`${API_URL}/api/settlement/cash-in/${selectedTerminal}?fromDate=${fromStr}&toDate=${toStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const openRes = await API.get(`/settlement/opening-cash?outletId=${outId}&date=${dateStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const denomsRes = await API.get(`/settlement/denominations?type=OPEN&date=${dateStr}&screenType=CB`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const closeDenomsRes = await API.get(`/settlement/denominations?type=CLOSE&date=${dateStr}&screenType=CB`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const cashOutRes = await API.get(`/settlement/cash-out/${selectedTerminal}?fromDate=${dateStr}&toDate=${endDateStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const cashInRes = await API.get(`/settlement/cash-in/${selectedTerminal}?fromDate=${dateStr}&toDate=${endDateStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const cashBoxRes = await API.get(`/settlement/artist-cashbox?fromDate=${dateStr}&toDate=${endDateStr}`, { headers: { Authorization: `Bearer ${useAuthStore.getState().token}` } }).catch(() => ({ data: null }));
+      const dayLogRes = await API.get(`/settlement/day-log?date=${dateStr}`).catch(() => ({ data: null }));
 
       setTotalSales(totalRes.data || {});
       setPayments(payRes.data || []);
@@ -865,6 +842,8 @@ const loadDishes = async () => {
       setSales(salesRes.data || []);
       setCashOutEntries(cashOutRes.data?.data || []);
       setCashInEntries(cashInRes.data?.data || []);
+      setCashBoxEntries(cashBoxRes.data?.data || []);
+      setDayLog(dayLogRes.data?.data || null);
 
       if (openRes.data?.data?.total) {
         setOpeningCash(openRes.data.data.total.toString());
@@ -916,6 +895,7 @@ const loadDishes = async () => {
   const displayOpeningAmount = totalOpening > 0 ? totalOpening : (parseFloat(openingCash) || 0);
   const totalCashOut = cashOutEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
   const totalCashInEntries = cashInEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
+  const totalCashBoxEntries = cashBoxEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
   const cashBoxTotal = payments
     .filter(p => p.PaymodeName?.toUpperCase().includes("CASH BOX") || p.PaymodeName?.toUpperCase().includes("CASHBOX"))
     .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
@@ -926,21 +906,60 @@ const loadDishes = async () => {
   }, 0);
 
   const transactionsTotal = baseTransactionsTotal + displayOpeningAmount - totalCashOut + totalCashInEntries;
-  const salesCash = parseFloat(payments.find(p => p.PaymodeName?.toUpperCase() === 'CASH')?.Amount) || 0;
 
-  const sysCash = salesCash + transactionsTotal;
+  const normalCashSales = payments
+    .filter(p => {
+      const name = p.PaymodeName?.toUpperCase();
+      return name === 'CASH' || name === 'CASHBOX' || name === 'CASH BOX';
+    })
+    .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
 
-  const totalCashIn = salesCash + displayOpeningAmount + totalCashInEntries + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
-  const uiTotalIn = paymentsTotal + displayOpeningAmount + totalCashInEntries + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
-  const totalCashOutSum = totalCashOut + transactions.filter(t => t.TransactionType === "OUT").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
+  const cashBoxEntrySales = 0;
+
+  const salesCash = normalCashSales;
+
+  const dbHasCashSalesInCashIn = cashInEntries.some(entry => entry.Reason === 'Cash Sale');
+
+  const cashInTransactionsSum = transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
+  const cashOutTransactionsSum = transactions.filter(t => t.TransactionType === "OUT").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
+
+  const displayManualCashIn = dbHasCashSalesInCashIn
+    ? Math.max(0, totalCashInEntries - salesCash)
+    : totalCashInEntries;
+
+  const displayCashInCard = dbHasCashSalesInCashIn
+    ? totalCashInEntries + cashInTransactionsSum
+    : totalCashInEntries + salesCash + cashInTransactionsSum;
+
+  const displayCashOutCard = totalCashOut + cashOutTransactionsSum;
+
+  const totalCashIn = salesCash + displayOpeningAmount + displayManualCashIn + cashInTransactionsSum;
+
+  const totalCashOutSum = totalCashOut + cashOutTransactionsSum;
+
+  const nonCashTotal = payments
+    .filter(p => {
+      const name = p.PaymodeName?.toUpperCase() || "";
+      return name !== 'CASH' && name !== 'CASHBOX' && name !== 'CASH BOX';
+    })
+    .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
+
+  const sysCash = totalCashIn - totalCashOutSum;
 
   const handleFinalize = async () => {
     try {
       setLoading(true);
+      const token = await useAuthStore.getState().token;
+      if (!token) {
+        Alert.alert("Error", "No authentication token found. Please login again.");
+        return;
+      }
+
+      const sumByMode = (mode: string) => payments.filter(p => p.PaymodeName?.trim().toUpperCase() === mode).reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
 
       const payload = {
         outletId: 1, // Fallback, backend handles this based on user
-        settlementDate: getLocalDateStr(fromDate),
+        settlementDate: getLocalDateStr(selectedDate),
         cashierName: user?.userName || "Admin",
         totalSales: totalSales.SubTotal || 0,
         totalDiscount: totalSales.DiscountAmount || 0,
@@ -952,13 +971,13 @@ const loadDishes = async () => {
         varianceStatus: totalClosing === sysCash ? "BALANCED" : (totalClosing > sysCash ? "SURPLUS" : "SHORTAGE"),
         openingCash: displayOpeningAmount,
         cashAmount: totalClosing,
-        cardAmount: payments.find(p => p.PaymodeName?.toUpperCase() === 'CARD')?.Amount || 0,
-        upiAmount: payments.find(p => p.PaymodeName?.toUpperCase() === 'UPI')?.Amount || 0,
-        paynowAmount: payments.find(p => p.PaymodeName?.toUpperCase() === 'PAYNOW')?.Amount || 0,
-        valueCardAmount: payments.find(p => p.PaymodeName?.toUpperCase() === 'VALUE CARD')?.Amount || 0,
+        cardAmount: sumByMode('CARD'),
+        upiAmount: sumByMode('UPI'),
+        paynowAmount: sumByMode('PAYNOW'),
+        valueCardAmount: sumByMode('VALUE CARD'),
       };
 
-      const res = await axios.post(`${API_URL}/api/settlement/finalize`, payload, {
+      const res = await API.post(`/settlement/finalize`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -993,10 +1012,10 @@ const loadDishes = async () => {
         count: parseInt(count, 10) || 0
       }));
 
-      const dateStr = getLocalDateStr(fromDate);
+      const dateStr = getLocalDateStr(selectedDate);
       const outId = selectedTerminal === "ALL" ? 1 : selectedTerminal;
 
-      const res = await axios.post(`${API_URL}/api/settlement/save-denominations`, {
+      const res = await API.post(`/settlement/save-denominations`, {
         denominations: denomsPayload,
         type: lovMode,
         date: dateStr,
@@ -1023,12 +1042,7 @@ const loadDishes = async () => {
     }
   };
 
-  const handleSaveCashOut = async () => {
-    if (!cashOutForm.Amount || parseFloat(cashOutForm.Amount) <= 0) {
-      Alert.alert("Validation", "Please enter a valid amount");
-      return;
-    }
-
+  const executeSaveCashOut = async () => {
     try {
       setLoading(true);
       const payload = {
@@ -1038,26 +1052,24 @@ const loadDishes = async () => {
         paymentMode: cashOutForm.PaymentMode,
         referenceNo: cashOutForm.ReferenceNo,
         terminalCode: selectedTerminal === "ALL" ? "" : selectedTerminal,
-        date: getLocalDateStr(fromDate)
+        date: getLocalDateStr(selectedDate),
+        attachmentUrl: cashOutForm.AttachmentUrl || null
       };
 
       let res;
       if (cashOutForm.CashOutId) {
-        res = await axios.put(`${API_URL}/api/settlement/cash-out/${cashOutForm.CashOutId}`, payload, {
+        res = await API.put(`/settlement/cash-out/${cashOutForm.CashOutId}`, payload, {
           headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
         });
       } else {
-        res = await axios.post(`${API_URL}/api/settlement/cash-out`, payload, {
+        res = await API.post(`/settlement/cash-out`, payload, {
           headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
         });
       }
 
       if (res.data.success) {
-        setCashOutForm({ CashOutId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '' });
+        setCashOutForm({ CashOutId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '', AttachmentUrl: '' });
         setShowCashOutModal(false);
-        setToDate(new Date()); // Auto-update the "To" date so the new record falls within the filter range
-        // Since setToDate triggers a re-fetch via useEffect, we don't strictly need fetchData() here,
-        // but we'll leave it to guarantee a refresh.
         fetchData();
         Alert.alert("Success", "Cash Out entry saved");
       }
@@ -1069,12 +1081,108 @@ const loadDishes = async () => {
     }
   };
 
-  const handleSaveCashIn = async () => {
-    if (!cashInForm.Amount || parseFloat(cashInForm.Amount) <= 0) {
+  const handleSaveCashOut = () => {
+    if (!cashOutForm.Amount || parseFloat(cashOutForm.Amount) <= 0) {
       Alert.alert("Validation", "Please enter a valid amount");
       return;
     }
+    if (cashOutForm.CashOutId) {
+      promptPassword(
+        "Edit Cash Out",
+        "Enter Admin password to modify this Cash Out entry",
+        "ADMIN",
+        executeSaveCashOut
+      );
+    } else {
+      executeSaveCashOut();
+    }
+  };
 
+  const handleSelectImage = async (mode: 'camera' | 'library') => {
+    try {
+      let permissionResult;
+      if (mode === 'camera') {
+        permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      } else {
+        permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      }
+
+      if (!permissionResult.granted) {
+        Alert.alert("Permission Denied", `We need access to your ${mode === 'camera' ? 'camera' : 'photo library'} to upload receipts.`);
+        return;
+      }
+
+      const pickerResult = mode === 'camera'
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.3,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.3,
+          });
+
+      if (pickerResult.canceled || !pickerResult.assets || pickerResult.assets.length === 0) {
+        return;
+      }
+
+      const fileUri = pickerResult.assets[0].uri;
+      await handleUploadImage(fileUri);
+    } catch (err) {
+      console.error("❌ SELECT IMAGE ERROR", err);
+      Alert.alert("Error", "Failed to select image");
+    }
+  };
+
+  const handleUploadImage = async (fileUri: string) => {
+    try {
+      setUploading(true);
+      const formData = new FormData();
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(fileUri);
+        const blob = await response.blob();
+        formData.append('image', blob, 'receipt.png');
+      } else {
+        const filename = fileUri.split('/').pop() || 'receipt.jpg';
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+        formData.append('image', {
+          uri: fileUri,
+          name: filename,
+          type,
+        } as any);
+      }
+
+      const response = await API.post('/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          Authorization: `Bearer ${useAuthStore.getState().token}`,
+        },
+      });
+
+      if (response.data && response.data.success) {
+        if (showCashInModal) {
+          setCashInForm(prev => ({ ...prev, AttachmentUrl: response.data.imageUrl }));
+        } else {
+          setCashOutForm(prev => ({ ...prev, AttachmentUrl: response.data.imageUrl }));
+        }
+        Alert.alert("Success", "Receipt uploaded successfully!");
+      } else {
+        Alert.alert("Upload Failed", "Could not upload image to server.");
+      }
+    } catch (err: any) {
+      console.error("❌ UPLOAD IMAGE ERROR", err);
+      Alert.alert("Error", "Failed to upload image");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const executeSaveCashIn = async () => {
     try {
       setLoading(true);
       const payload = {
@@ -1084,24 +1192,24 @@ const loadDishes = async () => {
         paymentMode: cashInForm.PaymentMode,
         referenceNo: cashInForm.ReferenceNo,
         terminalCode: selectedTerminal === "ALL" ? "" : selectedTerminal,
-        date: getLocalDateStr(fromDate)
+        date: getLocalDateStr(selectedDate),
+        attachmentUrl: cashInForm.AttachmentUrl || null
       };
 
       let res;
       if (cashInForm.CashInId) {
-        res = await axios.put(`${API_URL}/api/settlement/cash-in/${cashInForm.CashInId}`, payload, {
+        res = await API.put(`/settlement/cash-in/${cashInForm.CashInId}`, payload, {
           headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
         });
       } else {
-        res = await axios.post(`${API_URL}/api/settlement/cash-in`, payload, {
+        res = await API.post(`/settlement/cash-in`, payload, {
           headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
         });
       }
 
       if (res.data.success) {
-        setCashInForm({ CashInId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '' });
+        setCashInForm({ CashInId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '', AttachmentUrl: '' });
         setShowCashInModal(false);
-        setToDate(new Date());
         fetchData();
         Alert.alert("Success", "Cash In entry saved");
       }
@@ -1113,41 +1221,86 @@ const loadDishes = async () => {
     }
   };
 
-  const handleSaveCashBox = async () => {
-  try {
+  const handleSaveCashIn = () => {
+    if (!cashInForm.Amount || parseFloat(cashInForm.Amount) <= 0) {
+      Alert.alert("Validation", "Please enter a valid amount");
+      return;
+    }
+    if (cashInForm.CashInId) {
+      promptPassword(
+        "Edit Cash In",
+        "Enter Admin password to modify this Cash In entry",
+        "ADMIN",
+        executeSaveCashIn
+      );
+    } else {
+      executeSaveCashIn();
+    }
+  };
 
-    await axios.post(
-      `${API_URL}/api/settlement/artist-cashbox`,
-      {
-        ArtistName: cashBoxForm.ArtistName,
-        Amount: parseFloat(cashBoxForm.Amount)
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
-
-    Alert.alert("Success", "Cash Box Saved");
-
-    setCashBoxForm({
-      ArtistName: "",
-      Amount: "",
-    });
-
-    setShowCashBoxModal(false);
-
-  } catch (err) {
-    console.log(err);
-    Alert.alert("Error", "Failed to save");
-  }
-};
-
-  const executeDeleteCashOut = async (id: string) => {
+  const executeSaveCashBox = async () => {
     try {
       setLoading(true);
-      const res = await axios.delete(`${API_URL}/api/settlement/cash-out/${id}`, {
+
+      if (cashBoxForm.CashBoxId) {
+        await API.delete(`/settlement/artist-cashbox/${cashBoxForm.CashBoxId}`, {
+          headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
+        });
+      }
+
+      await API.post(
+        `/settlement/artist-cashbox`,
+        {
+          ArtistName: cashBoxForm.ArtistName,
+          Amount: parseFloat(cashBoxForm.Amount)
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      Alert.alert("Success", "Cash Box Saved");
+
+      setCashBoxForm({
+        ArtistName: "",
+        Amount: "",
+        CashBoxId: ""
+      });
+
+      setShowCashBoxModal(false);
+      fetchData();
+
+    } catch (err) {
+      console.log(err);
+      Alert.alert("Error", "Failed to save");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveCashBox = () => {
+    if (!cashBoxForm.ArtistName || !cashBoxForm.Amount || parseFloat(cashBoxForm.Amount) <= 0) {
+      Alert.alert("Validation", "Artist name and valid amount are required");
+      return;
+    }
+    if (cashBoxForm.CashBoxId) {
+      promptPassword(
+        "Edit Cash Box",
+        "Enter Admin password to modify this Artist Cashbox entry",
+        "ADMIN",
+        executeSaveCashBox
+      );
+    } else {
+      executeSaveCashBox();
+    }
+  };
+
+  const executeDeleteCashBox = async (id: string) => {
+    try {
+      setLoading(true);
+      const res = await API.delete(`/settlement/artist-cashbox/${id}`, {
         headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
       });
       if (res.data.success) {
@@ -1160,28 +1313,62 @@ const loadDishes = async () => {
     }
   };
 
-  const handleDeleteCashOut = async (id: string) => {
-    if (!id) {
-      Alert.alert("Error", "Invalid entry ID");
-      return;
-    }
-
-    if (Platform.OS === 'web') {
-      if (window.confirm("Are you sure you want to delete this cash out entry?")) {
-        executeDeleteCashOut(id);
+  const handleDeleteCashBox = (id: string) => {
+    if (!id) return;
+    setGenericConfirm({
+      visible: true,
+      title: "Delete Cash Box",
+      message: "Are you sure you want to delete this artist cashbox entry?",
+      onConfirm: () => {
+        setGenericConfirm(prev => ({ ...prev, visible: false }));
+        promptPassword(
+          "Delete Cash Box",
+          "Enter Admin/Void password to delete this Artist Cashbox entry",
+          "Void,ADMIN",
+          () => executeDeleteCashBox(id)
+        );
       }
-    } else {
-      Alert.alert("Confirm", "Are you sure you want to delete this cash out entry?", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => executeDeleteCashOut(id) }
-      ]);
+    });
+  };
+
+  const executeDeleteCashOut = async (id: string) => {
+    try {
+      setLoading(true);
+      const res = await API.delete(`/settlement/cash-out/${id}`, {
+        headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
+      });
+      if (res.data.success) {
+        fetchData();
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err.response?.data?.error || "Failed to delete entry");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleDeleteCashOut = (id: string) => {
+    if (!id) return;
+    setGenericConfirm({
+      visible: true,
+      title: "Delete Cash Out",
+      message: "Are you sure you want to delete this cash out entry?",
+      onConfirm: () => {
+        setGenericConfirm(prev => ({ ...prev, visible: false }));
+        promptPassword(
+          "Delete Cash Out",
+          "Enter Admin/Void password to delete this Cash Out entry",
+          "Void,ADMIN",
+          () => executeDeleteCashOut(id)
+        );
+      }
+    });
   };
 
   const executeDeleteCashIn = async (id: string) => {
     try {
       setLoading(true);
-      const res = await axios.delete(`${API_URL}/api/settlement/cash-in/${id}`, {
+      const res = await API.delete(`/settlement/cash-in/${id}`, {
         headers: { Authorization: `Bearer ${useAuthStore.getState().token}` }
       });
       if (res.data.success) {
@@ -1194,22 +1381,22 @@ const loadDishes = async () => {
     }
   };
 
-  const handleDeleteCashIn = async (id: string) => {
-    if (!id) {
-      Alert.alert("Error", "Invalid entry ID");
-      return;
-    }
-
-    if (Platform.OS === 'web') {
-      if (window.confirm("Are you sure you want to delete this cash in entry?")) {
-        executeDeleteCashIn(id);
+  const handleDeleteCashIn = (id: string) => {
+    if (!id) return;
+    setGenericConfirm({
+      visible: true,
+      title: "Delete Cash In",
+      message: "Are you sure you want to delete this cash in entry?",
+      onConfirm: () => {
+        setGenericConfirm(prev => ({ ...prev, visible: false }));
+        promptPassword(
+          "Delete Cash In",
+          "Enter Admin/Void password to delete this Cash In entry",
+          "Void,ADMIN",
+          () => executeDeleteCashIn(id)
+        );
       }
-    } else {
-      Alert.alert("Confirm", "Are you sure you want to delete this cash in entry?", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => executeDeleteCashIn(id) }
-      ]);
-    }
+    });
   };
 
    const handlePrintReport = async () => {
@@ -1251,54 +1438,25 @@ const loadDishes = async () => {
         }
       };
 
-      const fromDateStr = formatDateOnly(fromDate);
-      const toDateStr = formatDateOnly(toDate);
+      const businessDateStr = isRangeMode
+        ? `${selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${selectedEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+        : selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const cashInTotalSum = totalCashInEntries + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
 
-      // 2.5 Try silent Z-Report printing via the print bridge first if on web
-      if (Platform.OS === 'web') {
-        try {
-          const { useCompanySettingsStore } = require("../../stores/companySettingsStore");
-          const companySettings = useCompanySettingsStore.getState().settings;
-          const UniversalPrinter = require("../../components/UniversalPrinter").default;
-          const isOnline = await UniversalPrinter.isBridgeOnline();
-          if (isOnline) {
-            const company = {
-              name: companySettings?.name || "POS SYSTEM",
-              address: companySettings?.address || "",
-              currencySymbol: formatCurrency(1).substring(0, 1) || "$"
-            };
-            const period = `${fromDateStr} – ${toDateStr}`;
-            
-            // Format data rows exactly like UniversalPrinter expects:
-            const reportRows = [
-              { PayMode: "Gross Sales", Amount: totalSales.SubTotal },
-              { PayMode: "Discount", Amount: totalSales.DiscountAmount },
-              { PayMode: "Service Charge", Amount: totalSales.ServiceCharge },
-              { PayMode: "GST Collected", Amount: totalSales.TotalTax },
-              { PayMode: "Tips", Amount: totalSales.Tips },
-              { PayMode: "NET SALES", Amount: netSales }
-            ];
-            
-            payments.forEach(p => {
-              reportRows.push({ PayMode: p.PaymodeName, Amount: p.Amount });
-            });
-
-            reportRows.push(
-              { PayMode: "Opening Float", Amount: displayOpeningAmount },
-              { PayMode: "Cash Sales", Amount: salesCash },
-              { PayMode: "Cash In", Amount: cashInTotalSum },
-              { PayMode: "Cash Out", Amount: totalCashOutSum },
-              { PayMode: "EXPECTED CASH", Amount: (totalCashIn - totalCashOutSum) }
-            );
-
-            const success = await UniversalPrinter.printSettlementReportDirect(reportRows, company, period);
-            if (success) return;
-          }
-        } catch (bridgeErr) {
-          console.warn("Print bridge silent Z-Report failed, falling back:", bridgeErr);
+      const aggregatedPayments: { PaymodeName: string; Amount: number }[] = [];
+      const tempAgg: Record<string, { PaymodeName: string; Amount: number }> = {};
+      payments.forEach(p => {
+        const rawName = p.PaymodeName || "Unknown";
+        const name = rawName.trim();
+        const key = name.toUpperCase();
+        const amt = parseFloat(p.Amount) || 0;
+        if (tempAgg[key]) {
+          tempAgg[key].Amount += amt;
+        } else {
+          tempAgg[key] = { PaymodeName: name, Amount: amt };
         }
-      }
+      });
+      aggregatedPayments.push(...Object.values(tempAgg));
 
       // 2. Format HTML aligned to 80mm width with centered print-out look
       const html = `
@@ -1358,13 +1516,11 @@ const loadDishes = async () => {
               <div class="divider">========================================</div>
               
               <div class="info-block">
-                <div class="bold">Period:</div>
-                <div class="info-row">${fromDateStr}</div>
-                <div class="info-row">to</div>
-                <div class="info-row">${toDateStr}</div>
+                <div class="bold">Business Date:</div>
+                <div class="info-row">${businessDateStr}</div>
                 <br/>
                 <div class="bold">Generated:</div>
-                <div class="info-row">${formatDateOnly(new Date())}</div>
+                <div class="info-row">${formatDateTime(new Date())}</div>
               </div>
 
               <div class="divider">========================================</div>
@@ -1387,6 +1543,11 @@ const loadDishes = async () => {
                   <td>GST Collected</td>
                   <td class="right">${formatCurrency(totalSales.TotalTax)}</td>
                 </tr>
+
+                <tr>
+                  <td>Round Off</td>
+                  <td class="right">${formatCurrency(totalSales.RoundedBy)}</td>
+                </tr>
                 <tr>
                   <td>Tips</td>
                   <td class="right">${formatCurrency(totalSales.Tips)}</td>
@@ -1404,7 +1565,7 @@ const loadDishes = async () => {
               <div class="section-title">PAYMENT COLLECTION</div>
               <div class="divider">========================================</div>
               <table>
-                ${payments.map(p => `
+                ${aggregatedPayments.map(p => `
                   <tr>
                     <td>${p.PaymodeName}</td>
                     <td class="right">${formatCurrency(p.Amount)}</td>
@@ -1429,8 +1590,9 @@ const loadDishes = async () => {
                 </tr>
                 <tr>
                   <td>Cash Sales</td>
-                  <td class="right">${formatCurrency(salesCash)}</td>
+                  <td class="right">${formatCurrency(normalCashSales)}</td>
                 </tr>
+
                 <tr>
                   <td>Cash In</td>
                   <td class="right">${formatCurrency(cashInTotalSum)}</td>
@@ -1446,6 +1608,18 @@ const loadDishes = async () => {
                   <td>EXPECTED CASH</td>
                   <td class="right">${formatCurrency(totalCashIn - totalCashOutSum)}</td>
                 </tr>
+                ${totalClosing > 0 ? `
+                <tr>
+                  <td colspan="2"><div class="line-divider"></div></td>
+                </tr>
+                <tr class="bold">
+                  <td>CLOSING AMOUNT</td>
+                  <td class="right">${formatCurrency(totalClosing)}</td>
+                </tr>
+                <tr>
+                  <td>Variance</td>
+                  <td class="right" style="color: ${totalClosing >= (totalCashIn - totalCashOutSum) ? '#2e7d32' : '#c62828'}">${totalClosing >= (totalCashIn - totalCashOutSum) ? '+' : ''}${formatCurrency(totalClosing - (totalCashIn - totalCashOutSum))}</td>
+                </tr>` : ''}
               </table>
 
               <div class="divider">========================================</div>
@@ -1456,66 +1630,121 @@ const loadDishes = async () => {
         </html>
       `;
 
-      // 3. Attempt silent IP printing first if IP is reachable
+      // 3. Attempt silent IP printing first if IP is reachable (or via Print Bridge on Web)
       let printedToHardware = false;
       const isIp = cashierIp && /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(cashierIp.trim());
-      if (isIp && Platform.OS !== 'web') {
+
+      // Generate ESC/POS payload formatters
+      const formatTwoCols48 = (left: string, right: string) => {
+        const cleanLeft = left.replace(/<[^>]*>/g, "");
+        const cleanRight = right.replace(/<[^>]*>/g, "");
+        const spaceCount = 48 - cleanLeft.length - cleanRight.length;
+        return spaceCount > 0 ? `${left}${" ".repeat(spaceCount)}${right}\n` : `${left}\n${right.padStart(48, " ")}\n`;
+      };
+
+      let text = "[C]========================================\n";
+      text += "[C]<font size='big'><B>SETTLEMENT REPORT</B></font>\n";
+      text += "[C]========================================\n\n";
+      text += `[L]<B>Business Date:</B> ${businessDateStr}\n\n`;
+      text += "[L]<B>Generated:</B>\n";
+      text += `[L]${formatDateTime(new Date())}\n\n`;
+
+      text += "[C]========================================\n";
+      text += "[C]<B>SALES SUMMARY</B>\n";
+      text += "[C]========================================\n";
+      text += formatTwoCols48("Gross Sales:", formatCurrency(totalSales.SubTotal));
+      text += formatTwoCols48("Discount:", formatCurrency(totalSales.DiscountAmount));
+      text += formatTwoCols48("Service Charge:", formatCurrency(totalSales.ServiceCharge));
+      text += formatTwoCols48("GST Collected:", formatCurrency(totalSales.TotalTax));
+
+      text += formatTwoCols48("Round Off:", formatCurrency(totalSales.RoundedBy));
+      text += formatTwoCols48("Tips:", formatCurrency(totalSales.Tips));
+      text += "[L]----------------------------------------\n";
+      text += formatTwoCols48("<B>NET SALES:</B>", "<B>" + formatCurrency(netSales) + "</B>\n");
+
+      text += "[C]========================================\n";
+      text += "[C]<B>PAYMENT COLLECTION</B>\n";
+      text += "[C]========================================\n";
+      aggregatedPayments.forEach(p => {
+        text += formatTwoCols48(p.PaymodeName + ":", formatCurrency(p.Amount));
+      });
+      text += "[L]----------------------------------------\n";
+      text += formatTwoCols48("<B>TOTAL COLLECTION:</B>", "<B>" + formatCurrency(paymentsTotal) + "</B>\n");
+
+      text += "[C]========================================\n";
+      text += "[C]<B>CASH DRAWER SUMMARY</B>\n";
+      text += "[C]========================================\n";
+      text += formatTwoCols48("Opening Float:", formatCurrency(displayOpeningAmount));
+      text += formatTwoCols48("Cash Sales:", formatCurrency(normalCashSales));
+
+      text += formatTwoCols48("Cash In:", formatCurrency(cashInTotalSum));
+      text += formatTwoCols48("Cash Out:", formatCurrency(totalCashOutSum));
+      text += "[L]----------------------------------------\n";
+      text += formatTwoCols48("<font size='big'><B>EXPECTED CASH:</B></font>", "<font size='big'><B>" + formatCurrency(totalCashIn - totalCashOutSum) + "</B></font>\n");
+      if (totalClosing > 0) {
+        text += formatTwoCols48("<B>CLOSING AMOUNT:</B>", "<B>" + formatCurrency(totalClosing) + "</B>\n");
+        const variance = totalClosing - (totalCashIn - totalCashOutSum);
+        text += formatTwoCols48("Variance:", (variance >= 0 ? '+' : '') + formatCurrency(variance) + "\n");
+      }
+      text += "[C]========================================\n";
+      text += "[C]SMART-POS BY UNIPROSG\n";
+      text += "[C]========================================\n\n\n\n";
+
+      if (Platform.OS === 'web') {
+        try {
+          console.log("📡 [Web Settlement] Sending print job to Print Bridge");
+          const storeId = "STORE_001";
+          const response = await fetch(`${API_URL}/api/print-jobs`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer unipro-pos-bridge-token-2026",
+              "x-store-id": storeId
+            },
+            body: JSON.stringify({
+              printerType: 1, // Cashier Printer
+              content: text
+            })
+          });
+          const resData = await response.json();
+          if (resData.success && resData.jobId) {
+            console.log(`📡 [Web Settlement] print queued: ${resData.jobId}. Polling status...`);
+            const jobId = resData.jobId;
+            const start = Date.now();
+            let isCompleted = false;
+            while (Date.now() - start < 8000) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              try {
+                const statusRes = await fetch(`${API_URL}/api/print-jobs/status/${jobId}`);
+                const statusData = await statusRes.json();
+                if (statusData.success && statusData.status === 'COMPLETED') {
+                  isCompleted = true;
+                  break;
+                }
+                if (statusData.success && statusData.status === 'FAILED') {
+                  console.warn(`❌ [Web Settlement] Job failed on bridge side:`, statusData.error);
+                  break;
+                }
+              } catch (err) {
+                console.error("[Web Settlement] Status poll error:", err);
+              }
+            }
+            if (isCompleted) {
+              printedToHardware = true;
+              console.log(`✅ [Web Settlement] Settlement report printed successfully via bridge`);
+            } else {
+              console.warn(`⚠️ [Web Settlement] Print job ${jobId} failed or timed out. Falling back to print preview.`);
+            }
+          }
+        } catch (e) {
+          console.error("❌ [Web Settlement] Bridge print failed:", e);
+        }
+      } else if (isIp) {
         try {
           // Check if IP reachable
           const ipReachable = await checkIpReachable(cashierIp.trim());
 
           if (ipReachable) {
-            // Generate ESC/POS payload
-            const formatTwoCols48 = (left: string, right: string) => {
-              const cleanLeft = left.replace(/<[^>]*>/g, "");
-              const cleanRight = right.replace(/<[^>]*>/g, "");
-              const spaceCount = 48 - cleanLeft.length - cleanRight.length;
-              return spaceCount > 0 ? `${left}${" ".repeat(spaceCount)}${right}\n` : `${left}\n${right.padStart(48, " ")}\n`;
-            };
-
-            let text = "[C]========================================\n";
-            text += "[C]<font size='big'><B>SETTLEMENT REPORT</B></font>\n";
-            text += "[C]========================================\n\n";
-            text += "[L]<B>Period:</B>\n";
-            text += `[L]${fromDateStr}\n`;
-            text += "[L]to\n";
-            text += `[L]${toDateStr}\n\n`;
-            text += "[L]<B>Generated:</B>\n";
-            text += `[L]${formatDateOnly(new Date())}\n\n`;
-
-            text += "[C]========================================\n";
-            text += "[C]<B>SALES SUMMARY</B>\n";
-            text += "[C]========================================\n";
-            text += formatTwoCols48("Gross Sales:", formatCurrency(totalSales.SubTotal));
-            text += formatTwoCols48("Discount:", formatCurrency(totalSales.DiscountAmount));
-            text += formatTwoCols48("Service Charge:", formatCurrency(totalSales.ServiceCharge));
-            text += formatTwoCols48("GST Collected:", formatCurrency(totalSales.TotalTax));
-            text += formatTwoCols48("Tips:", formatCurrency(totalSales.Tips));
-            text += "[L]----------------------------------------\n";
-            text += formatTwoCols48("<B>NET SALES:</B>", "<B>" + formatCurrency(netSales) + "</B>\n");
-
-            text += "[C]========================================\n";
-            text += "[C]<B>PAYMENT COLLECTION</B>\n";
-            text += "[C]========================================\n";
-            payments.forEach(p => {
-              text += formatTwoCols48(p.PaymodeName + ":", formatCurrency(p.Amount));
-            });
-            text += "[L]----------------------------------------\n";
-            text += formatTwoCols48("<B>TOTAL COLLECTION:</B>", "<B>" + formatCurrency(paymentsTotal) + "</B>\n");
-
-            text += "[C]========================================\n";
-            text += "[C]<B>CASH DRAWER SUMMARY</B>\n";
-            text += "[C]========================================\n";
-            text += formatTwoCols48("Opening Float:", formatCurrency(displayOpeningAmount));
-            text += formatTwoCols48("Cash Sales:", formatCurrency(salesCash));
-            text += formatTwoCols48("Cash In:", formatCurrency(cashInTotalSum));
-            text += formatTwoCols48("Cash Out:", formatCurrency(totalCashOutSum));
-            text += "[L]----------------------------------------\n";
-            text += formatTwoCols48("<font size='big'><B>EXPECTED CASH:</B></font>", "<font size='big'><B>" + formatCurrency(totalCashIn - totalCashOutSum) + "</B></font>\n");
-            text += "[C]========================================\n";
-            text += "[C]SMART-POS BY UNIPROSG\n";
-            text += "[C]========================================\n\n\n\n";
-
             const ThermalPrinter = require("react-native-thermal-printer").default;
             await ThermalPrinter.printTcp({
               ip: cashierIp.trim(),
@@ -1546,12 +1775,9 @@ const loadDishes = async () => {
             if (SunmiModule.setFontSize) await SunmiModule.setFontSize(24);
             await SunmiModule.printText("================================\n\n");
             
-            await SunmiModule.printText("Period:\n");
-            await SunmiModule.printText(`${fromDateStr}\n`);
-            await SunmiModule.printText("to\n");
-            await SunmiModule.printText(`${toDateStr}\n\n`);
+            await SunmiModule.printText(`Business Date: ${businessDateStr}\n\n`);
             await SunmiModule.printText("Generated:\n");
-            await SunmiModule.printText(`${formatDateOnly(new Date())}\n\n`);
+            await SunmiModule.printText(`${formatDateTime(new Date())}\n\n`);
 
             const formatTwoCols32 = (left: string, right: string) => {
               const spaceCount = 32 - left.length - right.length;
@@ -1565,6 +1791,7 @@ const loadDishes = async () => {
             await SunmiModule.printText(formatTwoCols32("Discount:", formatCurrency(totalSales.DiscountAmount)));
             await SunmiModule.printText(formatTwoCols32("Service Charge:", formatCurrency(totalSales.ServiceCharge)));
             await SunmiModule.printText(formatTwoCols32("GST Collected:", formatCurrency(totalSales.TotalTax)));
+            await SunmiModule.printText(formatTwoCols32("Round Off:", formatCurrency(totalSales.RoundedBy)));
             await SunmiModule.printText(formatTwoCols32("Tips:", formatCurrency(totalSales.Tips)));
             await SunmiModule.printText("--------------------------------\n");
             await SunmiModule.printText(formatTwoCols32("NET SALES:", formatCurrency(netSales)));
@@ -1573,7 +1800,7 @@ const loadDishes = async () => {
             await SunmiModule.printText("================================\n");
             await SunmiModule.printText("       PAYMENT COLLECTION\n");
             await SunmiModule.printText("================================\n");
-            for (const p of payments) {
+            for (const p of aggregatedPayments) {
               await SunmiModule.printText(formatTwoCols32(p.PaymodeName + ":", formatCurrency(p.Amount)));
             }
             await SunmiModule.printText("--------------------------------\n");
@@ -1584,7 +1811,8 @@ const loadDishes = async () => {
             await SunmiModule.printText("      CASH DRAWER SUMMARY\n");
             await SunmiModule.printText("================================\n");
             await SunmiModule.printText(formatTwoCols32("Opening Float:", formatCurrency(displayOpeningAmount)));
-            await SunmiModule.printText(formatTwoCols32("Cash Sales:", formatCurrency(salesCash)));
+            await SunmiModule.printText(formatTwoCols32("Cash Sales:", formatCurrency(normalCashSales)));
+
             await SunmiModule.printText(formatTwoCols32("Cash In:", formatCurrency(cashInTotalSum)));
             await SunmiModule.printText(formatTwoCols32("Cash Out:", formatCurrency(totalCashOutSum)));
             await SunmiModule.printText("--------------------------------\n");
@@ -1672,92 +1900,125 @@ const loadDishes = async () => {
             )}
           </View>
 
-          {/* Date Pickers */}
+          {/* Single/Range Business Date Navigator */}
           <View style={
             isTablet 
-              ? { marginLeft: 'auto', flexDirection: 'row', gap: 20, alignItems: 'center', marginRight: 20 }
-              : { flexDirection: 'row', justifyContent: 'space-between', gap: 10 }
+              ? { marginLeft: 'auto', flexDirection: 'row', gap: 12, alignItems: 'center', marginRight: 20 }
+              : { flexDirection: 'row', justifyContent: 'center', gap: 12, alignItems: 'center', marginVertical: 4 }
           }>
-            <View style={{ flex: !isTablet ? 1 : undefined, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 12, color: Theme.textSecondary, fontFamily: Fonts.medium }}>From:</Text>
-              <TouchableOpacity
-                style={{ 
-                  flex: !isTablet ? 1 : undefined,
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  backgroundColor: '#fff', 
-                  borderWidth: 1.5, 
-                  borderColor: Theme.border, 
-                  borderRadius: 10, 
-                  paddingHorizontal: 8,
-                  height: 38,
-                  gap: 6,
-                  justifyContent: 'space-between',
-                  ...Platform.select({
-                    web: {
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                      cursor: 'pointer',
-                    }
-                  }) as any
+            {!isRangeMode && (
+              <TouchableOpacity 
+                onPress={() => {
+                  const nextDate = new Date(selectedDate);
+                  nextDate.setDate(nextDate.getDate() - 1);
+                  setSelectedDate(nextDate);
+                }} 
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: Theme.bgMuted,
+                  justifyContent: 'center',
+                  alignItems: 'center',
                 }}
-                onPress={() => setShowFromPicker(true)}
               >
-                <Text style={{ fontFamily: Fonts.bold, color: Theme.textPrimary, fontSize: 11, flexShrink: 1 }} numberOfLines={1}>
-                  {formatDateOnly(fromDate)}
-                </Text>
-                <Ionicons name="calendar-outline" size={13} color="#6B7280" />
+                <Ionicons name="chevron-back" size={18} color={Theme.textPrimary} />
               </TouchableOpacity>
-            </View>
+            )}
 
-            <View style={{ flex: !isTablet ? 1 : undefined, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 12, color: Theme.textSecondary, fontFamily: Fonts.medium }}>To:</Text>
+            <TouchableOpacity
+              style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                backgroundColor: Theme.bgMuted, 
+                borderWidth: 1.5, 
+                borderColor: Theme.border, 
+                borderRadius: 10, 
+                paddingHorizontal: 12,
+                height: 38,
+                gap: 8,
+                justifyContent: 'center',
+                minWidth: 150,
+                ...Platform.select({
+                  web: {
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                    cursor: 'pointer',
+                  }
+                }) as any
+              }}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={{ fontFamily: Fonts.bold, color: Theme.textPrimary, fontSize: 13 }}>
+                {isRangeMode 
+                  ? `${selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${selectedEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                  : selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                }
+              </Text>
+              <Ionicons name="calendar-outline" size={15} color={Theme.primary} />
+            </TouchableOpacity>
+
+            {!isRangeMode && (
               <TouchableOpacity
-                style={{ 
-                  flex: !isTablet ? 1 : undefined,
-                  flexDirection: 'row', 
-                  alignItems: 'center', 
-                  backgroundColor: '#fff', 
-                  borderWidth: 1.5, 
-                  borderColor: Theme.border, 
-                  borderRadius: 10, 
-                  paddingHorizontal: 8,
-                  height: 38,
-                  gap: 6,
-                  justifyContent: 'space-between',
-                  ...Platform.select({
-                    web: {
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                      cursor: 'pointer',
-                    }
-                  }) as any
+                onPress={() => {
+                  const nextDate = new Date(selectedDate);
+                  nextDate.setDate(nextDate.getDate() + 1);
+                  setSelectedDate(nextDate);
+                }} 
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: Theme.bgMuted,
+                  justifyContent: 'center',
+                  alignItems: 'center',
                 }}
-                onPress={() => setShowToPicker(true)}
               >
-                <Text style={{ fontFamily: Fonts.bold, color: Theme.textPrimary, fontSize: 11, flexShrink: 1 }} numberOfLines={1}>
-                  {formatDateOnly(toDate)}
-                </Text>
-                <Ionicons name="calendar-outline" size={13} color="#6B7280" />
+                <Ionicons name="chevron-forward" size={18} color={Theme.textPrimary} />
               </TouchableOpacity>
-            </View>
+            )}
 
-            <CustomDateTimePicker
-              visible={showFromPicker}
-              onClose={() => setShowFromPicker(false)}
-              selectedDate={fromDate}
-              onApply={(date) => setFromDate(date)}
-              title="Select Start Date"
-            />
-            <CustomDateTimePicker
-              visible={showToPicker}
-              onClose={() => setShowToPicker(false)}
-              selectedDate={toDate}
-              onApply={(date) => setToDate(date)}
-              title="Select End Date"
+            <CustomDatePicker
+              visible={showDatePicker}
+              onClose={() => setShowDatePicker(false)}
+              selectedDate={selectedDate}
+              selectedEndDate={selectedEndDate}
+              isRangeMode={isRangeMode}
+              onApply={(start, end, isRange) => {
+                setSelectedDate(start);
+                setSelectedEndDate(end);
+                setIsRangeMode(isRange);
+              }}
+              title="Select Business Date"
             />
           </View>
 
           {isTablet && (
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: "#3b82f6",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  elevation: 2,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 1.41,
+                }}
+                onPress={() => {
+                  setShowHistoryModal(true);
+                  fetchDayHistory();
+                }}
+              >
+                <Ionicons name="time-outline" size={18} color="#fff" />
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: "#fff" }}>History</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.confirmBtn, { paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
                 onPress={handlePrintReport}
@@ -1773,20 +2034,19 @@ const loadDishes = async () => {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 6,
-                  paddingVertical: 8,
                   paddingHorizontal: 16,
+                  paddingVertical: 8,
                   borderRadius: 10,
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 3,
                   elevation: 2,
-                  height: 38
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 1.41,
                 }}
                 onPress={handleDayEnd}
               >
                 <Ionicons name="moon-outline" size={18} color="#fff" />
-                <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>Day End</Text>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: "#fff" }}>Day End</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1798,7 +2058,54 @@ const loadDishes = async () => {
             <Text style={styles.loadingText}>Fetching Settlement...</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Day Start & End Timestamps */}
+            {dayLog && (
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                backgroundColor: Theme.bgCard,
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor: Theme.border,
+                marginBottom: 15,
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+                ...Platform.select({
+                  web: {
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }
+                }) as any
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 13, color: '#f59e0b', fontFamily: Fonts.bold }}>☀️ Day Started:</Text>
+                  <Text style={{ fontSize: 13, color: Theme.textPrimary, fontFamily: Fonts.medium }}>
+                    {dayLog.StartedAt ? formatTimeOnly(dayLog.StartedAt) : 'Pending'}
+                  </Text>
+                  {dayLog.StartedBy && (
+                    <Text style={{ fontSize: 11, color: Theme.textSecondary, fontFamily: Fonts.medium }}>
+                      ({dayLog.StartedBy})
+                    </Text>
+                  )}
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 13, color: '#3b82f6', fontFamily: Fonts.bold }}>🌙 Day Ended:</Text>
+                  <Text style={{ fontSize: 13, color: dayLog.EndedAt ? Theme.textPrimary : Theme.success, fontFamily: Fonts.medium }}>
+                    {dayLog.EndedAt ? formatTimeOnly(dayLog.EndedAt) : '🟢 Active Now'}
+                  </Text>
+                  {dayLog.EndedBy && dayLog.EndedAt && (
+                    <Text style={{ fontSize: 11, color: Theme.textSecondary, fontFamily: Fonts.medium }}>
+                      ({dayLog.EndedBy})
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+
             {/* Top Overview Cards */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 15 }}>
               <TouchableOpacity
@@ -1822,6 +2129,7 @@ const loadDishes = async () => {
                     Alert.alert("Locked", "Manual Cash In entry is disabled when Cash Drawer is ON.");
                     return;
                   }
+                  setCashInForm({ CashInId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '', AttachmentUrl: '' });
                   setShowCashInModal(true);
                 }}
               >
@@ -1829,7 +2137,7 @@ const loadDishes = async () => {
                   <Ionicons name="add-circle-outline" size={isTablet ? 16 : 14} color={Theme.success} />
                   <Text style={{ fontFamily: Fonts.bold, color: Theme.success, fontSize: isTablet ? 12 : 11 }}>Cash In</Text>
                 </View>
-                <Text style={{ fontFamily: Fonts.black, fontSize: isTablet ? 22 : 16, color: Theme.success, marginTop: 5 }} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(totalCashInEntries)}</Text>
+                <Text style={{ fontFamily: Fonts.black, fontSize: isTablet ? 22 : 16, color: Theme.success, marginTop: 5 }} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(displayCashInCard)}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1839,6 +2147,7 @@ const loadDishes = async () => {
                     Alert.alert("Locked", "Manual Cash Out entry is disabled when Cash Drawer is ON.");
                     return;
                   }
+                  setCashOutForm({ CashOutId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '', AttachmentUrl: '' });
                   setShowCashOutModal(true);
                 }}
               >
@@ -1846,8 +2155,10 @@ const loadDishes = async () => {
                   <Ionicons name="remove-circle-outline" size={isTablet ? 16 : 14} color={Theme.danger} />
                   <Text style={{ fontFamily: Fonts.bold, color: Theme.danger, fontSize: isTablet ? 12 : 11 }}>Cash Out</Text>
                 </View>
-                <Text style={{ fontFamily: Fonts.black, fontSize: isTablet ? 22 : 16, color: Theme.danger, marginTop: 5 }} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(totalCashOut)}</Text>
+                <Text style={{ fontFamily: Fonts.black, fontSize: isTablet ? 22 : 16, color: Theme.danger, marginTop: 5 }} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(displayCashOutCard)}</Text>
               </TouchableOpacity>
+
+
 
               <View style={[styles.card, { flex: isTablet ? 1 : undefined, minWidth: isTablet ? 0 : '48%', flexGrow: 1, padding: isTablet ? 15 : 10, alignItems: 'center', justifyContent: 'center', backgroundColor: Theme.successBg, borderColor: Theme.successBorder, borderWidth: 1 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1908,6 +2219,7 @@ const loadDishes = async () => {
                     <Text style={styles.rowLabel}>Tips</Text>
                     <Text style={styles.rowValue}>{formatCurrency(totalSales.Tips)}</Text>
                   </View>
+
                   <View style={[styles.row, styles.highlightRow, { marginTop: 'auto' }]}>
                     <Text style={[styles.rowLabel, styles.highlightText]}>Net Sales</Text>
                     <Text style={[styles.rowValue, styles.highlightText]}>{formatCurrency(netSales)}</Text>
@@ -1915,88 +2227,36 @@ const loadDishes = async () => {
                 </View>
               </View>
 
-              {/* === SALES SUMMARY === */}
-              {/* <View style={[styles.card, isTablet && styles.cardTablet]}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardHeaderTitle}>SALES SUMMARY</Text>
-                </View>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.tableHeaderText, { flex: 2 }]}>Paymode</Text>
-                  <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>Sys Amount</Text>
-                  <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>Manual Amount</Text>
-                </View>
-                <ScrollView style={styles.cardBodyScroll} nestedScrollEnabled> */}
-              {/* Opening Cash Row */}
-              {/* <TouchableOpacity
-                    style={[styles.tableRow, styles.clickableRow, { alignItems: "center" }]}
-                    onPress={() => {
-                      setLovMode("OPEN");
-                      setShowLov(true);
-                    }}
-                  >
-                    <View style={{ flex: 2, flexDirection: "row", alignItems: "center" }}>
-                      <Text style={[styles.tableCellText, { fontFamily: Fonts.bold, color: Theme.textSecondary }]}>OPENING AMOUNT</Text>
-                      <Ionicons name="create-outline" size={14} color={Theme.textSecondary} style={{ marginLeft: 6 }} />
-                    </View>
-                    <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}></Text>
-                    <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", fontFamily: Fonts.bold, color: Theme.textSecondary }]}>
-                      {formatCurrency(displayOpeningAmount)}
-                    </Text>
-                  </TouchableOpacity> */}
-
-              {/* Hardcoded CASH Row */}
-              {/* <TouchableOpacity
-                    style={[styles.tableRow, styles.clickableRow, { alignItems: "center" }]}
-                    onPress={() => {
-                      setLovMode("CLOSE");
-                      setShowLov(true);
-                    }}
-                  >
-                    <View style={{ flex: 2, flexDirection: "row", alignItems: "center" }}>
-                      <Text style={[styles.tableCellText, { fontFamily: Fonts.bold, color: Theme.primary }]}>CASH</Text>
-                      <Ionicons name="create-outline" size={14} color={Theme.primary} style={{ marginLeft: 6 }} />
-                    </View>
-                    <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>
-                      {formatCurrency(sysCash)}
-                    </Text>
-                    <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", fontFamily: Fonts.bold }]}>
-                      {formatCurrency(totalClosing)}
-                    </Text>
-                  </TouchableOpacity> */}
-
-              {/* Cash Out Row */}
-              {/* <TouchableOpacity
-                    style={[styles.tableRow, styles.clickableRow, { alignItems: "center" }]}
-                    onPress={() => setShowCashOutModal(true)}
-                  >
-                    <View style={{ flex: 2, flexDirection: "row", alignItems: "center" }}>
-                      <Text style={[styles.tableCellText, { fontFamily: Fonts.bold, color: Theme.danger }]}>CASH OUT</Text>
-                      <Ionicons name="create-outline" size={14} color={Theme.danger} style={{ marginLeft: 6 }} />
-                    </View>
-                    <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}></Text>
-                    <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", fontFamily: Fonts.bold, color: Theme.danger }]}>
-                      {formatCurrency(totalCashOut)}
-                    </Text>
-                  </TouchableOpacity>
-                </ScrollView>
-                <View style={styles.cardFooter}>
-                  <Text style={styles.footerLabel}>Total</Text>
-                  <Text style={styles.footerValue}>{formatCurrency(totalClosing)}</Text>
-                </View>
-                </View>
-              </View> */}
-
               {/* === SALES === */}
               <View style={[styles.card, isTablet && styles.cardTablet]}>
-                <View style={styles.cardHeader}>
+                <View style={[styles.cardHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
                   <Text style={styles.cardHeaderTitle}>SALES</Text>
+                  {(cashOutEntries.some(co => co.AttachmentUrl) || cashInEntries.some(ci => ci.AttachmentUrl)) && (
+                    <TouchableOpacity
+                      onPress={() => setShowAllMediaModal(true)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 5,
+                        backgroundColor: Theme.success + '20',
+                        borderWidth: 1,
+                        borderColor: Theme.success + '60',
+                        borderRadius: 8,
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <Ionicons name="images" size={13} color={Theme.success} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: Theme.success }}>Receipts</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.tableHeaderText, { flex: 2 }]}>Paymode</Text>
-                  <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>Cash In</Text>
-                  <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>Cash Out</Text>
+                  <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Cash In</Text>
+                  <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Cash Out</Text>
                 </View>
-                <ScrollView style={styles.cardBodyScroll} nestedScrollEnabled>
+                <View style={styles.cardBodyScroll}>
                   {displayOpeningAmount > 0 && (
                     <View style={styles.tableRow}>
                       <Text style={[styles.tableCellText, { flex: 2 }]}>Opening Balance</Text>
@@ -2008,7 +2268,7 @@ const loadDishes = async () => {
                       </Text>
                     </View>
                   )}
-                  {cashInEntries.map((ci, i) => (
+                  {cashInEntries.filter(ci => ci.Reason !== 'Cash Sale').map((ci, i) => (
                     <TouchableOpacity
                       key={`ci-${i}`}
                       style={[styles.tableRow, { alignItems: 'center' }]}
@@ -2018,13 +2278,34 @@ const loadDishes = async () => {
                           Alert.alert("Locked", "Manual Cash In entry is disabled when Cash Drawer is ON.");
                           return;
                         }
-                        setCashInForm({ ...ci, CashInId: ci.CashInId || ci.cashInId, Amount: ci.Amount?.toString() || '' });
+                        setCashInForm({ ...ci, CashInId: ci.CashInId || ci.cashInId, Amount: ci.Amount?.toString() || '', AttachmentUrl: ci.AttachmentUrl || '' });
                         setShowCashInModal(true);
                       }}
                     >
                       <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={styles.tableCellText}>{ci.Reason || 'Cash In'}</Text>
                         <Ionicons name="create-outline" size={14} color={Theme.textPrimary} style={{ marginLeft: 6 }} />
+                        {!!ci.AttachmentUrl && (
+                          <TouchableOpacity 
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              setViewerImageUrl(ci.AttachmentUrl);
+                            }}
+                            style={{
+                              marginLeft: 8,
+                              width: 24,
+                              height: 24,
+                              borderRadius: 6,
+                              borderWidth: 1.5,
+                              borderColor: Theme.success,
+                              backgroundColor: Theme.success + "15",
+                              justifyContent: 'center',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <Ionicons name="image" size={12} color={Theme.success} />
+                          </TouchableOpacity>
+                        )}
                       </View>
                       <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: Theme.success }]}>
                         +{formatCurrency(ci.Amount)}
@@ -2044,13 +2325,34 @@ const loadDishes = async () => {
                           Alert.alert("Locked", "Manual Cash Out entry is disabled when Cash Drawer is ON.");
                           return;
                         }
-                        setCashOutForm({ ...co, CashOutId: co.CashOutId || co.cashOutId, Amount: co.Amount?.toString() || '' });
+                        setCashOutForm({ ...co, CashOutId: co.CashOutId || co.cashOutId, Amount: co.Amount?.toString() || '', AttachmentUrl: co.AttachmentUrl || '' });
                         setShowCashOutModal(true);
                       }}
                     >
                       <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={styles.tableCellText}>{co.Reason || 'Cash Out'}</Text>
                         <Ionicons name="create-outline" size={14} color={Theme.textPrimary} style={{ marginLeft: 6 }} />
+                        {!!co.AttachmentUrl && (
+                          <TouchableOpacity 
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              setViewerImageUrl(co.AttachmentUrl);
+                            }}
+                            style={{
+                              marginLeft: 8,
+                              width: 24,
+                              height: 24,
+                              borderRadius: 6,
+                              borderWidth: 1.5,
+                              borderColor: Theme.success,
+                              backgroundColor: Theme.success + "15",
+                              justifyContent: 'center',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <Ionicons name="image" size={12} color={Theme.success} />
+                          </TouchableOpacity>
+                        )}
                       </View>
                       <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>
                         0.00
@@ -2071,32 +2373,75 @@ const loadDishes = async () => {
                       </Text>
                     </View>
                   ))}
-                  {payments.map((p, i) => (
-                    <View key={`pay-${i}`} style={styles.tableRow}>
-                      <Text style={[styles.tableCellText, { flex: 2 }]}>{p.PaymodeName}</Text>
-                      <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: Theme.success }]}>+{formatCurrency(p.Amount)}</Text>
-                      <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}></Text>
-                    </View>
-                  ))}
+                  {(() => {
+                    const aggregated: Record<string, { PaymodeName: string; Amount: number }> = {};
+                    payments.forEach(p => {
+                      const rawName = p.PaymodeName || "Unknown";
+                      const name = rawName.trim();
+                      const key = name.toUpperCase();
+                      const amt = parseFloat(p.Amount) || 0;
+                      if (aggregated[key]) {
+                        aggregated[key].Amount += amt;
+                      } else {
+                        aggregated[key] = { PaymodeName: name, Amount: amt };
+                      }
+                    });
+                    return Object.values(aggregated).map((p, i) => {
+                      const modeUpper = p.PaymodeName.toUpperCase();
+                      const isCash = modeUpper === "CASH" || modeUpper === "CASHBOX" || modeUpper === "CASH BOX";
+                      return (
+                        <View key={`pay-${i}`} style={styles.tableRow}>
+                          <Text style={[styles.tableCellText, { flex: 2 }]}>{p.PaymodeName}</Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: isCash ? Theme.success : Theme.textPrimary }]}>
+                            {`+${formatCurrency(p.Amount)}`}
+                          </Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>0.00</Text>
+                        </View>
+                      );
+                    });
+                  })()}
                   {payments.length === 0 && displayOpeningAmount === 0 && transactions.length === 0 && cashOutEntries.length === 0 && cashInEntries.length === 0 && <Text style={styles.emptyText}>No sales</Text>}
-                </ScrollView>
-                <View style={{ flexDirection: "row", paddingVertical: 12, paddingHorizontal: 12, backgroundColor: "#FAFAFA", borderTopWidth: 1, borderTopColor: Theme.border, alignItems: "center" }}>
-                  <View style={{ flex: 2, alignItems: 'flex-end', paddingRight: 15 }}>
-                    <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.primaryDark }}>TOTAL</Text>
-                  </View>
-                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.black, fontSize: 14, color: Theme.success }}>
-                    {formatCurrency(uiTotalIn)}
+                </View>
+                {/* 1. Total Collection (All Modes) */}
+                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, borderTopWidth: 1, borderTopColor: Theme.border, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Total Collection (All Modes)</Text>
+                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.success }}>
+                    {`+${formatCurrency(totalCashIn + nonCashTotal - displayOpeningAmount)}`}
                   </Text>
-                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.black, fontSize: 14, color: Theme.danger }}>
+                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.danger }}>
+                    {`-${formatCurrency(totalCashOutSum)}`}
+                  </Text>
+                </View>
+
+                {/* 2. Non-Cash Collection */}
+                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Non-Cash Collection</Text>
+                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
+                    {formatCurrency(nonCashTotal)}
+                  </Text>
+                </View>
+
+                {/* 3. Opening Float */}
+                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Opening Float</Text>
+                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
+                    {formatCurrency(displayOpeningAmount)}
+                  </Text>
+                </View>
+
+                {/* 4. Cash Out (All Modes) */}
+                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Total Cash Out</Text>
+                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.danger }}>
                     {formatCurrency(totalCashOutSum)}
                   </Text>
                 </View>
-                <View style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: "#F9FAFB", borderTopWidth: 1, borderTopColor: "#E5E7EB", alignItems: "center" }}>
-                  <View style={{ flex: 2, alignItems: 'flex-end', paddingRight: 15 }}>
-                    <Text style={{ fontFamily: Fonts.black, fontSize: 13, color: Theme.textSecondary }}>NET AMOUNT</Text>
-                  </View>
-                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.black, fontSize: 14, color: (uiTotalIn - totalCashOutSum) >= 0 ? Theme.success : Theme.danger }}>
-                    {formatCurrency(uiTotalIn - totalCashOutSum)}
+
+                {/* 5. Expected Drawer Cash */}
+                <View style={{ flexDirection: "row", paddingVertical: 12, paddingHorizontal: 12, backgroundColor: '#f9731615', borderTopWidth: 1, borderTopColor: '#f9731630', alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.black, fontSize: 13, color: '#f97316' }}>EXPECTED DRAWER CASH</Text>
+                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.black, fontSize: 15, color: (totalCashIn - totalCashOutSum) >= 0 ? Theme.success : Theme.danger }}>
+                    {formatCurrency(totalCashIn - totalCashOutSum)}
                   </Text>
                 </View>
               </View>
@@ -2133,7 +2478,7 @@ const loadDishes = async () => {
               <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>No.Of Currencies</Text>
             </View>
 
-            <ScrollView style={styles.modalList} nestedScrollEnabled>
+            <ScrollView style={styles.modalList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionHeaderText}>
                   {lovMode === "OPEN" ? "Opening Cash Notes" : "Count All Cash Notes"}
@@ -2237,13 +2582,18 @@ const loadDishes = async () => {
               <View style={{ marginBottom: 15 }}>
                 {/* <Text style={{ fontFamily: Fonts.bold, marginBottom: 8, color: Theme.textPrimary }}>Today's Entries</Text> */}
                 {cashOutEntries.length > 0 ? (
-                  <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
+                  <View>
                     {cashOutEntries.map((co, idx) => (
                       <View key={idx} style={[styles.tableRow, { alignItems: 'center' }]}>
                         <Text style={[styles.tableCellText, { flex: 2 }]}>{co.Reason || 'Cash Out'}</Text>
                         <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', paddingRight: 15 }]}>{formatCurrency(co.Amount)}</Text>
-                        <View style={{ flexDirection: 'row', gap: 15, width: 60, justifyContent: 'flex-end' }}>
-                          <TouchableOpacity onPress={() => setCashOutForm({ ...co, CashOutId: co.CashOutId || co.cashOutId, Amount: co.Amount?.toString() || '' })}>
+                        <View style={{ flexDirection: 'row', gap: 15, width: 90, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          {!!co.AttachmentUrl && (
+                            <TouchableOpacity onPress={() => setViewerImageUrl(co.AttachmentUrl)}>
+                              <Ionicons name="eye-outline" size={18} color={Theme.success} />
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity onPress={() => setCashOutForm({ ...co, CashOutId: co.CashOutId || co.cashOutId, Amount: co.Amount?.toString() || '', AttachmentUrl: co.AttachmentUrl || '' })}>
                             <Ionicons name="create-outline" size={18} color={Theme.primary} />
                           </TouchableOpacity>
                           <TouchableOpacity onPress={() => handleDeleteCashOut(co.CashOutId || co.cashOutId)}>
@@ -2252,7 +2602,7 @@ const loadDishes = async () => {
                         </View>
                       </View>
                     ))}
-                  </ScrollView>
+                  </View>
                 ) : (
                   <View style={{ paddingVertical: 15, alignItems: 'center', backgroundColor: '#FAFAFA', borderRadius: 8, borderWidth: 1, borderColor: Theme.border }}>
                     <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted }}>No cash out entries found for the selected time period.</Text>
@@ -2264,7 +2614,7 @@ const loadDishes = async () => {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: Fonts.bold, fontSize: 13, marginBottom: 6, color: Theme.textSecondary }}>Amount *</Text>
                   <TextInput
-                    style={[styles.premiumInput, { textAlign: 'right', fontSize: 18 }]}
+                    style={[styles.premiumInput, { textAlign: 'left', fontSize: 18 }]}
                     keyboardType="numeric"
                     value={cashOutForm.Amount}
                     onChangeText={(v) => setCashOutForm({ ...cashOutForm, Amount: v })}
@@ -2305,12 +2655,83 @@ const loadDishes = async () => {
                   placeholder="Additional notes..."
                 />
               </View> */}
+              {/* Attachment Section */}
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, marginBottom: 8, color: Theme.textSecondary }}>Receipt Attachment</Text>
+                
+                {uploading ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}>
+                    <ActivityIndicator size="small" color={Theme.primary} />
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted }}>Uploading receipt...</Text>
+                  </View>
+                ) : cashOutForm.AttachmentUrl ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.bgMuted, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: Theme.border }}>
+                    <Ionicons name="document-attach-outline" size={24} color={Theme.success} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }} numberOfLines={1}>
+                        {cashOutForm.AttachmentUrl.split('/').pop()}
+                      </Text>
+                      <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted }}>Compressed receipt photo</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <TouchableOpacity onPress={() => setViewerImageUrl(cashOutForm.AttachmentUrl)} style={{ padding: 4 }}>
+                        <Ionicons name="eye-outline" size={20} color={Theme.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setCashOutForm(prev => ({ ...prev, AttachmentUrl: '' }))} style={{ padding: 4 }}>
+                        <Ionicons name="trash-outline" size={20} color={Theme.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity 
+                      onPress={() => handleSelectImage('camera')}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        backgroundColor: Theme.bgCard,
+                        borderWidth: 1.5,
+                        borderColor: Theme.primary + '30',
+                        borderStyle: 'dashed',
+                        paddingVertical: 12,
+                        borderRadius: 8
+                      }}
+                    >
+                      <Ionicons name="camera-outline" size={18} color={Theme.primary} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.primary }}>Take Photo</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      onPress={() => handleSelectImage('library')}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        backgroundColor: Theme.bgCard,
+                        borderWidth: 1.5,
+                        borderColor: Theme.primary + '30',
+                        borderStyle: 'dashed',
+                        paddingVertical: 12,
+                        borderRadius: 8
+                      }}
+                    >
+                      <Ionicons name="image-outline" size={18} color={Theme.primary} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.primary }}>Upload Image</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </ScrollView>
 
             <View style={[styles.modalFooter, { flexDirection: 'row', gap: 10 }]}>
               <TouchableOpacity
                 style={[styles.confirmBtn, { flex: 1, backgroundColor: Theme.bgMuted }]}
-                onPress={() => setCashOutForm({ CashOutId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '' })}
+                onPress={() => setCashOutForm({ CashOutId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '', AttachmentUrl: '' })}
               >
                 <Text style={[styles.confirmBtnText, { color: Theme.textPrimary }]}>Clear Form</Text>
               </TouchableOpacity>
@@ -2321,6 +2742,142 @@ const loadDishes = async () => {
                 <Text style={styles.confirmBtnText}>Save</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Full-Screen Image Viewer Modal */}
+      <Modal visible={!!viewerImageUrl} transparent animationType="fade" onRequestClose={() => setViewerImageUrl(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.9)', justifyContent: 'center', alignItems: 'center' }}>
+          <TouchableOpacity 
+            style={StyleSheet.absoluteFill} 
+            activeOpacity={1} 
+            onPress={() => setViewerImageUrl(null)} 
+          />
+          <View style={{ width: '90%', height: '80%', justifyContent: 'center', alignItems: 'center' }}>
+            {!!viewerImageUrl && (
+              <Image 
+                source={{ uri: viewerImageUrl.startsWith('http') ? viewerImageUrl : `${API_URL}${viewerImageUrl}` }} 
+                style={{ width: '100%', height: '100%', resizeMode: 'contain' }} 
+              />
+            )}
+          </View>
+          <TouchableOpacity 
+            onPress={() => setViewerImageUrl(null)} 
+            style={{ position: 'absolute', top: 40, right: 20, backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 20 }}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* All Cash Out Media Gallery Modal */}
+      <Modal
+        visible={showAllMediaModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAllMediaModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowAllMediaModal(false)}
+          />
+          <View style={[styles.modalContent, { maxWidth: 600, width: '90%', maxHeight: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Receipts Gallery</Text>
+              <TouchableOpacity onPress={() => setShowAllMediaModal(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalDivider} />
+
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingVertical: 10 }} showsVerticalScrollIndicator={false}>
+              {(() => {
+                const outs = cashOutEntries.filter(co => co.AttachmentUrl).map(co => ({
+                  ...co,
+                  type: 'OUT',
+                  date: co.CreatedOn || co.CreatedDate || new Date()
+                }));
+                const ins = cashInEntries.filter(ci => ci.AttachmentUrl).map(ci => ({
+                  ...ci,
+                  type: 'IN',
+                  date: ci.CreatedOn || ci.CreatedDate || new Date()
+                }));
+                const combined = [...outs, ...ins].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                if (combined.length === 0) {
+                  return (
+                    <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                      <Text style={{ fontFamily: Fonts.medium, fontSize: 14, color: Theme.textMuted }}>No receipts found.</Text>
+                    </View>
+                  );
+                }
+
+                return combined.map((item, idx) => {
+                  const isOut = item.type === 'OUT';
+                  return (
+                    <View key={idx} style={{ 
+                      flexDirection: 'row', 
+                      backgroundColor: Theme.bgMuted, 
+                      borderRadius: 12, 
+                      padding: 12, 
+                      marginBottom: 12, 
+                      borderWidth: 1, 
+                      borderColor: Theme.border,
+                      alignItems: 'center'
+                    }}>
+                      <TouchableOpacity onPress={() => {
+                        setShowAllMediaModal(false);
+                        setViewerImageUrl(item.AttachmentUrl);
+                      }}>
+                        <Image 
+                          source={{ uri: item.AttachmentUrl.startsWith('http') ? item.AttachmentUrl : `${API_URL}${item.AttachmentUrl}` }} 
+                          style={{ width: 60, height: 60, borderRadius: 8, marginRight: 12, resizeMode: 'cover' }} 
+                        />
+                      </TouchableOpacity>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: Theme.textPrimary }}>
+                          {item.Reason || (isOut ? 'Cash Out' : 'Cash In')}
+                        </Text>
+                        <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textSecondary, marginTop: 2 }}>
+                          Ref: {item.ReferenceNo || 'N/A'} ({isOut ? 'Withdrawal' : 'Deposit'})
+                        </Text>
+                        <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted, marginTop: 2 }}>
+                          By: {item.CreatedBy || 'Admin'}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={{ fontFamily: Fonts.black, fontSize: 15, color: isOut ? Theme.danger : Theme.success }}>
+                          {isOut ? '-' : '+'}{formatCurrency(item.Amount)}
+                        </Text>
+                        <TouchableOpacity 
+                          onPress={() => {
+                            setShowAllMediaModal(false);
+                            setViewerImageUrl(item.AttachmentUrl);
+                          }}
+                          style={{ 
+                            marginTop: 8, 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            gap: 4, 
+                            backgroundColor: Theme.primary + '20', 
+                            paddingHorizontal: 8, 
+                            paddingVertical: 4, 
+                            borderRadius: 6 
+                          }}
+                        >
+                          <Ionicons name="eye-outline" size={14} color={Theme.primary} />
+                          <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: Theme.primary }}>View</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2352,7 +2909,7 @@ const loadDishes = async () => {
               {/* List of Today's Cash In */}
               <View style={{ marginBottom: 15 }}>
                 {cashInEntries.length > 0 ? (
-                  <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
+                  <View>
                     {cashInEntries.map((ci, idx) => (
                       <View key={idx} style={[styles.tableRow, { alignItems: 'center' }]}>
                         <Text style={[styles.tableCellText, { flex: 2 }]}>{ci.Reason || 'Cash In'}</Text>
@@ -2367,7 +2924,7 @@ const loadDishes = async () => {
                         </View>
                       </View>
                     ))}
-                  </ScrollView>
+                  </View>
                 ) : (
                   <View style={{ paddingVertical: 15, alignItems: 'center', backgroundColor: '#FAFAFA', borderRadius: 8, borderWidth: 1, borderColor: Theme.border }}>
                     <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted }}>No cash in entries found for the selected time period.</Text>
@@ -2379,7 +2936,7 @@ const loadDishes = async () => {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: Fonts.bold, fontSize: 13, marginBottom: 6, color: Theme.textSecondary }}>Amount *</Text>
                   <TextInput
-                    style={[styles.premiumInput, { textAlign: 'right', fontSize: 18 }]}
+                    style={[styles.premiumInput, { textAlign: 'left', fontSize: 18 }]}
                     keyboardType="numeric"
                     value={cashInForm.Amount}
                     onChangeText={(v) => setCashInForm({ ...cashInForm, Amount: v })}
@@ -2408,18 +2965,186 @@ const loadDishes = async () => {
                   placeholderTextColor={Theme.textMuted}
                 />
               </View>
+              
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, marginBottom: 8, color: Theme.textSecondary }}>Receipt Attachment</Text>
+                
+                {uploading ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}>
+                    <ActivityIndicator size="small" color={Theme.primary} />
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted }}>Uploading receipt...</Text>
+                  </View>
+                ) : cashInForm.AttachmentUrl ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Theme.bgMuted, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: Theme.border }}>
+                    <Ionicons name="document-attach-outline" size={24} color={Theme.success} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }} numberOfLines={1}>
+                        {cashInForm.AttachmentUrl.split('/').pop()}
+                      </Text>
+                      <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted }}>Compressed receipt photo</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <TouchableOpacity onPress={() => setViewerImageUrl(cashInForm.AttachmentUrl)} style={{ padding: 4 }}>
+                        <Ionicons name="eye-outline" size={20} color={Theme.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setCashInForm(prev => ({ ...prev, AttachmentUrl: '' }))} style={{ padding: 4 }}>
+                        <Ionicons name="trash-outline" size={20} color={Theme.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity 
+                      onPress={() => handleSelectImage('camera')}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        backgroundColor: Theme.bgCard,
+                        borderWidth: 1.5,
+                        borderColor: Theme.primary + '30',
+                        borderStyle: 'dashed',
+                        paddingVertical: 12,
+                        borderRadius: 8
+                      }}
+                    >
+                      <Ionicons name="camera-outline" size={18} color={Theme.primary} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.primary }}>Take Photo</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      onPress={() => handleSelectImage('library')}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        backgroundColor: Theme.bgCard,
+                        borderWidth: 1.5,
+                        borderColor: Theme.primary + '30',
+                        borderStyle: 'dashed',
+                        paddingVertical: 12,
+                        borderRadius: 8
+                      }}
+                    >
+                      <Ionicons name="image-outline" size={18} color={Theme.primary} />
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.primary }}>Upload Image</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </ScrollView>
 
             <View style={[styles.modalFooter, { flexDirection: 'row', gap: 10 }]}>
               <TouchableOpacity
                 style={[styles.confirmBtn, { flex: 1, backgroundColor: Theme.bgMuted }]}
-                onPress={() => setCashInForm({ CashInId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '' })}
+                onPress={() => setCashInForm({ CashInId: '', Amount: '', Reason: '', Remarks: '', PaymentMode: 'Cash', ReferenceNo: '', AttachmentUrl: '' })}
               >
                 <Text style={[styles.confirmBtnText, { color: Theme.textPrimary }]}>Clear Form</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.confirmBtn, { flex: 1 }]}
                 onPress={handleSaveCashIn}
+              >
+                <Text style={styles.confirmBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+
+      {/* Cash Box Modal */}
+      <Modal
+        visible={showCashBoxModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCashBoxModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowCashBoxModal(false)}
+          />
+          <View style={[styles.modalContent, { maxWidth: 500, width: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Artist Cash Box</Text>
+              <TouchableOpacity onPress={() => setShowCashBoxModal(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalDivider} />
+
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingVertical: 5 }} showsVerticalScrollIndicator={false}>
+              {/* List of Today's Artist Cash Box */}
+              <View style={{ marginBottom: 15 }}>
+                {cashBoxEntries.length > 0 ? (
+                  <View>
+                    {cashBoxEntries.map((co, idx) => (
+                      <View key={idx} style={[styles.tableRow, { alignItems: 'center' }]}>
+                        <Text style={[styles.tableCellText, { flex: 2, fontFamily: Fonts.bold }]}>{co.ArtistName || 'Artist'}</Text>
+                        <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', paddingRight: 15 }]}>{formatCurrency(co.Amount)}</Text>
+                        <View style={{ flexDirection: 'row', gap: 15, width: 60, justifyContent: 'flex-end' }}>
+                          <TouchableOpacity onPress={() => setCashBoxForm({ ...co, CashBoxId: co.CashBoxId || co.cashBoxId, ArtistName: co.ArtistName, Amount: co.Amount?.toString() || '' })}>
+                            <Ionicons name="create-outline" size={18} color={Theme.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleDeleteCashBox(co.CashBoxId || co.cashBoxId)}>
+                            <Ionicons name="trash-outline" size={18} color={Theme.danger} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={{ paddingVertical: 15, alignItems: 'center', backgroundColor: Theme.bgInput, borderRadius: 8, borderWidth: 1, borderColor: Theme.border }}>
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted }}>No cash box entries found for the selected time period.</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, marginBottom: 6, color: Theme.textSecondary }}>Artist Name *</Text>
+                <TouchableOpacity
+                  style={[styles.premiumInput, { justifyContent: 'center', height: 44 }]}
+                  onPress={() => setShowDishLov(true)}
+                >
+                  <Text style={{ fontFamily: Fonts.medium, fontSize: 14, color: cashBoxForm.ArtistName ? Theme.textPrimary : Theme.textMuted }}>
+                    {cashBoxForm.ArtistName || "Select Artist..."}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, marginBottom: 6, color: Theme.textSecondary }}>Amount *</Text>
+                <TextInput
+                  style={[styles.premiumInput, { textAlign: 'left', fontSize: 18, fontFamily: Fonts.medium }]}
+                  keyboardType="number-pad"
+                  value={cashBoxForm.Amount}
+                  onChangeText={(v) => {
+                    const cleaned = v.replace(/[^0-9]/g, "");
+                    setCashBoxForm({ ...cashBoxForm, Amount: cleaned });
+                  }}
+                  placeholder="0"
+                  placeholderTextColor={Theme.textMuted}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={[styles.modalFooter, { flexDirection: 'row', gap: 10 }]}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { flex: 1, backgroundColor: Theme.bgMuted }]}
+                onPress={() => setCashBoxForm({ ArtistName: '', Amount: '', CashBoxId: '' })}
+              >
+                <Text style={[styles.confirmBtnText, { color: Theme.textPrimary }]}>Clear Form</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { flex: 1 }]}
+                onPress={handleSaveCashBox}
               >
                 <Text style={styles.confirmBtnText}>Save</Text>
               </TouchableOpacity>
@@ -2639,6 +3364,313 @@ const loadDishes = async () => {
         </TouchableOpacity>
       </Modal>
 
+      {/* GENERIC CONFIRM MODAL */}
+      <Modal
+        visible={genericConfirm.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setGenericConfirm(prev => ({ ...prev, visible: false }))}
+      >
+        <TouchableOpacity 
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 20
+          }}
+          activeOpacity={1}
+          onPress={() => setGenericConfirm(prev => ({ ...prev, visible: false }))}
+        >
+          <TouchableWithoutFeedback>
+            <View 
+              style={{
+                width: "100%",
+                maxWidth: 400,
+                backgroundColor: Theme.bgCard,
+                borderRadius: 20,
+                padding: 24,
+                alignItems: "center",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 5
+              }}
+            >
+              <View style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                justifyContent: "center",
+                alignItems: "center",
+                marginBottom: 16
+              }}>
+                <Ionicons name="trash-outline" size={28} color="#ef4444" />
+              </View>
+
+              <Text style={{
+                fontSize: 18,
+                fontFamily: Fonts.bold,
+                color: Theme.textPrimary,
+                marginBottom: 8,
+                textAlign: "center"
+              }}>
+                {genericConfirm.title}
+              </Text>
+
+              <Text style={{
+                fontSize: 14,
+                fontFamily: Fonts.medium,
+                color: Theme.textSecondary,
+                marginBottom: 24,
+                textAlign: "center",
+                lineHeight: 20
+              }}>
+                {genericConfirm.message}
+              </Text>
+
+              <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
+                <TouchableOpacity 
+                  style={{
+                    flex: 1,
+                    height: 48,
+                    borderRadius: 12,
+                    backgroundColor: Theme.bgMuted || "#F3F4F6",
+                    justifyContent: "center",
+                    alignItems: "center"
+                  }}
+                  onPress={() => setGenericConfirm(prev => ({ ...prev, visible: false }))}
+                >
+                  <Text style={{
+                    fontSize: 14,
+                    fontFamily: Fonts.bold,
+                    color: Theme.textPrimary
+                  }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={{
+                    flex: 1,
+                    height: 48,
+                    borderRadius: 12,
+                    backgroundColor: "#ef4444",
+                    justifyContent: "center",
+                    alignItems: "center"
+                  }}
+                  onPress={genericConfirm.onConfirm}
+                >
+                  <Text style={{
+                    fontSize: 14,
+                    fontFamily: Fonts.bold,
+                    color: "#ffffff"
+                  }}>
+                    Delete
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* SUPERVISOR PASSWORD VERIFICATION MODAL */}
+      <Modal
+        visible={showPasswordModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPasswordModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 400 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{passwordAction?.title || "Verification Required"}</Text>
+              <TouchableOpacity onPress={() => setShowPasswordModal(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color={Theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalDivider} />
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 14, color: Theme.textSecondary, marginBottom: 16 }}>
+              {passwordAction?.description || "Please enter the supervisor/admin password:"}
+            </Text>
+            <TextInput
+              style={[styles.premiumInput, { width: '100%', marginBottom: 20, textAlign: 'left' }]}
+              placeholder="Enter Password"
+              placeholderTextColor={Theme.textMuted}
+              secureTextEntry
+              value={passwordValue}
+              onChangeText={setPasswordValue}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { flex: 1, backgroundColor: Theme.bgMuted }]}
+                onPress={() => setShowPasswordModal(false)}
+              >
+                <Text style={[styles.confirmBtnText, { color: Theme.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { flex: 1 }]}
+                onPress={async () => {
+                  try {
+                    const verifyRes = await fetch(`${API_URL}/api/auth/verify`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ password: passwordValue, role: passwordAction?.role || "ADMIN" }),
+                    });
+                    const verifyData = await verifyRes.json();
+                    if (!verifyData.success) {
+                      Alert.alert("Incorrect Password", "The password you entered is incorrect.");
+                      return;
+                    }
+                    setShowPasswordModal(false);
+                    if (passwordAction?.onSuccess) {
+                      passwordAction.onSuccess();
+                    }
+                  } catch (err) {
+                    console.error("Password verification error:", err);
+                    Alert.alert("Error", "Failed to verify password");
+                  }
+                }}
+              >
+                <Text style={styles.confirmBtnText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DAY HISTORY MODAL */}
+      <Modal
+        visible={showHistoryModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowHistoryModal(false)}
+      >
+        <TouchableOpacity 
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 20
+          }}
+          activeOpacity={1}
+          onPress={() => setShowHistoryModal(false)}
+        >
+          <TouchableWithoutFeedback>
+            <View 
+              style={{
+                width: "100%",
+                maxWidth: 560,
+                backgroundColor: Theme.bgCard || "#ffffff",
+                borderRadius: 24,
+                padding: 24,
+                maxHeight: "85%",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.25,
+                shadowRadius: 20,
+                elevation: 10
+              }}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottomWidth: 1, borderBottomColor: Theme.border, paddingBottom: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: Theme.infoBg, justifyContent: "center", alignItems: "center" }}>
+                    <Ionicons name="time" size={20} color="#3b82f6" />
+                  </View>
+                  <View>
+                    <Text style={{ fontFamily: Fonts.black, fontSize: 18, color: Theme.textPrimary }}>Day Start & End History</Text>
+                    <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textSecondary }}>
+                      Recent Business Day Audit Logs
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => setShowHistoryModal(false)} style={{ padding: 4 }}>
+                  <Ionicons name="close-circle" size={26} color={Theme.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {loadingHistory ? (
+                <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                  <ActivityIndicator size="large" color={Theme.primary} />
+                </View>
+              ) : historyLogs.length === 0 ? (
+                <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                  <Ionicons name="document-text-outline" size={48} color={Theme.textMuted} />
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 15, color: Theme.textSecondary, marginTop: 12 }}>No audit history found</Text>
+                  <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textMuted, marginTop: 4 }}>No Day Start or Day End logs recorded in the system.</Text>
+                </View>
+              ) : (
+                <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                  <View style={{ gap: 12 }}>
+                    {historyLogs.map((log: any, idx: number) => {
+                      const isStart = log.EventType === "DAY_START";
+                      const logDateStr = log.BusinessDate 
+                        ? new Date(log.BusinessDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : "—";
+
+                      return (
+                        <View 
+                          key={log.AuditId || idx}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            backgroundColor: isStart ? "rgba(245,158,11,0.12)" : "rgba(239, 68, 68, 0.12)",
+                            borderLeftWidth: 4,
+                            borderLeftColor: isStart ? "#f59e0b" : "#ef4444",
+                            padding: 14,
+                            borderRadius: 12,
+                            justifyContent: "space-between"
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                            <Text style={{ fontSize: 22 }}>{isStart ? "☀️" : "🌙"}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontFamily: Fonts.bold, fontSize: 14, color: isStart ? "#f59e0b" : "#ef4444" }}>
+                                {isStart ? "Day Started" : "Day Ended"}
+                              </Text>
+                              <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textSecondary, marginTop: 4 }}>
+                                Business Date: <Text style={{ fontFamily: Fonts.bold, color: Theme.textPrimary }}>{logDateStr}</Text>
+                              </Text>
+                              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted, marginTop: 2 }}>
+                                Action by: <Text style={{ fontFamily: Fonts.bold, color: Theme.textPrimary }}>{log.ActionBy || "admin"}</Text>
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={{ alignItems: "flex-end", marginLeft: 10 }}>
+                            <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Theme.textPrimary, textAlign: "right" }}>
+                              {formatToSingaporeDateTime(log.EventTime)}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              )}
+
+              <View style={{ marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: Theme.border, alignItems: "flex-end" }}>
+                <TouchableOpacity
+                  style={{
+                    paddingHorizontal: 20,
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                    backgroundColor: Theme.bgMuted,
+                  }}
+                  onPress={() => setShowHistoryModal(false)}
+                >
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </TouchableOpacity>
+      </Modal>
+
     </View>
   );
 }
@@ -2757,7 +3789,6 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   cardBodyScroll: {
-    height: 280,
     paddingHorizontal: 12,
   },
   row: {
@@ -2765,7 +3796,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: Theme.border,
   },
   rowLabel: {
     fontSize: 13,
@@ -2778,7 +3809,7 @@ const styles = StyleSheet.create({
     color: Theme.textPrimary,
   },
   highlightRow: {
-    backgroundColor: '#FAFAFA',
+    backgroundColor: Theme.bgNav,
     borderTopWidth: 1,
     borderTopColor: Theme.border,
     borderBottomWidth: 0,
@@ -2788,13 +3819,13 @@ const styles = StyleSheet.create({
     marginBottom: -12,
   },
   highlightText: {
-    color: Theme.primaryDark,
+    color: Theme.primary,
     fontFamily: Fonts.black,
     fontSize: 14,
   },
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: '#F8FAFC', // Very subtle cool gray
+    backgroundColor: Theme.bgMuted,
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
@@ -2811,7 +3842,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: Theme.border,
   },
   tableCellText: {
     fontSize: 13,
@@ -2819,27 +3850,28 @@ const styles = StyleSheet.create({
     color: Theme.textPrimary,
   },
   currencyInput: {
-    flex: 1,
-    height: 32,
+    width: 120,
+    height: 38,
     borderWidth: 1,
     borderColor: Theme.border,
-    borderRadius: 6,
-    paddingHorizontal: 8,
+    borderRadius: 8,
+    paddingHorizontal: 12,
     backgroundColor: Theme.bgInput,
     color: Theme.textPrimary,
     fontFamily: Fonts.bold,
-    textAlign: "right",
+    textAlign: "left",
+    fontSize: 14,
   },
   premiumInput: {
     height: 52,
-    backgroundColor: '#F4F5F7',
+    backgroundColor: Theme.bgInput,
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 15,
     fontFamily: Fonts.bold,
     color: Theme.textPrimary,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: Theme.border,
   },
   modalOverlay: {
     flex: 1,
@@ -2885,7 +3917,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   modalList: {
-    maxHeight: 300,
+    // no maxHeight - let modal content expand naturally
   },
   sectionHeader: {
     backgroundColor: Theme.bgMuted,
@@ -2934,7 +3966,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
     padding: 8,
-    backgroundColor: "#FAFAFA",
+    backgroundColor: Theme.bgNav,
     borderTopWidth: 1,
     borderTopColor: Theme.border,
   },

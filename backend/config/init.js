@@ -621,10 +621,18 @@ async function initDB(pool) {
               [ReferenceNo] [nvarchar](100) NULL,
               [TerminalCode] [nvarchar](50) NULL,
               [CreatedBy] [nvarchar](100) NULL,
-              [CreatedOn] [datetime] NULL
+              [CreatedOn] [datetime] NULL,
+              [start_date] [date] NULL,
+              [AttachmentUrl] [nvarchar](500) NULL
           )
       END
     `);
+
+    // Ensure start_date exists in CashOutEntry
+    await runQuery("CashOutEntry - start_date", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CashOutEntry]') AND name = 'start_date') ALTER TABLE [dbo].[CashOutEntry] ADD [start_date] DATE NULL");
+
+    // Ensure AttachmentUrl exists in CashOutEntry
+    await runQuery("CashOutEntry - AttachmentUrl", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CashOutEntry]') AND name = 'AttachmentUrl') ALTER TABLE [dbo].[CashOutEntry] ADD [AttachmentUrl] NVARCHAR(500) NULL");
 
     // 18.1 Create CashInEntry table (for manual Cash-In tracking)
     await runQuery("Create CashInEntry table", `
@@ -641,7 +649,30 @@ async function initDB(pool) {
               [ReferenceNo] [nvarchar](100) NULL,
               [TerminalCode] [nvarchar](50) NULL,
               [CreatedBy] [nvarchar](100) NULL,
-              [CreatedOn] [datetime] NULL
+              [CreatedOn] [datetime] NULL,
+              [start_date] [date] NULL,
+              [AttachmentUrl] [nvarchar](500) NULL
+          )
+      END
+    `);
+
+    // Ensure start_date exists in CashInEntry
+    await runQuery("CashInEntry - start_date", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CashInEntry]') AND name = 'start_date') ALTER TABLE [dbo].[CashInEntry] ADD [start_date] DATE NULL");
+
+    // Ensure AttachmentUrl exists in CashInEntry
+    await runQuery("CashInEntry - AttachmentUrl", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CashInEntry]') AND name = 'AttachmentUrl') ALTER TABLE [dbo].[CashInEntry] ADD [AttachmentUrl] NVARCHAR(500) NULL");
+
+    // 18.2 Create ArtistCashBox table
+    await runQuery("Create ArtistCashBox table", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ArtistCashBox]') AND type in (N'U'))
+      BEGIN
+          CREATE TABLE [dbo].[ArtistCashBox](
+              [CashBoxId] [uniqueidentifier] NOT NULL PRIMARY KEY DEFAULT NEWID(),
+              [ArtistName] [varchar](255) NULL,
+              [Amount] [decimal](18, 2) NULL,
+              [CreatedDate] [datetime] DEFAULT GETDATE(),
+              [SettlementID] [uniqueidentifier] NULL,
+              [start_date] [date] NULL
           )
       END
     `);
@@ -661,6 +692,35 @@ async function initDB(pool) {
               [CreatedDate] [datetime] DEFAULT GETDATE(),
               [UpdateBy] [varchar](30) NULL,
               [UpdateDate] [datetime] NULL
+          )
+      END
+    `);
+
+    // 19.2 Create BusinessDayLog table for Day Start/End history tracking
+    await runQuery("Create BusinessDayLog table", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[BusinessDayLog]') AND type in (N'U'))
+      BEGIN
+          CREATE TABLE [dbo].[BusinessDayLog](
+              [BusinessDate] [date] NOT NULL PRIMARY KEY,
+              [StartedAt] [datetime] NULL,
+              [StartedBy] [nvarchar](50) NULL,
+              [EndedAt] [datetime] NULL,
+              [EndedBy] [nvarchar](50) NULL
+          )
+      END
+    `);
+
+    // 19.3 Create BusinessDayAuditLog table for Day Start/End event audit log
+    await runQuery("Create BusinessDayAuditLog table", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[BusinessDayAuditLog]') AND type in (N'U'))
+      BEGIN
+          CREATE TABLE [dbo].[BusinessDayAuditLog](
+              [AuditId] [int] IDENTITY(1,1) NOT NULL PRIMARY KEY,
+              [BusinessDate] [date] NOT NULL,
+              [EventType] [nvarchar](50) NOT NULL,
+              [EventTime] [datetime] NOT NULL DEFAULT GETDATE(),
+              [ActionBy] [nvarchar](50) NULL,
+              [Remarks] [nvarchar](255) NULL
           )
       END
     `);
