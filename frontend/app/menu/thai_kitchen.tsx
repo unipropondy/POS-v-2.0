@@ -611,11 +611,7 @@ export default function MenuScreen() {
     >
       <TouchableOpacity
         onPress={() => {
-          if (router.canGoBack()) {
-            router.back();
-          } else {
-            router.replace("/(tabs)/category");
-          }
+          router.replace("/(tabs)/category");
         }}
         style={[
           styles.backBtn,

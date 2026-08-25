@@ -1559,7 +1559,7 @@ export default function SummaryScreen() {
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Pressable
                     style={styles.iconBtn}
-                    onPress={() => router.push("/menu/thai_kitchen")}
+                    onPress={() => router.replace("/menu/thai_kitchen")}
                   >
                     <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
                   </Pressable>
@@ -1635,7 +1635,7 @@ export default function SummaryScreen() {
               <View style={styles.headerLeft}>
                 <Pressable
                   style={styles.iconBtn}
-                  onPress={() => router.push("/menu/thai_kitchen")}
+                  onPress={() => router.replace("/menu/thai_kitchen")}
                 >
                   <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
                 </Pressable>

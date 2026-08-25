@@ -763,13 +763,13 @@ class SunmiPrinterService {
 
       const is80mm = SunmiPrinterManager.getPaperSize() === "80mm";
       const fontSizes = {
-        title: is80mm ? 36 : 44,
-        timestamp: is80mm ? 26 : 30,
-        table: is80mm ? 48 : 60,
-        item: is80mm ? 36 : 44,
-        modifier: is80mm ? 34 : 42,
-        note: is80mm ? 28 : 34,
-        reset: is80mm ? 24 : 28,
+        title: is80mm ? 26 : 30,
+        timestamp: is80mm ? 20 : 24,
+        table: is80mm ? 28 : 34,
+        item: is80mm ? 24 : 28,
+        modifier: is80mm ? 22 : 26,
+        note: is80mm ? 20 : 24,
+        reset: is80mm ? 20 : 24,
       };
 
       const title = type === "KDS_PRINT" ? "KDS PRINT" : type === "REPRINT" ? "REPRINT" : type === "ADDITIONAL" ? "ADDITIONAL" : "NEW ORDER";
@@ -801,7 +801,7 @@ class SunmiPrinterService {
       await SunmiModule.printText(formatter.left(timestamp));
       await SunmiModule.lineWrap(1);
 
-      // ============ TABLE INFO (EXTREMELY LARGE) ============
+      // ============ TABLE INFO ============
       await SunmiModule.printText(formatter.doubleDivider("="));
       await setSize(fontSizes.table);
       await SunmiModule.printText(formatter.left(`TABLE: ${tableNo}`));
@@ -835,7 +835,6 @@ class SunmiPrinterService {
 
         const isTw = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
         if (isTw) {
-          // Increase size to item size and enable bold
           await setSize(fontSizes.item);
           try {
             if (SunmiModule.setBold) await SunmiModule.setBold(true);
@@ -872,7 +871,7 @@ class SunmiPrinterService {
       }
 
       await setSize(fontSizes.reset);
-      await SunmiModule.lineWrap(3);
+      await SunmiModule.lineWrap(1);
       await SunmiModule.cutPaper();
       return true;
     } catch (err) {

@@ -829,20 +829,20 @@ class UniversalPrinter {
           .header-box { 
             background: #000 !important; 
             color: #fff !important; 
-            padding: 4px 6px; 
+            padding: 3px 5px; 
             text-align: center; 
             font-weight: bold; 
-            font-size: 22px; 
+            font-size: 15px; 
             display: block;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
             text-transform: uppercase;
             -webkit-print-color-adjust: exact;
           }
           
           .timestamp {
-            font-size: 13px;
+            font-size: 10px;
             font-weight: bold;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
             color: #333;
             text-align: center;
           }
@@ -850,26 +850,26 @@ class UniversalPrinter {
           .table-info {
             display: flex;
             justify-content: space-between;
-            border-bottom: 2px dashed #000;
-            padding: 2px 0;
-            margin-bottom: 4px;
-            font-size: 19px;
+            border-bottom: 1.5px dashed #000;
+            padding: 1px 0;
+            margin-bottom: 2px;
+            font-size: 14px;
             font-weight: 900;
           }
           
           .headers {
             display: flex;
-            border-bottom: 1.5px dashed #000;
-            padding: 2px 0;
-            font-size: 14px;
+            border-bottom: 1px dashed #000;
+            padding: 1px 0;
+            font-size: 11px;
             font-weight: bold;
             text-transform: uppercase;
           }
-          .qty-head { width: 36px; margin-right: 6px; }
+          .qty-head { width: 30px; margin-right: 4px; }
           
           .item-row {
             border-bottom: 1px solid #000;
-            padding: 5px 0;
+            padding: 3px 0;
           }
           
           .item-main {
@@ -878,55 +878,55 @@ class UniversalPrinter {
           }
           
           .item-qty {
-            font-size: 22px;
+            font-size: 14px;
             font-weight: 900;
-            width: 36px;
+            width: 30px;
             line-height: 1;
-            margin-right: 6px;
+            margin-right: 4px;
           }
           
           .item-name {
-            font-size: 20px;
+            font-size: 13px;
             font-weight: 900;
             flex: 1;
             line-height: 1.1;
           }
           
           .modifier-list {
-            margin-left: 42px;
-            margin-top: 2px;
+            margin-left: 34px;
+            margin-top: 1px;
           }
           
           .modifier-item {
-            font-size: 17px;
+            font-size: 11px;
             font-weight: 900;
             color: #000;
             display: block;
           }
           
           .remarks {
-            margin-left: 42px;
-            font-size: 17px;
+            margin-left: 34px;
+            font-size: 11px;
             font-weight: 900;
-            margin-top: 3px;
+            margin-top: 2px;
           }
           
           .footer {
-            margin-top: 8px;
-            font-size: 13px;
+            margin-top: 4px;
+            font-size: 10px;
             font-weight: bold;
             font-family: monospace;
           }
           
           .kitchen-name {
             text-align: center;
-            font-size: 20px;
+            font-size: 13px;
             font-weight: bold;
-            margin-top: 10px;
+            margin-top: 6px;
             text-transform: uppercase;
-            border-top: 2px dashed #000;
-            border-bottom: 2px dashed #000;
-            padding: 5px 0;
+            border-top: 1.5px dashed #000;
+            border-bottom: 1.5px dashed #000;
+            padding: 3px 0;
           }
           
           @media print {
@@ -982,7 +982,7 @@ class UniversalPrinter {
                             <div class="item-qty">${item.quantity || item.qty || 1}</div>
                             <div class="item-name">
                               ${(item.name || "").replace(/\n/g, '<br/>')}
-                              ${item.songName || item.SongName ? `<div style="font-size: 26px; font-weight: normal; color: #555; margin-top: 4px;">ðŸŽµ ${item.songName || item.SongName}</div>` : ''}
+                              ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
                             </div>
                           </div>
                           ${
@@ -1028,7 +1028,7 @@ class UniversalPrinter {
                       <div class="item-qty">${item.quantity || item.qty || 1}</div>
                       <div class="item-name">
                         ${(item.name || "").replace(/\n/g, '<br/>')}
-                        ${item.songName || item.SongName ? `<div style="font-size: 26px; font-weight: normal; color: #555; margin-top: 4px;">ðŸŽµ ${item.songName || item.SongName}</div>` : ''}
+                        ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
                       </div>
                     </div>
                     ${
@@ -1119,11 +1119,9 @@ class UniversalPrinter {
 
     const DIV = "[L]------------------------------------------------\n";
 
-    // Item wrapping constants (ESC/POS width alignments)
-    const DISH_WRAP = 20;
-    const BIG_MOD_WRAP = 20;   // big-font chars available for modifiers
+    const DISH_WRAP = 40;
+    const BIG_MOD_WRAP = 40;
 
-    // â”€â”€ Helper: wrap text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const wrapText = (str: string, maxChars: number): string[] => {
       const words = String(str || "").split(" ");
       const result: string[] = [];
@@ -1143,39 +1141,33 @@ class UniversalPrinter {
       return result.length ? result : [""];
     };
 
-    // â”€â”€ Helper: format one item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const formatItem = (item: any): string => {
       let t = "";
       const qtyNum   = item.quantity || item.qty || 1;
       const itemName = item.name || item.DishName || "";
 
-      // Item name: tall font (double height only), wrapped at 20 chars
       wrapText(itemName.replace(/\n/g, " "), DISH_WRAP).forEach((chunk: string, idx: number) => {
-        if (idx === 0) t += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
-        else           t += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+        if (idx === 0) t += `[L]<B>[${qtyNum}] ${chunk}</B>\n`;
+        else           t += `[L]<B>    ${chunk}</B>\n`;
       });
 
-      // Song name
       const songName = item.songName || item.SongName || "";
-      if (songName) t += `[L]<font size='big'><B>  â™ª ${songName}</B></font>\n`;
+      if (songName) t += `[L]<B>  ♪ ${songName}</B>\n`;
 
-      // Takeaway flag
       const isTw = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
-      if (isTw) t += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
+      if (isTw) t += `[L]<B>  >> TAKEAWAY <<</B>\n`;
 
-      // Modifiers: big font, wraps at 20 chars
       if (item.modifiers && item.modifiers.length > 0) {
         item.modifiers.forEach((m: any) => {
           const modName = m.ModifierName || m.modifierName || m.name || m.ModifierNameEn || "";
           if (modName) {
             wrapText(modName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-              t += idx === 0 ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+              t += idx === 0 ? `[L]<B>  + ${chunk}</B>\n` : `[L]<B>    ${chunk}</B>\n`;
             });
           }
         });
       }
 
-      // Combo selections: big font, wrap at 20 chars
       let comboSels = item.comboSelections;
       if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
         const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
@@ -1203,7 +1195,7 @@ class UniversalPrinter {
               const optName = opt.name || opt.DishName || opt.itemName || "";
               if (optName) {
                 wrapText(optName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-                  t += idx === 0 ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+                  t += idx === 0 ? `[L]<B>  - ${chunk}</B>\n` : `[L]<B>    ${chunk}</B>\n`;
                 });
               }
             });
@@ -1211,26 +1203,22 @@ class UniversalPrinter {
         });
       }
 
-      // Note / Remarks: big font, wrap at 20 chars
       const noteText = item.note || item.notes || item.Remarks || item.remarks;
       if (noteText) {
         wrapText(noteText, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-          t += idx === 0 ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+          t += idx === 0 ? `[L]<B>  * ${chunk}</B>\n` : `[L]<B>    ${chunk}</B>\n`;
         });
       }
 
       return t;
     };
 
-    // â”€â”€ HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let text = "";
-    // 25mm top side white space (approx 6 empty lines)
-    text += "[L]\n".repeat(6);
+    text += "[L]\n";
     text += `[C]<font size='big'><B>${title}</B></font>\n`;
-    text += `[C]<font size='big'><B>${kotDateStr}  ${kotTimeStr}</B></font>\n`;
+    text += `[C]<B>${kotDateStr}  ${kotTimeStr}</B>\n`;
     text += DIV;
 
-    // TABLE visible at top for both KOT and KDS
     if (type === "KDS_PRINT") {
       text += `[C]<font size='big'><B>TABLE NO : ${tableNo}</B></font>\n`;
       text += DIV;
@@ -1239,12 +1227,10 @@ class UniversalPrinter {
       text += DIV;
     }
 
-    text += "[L]<font size='big'><B>QTY  ITEM</B></font>\n";
+    text += "[L]<B>QTY  ITEM</B>\n";
     text += DIV;
 
-    // â”€â”€ ITEMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (type === "KDS_PRINT") {
-      // KDS: group by kitchen section
       const groups: Record<string, any[]> = {};
       items.forEach((item: any) => {
         const k = (item.KitchenTypeName || item.kitchenTypeName || item.dishGroupName || item.categoryName || "KITCHEN").toUpperCase().trim();
@@ -1253,16 +1239,15 @@ class UniversalPrinter {
       });
 
       for (const [kName, groupItems] of Object.entries(groups)) {
-        text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
+        text += `[C]<B>--- ${kName} ---</B>\n`;
         text += DIV;
         groupItems.forEach((item: any, idx: number) => {
           text += formatItem(item);
-          if (idx < groupItems.length - 1) text += "[L]\n"; // blank line between items
+          if (idx < groupItems.length - 1) text += "[L]\n";
         });
         text += DIV;
       }
     } else {
-      // KOT: group by kitchen section (same as KDS, for alignment)
       const kotGroups: Record<string, any[]> = {};
       items.forEach((item: any) => {
         const k = (item.KitchenTypeName || item.kitchenTypeName || item.dishGroupName || item.categoryName || "KITCHEN").toUpperCase().trim();
@@ -1272,9 +1257,8 @@ class UniversalPrinter {
 
       const kotGroupEntries = Object.entries(kotGroups);
       kotGroupEntries.forEach(([kName, groupItems]: [string, any[]], gIdx: number) => {
-        // Only show section header if there are multiple kitchens
         if (kotGroupEntries.length > 1) {
-          text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
+          text += `[C]<B>--- ${kName} ---</B>\n`;
           text += DIV;
         }
         groupItems.forEach((item: any, idx: number) => {
@@ -1285,12 +1269,10 @@ class UniversalPrinter {
       });
     }
 
-    // â”€â”€ FOOTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    text += `[L]<font size='big'><B>Order By : ${waiter}</B></font>\n`;
-    text += `[L]<font size='big'><B>Order No : ${orderNo}</B></font>\n`;
+    text += `[L]<B>Order By : ${waiter}</B>\n`;
+    text += `[L]<B>Order No : ${orderNo}</B>\n`;
 
     if (type !== "KDS_PRINT") {
-      // KOT: Kitchen Name + Table Number always at the very bottom
       const kotLabel = kitchenName && kitchenName !== "KDS"
         ? (tableNo && tableNo !== "N/A"
             ? `${kitchenName.toUpperCase()}  /  T.NO : ${tableNo}`
@@ -2353,7 +2335,7 @@ class UniversalPrinter {
                 mmFeedPaper: 25,
               });
               const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection to printer timed out")), 5000)
+                setTimeout(() => reject(new Error("Connection to printer timed out")), 15000)
               );
               await Promise.race([printPromise, timeoutPromise]);
               printSuccess = true;
@@ -2365,7 +2347,7 @@ class UniversalPrinter {
                 mmFeedPaper: 25,
               });
               const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection to printer timed out")), 5000)
+                setTimeout(() => reject(new Error("Connection to printer timed out")), 15000)
               );
               await Promise.race([printPromise, timeoutPromise]);
               printSuccess = true;
@@ -2400,6 +2382,8 @@ class UniversalPrinter {
               body: JSON.stringify({ errorMessage: errorMsg })
             });
           }
+          // Delay for 1 second between consecutive jobs to the same printer to clear the TCP socket
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       });
 

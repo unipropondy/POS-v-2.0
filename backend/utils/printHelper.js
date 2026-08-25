@@ -34,10 +34,10 @@ function formatKOTThermalText(data, type = 'NEW') {
 
   // ── HEADER ──────────────────────────────────────────────────────────
   let text = '';
-  // 25mm top side white space (approx 6 empty lines)
-  text += '[L]\n'.repeat(6);
+  // Only 1 empty line at the top to save paper
+  text += '[L]\n';
   text += `[C]<font size='big'><B>${title}</B></font>\n`;
-  text += `[C]<font size='big'><B>${dateStr}  ${timeStr}</B></font>\n`;
+  text += `[C]<B>${dateStr}  ${timeStr}</B>\n`;
   text += DIV;
 
   // TABLE visible at top for both KOT and KDS
@@ -49,7 +49,7 @@ function formatKOTThermalText(data, type = 'NEW') {
     text += DIV;
   }
 
-  text += "[L]<font size='big'><B>QTY  ITEM</B></font>\n";
+  text += "[L]<B>QTY  ITEM</B>\n";
   text += DIV;
 
   // ── ITEMS ───────────────────────────────────────────────────────────
@@ -63,8 +63,7 @@ function formatKOTThermalText(data, type = 'NEW') {
     });
 
     for (const [kName, groupItems] of Object.entries(groups)) {
-      // Section header: big bold, centered
-      text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
+      text += `[C]<B>--- ${kName} ---</B>\n`;
       text += DIV;
       groupItems.forEach((item, idx) => {
         text += _formatItem(item);
@@ -85,7 +84,7 @@ function formatKOTThermalText(data, type = 'NEW') {
     kotGroupEntries.forEach(([kName, groupItems], gIdx) => {
       // Only show section header if there are multiple kitchens
       if (kotGroupEntries.length > 1) {
-        text += `[C]<font size='big'><B>--- ${kName} ---</B></font>\n`;
+        text += `[C]<B>--- ${kName} ---</B>\n`;
         text += DIV;
       }
       groupItems.forEach((item, idx) => {
@@ -97,8 +96,8 @@ function formatKOTThermalText(data, type = 'NEW') {
   }
 
   // ── FOOTER ──────────────────────────────────────────────────────────
-  text += `[L]<font size='big'><B>Order By : ${waiter}</B></font>\n`;
-  text += `[L]<font size='big'><B>Order No : ${orderNo}</B></font>\n`;
+  text += `[L]<B>Order By : ${waiter}</B>\n`;
+  text += `[L]<B>Order No : ${orderNo}</B>\n`;
 
   if (type !== 'KDS_PRINT') {
     // KOT: Kitchen Name + Table Number always at the very bottom
@@ -111,13 +110,13 @@ function formatKOTThermalText(data, type = 'NEW') {
           : '');
     if (kotLabel) {
       text += DIV;
-      text += `[C]<font size='big'><B>${kotLabel}</B></font>\n`;
+      text += `[C]<B>${kotLabel}</B>\n`;
       text += DIV;
     }
   }
 
-  // ── FEED LINES at end to prevent last line from being cut ────────────
-  text += '[L]\n'.repeat(6);
+  // Minimal feed lines at end to prevent paper waste
+  text += '[L]\n';
 
   return text;
 }
@@ -150,49 +149,49 @@ function _wrapText(str, maxChars) {
  *
  * Width reference (80mm paper):
  *   Normal font : 48 chars/line
- *   Strategy    : QTY in tall bold, item name in tall bold (fits more text since tall has normal width)
- *                 Modifiers in tall font with + / - prefix
+ *   Strategy    : QTY in bold, item name in bold (normal size)
+ *                 Modifiers in bold with + / - prefix
  */
 function _formatItem(item) {
   let text = '';
   const qtyNum   = item.quantity || item.qty || 1;
   const itemName = item.name     || item.DishName || '';
 
-  // ── Item name: big font (double height + width), bold, wrapped at 20 chars ──
-  const DISH_WRAP = 20;
-  const BIG_MOD_WRAP = 20;   // big-font chars available for modifiers
+  // Item name: normal font size, bold, wrapped at 40 chars
+  const DISH_WRAP = 40;
+  const BIG_MOD_WRAP = 40;
 
   _wrapText(itemName.replace(/\n/g, ' '), DISH_WRAP).forEach((chunk, idx) => {
     if (idx === 0) {
-      text += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
+      text += `[L]<B>[${qtyNum}] ${chunk}</B>\n`;
     } else {
-      text += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+      text += `[L]<B>    ${chunk}</B>\n`;
     }
   });
 
-  // ── Song name ──────────────────────────────────────────────────────────────
+  // Song name
   const songName = item.songName || item.SongName || '';
-  if (songName) text += `[L]<font size='big'><B>  ♪ ${songName}</B></font>\n`;
+  if (songName) text += `[L]<B>  ♪ ${songName}</B>\n`;
 
-  // ── Takeaway flag ──────────────────────────────────────────────────────────
+  // Takeaway flag
   const isTakeaway = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
-  if (isTakeaway) text += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
+  if (isTakeaway) text += `[L]<B>  >> TAKEAWAY <<</B>\n`;
 
-  // ── Modifiers (big font, bold) — wrap at 20 chars ────────────────────
+  // Modifiers
   if (item.modifiers && item.modifiers.length > 0) {
     item.modifiers.forEach(m => {
       const modName = m.ModifierName || m.modifierName || m.name || m.ModifierNameEn || '';
       if (modName) {
         _wrapText(modName, BIG_MOD_WRAP).forEach((chunk, idx) => {
           text += idx === 0
-            ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n`
-            : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+            ? `[L]<B>  + ${chunk}</B>\n`
+            : `[L]<B>    ${chunk}</B>\n`;
         });
       }
     });
   }
 
-  // ── Combo selections (tall font, bold) — wrap at 40 chars ─────────────────────
+  // Combo selections
   let comboSels = item.comboSelections;
   if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
     const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
@@ -221,8 +220,8 @@ function _formatItem(item) {
           if (optName) {
             _wrapText(optName, BIG_MOD_WRAP).forEach((chunk, idx) => {
               text += idx === 0
-                ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n`
-                : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+                ? `[L]<B>  - ${chunk}</B>\n`
+                : `[L]<B>    ${chunk}</B>\n`;
             });
           }
         });
@@ -230,13 +229,13 @@ function _formatItem(item) {
     });
   }
 
-  // ── Remarks / Note ─────────────────────────────────────────────────────────
+  // Remarks / Note
   const noteText = item.note || item.notes || item.Remarks || item.remarks;
   if (noteText) {
     _wrapText(noteText, BIG_MOD_WRAP).forEach((chunk, idx) => {
       text += idx === 0 
-        ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` 
-        : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+        ? `[L]<B>  * ${chunk}</B>\n` 
+        : `[L]<B>    ${chunk}</B>\n`;
     });
   }
 

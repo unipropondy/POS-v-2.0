@@ -116,6 +116,16 @@ const formatMoney = (symbol: string, amount: number) => {
   }
 };
 
+// Define global ongoing payments map outside of the component to survive unmounting
+const ongoingPayments: Record<string, {
+  status: "idle" | "processing" | "success" | "cancelled" | "failed";
+  message: string;
+  method: string;
+  total: number;
+  promise: Promise<any>;
+  onUpdate?: (status: "idle" | "processing" | "success" | "cancelled" | "failed", message: string, result: any, error: any) => void;
+}> = {};
+
 export default function PaymentScreen() {
   const pathname = usePathname();
   const params = useLocalSearchParams();
@@ -222,6 +232,88 @@ export default function PaymentScreen() {
   const [collectionAmount, setCollectionAmount] = useState("");
   const [processing, setProcessing] = useState(false);
   const [checkoutSessionId, setCheckoutSessionId] = useState("");
+  const cacheKey = (context?.tableId || displayOrderId || "").toString();
+
+  // --- RECOVERY EFFECT FOR ONGOING YEAPAY TERMINAL TRANSACTIONS ---
+  useEffect(() => {
+    if (cacheKey && ongoingPayments[cacheKey]) {
+      const ongoing = ongoingPayments[cacheKey];
+      console.log(`🔌 [PaymentScreen] Reconnecting to ongoing transaction for ${cacheKey} (${ongoing.status})`);
+      
+      if (ongoing.status === "processing") {
+        setPaymentStatus("processing");
+        setPaymentMessage(ongoing.message);
+        setProcessing(true);
+        setMethod(ongoing.method);
+        
+        ongoing.onUpdate = (status, message, result, error) => {
+          setPaymentStatus(status);
+          setPaymentMessage(message);
+          setProcessing(status === "processing");
+          
+          if (status === "success") {
+            showToast({
+              type: 'success',
+              message: '✅ Payment Successful',
+              subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
+            });
+            executeFinalPayment();
+            delete ongoingPayments[cacheKey];
+          } else if (status === "cancelled") {
+            Alert.alert(
+              '❌ Transaction Cancelled',
+              'Payment was cancelled on the terminal. Please try again.',
+              [{ text: 'OK' }]
+            );
+            delete ongoingPayments[cacheKey];
+          } else if (status === "failed") {
+            Alert.alert(
+              error ? 'Error' : '❌ Payment Failed',
+              message || 'Failed to connect to terminal',
+              [{ text: 'OK' }]
+            );
+            delete ongoingPayments[cacheKey];
+          }
+        };
+      } else {
+        // Already completed in background while screen was unmounted
+        setPaymentStatus(ongoing.status);
+        setPaymentMessage(ongoing.message);
+        setMethod(ongoing.method);
+        
+        if (ongoing.status === "success") {
+          showToast({
+            type: 'success',
+            message: '✅ Payment Successful',
+            subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
+          });
+          executeFinalPayment();
+          delete ongoingPayments[cacheKey];
+        } else if (ongoing.status === "cancelled") {
+          Alert.alert(
+            '❌ Transaction Cancelled',
+            'Payment was cancelled on the terminal. Please try again.',
+            [{ text: 'OK' }]
+          );
+          delete ongoingPayments[cacheKey];
+        } else if (ongoing.status === "failed") {
+          Alert.alert(
+            '❌ Payment Failed',
+            ongoing.message || 'Failed to connect to terminal',
+            [{ text: 'OK' }]
+          );
+          delete ongoingPayments[cacheKey];
+        }
+      }
+    }
+    
+    return () => {
+      // Disconnect listener on unmount
+      if (cacheKey && ongoingPayments[cacheKey]) {
+        ongoingPayments[cacheKey].onUpdate = undefined;
+      }
+    };
+  }, [cacheKey]);
 
   useEffect(() => {
     if (isFocused) {
@@ -1056,106 +1148,128 @@ export default function PaymentScreen() {
     const isYeahPay        = isYeahPayPayNow || isYeahPayCardMode;
 
     // ✅ YEAHPAY - Direct terminal call (ONLY for "Yeahpay Paynow" / "Yeahpay Card")
-    if (isYeahPay && total > 0) {
+    if (isYeahPay && total > 0 && cacheKey) {
       setPaymentStatus("processing");
       setPaymentMessage("Processing payment...");
       setProcessing(true);
 
-      try {
-        const deviceSn = selectedMethod?.deviceSn || '';
-        const salt = selectedMethod?.deviceSalt || '';
+      const deviceSn = selectedMethod?.deviceSn || '';
+      const salt = selectedMethod?.deviceSalt || '';
 
-        console.log('🔄 [MainPayment] Calling YeahPay terminal for:', method);
-        console.log('   Amount:', total);
-        console.log('   DeviceSN:', deviceSn);
+      console.log('🔄 [MainPayment] Calling YeahPay terminal for:', method);
+      console.log('   Amount:', total);
+      console.log('   DeviceSN:', deviceSn);
 
-        if (!deviceSn) {
-          setPaymentStatus("failed");
-          setPaymentMessage("DeviceSN not configured");
-          Alert.alert('Configuration Error', 'DeviceSN not configured.');
-          setProcessing(false);
-          return;
+      if (!deviceSn) {
+        setPaymentStatus("failed");
+        setPaymentMessage("DeviceSN not configured");
+        Alert.alert('Configuration Error', 'DeviceSN not configured.');
+        setProcessing(false);
+        return;
+      }
+
+      const endpoint = isYeahPayCardMode ? '/api/yeahpay/card-payment' : '/api/yeahpay/paynow-payment';
+      
+      const fetchPromise = (async () => {
+        try {
+          const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(useAuthStore.getState().token ? { 'Authorization': `Bearer ${useAuthStore.getState().token}` } : {}),
+            },
+            body: JSON.stringify({
+              amount: total,
+              deviceSn: deviceSn,
+              salt: salt || ''
+            })
+          });
+
+          const result = await response.json();
+          console.log('✅ [MainPayment] Terminal response:', result);
+          const responseCode = result.code;
+
+          let status: "success" | "cancelled" | "failed" = "failed";
+          let message = "";
+
+          if (result.success || responseCode === 0) {
+            status = "success";
+            message = `✅ ${currencySymbol}${total.toFixed(2)} paid successfully via ${method}`;
+          } else if (responseCode === -1027) {
+            status = "cancelled";
+            message = `❌ Transaction cancelled on terminal`;
+          } else if (responseCode === -1028 || responseCode === -1008) {
+            status = "failed";
+            message = `⏰ Transaction timeout`;
+          } else {
+            status = "failed";
+            message = `❌ ${result.msg || result.error || 'Payment declined'}`;
+          }
+
+          if (ongoingPayments[cacheKey]) {
+            ongoingPayments[cacheKey].status = status;
+            ongoingPayments[cacheKey].message = message;
+            if (ongoingPayments[cacheKey].onUpdate) {
+              ongoingPayments[cacheKey].onUpdate(status, message, result, null);
+            }
+          }
+          return result;
+        } catch (error: any) {
+          console.error('❌ [MainPayment] Terminal error:', error);
+          const status = "failed";
+          const message = `❌ ${error.message}`;
+
+          if (ongoingPayments[cacheKey]) {
+            ongoingPayments[cacheKey].status = status;
+            ongoingPayments[cacheKey].message = message;
+            if (ongoingPayments[cacheKey].onUpdate) {
+              ongoingPayments[cacheKey].onUpdate(status, message, null, error);
+            }
+          }
+          throw error;
         }
+      })();
 
-        // "Yeahpay Card" → card-payment endpoint; "Yeahpay Paynow" → paynow-payment
-        const endpoint = isYeahPayCardMode ? '/api/yeahpay/card-payment' : '/api/yeahpay/paynow-payment';
-        const response = await fetch(`${API_URL}${endpoint}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(useAuthStore.getState().token ? { 'Authorization': `Bearer ${useAuthStore.getState().token}` } : {}),
-          },
-          body: JSON.stringify({
-            amount: total,
-            deviceSn: deviceSn,
-            salt: salt || ''
-          })
-        });
+      ongoingPayments[cacheKey] = {
+        status: "processing",
+        message: "Processing payment...",
+        method: method,
+        total: total,
+        promise: fetchPromise
+      };
 
-        const result = await response.json();
-        console.log('✅ [MainPayment] Terminal response:', result);
+      // Set up the listener on this newly created ongoing instance
+      const ongoing = ongoingPayments[cacheKey];
+      ongoing.onUpdate = (status, message, result, error) => {
+        setPaymentStatus(status);
+        setPaymentMessage(message);
+        setProcessing(status === "processing");
 
-        const responseCode = result.code;
-
-        // ✅ SUCCESS - Code 0
-        if (result.success || responseCode === 0) {
-          setPaymentStatus("success");
-          setPaymentMessage(`✅ ${currencySymbol}${total.toFixed(2)} paid successfully via ${method}`);
-
+        if (status === "success") {
           showToast({
             type: 'success',
             message: '✅ Payment Successful',
-            subtitle: `${currencySymbol}${total.toFixed(2)} paid via ${method}`
+            subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
           });
-
-          // ✅ Proceed to save
           executeFinalPayment();
-
-          // ✅ CANCELLED - Code -1027
-        } else if (responseCode === -1027) {
-          setPaymentStatus("cancelled");
-          setPaymentMessage(`❌ Transaction cancelled on terminal`);
-
+          delete ongoingPayments[cacheKey];
+        } else if (status === "cancelled") {
           Alert.alert(
             '❌ Transaction Cancelled',
             'Payment was cancelled on the terminal. Please try again.',
             [{ text: 'OK' }]
           );
-          setProcessing(false);
-
-          // ✅ TIMEOUT - Code -1028, -1008
-        } else if (responseCode === -1028 || responseCode === -1008) {
-          setPaymentStatus("failed");
-          setPaymentMessage(`⏰ Transaction timeout`);
-
+          delete ongoingPayments[cacheKey];
+        } else if (status === "failed") {
           Alert.alert(
-            '⏰ Transaction Timeout',
-            'Card read timed out. Please try again.',
+            error ? 'Error' : '❌ Payment Failed',
+            message || 'Failed to connect to terminal',
             [{ text: 'OK' }]
           );
-          setProcessing(false);
-
-          // ✅ FAILED - Other errors
-        } else {
-          setPaymentStatus("failed");
-          const errorMsg = result.msg || result.error || 'Payment declined';
-          setPaymentMessage(`❌ ${errorMsg}`);
-
-          Alert.alert(
-            '❌ Payment Failed',
-            errorMsg,
-            [{ text: 'OK' }]
-          );
-          setProcessing(false);
+          delete ongoingPayments[cacheKey];
         }
+      };
 
-      } catch (error: any) {
-        console.error('❌ [MainPayment] Terminal error:', error);
-        setPaymentStatus("failed");
-        setPaymentMessage(`❌ ${error.message}`);
-        Alert.alert('Error', error.message || 'Failed to connect to terminal');
-        setProcessing(false);
-      }
       return;
     }
     // ============================================================
@@ -2266,10 +2380,10 @@ export default function PaymentScreen() {
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
+              if (generalSettings?.enableSkipSummaryScreen) {
+                router.replace("/menu/thai_kitchen");
               } else {
-                router.replace("/(tabs)/category");
+                router.replace("/summary");
               }
             }}
           >
