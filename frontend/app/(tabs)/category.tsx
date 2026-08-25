@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
@@ -58,6 +59,7 @@ import {
   useTableStatusStore,
 } from "../../stores/tableStatusStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useTerminalPaymentStore } from "../../stores/terminalPaymentStore";
 
 // --- MOBILE SOLID COLORS ---
 const SOLID_LIGHT_GREEN = "#F0FDF4";
@@ -120,6 +122,11 @@ const TableItemComponent = React.memo(
   }) => {
     // 🚀 O(1) Store Subscription: Only re-renders when THIS table changes
     const tableData = useTableStatusStore((state) => state.tableMap[tableId]);
+
+    // Subscribe to terminal payment session — re-renders only when this table's session changes
+    const isTerminalProcessing = useTerminalPaymentStore(
+      (state) => state.sessions[tableId]?.status === "processing"
+    );
 
     // 🚀 SYNC-FIRST: Prioritize real-time data from the global store
     const status = tableData
@@ -327,6 +334,14 @@ const TableItemComponent = React.memo(
                 />
               </View>
             )}
+
+          {/* 🟢 LIVE TERMINAL INDICATOR: pulsing blue badge when a payment terminal call is running */}
+          {isTerminalProcessing && (
+            <View style={styles.terminalProcessingBadge}>
+              <ActivityIndicator size="small" color="#3b82f6" />
+              <Text style={styles.terminalProcessingText}>Terminal Active</Text>
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -1265,6 +1280,21 @@ export default function Category() {
             },
           ]
         );
+        return;
+      }
+
+      // 🚀 RESTORE FLOW: If there is a live terminal session for this table, bypass all
+      // popups and route directly to /payment so staff can monitor the ongoing transaction.
+      const activeTerminalSession = useTerminalPaymentStore.getState().getSession(item.id);
+      if (activeTerminalSession && activeTerminalSession.status === "processing") {
+        const section = getSectionFromDiningSection(item.DiningSection);
+        setOrderContext({
+          orderType: "DINE_IN",
+          section,
+          tableNo: item.label,
+          tableId: item.id,
+        });
+        router.push("/payment");
         return;
       }
 
@@ -5201,6 +5231,27 @@ const styles = StyleSheet.create({
     padding: 2,
     zIndex: 10,
     ...Theme.shadowSm,
+  },
+  terminalProcessingBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(59, 130, 246, 0.15)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "#3b82f6",
+    zIndex: 11,
+  },
+  terminalProcessingText: {
+    fontSize: 9,
+    color: "#3b82f6",
+    fontWeight: "bold",
+    fontFamily: Fonts.medium,
   },
 
   /* ──────────────────────────────────────────────────────────────────

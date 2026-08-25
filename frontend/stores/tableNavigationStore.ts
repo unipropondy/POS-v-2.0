@@ -8,11 +8,17 @@ type TableNavState = {
   tableScreens: Record<string, string>;
   setTableLastScreen: (tableId: string, screen: string) => void;
   clearTableLastScreen: (tableId: string) => void;
+
+  // maps tableId -> last selected payment method (e.g. 'PAYNOW', 'CAS')
+  selectedMethodMap: Record<string, string>;
+  setSelectedMethod: (tableId: string, payMode: string) => void;
+  getSelectedMethod: (tableId: string) => string | undefined;
+  clearSelectedMethod: (tableId: string) => void;
 };
 
 export const useTableNavigationStore = create<TableNavState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       tableScreens: {},
       setTableLastScreen: (tableId, screen) =>
         set((state) => ({
@@ -26,6 +32,22 @@ export const useTableNavigationStore = create<TableNavState>()(
           const next = { ...state.tableScreens };
           delete next[tableId];
           return { tableScreens: next };
+        }),
+
+      selectedMethodMap: {},
+      setSelectedMethod: (tableId, payMode) =>
+        set((state) => ({
+          selectedMethodMap: {
+            ...state.selectedMethodMap,
+            [tableId]: payMode,
+          },
+        })),
+      getSelectedMethod: (tableId) => get().selectedMethodMap[tableId],
+      clearSelectedMethod: (tableId) =>
+        set((state) => {
+          const next = { ...state.selectedMethodMap };
+          delete next[tableId];
+          return { selectedMethodMap: next };
         }),
     }),
     {

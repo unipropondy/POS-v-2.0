@@ -23,6 +23,17 @@ import { useCartStore } from "../../stores/cartStore";
 import { useOrderContextStore } from "../../stores/orderContextStore";
 import { usePaymentSettingsStore } from "../../stores/paymentSettingsStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useTerminalPaymentStore } from "../../stores/terminalPaymentStore";
+
+// Module-level map: persists split terminal sessions across component unmounts.
+// Keyed by tableId (same key used in useTerminalPaymentStore).
+const ongoingSplitSessions: Record<string, {
+  status: "processing" | "success" | "cancelled" | "failed";
+  splitRowId: string;
+  amount: number;
+  payMode: string;
+  onUpdate?: (status: "processing" | "success" | "cancelled" | "failed") => void;
+}> = {};
 const formatMoney = (symbol: string, amount: number) => {
   try {
     return `${symbol}${(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -221,6 +232,65 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
       ]);
     }
   }, [availableMethods, targetTotal]);
+
+  // 🚀 RESTORE FLOW: On mount, check if a terminal session completed in the background
+  useEffect(() => {
+    const context = useOrderContextStore.getState().currentOrder;
+    const tableId = context?.tableId?.toString();
+    if (!tableId) return;
+
+    const pending = ongoingSplitSessions[tableId];
+    if (!pending) return;
+
+    if (pending.status === "success") {
+      // Payment succeeded while component was unmounted — auto-mark the row
+      setRows(prevRows =>
+        prevRows.map(r =>
+          r.id === pending.splitRowId
+            ? { ...r, status: "Paid", terminalStatus: "success", terminalMsg: `✅ Paid via ${pending.payMode}` }
+            : r
+        )
+      );
+      showToast({
+        type: "success",
+        message: `✅ Payment Successful`,
+        subtitle: `$${pending.amount.toFixed(2)} paid via ${pending.payMode}`,
+      });
+      useTerminalPaymentStore.getState().clearSession(tableId);
+      delete ongoingSplitSessions[tableId];
+    } else if (pending.status === "processing") {
+      // Still running — reconnect the onUpdate callback
+      pending.onUpdate = (status) => {
+        if (status === "success") {
+          setRows(prevRows =>
+            prevRows.map(r =>
+              r.id === pending.splitRowId
+                ? { ...r, status: "Paid", terminalStatus: "success", terminalMsg: `✅ Paid via ${pending.payMode}` }
+                : r
+            )
+          );
+          showToast({
+            type: "success",
+            message: `✅ Payment Successful`,
+            subtitle: `$${pending.amount.toFixed(2)} paid via ${pending.payMode}`,
+          });
+          useTerminalPaymentStore.getState().clearSession(tableId);
+          delete ongoingSplitSessions[tableId];
+        } else if (status === "cancelled" || status === "failed") {
+          setRows(prevRows =>
+            prevRows.map(r =>
+              r.id === pending.splitRowId
+                ? { ...r, terminalStatus: status, terminalMsg: status === "cancelled" ? "❌ Transaction cancelled" : "❌ Payment failed" }
+                : r
+            )
+          );
+          useTerminalPaymentStore.getState().clearSession(tableId);
+          delete ongoingSplitSessions[tableId];
+        }
+      };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Check if a row is locked (a verified paid digital row)
   const isRowLocked = (row: SplitPaymentRow) => {
@@ -475,6 +545,26 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       return;
     }
 
+    // Register in module-level map + store before awaiting, so Home press during wait can restore
+    const context = useOrderContextStore.getState().currentOrder;
+    const tableId = context?.tableId?.toString();
+    if (tableId) {
+      ongoingSplitSessions[tableId] = {
+        status: "processing",
+        splitRowId: row.id,
+        amount: amt,
+        payMode: row.payMode,
+      };
+      useTerminalPaymentStore.getState().setSession(tableId, {
+        tableId,
+        status: "processing",
+        message: "Processing split payment...",
+        method: row.payMode,
+        total: amt,
+        splitRowId: row.id,
+      });
+    }
+
     // Endpoint: "Yeahpay Card" → card-payment, "Yeahpay Paynow" → paynow-payment
     const endpoint = isYeahPayCard(row.payMode)
       ? '/api/yeahpay/card-payment'
@@ -498,8 +588,16 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
 
     const responseCode = result.code;
     const isCardMode = isYeahPayCard(row.payMode);
+    const ctx = useOrderContextStore.getState().currentOrder;
+    const tblId = ctx?.tableId?.toString();
 
     if (result.success || responseCode === 0) {
+      if (tblId && ongoingSplitSessions[tblId]) {
+        ongoingSplitSessions[tblId].status = "success";
+        ongoingSplitSessions[tblId].onUpdate?.("success");
+        useTerminalPaymentStore.getState().clearSession(tblId);
+        delete ongoingSplitSessions[tblId];
+      }
       setRows(prevRows =>
         prevRows.map(r =>
           r.id === row.id
@@ -524,6 +622,12 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       setActiveQrRowId(null);
 
     } else if (responseCode === -1027) {
+      if (tblId && ongoingSplitSessions[tblId]) {
+        ongoingSplitSessions[tblId].status = "cancelled";
+        ongoingSplitSessions[tblId].onUpdate?.("cancelled");
+        useTerminalPaymentStore.getState().clearSession(tblId);
+        delete ongoingSplitSessions[tblId];
+      }
       setRows(prevRows =>
         prevRows.map(r =>
           r.id === row.id
@@ -548,6 +652,12 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       setActiveQrRowId(null);
 
     } else if (responseCode === -1028 || responseCode === -1008) {
+      if (tblId && ongoingSplitSessions[tblId]) {
+        ongoingSplitSessions[tblId].status = "failed";
+        ongoingSplitSessions[tblId].onUpdate?.("failed");
+        useTerminalPaymentStore.getState().clearSession(tblId);
+        delete ongoingSplitSessions[tblId];
+      }
       setRows(prevRows =>
         prevRows.map(r =>
           r.id === row.id
@@ -568,6 +678,12 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
 
     } else {
       const errorMsg = result.msg || result.error || 'Payment failed';
+      if (tblId && ongoingSplitSessions[tblId]) {
+        ongoingSplitSessions[tblId].status = "failed";
+        ongoingSplitSessions[tblId].onUpdate?.("failed");
+        useTerminalPaymentStore.getState().clearSession(tblId);
+        delete ongoingSplitSessions[tblId];
+      }
       setRows(prevRows =>
         prevRows.map(r =>
           r.id === row.id
@@ -585,6 +701,14 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
   } catch (error: any) {
     const errorMsg = error.message || 'Failed to connect to terminal';
     console.error('❌ [SplitPayment] Terminal error:', error);
+    const ctx2 = useOrderContextStore.getState().currentOrder;
+    const tblId2 = ctx2?.tableId?.toString();
+    if (tblId2 && ongoingSplitSessions[tblId2]) {
+      ongoingSplitSessions[tblId2].status = "failed";
+      ongoingSplitSessions[tblId2].onUpdate?.("failed");
+      useTerminalPaymentStore.getState().clearSession(tblId2);
+      delete ongoingSplitSessions[tblId2];
+    }
     setRows(prevRows =>
       prevRows.map(r =>
         r.id === row.id

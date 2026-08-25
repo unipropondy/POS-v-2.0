@@ -45,6 +45,8 @@ import { usePaymentSettingsStore } from "../stores/paymentSettingsStore";
 import { useQuickCashStore } from "../stores/quickCashStore";
 import { useServiceChargeOverrideStore } from "../stores/serviceChargeOverrideStore";
 import { useTableStatusStore } from "../stores/tableStatusStore";
+import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
+import { useTableNavigationStore } from "../stores/tableNavigationStore";
 import { CustomerDisplaySync } from "../utils/CustomerDisplaySync";
 
 const EMPTY_ARRAY: any[] = [];
@@ -287,22 +289,25 @@ export default function PaymentScreen() {
             message: '✅ Payment Successful',
             subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
           });
-          executeFinalPayment();
+          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
           delete ongoingPayments[cacheKey];
+          executeFinalPayment();
         } else if (ongoing.status === "cancelled") {
+          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
+          delete ongoingPayments[cacheKey];
           Alert.alert(
             '❌ Transaction Cancelled',
             'Payment was cancelled on the terminal. Please try again.',
             [{ text: 'OK' }]
           );
-          delete ongoingPayments[cacheKey];
         } else if (ongoing.status === "failed") {
+          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
+          delete ongoingPayments[cacheKey];
           Alert.alert(
             '❌ Payment Failed',
             ongoing.message || 'Failed to connect to terminal',
             [{ text: 'OK' }]
           );
-          delete ongoingPayments[cacheKey];
         }
       }
     }
@@ -1060,9 +1065,19 @@ export default function PaymentScreen() {
 
       setPaymentMethods(filtered);
       if (filtered.length > 0) {
-        setMethod(filtered[0].payMode);
-        setSelectedDetail(filtered[0]);
-        if (isCashMethod(filtered[0].payMode)) {
+        // 🚀 Restore the previously saved method for this table (if any)
+        const tableId = useOrderContextStore.getState().currentOrder?.tableId;
+        const savedMethod = tableId
+          ? useTableNavigationStore.getState().getSelectedMethod(tableId.toString())
+          : undefined;
+        const restoredMethod = savedMethod
+          ? filtered.find((m) => m.payMode === savedMethod)
+          : undefined;
+        const activeMethod = restoredMethod || filtered[0];
+
+        setMethod(activeMethod.payMode);
+        setSelectedDetail(activeMethod);
+        if (isCashMethod(activeMethod.payMode)) {
           setCashInput(total.toFixed(2));
         }
       }
@@ -1129,6 +1144,12 @@ export default function PaymentScreen() {
       setCashInput(total.toFixed(2));
     }
     setSelectedDetail(m);
+
+    // 💾 Persist selected method so it survives Home → back navigation
+    const tableId = useOrderContextStore.getState().currentOrder?.tableId;
+    if (tableId) {
+      useTableNavigationStore.getState().setSelectedMethod(tableId.toString(), m.payMode);
+    }
   };
 
   useEffect(() => {
@@ -1238,6 +1259,17 @@ export default function PaymentScreen() {
         promise: fetchPromise
       };
 
+      // 🚀 Sync to Zustand store so table grid can show live terminal badge
+      if (context?.tableId) {
+        useTerminalPaymentStore.getState().setSession(context.tableId, {
+          tableId: context.tableId,
+          status: "processing",
+          message: "Processing payment...",
+          method: method,
+          total: total,
+        });
+      }
+
       // Set up the listener on this newly created ongoing instance
       const ongoing = ongoingPayments[cacheKey];
       ongoing.onUpdate = (status, message, result, error) => {
@@ -1251,22 +1283,25 @@ export default function PaymentScreen() {
             message: '✅ Payment Successful',
             subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
           });
-          executeFinalPayment();
+          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
           delete ongoingPayments[cacheKey];
+          executeFinalPayment();
         } else if (status === "cancelled") {
+          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
+          delete ongoingPayments[cacheKey];
           Alert.alert(
             '❌ Transaction Cancelled',
             'Payment was cancelled on the terminal. Please try again.',
             [{ text: 'OK' }]
           );
-          delete ongoingPayments[cacheKey];
         } else if (status === "failed") {
+          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
+          delete ongoingPayments[cacheKey];
           Alert.alert(
             error ? 'Error' : '❌ Payment Failed',
             message || 'Failed to connect to terminal',
             [{ text: 'OK' }]
           );
-          delete ongoingPayments[cacheKey];
         }
       };
 
@@ -2581,7 +2616,14 @@ export default function PaymentScreen() {
                     }))}
                     selectedMember={selectedMember}
                     onSelectMember={(mode) => {
-                      if (mode) setMethod(mode);
+                      if (mode) {
+                        setMethod(mode);
+                        // 💾 Persist member-selected mode
+                        const tableId = useOrderContextStore.getState().currentOrder?.tableId;
+                        if (tableId) {
+                          useTableNavigationStore.getState().setSelectedMethod(tableId.toString(), mode);
+                        }
+                      }
                       setShowMemberModal(true);
                     }}
                     onComplete={(finalPayments) => {
