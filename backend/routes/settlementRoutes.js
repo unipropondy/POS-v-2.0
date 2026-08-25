@@ -69,6 +69,8 @@ router.post("/day-start", async (req, res) => {
         VALUES (@startDate, 'DAY_START', GETDATE(), @username)
       `);
       
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'day_started' });
     res.json({ success: true, message: "Day started successfully" });
   } catch (err) {
     console.error("Day Start Error:", err);
@@ -127,6 +129,10 @@ router.post("/day-end", async (req, res) => {
 
     // 2. Clear active business day — this officially ends the day
     await pool.request().query("DELETE FROM DateEntry");
+
+    // Notify all connected clients to refresh settlement data
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'day_ended' });
 
     res.json({
       success: true,
@@ -671,6 +677,9 @@ router.post('/save-denominations', authenticateToken, async (req, res) => {
       }
 
       await transaction.commit();
+      // Notify all connected clients to refresh settlement data
+      const io = req.app.get('io');
+      if (io) io.emit('settlement_updated', { action: 'denominations_saved' });
       res.json({ success: true, message: 'Denominations saved successfully' });
     } catch (err) {
       await transaction.rollback();
@@ -782,6 +791,8 @@ router.post('/cash-in', authenticateToken, async (req, res) => {
         VALUES (@CashInNo, @targetDate, @Amount, @Reason, @Remarks, @PaymentMode, @ReferenceNo, @TerminalCode, @CreatedBy, @targetDate, @targetDate, @AttachmentUrl)
       `);
 
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'cash_in_added' });
     res.json({ success: true, data: result.recordset[0] });
   } catch (err) {
     console.error('Error creating cash in entry:', err);
@@ -797,6 +808,8 @@ router.delete('/cash-in/:id', authenticateToken, async (req, res) => {
     await pool.request()
       .input('CashInId', sql.UniqueIdentifier, id)
       .query('DELETE FROM CashInEntry WHERE CashInId = @CashInId');
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'cash_in_deleted' });
     res.json({ success: true });
   } catch (err) {
     console.error('Error deleting cash in entry:', err);
@@ -836,6 +849,8 @@ router.put('/cash-in/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Cash in entry not found' });
     }
 
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'cash_in_updated' });
     res.json({ success: true, data: result.recordset[0] });
   } catch (err) {
     console.error('Error updating cash in entry:', err);
@@ -878,6 +893,8 @@ router.post('/cash-out', authenticateToken, async (req, res) => {
         VALUES (@CashOutNo, @targetDate, @Amount, @Reason, @Remarks, @PaymentMode, @ReferenceNo, @TerminalCode, @CreatedBy, @targetDate, @targetDate, @AttachmentUrl)
       `);
 
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'cash_out_added' });
     res.json({ success: true, data: result.recordset[0] });
   } catch (err) {
     console.error('Error creating cash out entry:', err);
@@ -917,6 +934,8 @@ router.put('/cash-out/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Cash out entry not found' });
     }
 
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'cash_out_updated' });
     res.json({ success: true, data: result.recordset[0] });
   } catch (err) {
     console.error('Error updating cash out entry:', err);
@@ -940,6 +959,8 @@ router.delete('/cash-out/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Cash out entry not found' });
     }
 
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'cash_out_deleted' });
     res.json({ success: true, message: 'Cash out entry deleted successfully' });
   } catch (err) {
     console.error('Error deleting cash out entry:', err);
@@ -1206,6 +1227,10 @@ router.delete('/artist-cashbox/:id', authenticateToken, async (req, res) => {
       await request.query('DELETE FROM PaymentDetail WHERE RestaurantBillId = @SettlementID');
       
       await transaction.commit();
+
+      const io = req.app.get('io');
+      if (io) io.emit('settlement_updated', { action: 'settlement_deleted' });
+
       res.json({ success: true, message: 'Cash box entry and associated settlement deleted successfully' });
     } catch (innerErr) {
       try { await transaction.rollback(); } catch (e) {}

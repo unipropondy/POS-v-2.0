@@ -606,6 +606,9 @@ async function initDB(pool) {
       END
     `);
 
+    await runQuery("OpeningCashDenomination - ScreenType", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[OpeningCashDenomination]') AND name = 'ScreenType') ALTER TABLE [dbo].[OpeningCashDenomination] ADD ScreenType NVARCHAR(50) NULL");
+    await runQuery("OpeningCashDenomination - start_date", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[OpeningCashDenomination]') AND name = 'start_date') ALTER TABLE [dbo].[OpeningCashDenomination] ADD start_date DATE NULL");
+
     // 18. Create CashOutEntry table
     await runQuery("Create CashOutEntry table", `
       IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CashOutEntry]') AND type in (N'U'))

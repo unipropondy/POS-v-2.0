@@ -7,9 +7,10 @@ import { useToast } from "../../components/Toast";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../api";
 import * as Print from "expo-print";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { socket } from "../../constants/socket";
 import * as Sharing from "expo-sharing";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -733,66 +734,71 @@ export default function SettlementScreen() {
   const totalClosing = computeTotal(closingCounts);
 
   useEffect(() => {
-    const fetchActiveDay = async () => {
+    const initScreen = async () => {
       try {
-        const res = await API.get(`/settlement/active-day`);
-        if (res.data?.success && res.data?.active && res.data?.startDate) {
-          const parts = res.data.startDate.split("-");
-          if (parts.length === 3) {
-            setSelectedDate(new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
-            setSelectedEndDate(new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+        setLoading(true);
+        
+        // 1. Fetch active day
+        let initialDate = new Date();
+        try {
+          const res = await API.get(`/settlement/active-day`);
+          if (res.data?.success && res.data?.active && res.data?.startDate) {
+            const parts = res.data.startDate.split("-");
+            if (parts.length === 3) {
+              initialDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            } else {
+              initialDate = new Date(res.data.startDate);
+            }
           } else {
-            setSelectedDate(new Date(res.data.startDate));
-            setSelectedEndDate(new Date(res.data.startDate));
+            const { from } = getSingaporeTimeTodayRange();
+            initialDate = from;
           }
+        } catch (err) {
+          console.error("Error fetching active day:", err);
+          const { from } = getSingaporeTimeTodayRange();
+          initialDate = from;
         }
+
+        // 2. Fetch terminals
+        let initialTerminal = "ALL";
+        try {
+          const res = await API.get(`/settlement/terminals`);
+          const termData = res.data || [];
+          setTerminals(termData);
+          if (termData.length > 0) {
+            initialTerminal = termData[0].TerminalCode;
+          }
+        } catch (err) {
+          console.error("❌ TERMINAL LOAD ERROR", err);
+        }
+
+        // 3. Fetch dishes
+        try {
+          const res = await API.get(`/settlement/artist-list`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setDishList(res.data.data || []);
+        } catch (err) {
+          console.error("Error loading dishes:", err);
+        }
+
+        // 4. Fetch settings
+        await useGeneralSettingsStore.getState().fetchSettings();
+
+        // Set states back-to-back
+        setSelectedDate(initialDate);
+        setSelectedEndDate(initialDate);
+        setSelectedTerminal(initialTerminal);
+
       } catch (err) {
-        console.error("Error fetching active day:", err);
+        console.error("Init screen error:", err);
+      } finally {
+        setLoading(false);
       }
     };
-    fetchActiveDay();
-    loadTerminals();
-    loadDishes();
-    useGeneralSettingsStore.getState().fetchSettings();
+
+    initScreen();
   }, []);
-
-  const loadTerminals = async () => {
-    try {
-      setLoading(true);
-      const res = await API.get(`/settlement/terminals`);
-      const termData = res.data || [];
-      setTerminals(termData);
-      if (termData.length > 0) {
-        setSelectedTerminal(termData[0].TerminalCode);
-      } else {
-        setSelectedTerminal("ALL");
-      }
-    } catch (err) {
-      console.error("❌ TERMINAL LOAD ERROR", err);
-      setSelectedTerminal("ALL");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-const loadDishes = async () => {
-  try {
-    const res = await API.get(
-      `/settlement/artist-list`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    console.log("ARTIST DATA =", res.data);
-
-    setDishList(res.data.data || []);
-  } catch (err) {
-    console.log(err);
-  }
-};
 
 const fetchDayHistory = async () => {
   try {
@@ -813,6 +819,26 @@ const fetchDayHistory = async () => {
 
   useEffect(() => {
     if (selectedTerminal) fetchData();
+  }, [selectedTerminal, selectedDate, selectedEndDate, isRangeMode]);
+
+  // Re-fetch every time this screen comes into focus (fixes stale data on navigate)
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedTerminal) fetchData();
+    }, [selectedTerminal, selectedDate, selectedEndDate, isRangeMode])
+  );
+
+  // Socket-based instant sync: re-fetch when a settlement action or sale completes
+  useEffect(() => {
+    const handleSettlementUpdate = () => {
+      if (selectedTerminal) fetchData();
+    };
+    socket.on('settlement_updated', handleSettlementUpdate);
+    socket.on('order_closed', handleSettlementUpdate);
+    return () => {
+      socket.off('settlement_updated', handleSettlementUpdate);
+      socket.off('order_closed', handleSettlementUpdate);
+    };
   }, [selectedTerminal, selectedDate, selectedEndDate, isRangeMode]);
 
   const fetchData = async () => {

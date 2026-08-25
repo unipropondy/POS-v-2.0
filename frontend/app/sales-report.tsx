@@ -219,8 +219,26 @@ export default function SalesReport() {
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showChangePaymentModal, setShowChangePaymentModal] = useState(false);
   const [showVoidItemModal, setShowVoidItemModal] = useState(false);
+  const [showVoidItemConfirm, setShowVoidItemConfirm] = useState(false);
+  const [itemToVoid, setItemToVoid] = useState<any>(null);
   const [showCancelOrderConfirm, setShowCancelOrderConfirm] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
+
+  // Supervisor Password Verification State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordValue, setPasswordValue] = useState("");
+  const [passwordAction, setPasswordAction] = useState<{
+    onSuccess: () => void;
+    title: string;
+    description: string;
+    role: string;
+  } | null>(null);
+
+  const promptPassword = (title: string, description: string, role: string, onSuccess: () => void) => {
+    setPasswordValue("");
+    setPasswordAction({ onSuccess, title, description, role });
+    setShowPasswordModal(true);
+  };
 
   const finalBillAmount = selectedOrder
     ? Number(selectedOrder.SubTotal || 0) -
@@ -1574,43 +1592,42 @@ export default function SalesReport() {
     }
   };
 
-  const handleConfirmVoidItem = async (item: any) => {
+  const runVoidItem = async (item: any) => {
     if (!selectedOrder) return;
-    Alert.alert(
-      "Void Item?",
-      `Are you sure you want to void "${item.DishName}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Void",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setShowVoidItemModal(false);
-              setLoadingDetails(true);
-              const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ orderDetailId: item.OrderDetailId || item.DishId }),
-              });
-              const data = await res.json();
-              if (res.ok && data.success) {
-                showToast({ type: "success", message: "Item voided successfully" });
-                await refreshOrder(selectedOrder.SettlementID);
-                fetchSales();
-              } else {
-                showToast({ type: "error", message: data.error || "Failed to void item" });
-              }
-            } catch (err: any) {
-              console.error(err);
-              showToast({ type: "error", message: err.message || "An error occurred" });
-            } finally {
-              setLoadingDetails(false);
-            }
+    promptPassword(
+      "Enter Password to Void",
+      `Verify supervisor credentials to void "${item.DishName}"`,
+      "VOID",
+      async () => {
+        try {
+          setShowVoidItemModal(false);
+          setLoadingDetails(true);
+          const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderDetailId: item.OrderDetailId || item.DishId }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast({ type: "success", message: "Item voided successfully" });
+            await refreshOrder(selectedOrder.SettlementID);
+            fetchSales();
+          } else {
+            showToast({ type: "error", message: data.error || "Failed to void item" });
           }
+        } catch (err: any) {
+          console.error(err);
+          showToast({ type: "error", message: err.message || "An error occurred" });
+        } finally {
+          setLoadingDetails(false);
         }
-      ]
+      }
     );
+  };
+
+  const handleConfirmVoidItem = (item: any) => {
+    setItemToVoid(item);
+    setShowVoidItemConfirm(true);
   };
 
   const handleConfirmCancelOrder = async () => {
@@ -4113,6 +4130,53 @@ export default function SalesReport() {
             </View>
           </Modal>
 
+          {/* Void Item Confirm Modal */}
+          <Modal visible={showVoidItemConfirm} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
+                <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: "#ef4444", marginBottom: 10 }}>
+                  Void Item?
+                </Text>
+                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 20 }}>
+                  Are you sure you want to void "{itemToVoid?.DishName}"? This action requires supervisor credentials.
+                </Text>
+
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowVoidItemConfirm(false);
+                      setItemToVoid(null);
+                    }}
+                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                  >
+                    <Text style={styles.premiumSecondaryBtnText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowVoidItemConfirm(false);
+                      const item = itemToVoid;
+                      setItemToVoid(null);
+                      if (item) {
+                        runVoidItem(item);
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#ef4444",
+                      borderRadius: 10,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingVertical: 10
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>YES, VOID</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
           {/* Cancel Order Confirm Modal */}
           <Modal visible={showCancelOrderConfirm} transparent animationType="fade">
             <View style={styles.modalOverlay}>
@@ -4166,6 +4230,96 @@ export default function SalesReport() {
                     }}
                   >
                     <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>YES, CANCEL</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          {/* SUPERVISOR PASSWORD VERIFICATION MODAL */}
+          <Modal
+            visible={showPasswordModal}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowPasswordModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                    {passwordAction?.title || "Verification Required"}
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowPasswordModal(false)}>
+                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 15 }}>
+                  {passwordAction?.description || "Please enter the supervisor/admin password:"}
+                </Text>
+
+                <TextInput
+                  placeholder="Enter Password"
+                  placeholderTextColor={Theme.textSecondary + "90"}
+                  secureTextEntry
+                  autoFocus
+                  value={passwordValue}
+                  onChangeText={setPasswordValue}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: Theme.border + "50",
+                    borderRadius: 8,
+                    padding: 10,
+                    fontSize: 14,
+                    color: Theme.textPrimary,
+                    fontFamily: Fonts.bold,
+                    backgroundColor: Theme.border + "10",
+                    marginBottom: 20,
+                    textAlign: "center",
+                    minHeight: 40
+                  }}
+                />
+
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setShowPasswordModal(false)}
+                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                  >
+                    <Text style={styles.premiumSecondaryBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: Theme.primary,
+                      borderRadius: 10,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingVertical: 10
+                    }}
+                    onPress={async () => {
+                      try {
+                        const verifyRes = await fetch(`${API_URL}/api/auth/verify`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ password: passwordValue, role: passwordAction?.role || "ADMIN" }),
+                        });
+                        const verifyData = await verifyRes.json();
+                        if (!verifyData.success) {
+                          showToast({ type: "error", message: "The password you entered is incorrect." });
+                          return;
+                        }
+                        setShowPasswordModal(false);
+                        if (passwordAction?.onSuccess) {
+                          passwordAction.onSuccess();
+                        }
+                      } catch (err) {
+                        console.error("Password verification error:", err);
+                        showToast({ type: "error", message: "Failed to verify password" });
+                      }
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>Confirm</Text>
                   </TouchableOpacity>
                 </View>
               </View>

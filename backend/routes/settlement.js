@@ -21,17 +21,24 @@ router.get("/total-sales/:terminal", async (req, res) => {
     console.log("🔥🔥🔥 TOTAL SALES ROUTE HIT NEW FILE,toDate", toDate);
     const result = await request.query(`
       SELECT
-        ISNULL(SUM(TotalLineItemAmount),0) AS SubTotal,
-        ISNULL(SUM(TotalDiscountAmount),0) AS DiscountAmount,
-        ISNULL(SUM(ServiceCharge),0) AS ServiceCharge,
-        ISNULL(SUM(AdditionalServiceCharge),0) AS AdditionalServiceCharge,
-        ISNULL(SUM(TotalTax),0) AS TotalTax,
-        ISNULL(SUM(RoundedBy),0) AS RoundedBy,
-        ISNULL(SUM(Tips),0) AS Tips,
-        COUNT(*) AS InvoiceCount,
-        ISNULL(SUM(TotalAmount),0) AS NetTotal
-      FROM RestaurantInvoiceCur
-      WHERE ${dateFilter}
+        ISNULL(SUM(sh.SubTotal),0) AS SubTotal,
+        ISNULL(SUM(sh.DiscountAmount),0) AS DiscountAmount,
+        ISNULL(SUM(sh.ServiceCharge),0) AS ServiceCharge,
+        ISNULL(SUM(ric.AdditionalServiceCharge),0) AS AdditionalServiceCharge,
+        ISNULL(SUM(sh.TotalTax),0) AS TotalTax,
+        ISNULL(SUM(sh.RoundedBy),0) AS RoundedBy,
+        ISNULL(SUM(ric.Tips),0) AS Tips,
+        COUNT(sh.SettlementID) AS InvoiceCount,
+        ISNULL(SUM(sh.SysAmount),0) AS NetTotal
+      FROM RestaurantInvoiceCur ric
+      INNER JOIN SettlementHeader sh ON ric.RestaurantBillId = sh.SettlementID
+      WHERE ric.StatusCode <> 4 
+        AND (sh.IsCancelled = 0 OR sh.IsCancelled IS NULL)
+        AND ric.RestaurantBillId IN (
+            SELECT RestaurantBillId 
+            FROM RestaurantInvoiceCur
+            WHERE ${dateFilter}
+        )
     `);
     const data = result.recordset[0] || {};
     console.log("🔥 TOTAL SALES API =>", data);
@@ -71,6 +78,11 @@ router.get("/payment/:terminal/:userId", async (req, res) => {
     TerminalCode
 FROM PaymentDetailCur
 WHERE ${dateFilter}
+  AND (RestaurantBillId IS NULL OR RestaurantBillId NOT IN (
+      SELECT RestaurantBillId 
+      FROM RestaurantInvoiceCur 
+      WHERE StatusCode = 4 AND RestaurantBillId IS NOT NULL
+  ))
 GROUP BY 
     Remarks,
     CAST(PaymentCollectedOn AS DATE),
@@ -142,6 +154,11 @@ router.get("/sales-summary/:terminal", async (req, res) => {
         FROM PaymentDetailCur
         WHERE TerminalCode = @TerminalCode
         AND isSettlement = 0
+        AND (RestaurantBillId IS NULL OR RestaurantBillId NOT IN (
+            SELECT RestaurantBillId 
+            FROM RestaurantInvoiceCur 
+            WHERE StatusCode = 4 AND RestaurantBillId IS NOT NULL
+        ))
         ${dateFilter}
         GROUP BY Paymode 
       `);
@@ -216,6 +233,10 @@ router.post("/settlement", async (req, res) => {
       `);
 
     await transaction.commit();
+
+    // Notify all connected clients to refresh settlement data
+    const io = req.app.get('io');
+    if (io) io.emit('settlement_updated', { action: 'settlement_saved' });
 
     res.json({
       message: "Settlement Completed ✅",

@@ -3458,7 +3458,7 @@ router.post("/settlement/:id/void-item", async (req, res) => {
           WHERE SettlementID = @Sid AND (OrderDetailId = @Odid OR DishId = @Odid)
         `);
 
-      // 2. Update SettlementHeader VoidItemQty & VoidItemAmount
+      // 2. Update SettlementHeader VoidItemQty, VoidItemAmount, SubTotal, SysAmount, ManualAmount
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
         .input("Qty", sql.Int, qty)
@@ -3466,8 +3466,51 @@ router.post("/settlement/:id/void-item", async (req, res) => {
         .query(`
           UPDATE SettlementHeader 
           SET VoidItemQty = ISNULL(VoidItemQty, 0) + @Qty,
-              VoidItemAmount = ISNULL(VoidItemAmount, 0) + @Amount
+              VoidItemAmount = ISNULL(VoidItemAmount, 0) + @Amount,
+              SubTotal = CASE WHEN ISNULL(SubTotal, 0) > @Amount THEN SubTotal - @Amount ELSE 0 END,
+              SysAmount = CASE WHEN ISNULL(SysAmount, 0) > @Amount THEN SysAmount - @Amount ELSE 0 END,
+              ManualAmount = CASE WHEN ISNULL(ManualAmount, 0) > @Amount THEN ManualAmount - @Amount ELSE 0 END
           WHERE SettlementID = @Sid
+        `);
+
+      // 3. Update SettlementTotalSales
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .query(`
+          UPDATE SettlementTotalSales 
+          SET SysAmount = CASE WHEN ISNULL(SysAmount, 0) > @Amount THEN SysAmount - @Amount ELSE 0 END,
+              ManualAmount = CASE WHEN ISNULL(ManualAmount, 0) > @Amount THEN ManualAmount - @Amount ELSE 0 END
+          WHERE SettlementID = @Sid
+        `);
+
+      // 4. Update SettlementDetail
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .query(`
+          UPDATE SettlementDetail 
+          SET SysAmount = CASE WHEN ISNULL(SysAmount, 0) > @Amount THEN SysAmount - @Amount ELSE 0 END,
+              ManualAmount = CASE WHEN ISNULL(ManualAmount, 0) > @Amount THEN ManualAmount - @Amount ELSE 0 END
+          WHERE SettlementId = @Sid
+        `);
+
+      // 5. Update PaymentDetailCur, PaymentDetail, and PaymentTransactionDetails
+      await transaction.request()
+        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .query(`
+          UPDATE PaymentDetailCur 
+          SET Amount = CASE WHEN ISNULL(Amount, 0) > @Amount THEN Amount - @Amount ELSE 0 END
+          WHERE RestaurantBillId = @Sid;
+
+          UPDATE PaymentDetail 
+          SET Amount = CASE WHEN ISNULL(Amount, 0) > @Amount THEN Amount - @Amount ELSE 0 END
+          WHERE RestaurantBillId = @Sid;
+
+          UPDATE PaymentTransactionDetails 
+          SET Amount = CASE WHEN ISNULL(Amount, 0) > @Amount THEN Amount - @Amount ELSE 0 END
+          WHERE ReferenceId = @Sid AND ReferenceType = 'BILL';
         `);
 
       await transaction.commit();
