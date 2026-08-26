@@ -4,6 +4,16 @@ const sql = require("mssql");
 const config = require('../config');
 const YeahPayService = require('./yeahpay.service');
 
+const toGuidOrNull = (value) => {
+  if (!value) return null;
+  const str = String(value).trim();
+  const guidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  if (guidRegex.test(str)) {
+    return str;
+  }
+  return null;
+};
+
 async function processSplitPayments({
   referenceType,
   referenceId,
@@ -208,11 +218,11 @@ if (!gatewayResponse.success) {
     const detailReq = new sql.Request(transaction);
     detailReq
       .input("ReferenceType", sql.NVarChar(50), referenceType)
-      .input("ReferenceId", sql.UniqueIdentifier, referenceId)
+      .input("ReferenceId", sql.UniqueIdentifier, toGuidOrNull(referenceId))
       .input("PayModeId", sql.Int, payModeId)
       .input("Amount", sql.Decimal(18, 2), amount)
       .input("ReferenceNo", sql.NVarChar(100), gatewayReferenceNo || referenceNo)
-      .input("CreatedBy", sql.UniqueIdentifier, cashierId);
+      .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId));
 
     await detailReq.query(`
       INSERT INTO [dbo].[PaymentTransactionDetails] (
@@ -238,16 +248,16 @@ if (!gatewayResponse.success) {
       const legacyReq = new sql.Request(transaction);
 
       await legacyReq
-        .input("RestaurantBillId", sql.UniqueIdentifier, referenceId)
-        .input("PaymentOrderId", sql.UniqueIdentifier, orderId)
+        .input("RestaurantBillId", sql.UniqueIdentifier, toGuidOrNull(referenceId))
+        .input("PaymentOrderId", sql.UniqueIdentifier, toGuidOrNull(orderId))
         .input("BilledFor", sql.Int, 1)
         .input("PaymentType", sql.Int, 1)
         .input("Paymode", sql.Int, payModeId)
         .input("Amount", sql.Decimal(18, 2), amount)
         .input("ReferenceNo", sql.VarChar(100), gatewayReferenceNo || referenceNo)
         .input("Remarks", sql.VarChar(500), payModeName + (gatewayResponse ? ' (Gateway)' : ''))
-        .input("BusinessUnitId", sql.UniqueIdentifier, businessUnitId)
-        .input("CreatedBy", sql.UniqueIdentifier, cashierId)
+        .input("BusinessUnitId", sql.UniqueIdentifier, toGuidOrNull(businessUnitId))
+        .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
         .input("startDate", sql.Date, startDate)
         .query(`
           DECLARE @PayId UNIQUEIDENTIFIER = NEWID();
@@ -329,8 +339,8 @@ if (!gatewayResponse.success) {
 async function logGatewayTransaction(data, transaction) {
   const request = new sql.Request(transaction);
   await request
-    .input('SettlementId', sql.UniqueIdentifier, data.settlementId || null)
-    .input('MemberId', sql.UniqueIdentifier, data.memberId || null)
+    .input('SettlementId', sql.UniqueIdentifier, toGuidOrNull(data.settlementId))
+    .input('MemberId', sql.UniqueIdentifier, toGuidOrNull(data.memberId))
     .input('PayModeId', sql.Int, data.payModeId)
     .input('DeviceSN', sql.NVarChar(100), data.deviceSn)
     .input('RequestPayload', sql.NVarChar(sql.MAX), data.requestPayload || '')

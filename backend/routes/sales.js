@@ -3397,14 +3397,14 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
         .query("UPDATE RestaurantInvoiceCur SET PaymentTermCode = @PayModeCode WHERE RestaurantBillId = @Sid");
 
       // 4. Update SettlementHeader PayMode
-      const joinedPayMode = payModeNames.join(" + ");
+      const joinedPayMode = payModeNames.map(p => String(p).trim()).join(" + ");
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
         .input("PayMode", sql.NVarChar(100), joinedPayMode)
         .query(`
           IF COL_LENGTH('SettlementHeader', 'PayMode') IS NOT NULL
           BEGIN
-            EXEC('UPDATE SettlementHeader SET PayMode = ''' + @PayMode + ''' WHERE SettlementID = ''' + @Sid + '''')
+            EXEC sp_executesql N'UPDATE SettlementHeader SET PayMode = @pPayMode WHERE SettlementID = @pSid', N'@pPayMode NVARCHAR(100), @pSid UNIQUEIDENTIFIER', @pPayMode = @PayMode, @pSid = @Sid
           END
         `);
 

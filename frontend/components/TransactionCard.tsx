@@ -22,12 +22,13 @@ const TransactionCard = React.memo(
   ({ item, onPress, formatOrderId, formatCurrency }: TransactionCardProps) => {
     const { width: SCREEN_W } = useWindowDimensions();
 
-    const modeUpper = String(item.PayMode || "").toUpperCase();
-    const isUpi = modeUpper.includes("UPI") || modeUpper.includes("GPAY");
-    const isYeahpayPaynow = modeUpper.includes("YEAHPAY PAYNOW");
-    const isYeahpayCard = modeUpper.includes("YEAHPAY CARD");
-    const isPayNow = modeUpper.includes("PAYNOW") && !isYeahpayPaynow;
-    const isNets = modeUpper.includes("NETS");
+    const modeUpper = String(item.PayMode || "").toUpperCase().trim();
+    const isSplitMode = modeUpper.includes("+");
+    const isUpi = !isSplitMode && (modeUpper.includes("UPI") || modeUpper.includes("GPAY"));
+    const isYeahpayPaynow = !isSplitMode && modeUpper.includes("YEAHPAY PAYNOW");
+    const isYeahpayCard = !isSplitMode && modeUpper.includes("YEAHPAY CARD");
+    const isPayNow = !isSplitMode && modeUpper.includes("PAYNOW");
+    const isNets = !isSplitMode && modeUpper.includes("NETS");
 
     return (
       <TouchableOpacity
@@ -49,7 +50,9 @@ const TransactionCard = React.memo(
         <View style={styles.txIconWrap}>
           <Ionicons
             name={
-              modeUpper === "CASH"
+              isSplitMode
+                ? "git-compare-outline"
+                : modeUpper === "CASH"
                 ? "cash-outline"
                 : modeUpper === "MEMBER"
                 ? "person-outline"
@@ -69,7 +72,9 @@ const TransactionCard = React.memo(
             }
             size={16}
             color={
-              modeUpper === "CASH"
+              isSplitMode
+                ? "#ea580c"
+                : modeUpper === "CASH"
                 ? "#22c55e"
                 : modeUpper === "MEMBER"
                 ? "#ec4899"
@@ -138,7 +143,9 @@ const TransactionCard = React.memo(
                     } Member Account Settlement`
                 )
               : `${item.OrderType === "TAKEAWAY" ? "🛍️ Takeaway" : `🪑 Table ${item.TableNo || "N/A"}`} • ${
-                  modeUpper === "CASH"
+                  isSplitMode
+                    ? (item.PayMode || "Split").trim()
+                    : modeUpper === "CASH"
                     ? "Cash"
                     : modeUpper === "MEMBER"
                     ? "Member"
@@ -154,7 +161,7 @@ const TransactionCard = React.memo(
                     ? "PayNow"
                     : isNets
                     ? "NETS"
-                    : item.PayMode || "Other"
+                    : (item.PayMode || "Other").trim()
                 }`}
             {item.SER_NAME && item.OrderType !== "LEDGER" ? ` • ${item.SER_NAME}` : ""}
           </Text>
