@@ -220,9 +220,14 @@ export default function SalesReport() {
   const [showChangePaymentModal, setShowChangePaymentModal] = useState(false);
   const [showVoidItemModal, setShowVoidItemModal] = useState(false);
   const [showVoidItemConfirm, setShowVoidItemConfirm] = useState(false);
+  const [selectedVoidItemIds, setSelectedVoidItemIds] = useState<string[]>([]);
   const [itemToVoid, setItemToVoid] = useState<any>(null);
   const [showCancelOrderConfirm, setShowCancelOrderConfirm] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
+  
+  // Split payment mode in Change Payment Modal
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [changePaymentSplits, setChangePaymentSplits] = useState<{ payMode: string; amount: string }[]>([]);
 
   // Supervisor Password Verification State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -247,6 +252,14 @@ export default function SalesReport() {
       Number(selectedOrder.TakeawayCharge || 0) +
       Number(selectedOrder.TotalTax || 0)
     : 0;
+
+  const allocatedSplitsSum = useMemo(() => {
+    return changePaymentSplits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  }, [changePaymentSplits]);
+
+  const remainingSplitsBalance = useMemo(() => {
+    return finalBillAmount - allocatedSplitsSum;
+  }, [finalBillAmount, allocatedSplitsSum]);
 
   // --- DOWNLOAD MODAL STATES ---
   const [showDownloadPanel, setShowDownloadPanel] = useState(false);
@@ -325,6 +338,19 @@ export default function SalesReport() {
       setSelectedDate(activeBusinessDate);
     }
   }, [activeBusinessDate]);
+
+  useEffect(() => {
+    if (!showVoidItemModal) {
+      setSelectedVoidItemIds([]);
+    }
+  }, [showVoidItemModal]);
+
+  useEffect(() => {
+    if (!showChangePaymentModal) {
+      setIsSplitMode(false);
+      setChangePaymentSplits([]);
+    }
+  }, [showChangePaymentModal]);
 
   useEffect(() => {
     const saveState = async () => {
@@ -763,13 +789,14 @@ export default function SalesReport() {
       roundedBy: sa.roundOff || 0,
       totalRevenue: sa.totalSales || 0,
       totalSales: sa.totalSales || 0,
+      focSales: sa.focSales || 0,
       totalDiscount: sa.totalDiscount || 0,
       memberPaymentsCollected: Number(memberPaymentsCollected),
       creditPaymentsCollected: Number(creditPaymentsCollected),
       // Total Collections = actual cash/card received.
       // Credit *sales* are deferred revenue (not collected at point of sale),
       // so subtract them before adding credit payment collections.
-      totalCollections: (Number(sa.totalSales || 0) - creditSalesTotal) + Number(memberPaymentsCollected) + Number(creditPaymentsCollected),
+      totalCollections: (Number(sa.totalSales || 0) - creditSalesTotal - Number(sa.focSales || 0)) + Number(memberPaymentsCollected) + Number(creditPaymentsCollected),
 
       totalOrders: sa.billCount || 0,
       totalItems: items.reduce((acc, curr) => acc + curr.quantity, 0),
@@ -1069,12 +1096,10 @@ export default function SalesReport() {
 
       if (group.length > 1) {
         const totalSysAmount = group.reduce((sum, r) => {
-          const isFoc = String(r.PayMode || "").toUpperCase().trim() === "FOC";
-          return sum + (isFoc ? 0 : (r.SysAmount || 0));
+          return sum + (r.SysAmount || 0);
         }, 0);
         const totalManualAmount = group.reduce((sum, r) => {
-          const isFoc = String(r.PayMode || "").toUpperCase().trim() === "FOC";
-          return sum + (isFoc ? 0 : (r.ManualAmount || 0));
+          return sum + (r.ManualAmount || 0);
         }, 0);
         const payModes = group.map((r) => String(r.PayMode || "CASH").trim()).filter(Boolean);
         const uniquePayModes = Array.from(new Set(payModes));
@@ -1092,11 +1117,6 @@ export default function SalesReport() {
         } else {
           row.isSplit = false;
           row.splitNo = "";
-        }
-        // FOC is a write-off / discount, so its cash/collected amount is 0
-        if (String(row.PayMode || "").toUpperCase().trim() === "FOC") {
-          row.SysAmount = 0;
-          row.ManualAmount = 0;
         }
       }
       grouped.push(row);
@@ -1178,10 +1198,8 @@ export default function SalesReport() {
         }
 
         const mode = s.PayMode?.trim().toUpperCase() || "";
-        const isFoc = mode === "FOC";
 
-        if (!isFoc) {
-          acc.TotalSales += s.SysAmount || 0;
+        acc.TotalSales += s.SysAmount || 0;
           const isUpi = mode.includes("UPI") || mode.includes("GPAY");
           if (mode === "CASH") acc.Cash += s.SysAmount;
           else if (mode === "CARD") acc.Card += s.SysAmount;
@@ -1195,8 +1213,9 @@ export default function SalesReport() {
           } else if (mode === "CREDIT") {
             acc.Credit += s.SysAmount;
             acc.CreditOutstanding += Number(s.OutstandingAmount) || 0;
+          } else if (mode === "FOC") {
+            acc.FocSales += s.SysAmount;
           }
-        }
 
         if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
           processedBills.add(s.SettlementID);
@@ -1225,6 +1244,7 @@ export default function SalesReport() {
         Upi: 0,
         Member: 0,
         Credit: 0,
+        FocSales: 0,
         TotalVoids: 0,
         TotalVoidAmount: 0,
         CancelledCount: 0,
@@ -1314,9 +1334,6 @@ export default function SalesReport() {
         }
 
         const salePayMode = s.PayMode?.trim().toUpperCase() || "";
-        if (salePayMode === "FOC") {
-          return acc;
-        }
 
         // First pass: try exact match
         let matchedMode = dbPaymentModes.find((m) => {
@@ -1544,6 +1561,7 @@ export default function SalesReport() {
   };
 
   const handleOrderPress = (order: any) => {
+    setSelectedVoidItemIds([]);
     setOrderDetails([]);
     setOrderPayments([]);
     setOrderRewards(null);
@@ -1566,7 +1584,7 @@ export default function SalesReport() {
     }
   };
 
-  const handleConfirmChangePayment = async (newPayMode: string) => {
+  const handleConfirmChangePayment = async (newPayMode: string, splits?: any[]) => {
     if (!selectedOrder) return;
     try {
       setShowChangePaymentModal(false);
@@ -1574,7 +1592,7 @@ export default function SalesReport() {
       const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payMode: newPayMode }),
+        body: JSON.stringify({ payMode: newPayMode, splits }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -1592,11 +1610,22 @@ export default function SalesReport() {
     }
   };
 
-  const runVoidItem = async (item: any) => {
-    if (!selectedOrder) return;
+  const toggleVoidItemSelection = (id: string) => {
+    setSelectedVoidItemIds((prev) =>
+      prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]
+    );
+  };
+
+  const runVoidItems = async (itemIds: string[]) => {
+    if (!selectedOrder || itemIds.length === 0) return;
+    const names = orderDetails
+      .filter(item => itemIds.includes(item.OrderDetailId || item.DishId))
+      .map(item => item.DishName)
+      .join(", ");
+
     promptPassword(
       "Enter Password to Void",
-      `Verify supervisor credentials to void "${item.DishName}"`,
+      `Verify supervisor credentials to void: "${names}"`,
       "VOID",
       async () => {
         try {
@@ -1605,29 +1634,25 @@ export default function SalesReport() {
           const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderDetailId: item.OrderDetailId || item.DishId }),
+            body: JSON.stringify({ orderDetailIds: itemIds }),
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            showToast({ type: "success", message: "Item voided successfully" });
+            showToast({ type: "success", message: "Items voided successfully" });
             await refreshOrder(selectedOrder.SettlementID);
             fetchSales();
           } else {
-            showToast({ type: "error", message: data.error || "Failed to void item" });
+            showToast({ type: "error", message: data.error || "Failed to void items" });
           }
         } catch (err: any) {
           console.error(err);
           showToast({ type: "error", message: err.message || "An error occurred" });
         } finally {
           setLoadingDetails(false);
+          setSelectedVoidItemIds([]);
         }
       }
     );
-  };
-
-  const handleConfirmVoidItem = (item: any) => {
-    setItemToVoid(item);
-    setShowVoidItemConfirm(true);
   };
 
   const handleConfirmCancelOrder = async () => {
@@ -2519,32 +2544,22 @@ export default function SalesReport() {
           Theme.success,
         )}
         {renderMetricTile(
-          "Member Collections",
-          // filteredMetrics.Member = member POS sales (prepaid wallet deductions)
-          // filteredMetrics.MemberPaymentsCollected = LEDGER credit-account payment collections
-          // Both represent cash received via member accounts
-          formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected),
-          "cash-outline",
-          Theme.primary,
-        )}
-        {renderMetricTile(
-          "Credit Collections",
-          formatCurrency(filteredMetrics.CreditPaymentsCollected),
-          "cash-outline",
-          Theme.warning,
-        )}
-        {renderMetricTile(
           "Total Collections",
-          // Exclude credit *sales* from TotalSales — they are deferred revenue (not collected at
-          // point of sale). Add credit/member *payment* collections separately so a credit bill
-          // paid within the same period is never counted twice.
+          // Exclude credit *sales* and FOC sales from TotalSales — they are deferred/exempt revenue.
+          // Add credit/member *payment* collections separately.
           formatCurrency(
-            (filteredMetrics.TotalSales - filteredMetrics.Credit) +
+            (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
             filteredMetrics.MemberPaymentsCollected +
             filteredMetrics.CreditPaymentsCollected
           ),
           "wallet-outline",
           "#22c55e",
+        )}
+        {renderMetricTile(
+          "FOC Sales",
+          formatCurrency(filteredMetrics.FocSales),
+          "gift-outline",
+          "#2563eb",
         )}
         {renderMetricTile(
           "Service Charge",
@@ -2569,6 +2584,21 @@ export default function SalesReport() {
           formatCurrency(filteredMetrics.TotalDiscount),
           "pricetag-outline",
           "#f97316",
+        )}
+        {renderMetricTile(
+          "Credit Collections",
+          formatCurrency(filteredMetrics.CreditPaymentsCollected),
+          "cash-outline",
+          Theme.warning,
+        )}
+        {renderMetricTile(
+          "Member Collections",
+          // filteredMetrics.Member = member POS sales (prepaid wallet deductions)
+          // filteredMetrics.MemberPaymentsCollected = LEDGER credit-account payment collections
+          // Both represent cash received via member accounts
+          formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected),
+          "cash-outline",
+          Theme.primary,
         )}
         {renderMetricTile(
           "Total Orders",
@@ -3481,7 +3511,19 @@ export default function SalesReport() {
                             </View>
                           )}
                           {/* Unit price row — strikethrough if item has discount */}
-                          {item.DiscountAmount > 0 ? (
+                          {item.DiscountType === "FOC" ? (
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
+                                UNIT: ${(item.Price || 0).toFixed(2)}
+                              </Text>
+                              <Text style={{ color: "#3b82f6", fontSize: 10, fontFamily: Fonts.black }}>
+                                $0.00
+                              </Text>
+                              <View style={{ backgroundColor: "#3b82f615", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                                <Text style={{ color: "#3b82f6", fontSize: 9, fontFamily: Fonts.black }}>FOC</Text>
+                              </View>
+                            </View>
+                          ) : item.DiscountAmount > 0 ? (
                             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                               <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
                                 UNIT: ${(item.Price || 0).toFixed(2)}
@@ -3515,7 +3557,16 @@ export default function SalesReport() {
                           )}
                         </View>
                         {/* Line total */}
-                        {item.DiscountAmount > 0 ? (
+                        {item.DiscountType === "FOC" ? (
+                          <View style={{ alignItems: "flex-end" }}>
+                            <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
+                              ${(item.Price * item.Qty).toFixed(2)}
+                            </Text>
+                            <Text style={[styles.orderItemPrice, { color: "#3b82f6" }]}>
+                              $0.00
+                            </Text>
+                          </View>
+                        ) : item.DiscountAmount > 0 ? (
                           <View style={{ alignItems: "flex-end" }}>
                             <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
                               ${(item.Price * item.Qty).toFixed(2)}
@@ -3587,9 +3638,7 @@ export default function SalesReport() {
                     </View>
                   )}
                   {(() => {
-                    const focPayment = displayedPayments.find(p => (p.PayModeName || 'CASH').trim().toUpperCase() === 'FOC');
-                    const focDiscountAmt = focPayment ? Number(focPayment.Amount || 0) : 0;
-                    const regularDiscountAmt = Number(selectedOrder?.DiscountAmount || 0) - focDiscountAmt;
+                    const regularDiscountAmt = Number(selectedOrder?.DiscountAmount || 0);
 
                     return (
                       <>
@@ -3609,14 +3658,6 @@ export default function SalesReport() {
                             </View>
                             <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.success }}>
                               -{formatCurrency(regularDiscountAmt)}
-                            </Text>
-                          </View>
-                        )}
-                        {focDiscountAmt > 0 && (
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                            <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.success }}>FOC Discount</Text>
-                            <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.success }}>
-                              -{formatCurrency(focDiscountAmt)}
                             </Text>
                           </View>
                         )}
@@ -4039,39 +4080,200 @@ export default function SalesReport() {
           <Modal visible={showChangePaymentModal} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-              <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
+              <View style={[styles.modalContent, { width: 350, padding: 20, maxHeight: '80%' }]}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Select Payment Mode</Text>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                    {isSplitMode ? "Configure Split Payment" : "Select Payment Mode"}
+                  </Text>
                   <TouchableOpacity onPress={() => setShowChangePaymentModal(false)}>
                     <Ionicons name="close" size={20} color={Theme.textPrimary} />
                   </TouchableOpacity>
                 </View>
                 
-                <ScrollView style={{ maxHeight: 250 }}>
-                  {["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"].map((mode) => (
+                {!isSplitMode ? (
+                  <>
+                    <ScrollView style={{ maxHeight: 250 }}>
+                      {["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"].map((mode) => (
+                        <TouchableOpacity
+                          key={mode}
+                          onPress={() => handleConfirmChangePayment(mode)}
+                          style={{
+                            paddingVertical: 12,
+                            paddingHorizontal: 16,
+                            borderRadius: 8,
+                            backgroundColor: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary + "15" : "transparent",
+                            marginBottom: 6,
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary : Theme.textPrimary }}>
+                            {mode}
+                          </Text>
+                          {(selectedOrder?.PayMode || '').toUpperCase() === mode && (
+                            <Ionicons name="checkmark" size={18} color={Theme.primary} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+
                     <TouchableOpacity
-                      key={mode}
-                      onPress={() => handleConfirmChangePayment(mode)}
+                      onPress={() => {
+                        setIsSplitMode(true);
+                        setChangePaymentSplits([
+                          { payMode: "CASH", amount: String(finalBillAmount) }
+                        ]);
+                      }}
                       style={{
+                        backgroundColor: Theme.primary,
+                        borderRadius: 10,
                         paddingVertical: 12,
-                        paddingHorizontal: 16,
-                        borderRadius: 8,
-                        backgroundColor: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary + "15" : "transparent",
-                        marginBottom: 6,
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center"
+                        alignItems: "center",
+                        marginTop: 15
                       }}
                     >
-                      <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary : Theme.textPrimary }}>
-                        {mode}
+                      <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>
+                        SPLIT PAYMENT (CASH + NETS, etc.)
                       </Text>
-                      {(selectedOrder?.PayMode || '').toUpperCase() === mode && (
-                        <Ionicons name="checkmark" size={18} color={Theme.primary} />
-                      )}
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                  </>
+                ) : (
+                  <View style={{ flexShrink: 1 }}>
+                    <ScrollView style={{ maxHeight: 250, marginBottom: 15 }} keyboardShouldPersistTaps="handled">
+                      {changePaymentSplits.map((split, idx) => {
+                        const nextMode = () => {
+                          const modes = ["CASH", "CARD", "NETS", "PAYNOW"];
+                          const currentIdx = modes.indexOf(split.payMode);
+                          const next = modes[(currentIdx + 1) % modes.length]!;
+                          const newSplits = [...changePaymentSplits];
+                          newSplits[idx] = { ...split, payMode: next };
+                          setChangePaymentSplits(newSplits);
+                        };
+
+                        const handleAmountChange = (text: string) => {
+                          const newSplits = [...changePaymentSplits];
+                          newSplits[idx] = { ...split, amount: text };
+                          setChangePaymentSplits(newSplits);
+                        };
+
+                        const handleDeleteRow = () => {
+                          setChangePaymentSplits(changePaymentSplits.filter((_, i) => i !== idx));
+                        };
+
+                        return (
+                          <View key={idx} style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                            <TouchableOpacity
+                              onPress={nextMode}
+                              style={{
+                                width: 90,
+                                height: 40,
+                                borderWidth: 1,
+                                borderColor: Theme.border + "60",
+                                borderRadius: 8,
+                                justifyContent: "center",
+                                alignItems: "center",
+                                backgroundColor: Theme.border + "10"
+                              }}
+                            >
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.primary }}>
+                                {split.payMode}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TextInput
+                              placeholder="Amount"
+                              placeholderTextColor={Theme.textSecondary + "70"}
+                              value={split.amount}
+                              onChangeText={handleAmountChange}
+                              keyboardType="numeric"
+                              style={{
+                                flex: 1,
+                                height: 40,
+                                borderWidth: 1,
+                                borderColor: Theme.border + "60",
+                                borderRadius: 8,
+                                paddingHorizontal: 10,
+                                fontSize: 14,
+                                color: Theme.textPrimary,
+                                fontFamily: Fonts.bold,
+                                backgroundColor: "#fff"
+                              }}
+                            />
+
+                            {changePaymentSplits.length > 1 && (
+                              <TouchableOpacity onPress={handleDeleteRow} style={{ padding: 4 }}>
+                                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        );
+                      })}
+
+                      <TouchableOpacity
+                        onPress={() => setChangePaymentSplits([...changePaymentSplits, { payMode: "NETS", amount: "" }])}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          paddingVertical: 10,
+                          borderWidth: 1.5,
+                          borderColor: Theme.primary + "30",
+                          borderRadius: 8,
+                          borderStyle: "dashed",
+                          marginTop: 5
+                        }}
+                      >
+                        <Ionicons name="add" size={18} color={Theme.primary} />
+                        <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.primary }}>
+                          ADD PAYMENT METHOD
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
+
+                    <View style={{ backgroundColor: Theme.border + "15", padding: 12, borderRadius: 10, marginBottom: 15, gap: 4 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Bill Total:</Text>
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: Theme.textPrimary }}>${finalBillAmount.toFixed(2)}</Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Allocated:</Text>
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: Theme.textPrimary }}>${allocatedSplitsSum.toFixed(2)}</Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: Theme.border + "30", paddingTop: 4 }}>
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Remaining:</Text>
+                        <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.success : "#ef4444" }}>
+                          ${remainingSplitsBalance.toFixed(2)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      <TouchableOpacity
+                        onPress={() => setIsSplitMode(false)}
+                        style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                      >
+                        <Text style={styles.premiumSecondaryBtnText}>BACK</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        disabled={Math.abs(remainingSplitsBalance) >= 0.02}
+                        onPress={() => handleConfirmChangePayment("SPLIT", changePaymentSplits)}
+                        style={{
+                          flex: 1.5,
+                          backgroundColor: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.success : Theme.textMuted,
+                          borderRadius: 10,
+                          justifyContent: "center",
+                          alignItems: "center",
+                          paddingVertical: 10,
+                          opacity: Math.abs(remainingSplitsBalance) < 0.02 ? 1 : 0.6
+                        }}
+                      >
+                        <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>CONFIRM SPLIT</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
               </View>
             </View>
           </Modal>
@@ -4082,7 +4284,7 @@ export default function SalesReport() {
               <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
               <View style={[styles.modalContent, { width: 360, padding: 20 }]}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Select Item to Void</Text>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Select Items to Void</Text>
                   <TouchableOpacity onPress={() => setShowVoidItemModal(false)}>
                     <Ionicons name="close" size={20} color={Theme.textPrimary} />
                   </TouchableOpacity>
@@ -4091,41 +4293,73 @@ export default function SalesReport() {
                 <ScrollView style={{ maxHeight: 250 }}>
                   {orderDetails
                     .filter((item) => item.Status !== "VOIDED")
-                    .map((item) => (
-                      <TouchableOpacity
-                        key={item.OrderDetailId || item.DishId}
-                        onPress={() => handleConfirmVoidItem(item)}
-                        style={{
-                          paddingVertical: 12,
-                          paddingHorizontal: 10,
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: Theme.border + "30",
-                          marginBottom: 8,
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center"
-                        }}
-                      >
-                        <View style={{ flex: 1, marginRight: 10 }}>
-                          <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
-                            {item.DishName}
+                    .map((item) => {
+                      const itemId = item.OrderDetailId || item.DishId;
+                      const isSelected = selectedVoidItemIds.includes(itemId);
+                      return (
+                        <TouchableOpacity
+                          key={itemId}
+                          onPress={() => toggleVoidItemSelection(itemId)}
+                          style={{
+                            paddingVertical: 12,
+                            paddingHorizontal: 10,
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            borderColor: isSelected ? Theme.primary : Theme.border + "30",
+                            backgroundColor: isSelected ? Theme.primary + "08" : "transparent",
+                            marginBottom: 8,
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 }}>
+                            <Ionicons
+                              name={isSelected ? "checkbox" : "square-outline"}
+                              size={20}
+                              color={isSelected ? Theme.primary : Theme.textSecondary}
+                              style={{ marginRight: 8 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                                {item.DishName}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
+                                Qty: {item.Qty} • Unit: ${(item.Price || 0).toFixed(2)}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                            ${((item.Price || 0) * (item.Qty || 1)).toFixed(2)}
                           </Text>
-                          <Text style={{ fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
-                            Qty: {item.Qty} • Unit: ${(item.Price || 0).toFixed(2)}
-                          </Text>
-                        </View>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary }}>
-                          ${((item.Price || 0) * (item.Qty || 1)).toFixed(2)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                        </TouchableOpacity>
+                      );
+                    })}
                   {orderDetails.filter((item) => item.Status !== "VOIDED").length === 0 && (
                     <Text style={{ textAlign: "center", color: Theme.textSecondary, marginVertical: 20 }}>
                       No active items to void
                     </Text>
                   )}
                 </ScrollView>
+
+                {selectedVoidItemIds.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowVoidItemConfirm(true);
+                    }}
+                    style={{
+                      backgroundColor: "#ef4444",
+                      borderRadius: 10,
+                      paddingVertical: 12,
+                      alignItems: "center",
+                      marginTop: 15
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 14, fontFamily: Fonts.black }}>
+                      VOID SELECTED ({selectedVoidItemIds.length})
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </Modal>
@@ -4136,17 +4370,16 @@ export default function SalesReport() {
               <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
               <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
                 <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: "#ef4444", marginBottom: 10 }}>
-                  Void Item?
+                  Void Selected Items?
                 </Text>
                 <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 20 }}>
-                  Are you sure you want to void "{itemToVoid?.DishName}"? This action requires supervisor credentials.
+                  Are you sure you want to void the {selectedVoidItemIds.length} selected item(s)? This action requires supervisor credentials.
                 </Text>
 
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => {
                       setShowVoidItemConfirm(false);
-                      setItemToVoid(null);
                     }}
                     style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
                   >
@@ -4155,11 +4388,7 @@ export default function SalesReport() {
                   <TouchableOpacity
                     onPress={() => {
                       setShowVoidItemConfirm(false);
-                      const item = itemToVoid;
-                      setItemToVoid(null);
-                      if (item) {
-                        runVoidItem(item);
-                      }
+                      runVoidItems(selectedVoidItemIds);
                     }}
                     style={{
                       flex: 1,

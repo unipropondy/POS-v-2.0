@@ -744,6 +744,7 @@ export default function PaymentScreen() {
     subtotal,
     grossTotal: payGrossTotal,
     totalItemDiscount: payItemDiscount,
+    totalFocAmount,
     scEligibleSubtotal,
     calcTakeawayChargeAmt,
     takeawayQty,
@@ -754,6 +755,7 @@ export default function PaymentScreen() {
       return {
         grossTotal: collectAmount || 0,
         totalItemDiscount: 0,
+        totalFocAmount: 0,
         subtotal: collectAmount || 0,
         scEligibleSubtotal: 0,
         calcTakeawayChargeAmt: 0,
@@ -785,6 +787,7 @@ export default function PaymentScreen() {
           }
         }
         const itemSubtotal = baseTotal - itemDiscount;
+        const itemFocAmount = item.isFoc ? itemSubtotal : 0;
         const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
         const isSC =
           !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true);
@@ -805,16 +808,18 @@ export default function PaymentScreen() {
         return {
           grossTotal: acc.grossTotal + baseTotal,
           totalItemDiscount: acc.totalItemDiscount + itemDiscount,
+          totalFocAmount: acc.totalFocAmount + itemFocAmount,
           subtotal: acc.subtotal + itemSubtotal,
           scEligibleSubtotal:
-            acc.scEligibleSubtotal + (isSC ? itemSubtotal : 0),
-          calcTakeawayChargeAmt: acc.calcTakeawayChargeAmt + itemTWCharge,
-          takeawayQty: acc.takeawayQty + (isTakeawayItem ? (item.qty || 1) : 0),
+            acc.scEligibleSubtotal + (isSC && !item.isFoc ? itemSubtotal : 0),
+          calcTakeawayChargeAmt: acc.calcTakeawayChargeAmt + (isTakeawayItem && !item.isFoc ? itemTWCharge : 0),
+          takeawayQty: acc.takeawayQty + (isTakeawayItem && !item.isFoc ? (item.qty || 1) : 0),
         };
       },
       {
         grossTotal: 0,
         totalItemDiscount: 0,
+        totalFocAmount: 0,
         subtotal: 0,
         scEligibleSubtotal: 0,
         calcTakeawayChargeAmt: 0,
@@ -855,14 +860,16 @@ export default function PaymentScreen() {
   // Service Charge & GST: SC on net, GST on (net + SC)
   const netAfterDiscount = isLedgerCollection
     ? collectAmount || 0
-    : subtotal - discountAmount;
+    : Math.max(0, subtotal - discountAmount - totalFocAmount);
 
   // Pro-rate the bill-level discount to service-charge-eligible items
   const scEligibleNet = useMemo(() => {
     if (isLedgerCollection || subtotal <= 0) return 0;
-    const proportion = scEligibleSubtotal / subtotal;
+    const payableSubtotal = Math.max(0, subtotal - totalFocAmount);
+    if (payableSubtotal <= 0) return 0;
+    const proportion = scEligibleSubtotal / payableSubtotal;
     return Math.max(0, scEligibleSubtotal - proportion * discountAmount);
-  }, [scEligibleSubtotal, subtotal, discountAmount, isLedgerCollection]);
+  }, [scEligibleSubtotal, subtotal, totalFocAmount, discountAmount, isLedgerCollection]);
 
   const billDiscountProportion = useMemo(() => {
     if (isLedgerCollection) return 0;
@@ -870,8 +877,9 @@ export default function PaymentScreen() {
     if (discount.type === "percentage") {
       return discount.value / 100;
     }
-    return subtotal > 0 ? (discountAmount / subtotal) : 0;
-  }, [discount, subtotal, discountAmount, isLedgerCollection]);
+    const payableSubtotal = Math.max(0, subtotal - totalFocAmount);
+    return payableSubtotal > 0 ? (discountAmount / payableSubtotal) : 0;
+  }, [discount, subtotal, totalFocAmount, discountAmount, isLedgerCollection]);
 
   const currentTakeawayCharge = useMemo(() => {
     if (isLedgerCollection) return 0;
@@ -1104,38 +1112,6 @@ export default function PaymentScreen() {
 
   const handleSelectMethod = (m: PaymentMethod) => {
     setMethod(m.payMode);
-    
-    // Apply 100% discount if FOC is selected
-    if (m.payMode.toUpperCase().trim() === "FOC") {
-      const discountData = {
-        applied: true,
-        type: "percentage" as const,
-        value: 100,
-      };
-      useCartStore.getState().applyDiscount(discountData);
-      const currentContext = useOrderContextStore.getState().currentOrder;
-      if (currentContext) {
-        useActiveOrdersStore.getState().updateOrderDiscount(currentContext, discountData);
-      }
-    } else {
-      // Clear 100% FOC discount if switching away from FOC
-      const currentContextId = useCartStore.getState().currentContextId;
-      const currentDiscount = currentContextId
-        ? useCartStore.getState().discounts[currentContextId]
-        : null;
-      if (currentDiscount?.applied && currentDiscount?.value === 100) {
-        const clearedDiscount = {
-          applied: false,
-          type: "percentage" as const,
-          value: 0,
-        };
-        useCartStore.getState().applyDiscount(clearedDiscount);
-        const currentContext = useOrderContextStore.getState().currentOrder;
-        if (currentContext) {
-          useActiveOrdersStore.getState().updateOrderDiscount(currentContext, clearedDiscount);
-        }
-      }
-    }
 
     if (!isCashMethod(m.payMode)) {
       setRoundOff(0);
@@ -1523,10 +1499,63 @@ export default function PaymentScreen() {
     const tableState = context?.tableId
       ? useTableStatusStore.getState().tableMap[context.tableId.toLowerCase()]
       : null;
-      // FOC discount: add on top of any existing cart discount
-      const effectiveFocAmount = focAmount || 0;
-      const effectiveDiscountAmount = discountAmount + payItemDiscount + effectiveFocAmount;
-      const effectiveTotalAmount = total - effectiveFocAmount;
+      // FOC discount: disabled, FOC is a normal paymode
+      const effectiveFocAmount = 0;
+      const effectiveDiscountAmount = discountAmount + payItemDiscount;
+
+      const selectedMode = paymentMethods.find(x => x.payMode.toUpperCase().trim() === method.toUpperCase().trim());
+      const payModeId = selectedMode ? selectedMode.position || 1 : 1;
+
+      const focMode = paymentMethods.find(x => x.payMode.toUpperCase().trim() === "FOC");
+      const focModeId = focMode ? focMode.position || 1 : 1;
+
+      let finalPayments = null;
+      let finalTotalAmount = total;
+
+      if (payments && payments.length > 0) {
+        finalPayments = payments.map(p => ({
+          payModeId: p.payModeId,
+          payMode: (p as any).payMode || paymentMethods.find(x => x.position === p.payModeId)?.payMode || "CASH",
+          amount: p.amount,
+          referenceNo: p.referenceNo || ""
+        }));
+        finalTotalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+      } else {
+        if (method.trim().toUpperCase() === "FOC") {
+          const originalTaxableAmount = subtotal + serviceChargeAmt + currentTakeawayCharge;
+          const originalTax = originalTaxableAmount * gstRate;
+          const originalBillTotal = originalTaxableAmount + originalTax;
+          
+          let roundedTotal = originalBillTotal;
+          if (roundType === "whole") roundedTotal = Math.round(originalBillTotal);
+          else if (roundType === "five") roundedTotal = Math.round(originalBillTotal * 20) / 20;
+
+          finalPayments = [{
+            payModeId: focModeId,
+            payMode: "FOC",
+            amount: roundedTotal,
+            referenceNo: ""
+          }];
+          finalTotalAmount = roundedTotal;
+        } else {
+          finalPayments = [];
+          if (totalFocAmount > 0) {
+            finalPayments.push({
+              payModeId: focModeId,
+              payMode: "FOC",
+              amount: totalFocAmount,
+              referenceNo: ""
+            });
+          }
+          finalPayments.push({
+            payModeId,
+            payMode: method,
+            amount: total,
+            referenceNo: ""
+          });
+          finalTotalAmount = total + totalFocAmount;
+        }
+      }
 
       const saleData = {
         settlementId: checkoutSessionId,
@@ -1540,31 +1569,34 @@ export default function PaymentScreen() {
             ? context?.takeawayNo
             : context?.tableNo,
         section: context?.section,
-        items: finalItems.map((item: any) => ({
-          lineItemId: item.lineItemId,
-          dishId: item.dishId || item.DishId || item.id,
-          name: item.name,
-          songName: item.songName || item.SongName || "",
-          qty: item.qty,
-          price: item.price,
-          status: item.status,
-          discountAmount: item.discountAmount ?? item.discount ?? null,
-          discountType: item.discountType ?? null,
-          isDishReward: item.isDishReward || false,
-          rewardRuleId: item.rewardRuleId || null,
-          rewardDishId: item.rewardDishId || null,
-          modifiers: item.modifiers || null,
-          comboSelections: item.comboSelections || null,
-        })),
+        items: finalItems.map((item: any) => {
+          const isItemFoc = item.isFoc || item.IsFoc || false;
+          return {
+            lineItemId: item.lineItemId,
+            dishId: item.dishId || item.DishId || item.id,
+            name: item.name,
+            songName: item.songName || item.SongName || "",
+            qty: item.qty,
+            price: item.price,
+            status: item.status,
+            discountAmount: isItemFoc ? item.price : (item.discountAmount ?? item.discount ?? null),
+            discountType: isItemFoc ? "FOC" : (item.discountType ?? null),
+            isDishReward: item.isDishReward || false,
+            rewardRuleId: item.rewardRuleId || null,
+            rewardDishId: item.rewardDishId || null,
+            modifiers: item.modifiers || null,
+            comboSelections: item.comboSelections || null,
+          };
+        }),
         subTotal: subtotal,
         taxAmount: displayedTax,
         serviceCharge: displayedServiceCharge,
         takeawayCharge: currentTakeawayCharge,
         discountAmount: effectiveDiscountAmount,
         discountType: effectiveFocAmount > 0 ? "fixed" : (discount?.type || "fixed"),
-        totalAmount: effectiveTotalAmount,
-        paymentMethod: payments && payments.length > 0 ? "SPLIT" : method.trim(),
-        payments: payments || null,
+        totalAmount: finalTotalAmount,
+        paymentMethod: finalPayments && finalPayments.length > 1 ? "SPLIT" : (finalPayments && finalPayments[0]?.payMode || method).trim(),
+        payments: finalPayments,
         memberId: memberOverride?.MemberId || selectedMember?.MemberId || null,
         roundOff: displayedRoundOff,
         cashierId: user?.userId,
@@ -1599,9 +1631,9 @@ export default function PaymentScreen() {
         router.push({
           pathname: "/payment_success" as any,
           params: {
-            total: effectiveTotalAmount.toFixed(2),
+            total: finalTotalAmount.toFixed(2),
             paidNum: (payments && payments.length > 0
-              ? effectiveTotalAmount
+              ? finalTotalAmount
               : paidNum
             ).toFixed(2),
             change: (payments && payments.length > 0 ? 0 : change).toFixed(2),
@@ -2627,9 +2659,7 @@ export default function PaymentScreen() {
                       setShowMemberModal(true);
                     }}
                     onComplete={(finalPayments) => {
-                      const focRow = finalPayments.find(p => p.payMode.toUpperCase().trim() === "FOC");
-                      const focAmt = focRow ? focRow.amount : undefined;
-                      executeFinalPayment(finalPayments, undefined, focAmt);
+                      executeFinalPayment(finalPayments, undefined, undefined);
                     }}
                     onCancel={() => setIsSplitActive(false)}
                     processing={processing}

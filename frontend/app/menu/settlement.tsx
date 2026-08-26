@@ -914,10 +914,16 @@ const fetchDayHistory = async () => {
     return val.toFixed(2);
   };
 
-  const netSales = parseFloat(totalSales.NetTotal) || 0;
+  const focTotal = payments
+    .filter(p => p.PaymodeName?.toUpperCase().trim() === "FOC")
+    .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
+
+  const netSales = Math.max(0, (parseFloat(totalSales.NetTotal) || 0));
 
   const salesTotal = sales.reduce((sum, s) => sum + (parseFloat(s.Amount) || 0), 0);
-  const paymentsTotal = payments.reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
+  const paymentsTotal = payments
+    .filter(p => p.PaymodeName?.toUpperCase().trim() !== "FOC")
+    .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
   const displayOpeningAmount = totalOpening > 0 ? totalOpening : (parseFloat(openingCash) || 0);
   const totalCashOut = cashOutEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
   const totalCashInEntries = cashInEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
@@ -935,7 +941,7 @@ const fetchDayHistory = async () => {
 
   const normalCashSales = payments
     .filter(p => {
-      const name = p.PaymodeName?.toUpperCase();
+      const name = p.PaymodeName?.toUpperCase().trim();
       return name === 'CASH' || name === 'CASHBOX' || name === 'CASH BOX';
     })
     .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
@@ -965,8 +971,8 @@ const fetchDayHistory = async () => {
 
   const nonCashTotal = payments
     .filter(p => {
-      const name = p.PaymodeName?.toUpperCase() || "";
-      return name !== 'CASH' && name !== 'CASHBOX' && name !== 'CASH BOX';
+      const name = p.PaymodeName?.toUpperCase().trim() || "";
+      return name !== 'CASH' && name !== 'CASHBOX' && name !== 'CASH BOX' && name !== 'FOC';
     })
     .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
 
@@ -1467,7 +1473,7 @@ const fetchDayHistory = async () => {
       const businessDateStr = isRangeMode
         ? `${selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${selectedEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
         : selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const cashInTotalSum = totalCashInEntries + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
+      const cashInTotalSum = displayManualCashIn + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
 
       const aggregatedPayments: { PaymodeName: string; Amount: number }[] = [];
       const tempAgg: Record<string, { PaymodeName: string; Amount: number }> = {};
@@ -1602,7 +1608,7 @@ const fetchDayHistory = async () => {
                 </tr>
                 <tr class="bold">
                   <td>TOTAL COLLECTION</td>
-                  <td class="right">${formatCurrency(paymentsTotal)}</td>
+                  <td class="right">${formatCurrency(paymentsTotal + focTotal)}</td>
                 </tr>
               </table>
 
@@ -1649,7 +1655,7 @@ const fetchDayHistory = async () => {
               </table>
 
               <div class="divider">========================================</div>
-              <div class="center bold" style="font-size: 11px; margin-top: 10px; text-transform: uppercase;">SMART-POS BY UNIPROSG</div>
+              <div class="center bold" style="font-size: 11px; margin-top: 10px; text-transform: uppercase;">SMART-CAFE BY UNIPROSG</div>
               <div class="divider">========================================</div>
             </div>
           </body>
@@ -1695,7 +1701,7 @@ const fetchDayHistory = async () => {
         text += formatTwoCols48(p.PaymodeName + ":", formatCurrency(p.Amount));
       });
       text += "[L]----------------------------------------\n";
-      text += formatTwoCols48("<B>TOTAL COLLECTION:</B>", "<B>" + formatCurrency(paymentsTotal) + "</B>\n");
+      text += formatTwoCols48("<B>TOTAL COLLECTION:</B>", "<B>" + formatCurrency(paymentsTotal + focTotal) + "</B>\n");
 
       text += "[C]========================================\n";
       text += "[C]<B>CASH DRAWER SUMMARY</B>\n";
@@ -1713,7 +1719,7 @@ const fetchDayHistory = async () => {
         text += formatTwoCols48("Variance:", (variance >= 0 ? '+' : '') + formatCurrency(variance) + "\n");
       }
       text += "[C]========================================\n";
-      text += "[C]SMART-POS BY UNIPROSG\n";
+      text += "[C]SMART-CAFE BY UNIPROSG\n";
       text += "[C]========================================\n\n\n\n";
 
       if (Platform.OS === 'web') {
@@ -1830,7 +1836,7 @@ const fetchDayHistory = async () => {
               await SunmiModule.printText(formatTwoCols32(p.PaymodeName + ":", formatCurrency(p.Amount)));
             }
             await SunmiModule.printText("--------------------------------\n");
-            await SunmiModule.printText(formatTwoCols32("TOTAL COLLECTION:", formatCurrency(paymentsTotal)));
+            await SunmiModule.printText(formatTwoCols32("TOTAL COLLECTION:", formatCurrency(paymentsTotal + focTotal)));
             await SunmiModule.printText("\n");
 
             await SunmiModule.printText("================================\n");
@@ -1846,7 +1852,7 @@ const fetchDayHistory = async () => {
             await SunmiModule.printText(formatTwoCols32("EXPECTED CASH:", formatCurrency(totalCashIn - totalCashOutSum)));
             if (SunmiModule.setFontSize) await SunmiModule.setFontSize(24);
             await SunmiModule.printText("================================\n");
-            await SunmiModule.printText("     SMART-POS BY UNIPROSG\n");
+            await SunmiModule.printText("     SMART-CAFE BY UNIPROSG\n");
             await SunmiModule.printText("================================\n");
             await SunmiModule.lineWrap(3);
             await SunmiModule.cutPaper();
@@ -2223,11 +2229,13 @@ const fetchDayHistory = async () => {
                 <View style={[styles.cardBody, { flex: 1 }]}>
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Sales Total</Text>
-                    <Text style={styles.rowValue}>{formatCurrency(totalSales.SubTotal)}</Text>
+                     <Text style={styles.rowValue}>{formatCurrency(totalSales.SubTotal)}</Text>
                   </View>
                   <View style={styles.row}>
-                    <Text style={styles.rowLabel}>Total Discount</Text>
-                    <Text style={styles.rowValue}>{formatCurrency(totalSales.DiscountAmount)}</Text>
+                    <Text style={[styles.rowLabel, (parseFloat(totalSales.DiscountAmount) || 0) > 0 && { color: Theme.danger }]}>Total Discount</Text>
+                    <Text style={[styles.rowValue, (parseFloat(totalSales.DiscountAmount) || 0) > 0 && { color: Theme.danger }]}>
+                      {(parseFloat(totalSales.DiscountAmount) || 0) > 0 ? `-${formatCurrency(totalSales.DiscountAmount)}` : formatCurrency(totalSales.DiscountAmount)}
+                    </Text>
                   </View>
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Service Charge</Text>
@@ -2419,7 +2427,7 @@ const fetchDayHistory = async () => {
                         <View key={`pay-${i}`} style={styles.tableRow}>
                           <Text style={[styles.tableCellText, { flex: 2 }]}>{p.PaymodeName}</Text>
                           <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: isCash ? Theme.success : Theme.textPrimary }]}>
-                            {`+${formatCurrency(p.Amount)}`}
+                            {modeUpper === "FOC" ? formatCurrency(p.Amount) : `+${formatCurrency(p.Amount)}`}
                           </Text>
                           <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>0.00</Text>
                         </View>
@@ -2428,48 +2436,71 @@ const fetchDayHistory = async () => {
                   })()}
                   {payments.length === 0 && displayOpeningAmount === 0 && transactions.length === 0 && cashOutEntries.length === 0 && cashInEntries.length === 0 && <Text style={styles.emptyText}>No sales</Text>}
                 </View>
-                {/* 1. Total Collection (All Modes) */}
-                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, borderTopWidth: 1, borderTopColor: Theme.border, alignItems: "center" }}>
-                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Total Collection (All Modes)</Text>
+
+                {/* ── TOTAL MOVEMENTS ── */}
+                <View style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: Theme.bgNav, borderTopWidth: 1, borderTopColor: Theme.border, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.primary, letterSpacing: 0.4 }}>TOTAL MOVEMENTS</Text>
                   <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.success }}>
-                    {`+${formatCurrency(totalCashIn + nonCashTotal - displayOpeningAmount)}`}
+                    {formatCurrency(totalCashIn + nonCashTotal + focTotal)}
                   </Text>
-                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.danger }}>
-                    {`-${formatCurrency(totalCashOutSum)}`}
-                  </Text>
-                </View>
-
-                {/* 2. Non-Cash Collection */}
-                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
-                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Non-Cash Collection</Text>
-                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
-                    {formatCurrency(nonCashTotal)}
-                  </Text>
-                </View>
-
-                {/* 3. Opening Float */}
-                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
-                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Opening Float</Text>
-                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
-                    {formatCurrency(displayOpeningAmount)}
-                  </Text>
-                </View>
-
-                {/* 4. Cash Out (All Modes) */}
-                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
-                  <Text style={{ flex: 2, fontFamily: Fonts.bold, fontSize: 12, color: Theme.textSecondary }}>Total Cash Out</Text>
-                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.danger }}>
+                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: totalCashOutSum > 0 ? Theme.danger : Theme.textPrimary }}>
                     {formatCurrency(totalCashOutSum)}
                   </Text>
                 </View>
 
-                {/* 5. Expected Drawer Cash */}
-                <View style={{ flexDirection: "row", paddingVertical: 12, paddingHorizontal: 12, backgroundColor: '#f9731615', borderTopWidth: 1, borderTopColor: '#f9731630', alignItems: "center" }}>
-                  <Text style={{ flex: 2, fontFamily: Fonts.black, fontSize: 13, color: '#f97316' }}>EXPECTED DRAWER CASH</Text>
-                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.black, fontSize: 15, color: (totalCashIn - totalCashOutSum) >= 0 ? Theme.success : Theme.danger }}>
+                {/* ── NET CASH / PAYMENT MOVEMENTS ── */}
+                <View style={{ flexDirection: "row", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Theme.bgNav, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.medium, fontSize: 12, color: Theme.textSecondary }}>NET CASH / PAYMENT MOVEMENTS</Text>
+                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
+                    {formatCurrency(totalCashIn + nonCashTotal + focTotal - totalCashOutSum)}
+                  </Text>
+                </View>
+
+                {/* ── EXPECTED CASH (CASH ONLY) ── */}
+                <View style={{ flexDirection: "row", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: Theme.bgNav, borderTopWidth: 1, borderTopColor: Theme.border, alignItems: "center" }}>
+                  <Text style={{ flex: 2, fontFamily: Fonts.medium, fontSize: 12, color: Theme.textSecondary }}>EXPECTED CASH (CASH ONLY)</Text>
+                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: Theme.success }}>
+                    {formatCurrency(totalCashIn)}
+                  </Text>
+                  <Text style={{ flex: 1, textAlign: "right", fontFamily: Fonts.bold, fontSize: 13, color: totalCashOutSum > 0 ? Theme.danger : Theme.textPrimary }}>
+                    {formatCurrency(totalCashOutSum)}
+                  </Text>
+                </View>
+
+                {/* ── EXPECTED DRAWER CASH ── */}
+                <View style={{ flexDirection: "row", paddingVertical: 13, paddingHorizontal: 12, backgroundColor: '#f9731610', borderTopWidth: 1.5, borderTopColor: '#f9731640', alignItems: "center" }}>
+                  <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: '#f97316', alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="wallet-outline" size={14} color="#fff" />
+                    </View>
+                    <Text style={{ fontFamily: Fonts.black, fontSize: 13, color: '#f97316', letterSpacing: 0.6 }}>EXPECTED DRAWER CASH</Text>
+                  </View>
+                  <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.black, fontSize: 17, color: (totalCashIn - totalCashOutSum) >= 0 ? Theme.success : Theme.danger }}>
                     {formatCurrency(totalCashIn - totalCashOutSum)}
                   </Text>
                 </View>
+
+                {/* ── VARIANCE (SHORTAGE / SURPLUS) ── */}
+                {totalClosing > 0 && (() => {
+                  const variance = totalClosing - (totalCashIn - totalCashOutSum);
+                  const isShortage = variance < 0;
+                  const varColor = isShortage ? Theme.danger : Theme.success;
+                  return (
+                    <View style={{ flexDirection: "row", paddingVertical: 13, paddingHorizontal: 12, backgroundColor: isShortage ? Theme.danger + '12' : Theme.success + '12', borderTopWidth: 1, borderTopColor: isShortage ? Theme.danger + '40' : Theme.success + '40', alignItems: "center" }}>
+                      <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: varColor, alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name={isShortage ? "trending-down" : "trending-up"} size={14} color="#fff" />
+                        </View>
+                        <Text style={{ fontFamily: Fonts.black, fontSize: 13, color: varColor, letterSpacing: 0.6 }}>
+                          VARIANCE ({isShortage ? 'SHORTAGE' : 'SURPLUS'})
+                        </Text>
+                      </View>
+                      <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.black, fontSize: 17, color: varColor }}>
+                        {variance >= 0 ? '+' : ''}{formatCurrency(variance)}
+                      </Text>
+                    </View>
+                  );
+                })()}
               </View>
             </View>
           </ScrollView>

@@ -213,7 +213,7 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
   const totalOrders = totalTransactions;
 
   const paymentBreakdownTotal = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
-  const totalCollections = (paymentBreakdownTotal - (breakdown["CREDIT"] || 0)) + memberPaymentsCollected + creditPaymentsCollected;
+  const totalCollections = (paymentBreakdownTotal - (breakdown["CREDIT"] || 0) - (breakdown["FOC"] || 0)) + memberPaymentsCollected + creditPaymentsCollected;
 
   const avgCheck = totalTransactions > 0 ? totalSales / totalTransactions : 0;
   let avgItems = totalTransactions > 0 ? totalItems / totalTransactions : 0;
@@ -498,6 +498,7 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
 
     // Summary Metrics
     totalSales,
+    focSales: breakdown["FOC"] || 0,
     totalCollections,
     creditPaymentsCollected,
     memberPaymentsCollected,

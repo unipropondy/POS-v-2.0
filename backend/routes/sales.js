@@ -214,10 +214,7 @@ const validateSalePayload = ({ totalAmount, paymentMethod, items, payments }) =>
       if (!p.payModeId && !p.payMode) {
         return `Payment row ${i + 1} is missing a payment mode.`;
       }
-      const modeName = String(p.payMode || "").trim().toUpperCase();
-      if (modeName !== "FOC") {
-        sum += amt;
-      }
+      sum += amt;
     }
     const diff = Math.abs(sum - Number(totalAmount));
     if (diff > 0.01) {
@@ -1311,9 +1308,14 @@ router.get("/day-end-summary", async (req, res) => {
       return mode === 'CASH' || mode === 'CREDIT PAYMENT (CASH)' || mode === 'MEMBER PAYMENT (CASH)';
     }).reduce((acc, curr) => acc + (Number(curr.Amount) || 0), 0);
 
+    const focTotal = paymodes.filter(p => {
+      const mode = String(p.Paymode).toUpperCase();
+      return mode === 'FOC';
+    }).reduce((acc, curr) => acc + (Number(curr.Amount) || 0), 0);
+
     const otherTotal = paymodes.filter(p => {
       const mode = String(p.Paymode).toUpperCase();
-      return mode !== 'CASH' && mode !== 'CREDIT PAYMENT (CASH)' && mode !== 'MEMBER PAYMENT (CASH)';
+      return mode !== 'CASH' && mode !== 'CREDIT PAYMENT (CASH)' && mode !== 'MEMBER PAYMENT (CASH)' && mode !== 'FOC';
     }).reduce((acc, curr) => acc + (Number(curr.Amount) || 0), 0);
 
     const billCount = Number(analysis.TotalBills) || 0;
@@ -1373,11 +1375,13 @@ router.get("/day-end-summary", async (req, res) => {
       cancelledOrders: cancelledOrdersRes.recordset,
       settlementDetail: {
         cashTotal,
-        otherTotal
+        otherTotal,
+        focTotal
       },
       salesAnalysis: {
         baseSales: analysis.BaseSales || 0,
         totalSales,
+        focSales: focTotal,
         totalTax: analysis.TotalTax || 0,
         totalDiscount: analysis.TotalDiscount || 0,
         totalServiceCharge: analysis.TotalServiceCharge || 0,
@@ -3280,82 +3284,108 @@ async function logLoyaltyVisitAsync(pool, settlementId, billNo, phone, name, ite
 }
 
 
-// ==========================================
-// ⚙️ ORDER DETAILS ACTIONS & POPUP MODIFICATIONS
-// ==========================================
-
 router.post("/settlement/:id/change-payment", async (req, res) => {
   try {
-    const { payMode } = req.body;
+    const { payMode, splits } = req.body;
     const settlementId = req.params.id;
-    if (!payMode) {
-      return res.status(400).json({ error: "payMode is required" });
+    if (!payMode && (!splits || splits.length === 0)) {
+      return res.status(400).json({ error: "payMode or splits is required" });
     }
 
     const pool = await poolPromise;
     
-    // Resolve new paymode from Paymode table
-    const pmResult = await pool.request()
-      .input("PayModeName", sql.NVarChar(50), payMode)
+    // Fetch SettlementHeader details to get total bill amount
+    const shRes = await pool.request()
+      .input("Sid", sql.UniqueIdentifier, settlementId)
       .query(`
-        SELECT Position, PayMode, Description FROM [dbo].[Paymode] 
-        WHERE LTRIM(RTRIM(PayMode)) = LTRIM(RTRIM(@PayModeName)) 
-           OR LTRIM(RTRIM(Description)) = LTRIM(RTRIM(@PayModeName))
-           OR CAST(Position AS VARCHAR(10)) = LTRIM(RTRIM(@PayModeName))
+        SELECT sh.SysAmount, sh.SubTotal, sh.CreatedBy, sh.BusinessUnitId, ri.OrderId 
+        FROM SettlementHeader sh
+        LEFT JOIN RestaurantInvoice ri ON sh.SettlementID = ri.RestaurantBillId
+        WHERE sh.SettlementID = @Sid
       `);
-      
-    if (pmResult.recordset.length === 0) {
-      return res.status(400).json({ error: "Invalid payment mode specified" });
-    }
     
-    const dbPaymode = pmResult.recordset[0];
-    const position = dbPaymode.Position;
-    const finalPayMode = dbPaymode.PayMode;
-    const payModeCode = finalPayMode === "CASH" ? 1 : finalPayMode === "CARD" ? 2 : 3;
+    if (shRes.recordset.length === 0) {
+      return res.status(404).json({ error: "Order/Settlement not found" });
+    }
+
+    const { SysAmount, SubTotal, CreatedBy, BusinessUnitId, OrderId } = shRes.recordset[0];
+    const totalBillAmount = Number(SysAmount || SubTotal || 0);
+
+    let finalSplits = splits;
+    if (!finalSplits && payMode) {
+      finalSplits = [{ payMode, amount: totalBillAmount }];
+    }
+
+    // Resolve paymodes from Paymode table
+    const pmResult = await pool.request().query(`SELECT Position, PayMode, Description FROM [dbo].[Paymode]`);
+    const activePaymodes = pmResult.recordset;
+
+    const validatedSplits = [];
+    const payModeNames = [];
+    
+    for (const split of finalSplits) {
+      const pm = activePaymodes.find(x => 
+        String(x.PayMode).trim().toUpperCase() === String(split.payMode).trim().toUpperCase() ||
+        String(x.Description).trim().toUpperCase() === String(split.payMode).trim().toUpperCase() ||
+        String(x.Position).trim() === String(split.payMode).trim()
+      );
+      if (!pm) {
+        return res.status(400).json({ error: `Invalid payment mode: ${split.payMode}` });
+      }
+      
+      const amt = split.amount === null || split.amount === undefined 
+        ? (finalSplits.length === 1 ? totalBillAmount : 0)
+        : Number(split.amount || 0);
+
+      validatedSplits.push({
+        payModeId: pm.Position,
+        payMode: pm.PayMode,
+        amount: amt
+      });
+      payModeNames.push(pm.PayMode);
+    }
+
+    // Verify sum of splits matches total bill amount
+    const totalSplitsAmount = validatedSplits.reduce((sum, s) => sum + s.amount, 0);
+    if (Math.abs(totalSplitsAmount - totalBillAmount) > 0.02) {
+      return res.status(400).json({ 
+        error: `Total split amount ($${totalSplitsAmount.toFixed(2)}) must equal total bill amount ($${totalBillAmount.toFixed(2)})` 
+      });
+    }
 
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
     try {
-      // 1. Update SettlementTotalSales
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("PayMode", sql.NVarChar(50), finalPayMode)
-        .query("UPDATE SettlementTotalSales SET PayMode = @PayMode WHERE SettlementID = @Sid");
+      // 1. Delete existing payment records
+      const deleteReq = new sql.Request(transaction);
+      deleteReq.input("Sid", sql.UniqueIdentifier, settlementId);
+      await deleteReq.query(`
+        DELETE FROM [dbo].[PaymentDetailCur] WHERE RestaurantBillId = @Sid;
+        DELETE FROM [dbo].[PaymentDetail] WHERE RestaurantBillId = @Sid OR SettlementId = @Sid;
+        DELETE FROM [dbo].[PaymentTransactionDetails] WHERE ReferenceId = @Sid AND ReferenceType = 'BILL';
+        DELETE FROM SettlementTotalSales WHERE SettlementID = @Sid;
+        DELETE FROM [dbo].[SettlementDetail] WHERE SettlementId = @Sid;
+        DELETE FROM SettlementTranDetail WHERE SettlementID = @Sid;
+        DELETE FROM SettlementCreditSales WHERE SettlementID = @Sid;
+      `);
 
-      // 2. Update SettlementDetail
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("PayMode", sql.NVarChar(50), finalPayMode)
-        .query("UPDATE [dbo].[SettlementDetail] SET Paymode = @PayMode WHERE SettlementId = @Sid");
+      // 2. Insert new split payments
+      await processSplitPayments({
+        referenceType: "BILL",
+        referenceId: settlementId,
+        payments: validatedSplits,
+        transaction,
+        businessUnitId: toGuidOrNull(BusinessUnitId),
+        cashierId: toGuidOrNull(CreatedBy),
+        orderId: toGuidOrNull(OrderId),
+        receiptCount: 1
+      });
 
-      // 3. Update SettlementTranDetail
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("PayMode", sql.NVarChar(50), finalPayMode)
-        .query("UPDATE SettlementTranDetail SET PayMode = @PayMode WHERE SettlementID = @Sid");
+      // 3. Update RestaurantInvoice & RestaurantInvoiceCur (PaymentTermCode)
+      const firstSplitMode = validatedSplits[0].payMode.toUpperCase();
+      const payModeCode = validatedSplits.length > 1 ? 3 : (firstSplitMode === "CASH" ? 1 : firstSplitMode === "CARD" ? 2 : 3);
 
-      // 4. Update PaymentDetailCur
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Position", sql.Int, position)
-        .input("Remarks", sql.VarChar(500), payMode)
-        .query("UPDATE [dbo].[PaymentDetailCur] SET Paymode = @Position, Remarks = @Remarks WHERE RestaurantBillId = @Sid");
-
-      // 5. Update PaymentDetail
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Position", sql.Int, position)
-        .input("Remarks", sql.VarChar(500), payMode)
-        .query("UPDATE [dbo].[PaymentDetail] SET Paymode = @Position, Remarks = @Remarks WHERE RestaurantBillId = @Sid OR SettlementId = @Sid");
-
-      // 6. Update PaymentTransactionDetails
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Position", sql.Int, position)
-        .query("UPDATE [dbo].[PaymentTransactionDetails] SET PayModeId = @Position WHERE ReferenceId = @Sid AND ReferenceType = 'BILL'");
-
-      // 7. Update RestaurantInvoice & RestaurantInvoiceCur (PaymentTermCode)
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
         .input("PayModeCode", sql.Int, payModeCode)
@@ -3366,41 +3396,17 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
         .input("PayModeCode", sql.Int, payModeCode)
         .query("UPDATE RestaurantInvoiceCur SET PaymentTermCode = @PayModeCode WHERE RestaurantBillId = @Sid");
 
-      // 8. Update SettlementHeader if PayMode column is present
+      // 4. Update SettlementHeader PayMode
+      const joinedPayMode = payModeNames.join(" + ");
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("PayMode", sql.NVarChar(50), finalPayMode)
+        .input("PayMode", sql.NVarChar(100), joinedPayMode)
         .query(`
           IF COL_LENGTH('SettlementHeader', 'PayMode') IS NOT NULL
           BEGIN
             EXEC('UPDATE SettlementHeader SET PayMode = ''' + @PayMode + ''' WHERE SettlementID = ''' + @Sid + '''')
           END
         `);
-
-      // 9. Handle SettlementCreditSales (CREDIT mode)
-      if (finalPayMode === 'CREDIT') {
-        const shRes = await transaction.request()
-          .input("Sid", sql.UniqueIdentifier, settlementId)
-          .query("SELECT SysAmount, ManualAmount FROM SettlementHeader WHERE SettlementID = @Sid");
-        if (shRes.recordset.length > 0) {
-          const { SysAmount, ManualAmount } = shRes.recordset[0];
-          await transaction.request()
-            .input("Sid", sql.UniqueIdentifier, settlementId)
-            .input("SysAmount", sql.Decimal(18, 2), SysAmount)
-            .input("ManualAmount", sql.Decimal(18, 2), ManualAmount)
-            .query(`
-              IF NOT EXISTS (SELECT 1 FROM SettlementCreditSales WHERE SettlementID = @Sid)
-              BEGIN
-                INSERT INTO SettlementCreditSales (SettlementID, PayMode, SysAmount, ManualAmount, AmountDiff)
-                VALUES (@Sid, 'CREDIT', @SysAmount, @ManualAmount, 0)
-              END
-            `);
-        }
-      } else {
-        await transaction.request()
-          .input("Sid", sql.UniqueIdentifier, settlementId)
-          .query("DELETE FROM SettlementCreditSales WHERE SettlementID = @Sid");
-      }
 
       await transaction.commit();
       res.json({ success: true, message: "Payment mode updated successfully" });
@@ -3416,9 +3422,10 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
 router.post("/settlement/:id/void-item", async (req, res) => {
   try {
     const settlementId = req.params.id;
-    const { orderDetailId } = req.body;
-    if (!orderDetailId) {
-      return res.status(400).json({ error: "orderDetailId is required" });
+    const { orderDetailId, orderDetailIds } = req.body;
+    const idsToVoid = orderDetailIds || (orderDetailId ? [orderDetailId] : []);
+    if (idsToVoid.length === 0) {
+      return res.status(400).json({ error: "orderDetailId or orderDetailIds is required" });
     }
 
     const pool = await poolPromise;
@@ -3426,43 +3433,47 @@ router.post("/settlement/:id/void-item", async (req, res) => {
     // Check item details
     const itemQuery = await pool.request()
       .input("Sid", sql.UniqueIdentifier, settlementId)
-      .input("Odid", sql.NVarChar(100), orderDetailId)
       .query(`
-        SELECT Qty, Price, Status FROM SettlementItemDetail 
-        WHERE SettlementID = @Sid AND (OrderDetailId = @Odid OR DishId = @Odid)
+        SELECT OrderDetailId, DishId, Qty, Price, Status FROM SettlementItemDetail 
+        WHERE SettlementID = @Sid AND Status <> 'VOIDED'
       `);
 
-    if (itemQuery.recordset.length === 0) {
-      return res.status(404).json({ error: "Item not found in order" });
+    const matchingItems = itemQuery.recordset.filter(item => 
+      idsToVoid.includes(item.OrderDetailId) || idsToVoid.includes(item.DishId)
+    );
+
+    if (matchingItems.length === 0) {
+      return res.status(404).json({ error: "No matching active items found in order" });
     }
 
-    const item = itemQuery.recordset[0];
-    if (item.Status === "VOIDED") {
-      return res.status(400).json({ error: "Item is already voided" });
+    let totalQty = 0;
+    let totalVoidAmount = 0;
+    for (const item of matchingItems) {
+      totalQty += Number(item.Qty || 0);
+      totalVoidAmount += Number(item.Qty || 0) * Number(item.Price || 0);
     }
-
-    const qty = Number(item.Qty || 0);
-    const price = Number(item.Price || 0);
-    const voidAmount = qty * price;
 
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
     try {
-      // 1. Update SettlementItemDetail Status
-      await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Odid", sql.NVarChar(100), orderDetailId)
-        .query(`
-          UPDATE SettlementItemDetail SET Status = 'VOIDED' 
-          WHERE SettlementID = @Sid AND (OrderDetailId = @Odid OR DishId = @Odid)
-        `);
+      // 1. Update SettlementItemDetail Status for matching items
+      for (const item of matchingItems) {
+        const itemId = item.OrderDetailId || item.DishId;
+        await transaction.request()
+          .input("Sid", sql.UniqueIdentifier, settlementId)
+          .input("Odid", sql.NVarChar(100), itemId)
+          .query(`
+            UPDATE SettlementItemDetail SET Status = 'VOIDED' 
+            WHERE SettlementID = @Sid AND (OrderDetailId = @Odid OR DishId = @Odid)
+          `);
+      }
 
       // 2. Update SettlementHeader VoidItemQty, VoidItemAmount, SubTotal, SysAmount, ManualAmount
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Qty", sql.Int, qty)
-        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .input("Qty", sql.Int, totalQty)
+        .input("Amount", sql.Decimal(18, 2), totalVoidAmount)
         .query(`
           UPDATE SettlementHeader 
           SET VoidItemQty = ISNULL(VoidItemQty, 0) + @Qty,
@@ -3476,7 +3487,7 @@ router.post("/settlement/:id/void-item", async (req, res) => {
       // 3. Update SettlementTotalSales
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .input("Amount", sql.Decimal(18, 2), totalVoidAmount)
         .query(`
           UPDATE SettlementTotalSales 
           SET SysAmount = CASE WHEN ISNULL(SysAmount, 0) > @Amount THEN SysAmount - @Amount ELSE 0 END,
@@ -3487,7 +3498,7 @@ router.post("/settlement/:id/void-item", async (req, res) => {
       // 4. Update SettlementDetail
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .input("Amount", sql.Decimal(18, 2), totalVoidAmount)
         .query(`
           UPDATE SettlementDetail 
           SET SysAmount = CASE WHEN ISNULL(SysAmount, 0) > @Amount THEN SysAmount - @Amount ELSE 0 END,
@@ -3498,7 +3509,7 @@ router.post("/settlement/:id/void-item", async (req, res) => {
       // 5. Update PaymentDetailCur, PaymentDetail, and PaymentTransactionDetails
       await transaction.request()
         .input("Sid", sql.UniqueIdentifier, settlementId)
-        .input("Amount", sql.Decimal(18, 2), voidAmount)
+        .input("Amount", sql.Decimal(18, 2), totalVoidAmount)
         .query(`
           UPDATE PaymentDetailCur 
           SET Amount = CASE WHEN ISNULL(Amount, 0) > @Amount THEN Amount - @Amount ELSE 0 END
@@ -3514,7 +3525,7 @@ router.post("/settlement/:id/void-item", async (req, res) => {
         `);
 
       await transaction.commit();
-      res.json({ success: true, message: "Item voided successfully" });
+      res.json({ success: true, message: "Items voided successfully" });
     } catch (txErr) {
       await transaction.rollback();
       throw txErr;

@@ -1726,7 +1726,9 @@ class UniversalPrinter {
         const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
         const effectiveDisc = discType === "percentage" ? discAmt : Math.min(discAmt, discountBasis);
         const discStr =
-          discType === "percentage"
+          discType === "FOC"
+            ? "FOC"
+            : discType === "percentage"
             ? `-${discAmt}%`
             : `-${symbol}${effectiveDisc.toFixed(2)}`;
         text += `[L]      Discount: ${discStr}\n`;
@@ -1751,6 +1753,8 @@ class UniversalPrinter {
       if (discAmt > 0) {
         if (discType === "percentage") {
           itemDiscount = (discountBasis * (discAmt / 100)) * qtyNum;
+        } else if (discType === "FOC") {
+          itemDiscount = baseTotal;
         } else {
           itemDiscount = Math.min(discAmt, discountBasis) * qtyNum;
         }
@@ -1969,7 +1973,7 @@ class UniversalPrinter {
     }
 
     text += "[C]<B>THANK YOU! COME AGAIN!</B>\n";
-    text += "[C]SMART-POS BY UNIPROSG\n\n\n\n";
+    text += "[C]SMART-CAFE BY UNIPROSG\n\n\n\n";
 
     return text;
   }
@@ -2615,11 +2619,13 @@ class UniversalPrinter {
       if (sId && !orderSet.has(sId)) {
         orderSet.add(sId);
         totalOrders++;
-        grandTotal += Number(row.SysAmount || row.Amount || 0);
       }
       const mode = String(row.PayMode || row.PayModeName || row.payMode || "CASH").trim().toUpperCase();
       const amt = Number(row.Amount || row.SysAmount || 0);
       paymentTotals[mode] = (paymentTotals[mode] || 0) + amt;
+      if (mode !== "FOC") {
+        grandTotal += amt;
+      }
     });
 
     const paymentRows = Object.entries(paymentTotals)
@@ -2652,11 +2658,11 @@ class UniversalPrinter {
         <div class="summary-box"><div>Total Orders</div><div style="font-size:20px;font-weight:bold">${totalOrders}</div></div>
         <div class="summary-box"><div>Grand Total</div><div style="font-size:20px;font-weight:bold">${symbol}${grandTotal.toFixed(2)}</div></div>
       </div>
-      <div class="section-title">ðŸ’³ PAYMENT MODE BREAKDOWN</div>
+      <div class="section-title">💳 PAYMENT MODE BREAKDOWN</div>
       <table><thead><tr><th>Payment Mode</th><th class="amount">Amount</th></tr></thead><tbody>${paymentRows}</tbody>
         <tfoot><tr class="grand-total"><td>GRAND TOTAL</td><td class="amount">${symbol}${grandTotal.toFixed(2)}</td></tr></tfoot>
       </table>
-      <div class="footer"><p>Â© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
+      <div class="footer"><p>© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
     </body></html>`;
   }
   
@@ -2680,11 +2686,13 @@ class UniversalPrinter {
         if (sId && !orderSet.has(sId)) {
           orderSet.add(sId);
           totalOrders++;
-          grandTotal += Number(row.SysAmount || row.Amount || 0);
         }
         const mode = String(row.PayMode || row.PayModeName || row.payMode || "CASH").trim().toUpperCase();
         const amt = Number(row.Amount || row.SysAmount || 0);
         paymentTotals[mode] = (paymentTotals[mode] || 0) + amt;
+        if (mode !== "FOC") {
+          grandTotal += amt;
+        }
       });
 
       let text = "";

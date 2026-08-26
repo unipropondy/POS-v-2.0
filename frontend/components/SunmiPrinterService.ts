@@ -657,7 +657,7 @@ class SunmiPrinterService {
         await SunmiModule.printText(formatter.center("THANK YOU! COME AGAIN!"));
       }
       await SunmiModule.lineWrap(1);
-      await SunmiModule.printText(formatter.center("SMART-POS BY UNIPROSG"));
+      await SunmiModule.printText(formatter.center("SMART-CAFE BY UNIPROSG"));
 
       if (companySettings.gstPercentage > 0) {
         await SunmiModule.printText(formatter.center(`* Prices include ${companySettings.gstPercentage}% GST`));

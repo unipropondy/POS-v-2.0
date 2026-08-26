@@ -937,7 +937,7 @@ private static escapeHtml(str: string): string {
             ` : `
               <div class="thankyou">THANK YOU! COME AGAIN!</div>
             `}
-            <div class="copyright">SMART-POS BY UNIPROSG</div>
+            <div class="copyright">SMART-CAFE BY UNIPROSG</div>
           </div>
           </div>
         </div>

@@ -57,6 +57,7 @@ export type CartItem = {
   isCombo?: boolean;
   comboSelections?: any[];
   IsDiscountAllowed?: number | boolean;
+  isFoc?: boolean;
 };
 
 export type DiscountInfo = {
@@ -309,6 +310,7 @@ const normalizeCartItem = (item: any, fallback: Partial<CartItem> = {}): CartIte
     IsDiscountAllowed: item.IsDiscountAllowed !== undefined ? item.IsDiscountAllowed : (fallback.IsDiscountAllowed !== undefined ? fallback.IsDiscountAllowed : 1),
     discountAmount: Number(item.discount ?? item.discountAmount ?? item.DiscountAmount ?? fallback.discountAmount ?? discount),
     discountType: item.discountType || item.DiscountType || fallback.discountType || "percentage",
+    isFoc: getNormalizedBoolean(item.isFoc, item.IsFoc, fallback.isFoc),
   };
 };
 
@@ -326,6 +328,7 @@ const canMergeCartItems = (left: CartItem, right: CartItem) => {
     (left.status || "NEW") === "NEW" &&
     (right.status || "NEW") === "NEW" &&
     !!left.isTakeaway === !!right.isTakeaway &&
+    !!left.isFoc === !!right.isFoc &&
     (left.note || "") === (right.note || "") &&
     (left.spicy || "") === (right.spicy || "") &&
     (left.salt || "") === (right.salt || "") &&
@@ -405,6 +408,7 @@ type CartState = {
       discountType?: string;
       isVoided?: boolean;
       isTakeaway?: boolean;
+      isFoc?: boolean;
     },
   ) => void;
   applyBulkItemDiscount: (value: number, type: "percentage" | "fixed") => void;
@@ -1799,6 +1803,7 @@ export const updateCartItemFullGlobal = (
     discount?: number;
     isTakeaway?: boolean;
     isVoided?: boolean;
+    isFoc?: boolean;
   },
 ) => useCartStore.getState().updateCartItemFull(lineItemId, updates);
 

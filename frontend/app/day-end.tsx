@@ -492,6 +492,10 @@ export default function DayEndScreen() {
               <Text style={styles.analysisLabel}>Other Total</Text>
               <Text style={styles.analysisValue}>{formatCurrency(data?.settlementDetail?.otherTotal || 0)}</Text>
             </View>
+            <View style={styles.analysisRow}>
+              <Text style={styles.analysisLabel}>FOC Total</Text>
+              <Text style={styles.analysisValue}>{formatCurrency(data?.settlementDetail?.focTotal || 0)}</Text>
+            </View>
           </View>
 
           {/* Analysis Section */}
@@ -504,6 +508,10 @@ export default function DayEndScreen() {
             <View style={styles.analysisRow}>
               <Text style={styles.analysisLabel}>Sales Amount</Text>
               <Text style={styles.analysisValue}>{formatCurrency(analysis?.totalSales || 0)}</Text>
+            </View>
+            <View style={styles.analysisRow}>
+              <Text style={styles.analysisLabel}>FOC Sales</Text>
+              <Text style={styles.analysisValue}>{formatCurrency(analysis?.focSales || 0)}</Text>
             </View>
             <View style={styles.analysisRow}>
               <Text style={styles.analysisLabel}>Total Tax</Text>

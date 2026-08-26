@@ -145,7 +145,7 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
   }, [paymentMethods, memberFlow]);
 
   // Helper: FOC rows are discounts, not real payments (Disabled: FOC is now a regular paymode)
-  const isFocRow = (r: SplitPaymentRow) => false;
+  const isFocRow = (r: SplitPaymentRow) => String(r.payMode || r.payModeName || "").trim().toUpperCase() === "FOC";
 
   // Sum of ALL rows (including FOC) — used for validation and balance
   const totalAllRows = useMemo(() => {

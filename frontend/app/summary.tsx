@@ -891,6 +891,42 @@ export default function SummaryScreen() {
     setShowVoidModal(true);
   };
 
+  const handleItemClick = (item: any) => {
+    if (item.status === "VOIDED" || item.isVoided) return;
+    if (Platform.OS === 'web') {
+      const confirmFoc = window.confirm(item.isFoc ? `Remove FOC (Free of Cost) status for ${item.name}?` : `Mark ${item.name} as FOC (Free of Cost)?`);
+      if (confirmFoc) {
+        const nextFoc = !item.isFoc;
+        useCartStore.getState().updateCartItemFull(item.lineItemId, { isFoc: nextFoc });
+        showToast({
+          type: "success",
+          message: nextFoc ? "Item Marked FOC" : "FOC Removed",
+          subtitle: nextFoc ? `${item.name} is now FOC` : `${item.name} is no longer FOC`
+        });
+      }
+      return;
+    }
+    Alert.alert(
+      item.name,
+      item.isFoc ? "Remove FOC (Free of Cost) status?" : "Mark this item as FOC (Free of Cost)?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: item.isFoc ? "Remove FOC" : "Mark FOC", 
+          onPress: () => {
+            const nextFoc = !item.isFoc;
+            useCartStore.getState().updateCartItemFull(item.lineItemId, { isFoc: nextFoc });
+            showToast({
+              type: "success",
+              message: nextFoc ? "Item Marked FOC" : "FOC Removed",
+              subtitle: nextFoc ? `${item.name} is now FOC` : `${item.name} is no longer FOC`
+            });
+          } 
+        }
+      ]
+    );
+  };
+
   const handleSplitBill = () => {
     // Reset split quantities to 0 for all items in cart
     const initialSplit: Record<string, number> = {};
@@ -1211,7 +1247,7 @@ export default function SummaryScreen() {
 
   const takeawayCharges = settings.takeawayCharges || 0;
 
-  const { grossTotal, totalItemDiscount, scEligibleSubtotal, calcTakeawayChargeAmt, takeawayQty, hasMixedTWCharges, singleTWRate } = useMemo(() => {
+  const { grossTotal, totalItemDiscount, totalFocAmount, scEligibleSubtotal, calcTakeawayChargeAmt, takeawayQty, hasMixedTWCharges, singleTWRate } = useMemo(() => {
     let firstRate: number | null = null;
     let mixed = false;
 
@@ -1235,6 +1271,7 @@ export default function SummaryScreen() {
       }
 
       const itemSubtotal = baseTotal - itemDiscount;
+      const itemFocAmount = item.isFoc ? itemSubtotal : 0;
       const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway || (item as any).isTakeaway === true || (item as any).IsTakeaway === true || String((item as any).isTakeaway) === "1" || String((item as any).IsTakeaway) === "1";
       const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true || Number(item.IsServiceCharge) === 1 || item.IsServiceCharge === true);
       
@@ -1254,11 +1291,12 @@ export default function SummaryScreen() {
       return {
         grossTotal: acc.grossTotal + baseTotal,
         totalItemDiscount: acc.totalItemDiscount + itemDiscount,
-        scEligibleSubtotal: acc.scEligibleSubtotal + (isSC ? itemSubtotal : 0),
-        calcTakeawayChargeAmt: acc.calcTakeawayChargeAmt + itemTWCharge,
-        takeawayQty: acc.takeawayQty + (isTakeawayItem ? item.qty : 0),
+        totalFocAmount: acc.totalFocAmount + itemFocAmount,
+        scEligibleSubtotal: acc.scEligibleSubtotal + (isSC && !item.isFoc ? itemSubtotal : 0),
+        calcTakeawayChargeAmt: acc.calcTakeawayChargeAmt + (isTakeawayItem && !item.isFoc ? itemTWCharge : 0),
+        takeawayQty: acc.takeawayQty + (isTakeawayItem && !item.isFoc ? item.qty : 0),
       };
-    }, { grossTotal: 0, totalItemDiscount: 0, scEligibleSubtotal: 0, calcTakeawayChargeAmt: 0, takeawayQty: 0 });
+    }, { grossTotal: 0, totalItemDiscount: 0, totalFocAmount: 0, scEligibleSubtotal: 0, calcTakeawayChargeAmt: 0, takeawayQty: 0 });
 
     return {
       ...reduced,
@@ -1283,22 +1321,24 @@ export default function SummaryScreen() {
     return Math.min(discountInfo.value, subtotal);
   }, [discountInfo, subtotal]);
 
-  const netAfterDiscount = useMemo(() => subtotal - discountAmount, [subtotal, discountAmount]);
+  const netAfterDiscount = useMemo(() => Math.max(0, subtotal - discountAmount - totalFocAmount), [subtotal, discountAmount, totalFocAmount]);
 
   // Pro-rate the bill-level discount to service-charge-eligible items
   const scEligibleNet = useMemo(() => {
-    if (subtotal <= 0) return 0;
-    const proportion = scEligibleSubtotal / subtotal;
+    const payableSubtotal = Math.max(0, subtotal - totalFocAmount);
+    if (payableSubtotal <= 0) return 0;
+    const proportion = scEligibleSubtotal / payableSubtotal;
     return Math.max(0, scEligibleSubtotal - proportion * discountAmount);
-  }, [scEligibleSubtotal, subtotal, discountAmount]);
+  }, [scEligibleSubtotal, subtotal, totalFocAmount, discountAmount]);
 
   const billDiscountProportion = useMemo(() => {
     if (!discountInfo?.applied) return 0;
     if (discountInfo.type === "percentage") {
       return discountInfo.value / 100;
     }
-    return subtotal > 0 ? (discountAmount / subtotal) : 0;
-  }, [discountInfo, subtotal, discountAmount]);
+    const payableSubtotal = Math.max(0, subtotal - totalFocAmount);
+    return payableSubtotal > 0 ? (discountAmount / payableSubtotal) : 0;
+  }, [discountInfo, subtotal, totalFocAmount, discountAmount]);
 
   const currentTakeawayCharge = useMemo(() => {
     if (!takeawayChargeApplied) return 0;
@@ -1722,15 +1762,19 @@ export default function SummaryScreen() {
                 const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway || (item as any).isTakeaway === true || (item as any).IsTakeaway === true || String((item as any).isTakeaway) === "1" || String((item as any).IsTakeaway) === "1";
                 const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true) && useGeneralSettingsStore.getState().settings.SVCIdentification !== false;
                 return (
-                  <View style={[
-                    styles.row,
-                    isSC && {
-                      borderWidth: 1.5,
-                      borderColor: Theme.dangerBorder,
-                      borderLeftColor: Theme.danger,
-                      backgroundColor: Theme.dangerBg,
-                    }
-                  ]}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => handleItemClick(item)}
+                    style={[
+                      styles.row,
+                      isSC && {
+                        borderWidth: 1.5,
+                        borderColor: Theme.dangerBorder,
+                        borderLeftColor: Theme.danger,
+                        backgroundColor: Theme.dangerBg,
+                      }
+                    ]}
+                  >
                   <View style={styles.qtyBadge}>
                     <Text style={styles.qtyBadgeText}>{formatQty(item.qty)}</Text>
                   </View>
@@ -1746,6 +1790,7 @@ export default function SummaryScreen() {
                       {item.name}
                       {isTakeawayItem && " (Takeaway 🛍️)"}
                       {item.isDishReward && " (Loyalty Reward 🎁)"}
+                      {item.isFoc && " (FOC 🎁)"}
                       {(item as any).status === "VOIDED" && " (VOIDED)"}
                     </Text>
                     {(item.spicy && item.spicy !== "Medium") ||
@@ -1817,14 +1862,14 @@ export default function SummaryScreen() {
                   </View>
 
                   <View style={[styles.priceBlock, { alignItems: 'flex-end', justifyContent: 'center' }]}>
-                    {(Number(item.discountAmount ?? item.discount ?? 0)) > 0 && (
+                    {(item.isFoc || (Number(item.discountAmount ?? item.discount ?? 0)) > 0) && (
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                         <Text style={[styles.price, { fontSize: 13, textDecorationLine: "line-through", color: Theme.textMuted }]}>
                           {currencySymbol}{((item.price || 0) * item.qty).toFixed(2)}
                         </Text>
-                        <View style={{ backgroundColor: (Theme as any).successBg || '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                          <Text style={{ color: Theme.success || '#16a34a', fontSize: 11, fontFamily: Fonts.bold }}>
-                            {(() => {
+                        <View style={{ backgroundColor: item.isFoc ? '#dbeafe' : ((Theme as any).successBg || '#dcfce7'), paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                          <Text style={{ color: item.isFoc ? '#2563eb' : (Theme.success || '#16a34a'), fontSize: 11, fontFamily: Fonts.bold }}>
+                            {item.isFoc ? "FOC" : (() => {
                               const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
                               const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
                               const rawDiscAmt = Number(item.discountAmount ?? item.discount ?? 0);
@@ -1847,7 +1892,7 @@ export default function SummaryScreen() {
                       ]}
                     >
                       {currencySymbol}
-                      {(() => {
+                      {item.isFoc ? "0.00" : (() => {
                         const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
                         const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
                         const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
@@ -1868,7 +1913,7 @@ export default function SummaryScreen() {
                       <Ionicons name="trash-outline" size={18} color={Theme.danger} />
                     </TouchableOpacity>
                   )}
-                </View>
+                </TouchableOpacity>
                 );
               }}
             />
