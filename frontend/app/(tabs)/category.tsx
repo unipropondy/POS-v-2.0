@@ -279,9 +279,7 @@ const TableItemComponent = React.memo(
       borderWidth = 3;
     }
 
-    const bgColor = status !== 0 ? ui.lightBg : Theme.bgCard;
-    const textColor = status === 0 ? Theme.textPrimary : ui.color;
-    let labelColor = Theme.textPrimary;
+
 
 
     let timeText = "";
@@ -300,11 +298,23 @@ const TableItemComponent = React.memo(
     const ySize = item.YSize !== undefined && item.YSize !== null && Number(item.YSize) > 0 ? Number(item.YSize) : 80;
 
     // Outer table size calculations (leaving space for chairs)
-    const maxTableDim = itemSize - 28; // Padding on all sides for chairs
-    const maxDimension = Math.max(xSize, ySize) || 100;
+    let tableW = 0;
+    let tableH = 0;
 
-    let tableW = isAbsoluteLayout ? (xSize * 0.6) * layoutScale : Math.max(itemSize * 0.45, (xSize / maxDimension) * maxTableDim);
-    let tableH = isAbsoluteLayout ? (ySize * 0.6) * layoutScale : Math.max(itemSize * 0.45, (ySize / maxDimension) * maxTableDim);
+    if (isAbsoluteLayout) {
+      tableW = (xSize * 0.6) * layoutScale;
+      tableH = (ySize * 0.6) * layoutScale;
+    } else {
+      // Standard grid view layout - scale to fit nicely in grid cell itemSize
+      if (tableType === "round" || tableType === "square") {
+        const size = itemSize * 0.52;
+        tableW = size;
+        tableH = size;
+      } else {
+        tableW = itemSize * 0.62;
+        tableH = itemSize * 0.44;
+      }
+    }
 
     let borderRadius = 8; // rectangular default
     if (tableType === "square") {
@@ -319,370 +329,102 @@ const TableItemComponent = React.memo(
       borderRadius = size / 2;
     } else if (tableType === "oval") {
       borderRadius = Math.min(tableW, tableH) / 2;
-    } else if (tableType === "rectangular") {
-      borderRadius = 8;
-    } else {
-      borderRadius = 12;
     }
 
+    // Centering coordinates
     const tx = isAbsoluteLayout ? 0 : (itemSize - tableW) / 2;
     const ty = isAbsoluteLayout ? 0 : (itemSize - tableH) / 2;
     const cx = isAbsoluteLayout ? tableW / 2 : itemSize / 2;
     const cy = isAbsoluteLayout ? tableH / 2 : itemSize / 2;
 
-    // Dynamically adjust chair size based on seat density to prevent overlap
-    let chairSize = Math.max(10, itemSize * 0.09);
+    // Chair dimensions
+    let chairSize = isAbsoluteLayout ? Math.max(10, 90 * 0.12 * layoutScale) : Math.max(8, itemSize * 0.1);
     if (seatsCount > 10) {
       chairSize = Math.max(5, chairSize * (10 / seatsCount) * 1.5);
     }
-    
-    const offset = 4; // elegant gap between table and chairs
-    
-    // Override AVAILABLE colors for premium beige look matching reference
-    let activeColor = status === 0 ? "#D1C7BD" : ui.color;
-    let activeBg = status === 0 ? "#FAF8F5" : ui.lightBg;
+    const chairW = chairSize * 1.35;
+    const chairH = chairSize * 0.95;
+    const offset = 3.5; // Gap between table and chairs
 
-    if (backgroundTheme === "light") {
-      if (status === 0) {
-        activeColor = "#22C55E"; // Free -> clean emerald green
-        activeBg = "#FFFFFF";
-      } else if (isPaid) {
-        activeColor = "#F43F5E";
-        activeBg = "#FFFFFF";
-      } else {
-        const effectiveStatus = ((status === 1 || status === 3) && isOvertime) ? 4 : status;
-        switch (effectiveStatus) {
-          case 1: // Dining
-            activeColor = "#22C55E";
-            activeBg = "#FFFFFF";
-            break;
-          case 2: // Checkout
-            activeColor = "#F97316";
-            activeBg = "#FFFFFF";
-            break;
-          case 3: // Hold
-            activeColor = "#3B82F6";
-            activeBg = "#FFFFFF";
-            break;
-          case 4: // Overtime
-            activeColor = "#8B5CF6";
-            activeBg = "#FFFFFF";
-            break;
-          case 5: // Reserved
-            activeColor = "#3B82F6";
-            activeBg = "#FFFFFF";
-            break;
-        }
-      }
-    }
-    
-    // Label color mapping for high-readability text
-    if (backgroundTheme === "light") {
-      labelColor = "#000000";
-    } else if (status === 0) {
-      labelColor = "#000000";
-    } else if (isPaid) {
-      labelColor = "#9E1F4B";
-    } else {
-      switch (status) {
-        case 1: labelColor = "#1B5E20"; break; // Dark green
-        case 2: labelColor = "#B66000"; break; // Dark yellow/orange
-        case 3: labelColor = "#0D47A1"; break; // Dark blue
-        case 4:
-        case 5: labelColor = "#B71C1C"; break; // Dark red
-        default: labelColor = activeColor;
+    // Colors matching the reference image
+    // Solid white table bodies
+    const gradientColors: [string, string] = ["#FFFFFF", "#FFFFFF"];
+    const bgColor = "#FFFFFF";
+
+    let activeColor = "#D2C8BC"; // Available/Empty light grey border
+    let activeBg = "#FFFFFF";
+
+    if (status !== 0) {
+      const effectiveStatus = ((status === 1 || status === 3) && isOvertime) ? 4 : status;
+      switch (effectiveStatus) {
+        case 1: // Dining (Green)
+          activeColor = "#2E7D32";
+          break;
+        case 2: // Checkout (Yellow/Orange)
+          activeColor = "#F57C00";
+          break;
+        case 3: // Hold (Blue)
+          activeColor = "#1565C0";
+          break;
+        case 4: // Overtime (Purple)
+          activeColor = "#8E24AA";
+          break;
+        case 5: // Reserved (Red/Pink)
+          activeColor = "#D81B60";
+          break;
       }
     }
 
-    // Chair styling (white background with matching color border, top-down chair backrest design!)
-    const chairColor = status === 0 ? (backgroundTheme === "light" ? "#22C55E" : "#D1C7BD") : activeColor;
-    const chairBg = "#FFFFFF";
+    const tableBorderColor = activeColor;
+    const labelColor = "#1E293B"; // High contrast dark charcoal table numbers
+    const textColor = activeColor; // Text color matching status
 
-    // Chair placement calculation
+    // Chair placement
     const chairPositions: { x: number; y: number; rotate?: string; backrestStyle?: any }[] = [];
     if (seatsCount > 0) {
       if (tableType === "round" || tableType === "oval") {
         const rx = tableW / 2;
         const ry = tableH / 2;
-        const radiusOffset = chairSize / 2 + offset;
-        for (let i = 0; i < seatsCount; i++) {
-          const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2; // start from top
-          const x = cx + (rx + radiusOffset) * Math.cos(angle) - chairSize / 2;
-          const y = cy + (ry + radiusOffset) * Math.sin(angle) - chairSize / 2;
-          
-          // Rotation so backrest (top border) faces outwards
-          const rotationAngle = angle + Math.PI / 2;
-          chairPositions.push({ 
-            x, 
-            y, 
-            rotate: `${rotationAngle}rad`,
-            backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 }
-          });
-        }
-      } else {
-        // Rectangular / Square logic
-        let topCount = 0;
-        let bottomCount = 0;
-        let leftCount = 0;
-        let rightCount = 0;
-
-        if (seatsCount === 2) {
-          leftCount = 1;
-          rightCount = 1;
-        } else {
-          const base = Math.floor(seatsCount / 4);
-          const rem = seatsCount % 4;
-          topCount = base + (rem > 0 ? 1 : 0);
-          bottomCount = base + (rem > 1 ? 1 : 0);
-          leftCount = base + (rem > 2 ? 1 : 0);
-          rightCount = base;
-        }
-
-        // Top chairs (backrest is on the top)
-        for (let i = 0; i < topCount; i++) {
-          const x = tx + (i + 0.5) * (tableW / topCount) - chairSize / 2;
-          const y = ty - chairSize - offset;
-          chairPositions.push({ 
-            x, 
-            y, 
-            backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 } 
-          });
-        }
-        // Bottom chairs (backrest is on the bottom)
-        for (let i = 0; i < bottomCount; i++) {
-          const x = tx + (i + 0.5) * (tableW / bottomCount) - chairSize / 2;
-          const y = ty + tableH + offset;
-          chairPositions.push({ 
-            x, 
-            y, 
-            backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.2, borderBottomLeftRadius: 1.5, borderBottomRightRadius: 1.5 } 
-          });
-        }
-        // Left chairs (backrest is on the left)
-        for (let i = 0; i < leftCount; i++) {
-          const x = tx - chairSize - offset;
-          const y = ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2;
-          chairPositions.push({ 
-            x, 
-            y, 
-            backrestStyle: { left: 0, top: 0, bottom: 0, width: 2.2, borderTopLeftRadius: 1.5, borderBottomLeftRadius: 1.5 } 
-          });
-        }
-        // Right chairs (backrest is on the right)
-        for (let i = 0; i < rightCount; i++) {
-          const x = tx + tableW + offset;
-          const y = ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2;
-          chairPositions.push({ 
-            x, 
-            y, 
-            backrestStyle: { right: 0, top: 0, bottom: 0, width: 2.2, borderTopRightRadius: 1.5, borderBottomRightRadius: 1.5 } 
-          });
-        }
-      }
-    }
-
-    // Dynamic color gradient for the table body
-    let gradientColors: [string, string] = ["#FFFFFF", "#FFFFFF"];
-    let tableBorderColor = activeColor;
-    if (backgroundTheme === "light") {
-      gradientColors = ["#FFFFFF", "#FFFFFF"];
-      tableBorderColor = activeColor;
-    } else if (status === 0) {
-      gradientColors = ["#FAF8F5", "#F0EAE1"]; // Subtle blonde-wood / warm linen look
-      tableBorderColor = "#D1C7BD";
-    } else if (isPaid) {
-      gradientColors = ["#FFF1F2", "#FFE4E6"];
-      tableBorderColor = "#FDA4AF";
-    } else {
-      const effectiveStatus = ((status === 1 || status === 3) && isOvertime) ? 4 : status;
-      switch (effectiveStatus) {
-        case 1: // Dining (Subtle Green)
-          gradientColors = ["#F0FDF4", "#DCFCE7"];
-          tableBorderColor = "#22c55e";
-          break;
-        case 2: // Checkout (Subtle Orange)
-          gradientColors = ["#FFF7ED", "#FFEDD5"];
-          tableBorderColor = "#fd7e14";
-          break;
-        case 3: // Hold (Subtle Blue)
-          gradientColors = ["#F0F9FF", "#E0F2FE"];
-          tableBorderColor = "#3b82f6";
-          break;
-        case 4: // Overtime (Subtle Purple)
-          gradientColors = ["#F5F3FF", "#EDE9FE"];
-          tableBorderColor = "#8b5cf6";
-          break;
-        case 5: // Reserved (Subtle Red)
-          gradientColors = ["#FEF2F2", "#FEE2E2"];
-          tableBorderColor = "#ef4444";
-          break;
-      }
-    }
-
-    // Placings/plates coordinates inside table body
-    const platePositions: { x: number; y: number }[] = [];
-    if (seatsCount > 0) {
-      if (tableType === "round" || tableType === "oval") {
-        const plateRadiusOffset = Math.max(6, (tableW / 2) - 8);
+        const radiusOffset = chairH / 2 + offset;
         for (let i = 0; i < seatsCount; i++) {
           const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2;
-          const px = tableW / 2 + plateRadiusOffset * Math.cos(angle);
-          const py = tableH / 2 + plateRadiusOffset * Math.sin(angle);
-          platePositions.push({ x: px, y: py });
+          const x = cx + (rx + radiusOffset) * Math.cos(angle) - chairW / 2;
+          const y = cy + (ry + radiusOffset) * Math.sin(angle) - chairH / 2;
+          const rotationAngle = angle + Math.PI / 2;
+          chairPositions.push({
+            x,
+            y,
+            rotate: `${rotationAngle}rad`,
+            backrestStyle: { top: 0, left: 0, right: 0, height: 3, borderTopLeftRadius: 3, borderTopRightRadius: 3 }
+          });
         }
       } else {
-        let topCount = 0;
-        let bottomCount = 0;
-        let leftCount = 0;
-        let rightCount = 0;
+        // Rectangular / Square layout (Top & Bottom only, matching reference image)
+        const topCount = Math.ceil(seatsCount / 2);
+        const bottomCount = Math.floor(seatsCount / 2);
 
-        if (seatsCount === 2) {
-          leftCount = 1;
-          rightCount = 1;
-        } else {
-          const base = Math.floor(seatsCount / 4);
-          const rem = seatsCount % 4;
-          topCount = base + (rem > 0 ? 1 : 0);
-          bottomCount = base + (rem > 1 ? 1 : 0);
-          leftCount = base + (rem > 2 ? 1 : 0);
-          rightCount = base;
-        }
-
-        const distFromEdge = Math.min(8, tableH * 0.18);
-        const distFromEdgeH = Math.min(8, tableW * 0.18);
-
+        // Top chairs (backrest at top)
         for (let i = 0; i < topCount; i++) {
-          platePositions.push({ x: (i + 0.5) * (tableW / topCount), y: distFromEdge });
+          const x = cx - tableW / 2 + (i + 0.5) * (tableW / topCount) - chairW / 2;
+          const y = cy - tableH / 2 - chairH - offset;
+          chairPositions.push({
+            x,
+            y,
+            backrestStyle: { top: 0, left: 0, right: 0, height: 2.5, borderTopLeftRadius: 2, borderTopRightRadius: 2 }
+          });
         }
+
+        // Bottom chairs (backrest at bottom)
         for (let i = 0; i < bottomCount; i++) {
-          platePositions.push({ x: (i + 0.5) * (tableW / bottomCount), y: tableH - distFromEdge });
-        }
-        for (let i = 0; i < leftCount; i++) {
-          platePositions.push({ x: distFromEdgeH, y: (i + 0.5) * (tableH / leftCount) });
-        }
-        for (let i = 0; i < rightCount; i++) {
-          platePositions.push({ x: tableW - distFromEdgeH, y: (i + 0.5) * (tableH / rightCount) });
+          const x = cx - tableW / 2 + (i + 0.5) * (tableW / bottomCount) - chairW / 2;
+          const y = cy + tableH / 2 + offset;
+          chairPositions.push({
+            x,
+            y,
+            backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.5, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 }
+          });
         }
       }
-    }
-
-    if (!isAbsoluteLayout) {
-      return (
-        <TouchableOpacity
-          activeOpacity={isPaid ? 1 : 0.8}
-          disabled={isPaid}
-          style={[
-            styles.tableBox,
-            {
-              width: itemSize,
-              height: itemSize,
-              borderColor,
-              backgroundColor: bgColor,
-              borderWidth,
-              elevation: status !== 0 ? 0 : 2,
-              opacity: isPaid ? 0.92 : 1,
-              justifyContent: "center",
-              alignItems: "center",
-              borderRadius: 12,
-            },
-          ]}
-          onPress={() => onPress(item, tableData)}
-        >
-          <Text
-            style={[
-              styles.tableNumber,
-              { 
-                fontSize: numberFont, 
-                color: labelColor, 
-                fontFamily: Fonts.black,
-                fontWeight: "900"
-              },
-            ]}
-          >
-            {item.label}
-          </Text>
-
-          {status === 0 && (
-            <Text
-              style={{
-                fontSize: smallFont - 1,
-                color: "#64748B",
-                fontFamily: Fonts.medium,
-                marginTop: 2,
-              }}
-            >
-              {seatsCount} Pax
-            </Text>
-          )}
-
-          {status !== 0 && (
-            <View style={[styles.tableInfo, { gap: 1 }]}>
-              <View
-                style={[
-                  styles.statusChip,
-                  { 
-                    backgroundColor: activeBg, 
-                    borderColor: activeColor,
-                    paddingHorizontal: 4,
-                    paddingVertical: 2,
-                    borderRadius: 6,
-                    marginBottom: 1,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusChipText,
-                    { color: activeColor, fontSize: smallFont },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {tableData?.customerName ? tableData.customerName : ui.text}
-                </Text>
-              </View>
-
-              <Text
-                style={{
-                  fontSize: smallFont - 1,
-                  color: labelColor,
-                  fontFamily: Fonts.medium,
-                  textAlign: "center",
-                  marginTop: 1,
-                  marginBottom: 1,
-                }}
-              >
-                {seatsCount} Pax
-              </Text>
-
-              {status !== 5 && (
-                <View style={styles.tableStats}>
-                  {timeText ? (
-                    <Text style={[styles.timeText, { fontSize: smallFont - 1, color: textColor }]}>
-                      <Ionicons name="time-outline" size={smallFont - 1} color={textColor} /> {timeText}
-                    </Text>
-                  ) : null}
-                  {billAmount > 0 && (
-                    <Text style={[styles.billText, { fontSize: smallFont + 1, color: textColor, fontWeight: "800" }]}>
-                      ${billAmount.toFixed(2)}
-                    </Text>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-
-          {status === 5 && (
-            <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
-              <Ionicons name="lock-closed" size={16} color={ui.color} />
-              {tableData?.lockedByName ? (
-                <Text style={[styles.lockedNameText, { fontSize: smallFont - 1 }]}>
-                  {tableData.lockedByName}
-                </Text>
-              ) : null}
-            </View>
-          )}
-        </TouchableOpacity>
-      );
     }
 
     return (
@@ -690,6 +432,16 @@ const TableItemComponent = React.memo(
         activeOpacity={isPaid ? 1 : 0.8}
         disabled={isPaid}
         style={isAbsoluteLayout ? {
+          width: tableW,
+          height: tableH,
+          position: "relative",
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "transparent",
+          borderColor: "transparent",
+          borderWidth: 0,
+          opacity: isPaid ? 0.92 : 1,
+        } : {
           width: itemSize,
           height: itemSize,
           position: "relative",
@@ -698,21 +450,8 @@ const TableItemComponent = React.memo(
           backgroundColor: "transparent",
           borderColor: "transparent",
           borderWidth: 0,
-          borderRadius: 14,
-          padding: 8,
           opacity: isPaid ? 0.92 : 1,
-        } : [
-          styles.tableBox,
-          {
-            width: itemSize,
-            height: itemSize,
-            borderColor,
-            backgroundColor: bgColor,
-            borderWidth,
-            elevation: status !== 0 ? 0 : 2,
-            opacity: isPaid ? 0.92 : 1,
-          },
-        ]}
+        }}
         onPress={() => onPress(item, tableData)}
       >
         {/* Render Chairs */}
@@ -725,37 +464,20 @@ const TableItemComponent = React.memo(
                 position: "absolute",
                 left: pos.x,
                 top: pos.y,
-                width: chairSize,
-                height: chairSize,
-                borderRadius: chairSize / 4,
-                borderWidth: 1.2,
-                borderColor: chairColor,
-                backgroundColor: chairBg,
+                width: chairW,
+                height: chairH,
+                borderRadius: 3,
+                borderWidth: 1,
+                borderColor: "#8C6239", // wood Outline
+                backgroundColor: "#DFD0BC", // warm wood seat
                 transform,
-                justifyContent: "center",
-                alignItems: "center",
                 overflow: "hidden",
               }}
             >
-              {/* Cushion */}
-              <View style={{
-                width: "70%",
-                height: "70%",
-                borderRadius: chairSize / 6,
-                backgroundColor: status === 0 ? "#FAF6F0" : activeBg,
-                opacity: 0.85,
-                justifyContent: "center",
-                alignItems: "center",
-              }}>
-                <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.45, color: status === 0 ? "#64748B" : activeColor }}>
-                  {idx + 1}
-                </Text>
-              </View>
-              {/* Realistic Backrest bar */}
               {pos.backrestStyle && (
                 <View style={[{
                   position: "absolute",
-                  backgroundColor: chairColor,
+                  backgroundColor: "#8C6239",
                 }, pos.backrestStyle]} />
               )}
             </View>
@@ -797,8 +519,11 @@ const TableItemComponent = React.memo(
             height: tableH,
             borderRadius,
             borderColor: tableBorderColor,
-            borderWidth: 2,
+            borderWidth: 2.2,
+            backgroundColor: "#FFFFFF",
             overflow: "hidden",
+            justifyContent: "center",
+            alignItems: "center",
             ...Platform.select({
               ios: { shadowColor: tableBorderColor, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 3 },
               android: { elevation: 2 },
@@ -806,168 +531,125 @@ const TableItemComponent = React.memo(
             }),
           }}
         >
-          <LinearGradient
-            colors={gradientColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{
-              flex: 1,
-              width: "100%",
-              height: "100%",
-              padding: 2,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {/* Inner table margin line for craftsmanship style */}
-            <View style={{
-              flex: 1,
-              width: "100%",
-              height: "100%",
-              borderRadius: Math.max(0, borderRadius - 2),
-              borderWidth: 1,
-              borderColor: status === 0 ? "rgba(163, 117, 78, 0.25)" : "rgba(255, 255, 255, 0.4)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}>
-          <Text
-            style={[
-              styles.tableNumber,
-              { 
-                fontSize: Math.max(12, numberFont * (tableW / itemSize) * 0.9), 
-                color: labelColor, 
-                marginTop: 0, 
-                marginBottom: 0,
-                fontFamily: Fonts.black,
-                fontWeight: "900"
-              },
-            ]}
-          >
-            {item.label}
-          </Text>
-
-          {status === 0 && (
+          {/* Inner table margin line for craftsmanship style */}
+          <View style={{
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            borderRadius: Math.max(0, borderRadius - 2),
+            borderWidth: 1,
+            borderColor: status === 0 ? "rgba(210, 200, 188, 0.3)" : "rgba(255, 255, 255, 0.4)",
+            justifyContent: "center",
+            alignItems: "center",
+          }}>
             <Text
-              style={{
-                fontSize: Math.max(8, (smallFont - 1) * (tableW / itemSize) * 0.9),
-                color: "#64748B",
-                fontFamily: Fonts.medium,
-                marginTop: 2,
-              }}
+              style={[
+                styles.tableNumber,
+                { 
+                  fontSize: Math.max(12, numberFont * (tableW / itemSize) * 0.9), 
+                  color: labelColor, 
+                  marginTop: 0, 
+                  marginBottom: 0,
+                  fontFamily: Fonts.black,
+                  fontWeight: "900"
+                },
+              ]}
             >
-              {seatsCount} Pax
+              {item.label}
             </Text>
-          )}
 
-          {status !== 0 && (
-            <View style={[styles.tableInfo, { gap: 1 }]}>
-              <View
-                style={[
-                  styles.statusChip,
-                  { 
-                    backgroundColor: activeBg, 
-                    borderColor: activeColor,
-                    paddingHorizontal: 4,
-                    paddingVertical: 0.5,
-                    borderRadius: 4,
-                    maxWidth: tableW - 8,
-                    marginBottom: 0,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusChipText,
-                    { color: activeColor, fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.8) },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {tableData?.customerName ? tableData.customerName : ui.text}
+            {/* Status Badge Pill */}
+            {status !== 0 && (
+              <View style={{
+                backgroundColor: activeColor, // Solid status color background
+                paddingHorizontal: 6,
+                paddingVertical: 1,
+                borderRadius: 10,
+                marginTop: 2,
+                marginBottom: 1,
+                maxWidth: tableW - 8,
+                alignItems: "center",
+                justifyContent: "center",
+              }}>
+                <Text style={{
+                  color: "#FFFFFF", // White text
+                  fontFamily: Fonts.bold,
+                  fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.8),
+                  fontWeight: "bold",
+                }} numberOfLines={1}>
+                  {ui.text}
                 </Text>
               </View>
+            )}
 
-              <Text
-                style={{
-                  fontSize: Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8),
-                  color: labelColor,
-                  fontFamily: Fonts.medium,
-                  textAlign: "center",
-                  marginTop: 1,
-                  marginBottom: 1,
-                }}
-              >
-                {seatsCount} Pax
-              </Text>
+            {/* Pax / Capacity label */}
+            <Text style={{
+              fontFamily: Fonts.medium,
+              fontSize: Math.max(8, (smallFont - 1) * (tableW / itemSize) * 0.95),
+              color: "#64748B", // Slate grey
+              marginTop: 1,
+            }}>
+              {seatsCount} Pax
+            </Text>
 
-              {status !== 0 && status !== 5 && (
-                <View style={styles.tableStats}>
-                  {timeText ? (
-                    <Text
-                      style={[
-                        styles.timeText,
-                        { fontSize: Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8), color: textColor },
-                      ]}
-                    >
-                      <Ionicons
-                        name="time-outline"
-                        size={Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8)}
-                        color={textColor}
-                      />{" "}
-                      {timeText}
-                    </Text>
-                  ) : null}
-                  {billAmount > 0 && (
-                    <Text
-                      style={[
-                        styles.billText,
-                        {
-                          fontSize: Math.max(8, (smallFont + 1) * (tableW / itemSize) * 0.9),
-                          color: textColor,
-                          fontWeight: "800",
-                        },
-                      ]}
-                    >
-                      ${billAmount.toFixed(2)}
-                    </Text>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-
-          {status === 5 && (
-            <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
-              <Ionicons
-                name="lock-closed"
-                size={Math.max(10, tableW * 0.15)}
-                color={ui.color}
-              />
-              {tableData?.lockedByName ? (
-                <View
-                  style={{
-                    backgroundColor: ui.color,
-                    paddingHorizontal: 4,
-                    paddingVertical: 1,
-                    borderRadius: 3,
-                    maxWidth: tableW - 8,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: Math.max(7, (smallFont - 2) * (tableW / itemSize)),
-                      color: "#FFF",
-                      fontWeight: "bold",
-                    }}
-                    numberOfLines={1}
-                  >
-                    {tableData.lockedByName}
+            {/* Time & Bill amount */}
+            {status !== 0 && status !== 5 && (
+              <View style={{ alignItems: "center", marginTop: 1 }}>
+                {timeText ? (
+                  <Text style={{
+                    fontSize: Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8),
+                    color: textColor,
+                    fontFamily: Fonts.medium,
+                  }}>
+                    <Ionicons name="time-outline" size={Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8)} color={textColor} /> {timeText}
                   </Text>
-                </View>
-              ) : null}
-            </View>
-          )}
-            </View>
-          </LinearGradient>
+                ) : null}
+                {billAmount > 0 && (
+                  <Text style={{
+                    fontSize: Math.max(8, (smallFont + 1) * (tableW / itemSize) * 0.9),
+                    color: textColor,
+                    fontFamily: Fonts.black,
+                    fontWeight: "900",
+                    marginTop: 1,
+                  }}>
+                    ${billAmount.toFixed(2)}
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {status === 5 && (
+              <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
+                <Ionicons
+                  name="lock-closed"
+                  size={Math.max(10, tableW * 0.15)}
+                  color={ui.color}
+                />
+                {tableData?.lockedByName ? (
+                  <View
+                    style={{
+                      backgroundColor: ui.color,
+                      paddingHorizontal: 4,
+                      paddingVertical: 1,
+                      borderRadius: 3,
+                      maxWidth: tableW - 8,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: Math.max(7, (smallFont - 2) * (tableW / itemSize)),
+                        color: "#FFF",
+                        fontWeight: "bold",
+                      }}
+                      numberOfLines={1}
+                    >
+                      {tableData.lockedByName}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+          </View>
         </View>
 
         {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
@@ -994,30 +676,31 @@ const TableItemComponent = React.memo(
               />
             </View>
           )}
-          {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
-          {terminalStatus && terminalStatus !== "idle" && (
-            <TouchableOpacity
-              style={[
-                styles.terminalProcessingBadge,
-                (terminalStatus === "cancelled" || terminalStatus === "failed") &&
-                  styles.terminalErrorBadge,
-              ]}
-              onPress={(e) => {
-                e.stopPropagation();
-                useTerminalPaymentStore.getState().clearSession(tableId);
-              }}
-            >
-              {terminalStatus === "processing" ? (
-                <RotatingSyncIcon size={20} color="#3b82f6" />
-              ) : (
-                <Ionicons name="alert" size={16} color="#ffffff" />
-              )}
-            </TouchableOpacity>
-          )}
+        {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
+        {terminalStatus && terminalStatus !== "idle" && (
+          <TouchableOpacity
+            style={[
+              styles.terminalProcessingBadge,
+              (terminalStatus === "cancelled" || terminalStatus === "failed") &&
+                styles.terminalErrorBadge,
+            ]}
+            onPress={(e) => {
+              e.stopPropagation();
+              useTerminalPaymentStore.getState().clearSession(tableId);
+            }}
+          >
+            {terminalStatus === "processing" ? (
+              <RotatingSyncIcon size={20} color="#3b82f6" />
+            ) : (
+              <Ionicons name="alert" size={16} color="#ffffff" />
+            )}
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   },
 );
+
 
 const TableGridSkeleton = ({
   itemSize,
