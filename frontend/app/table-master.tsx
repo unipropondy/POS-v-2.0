@@ -173,55 +173,117 @@ const DraggableTable = ({
   const cx = tableW / 2;
   const cy = tableH / 2;
 
-  let chairSize = Math.max(10, 90 * 0.12 * layoutScale);
+  let chairSize = Math.max(8, 90 * 0.09 * layoutScale);
   if (seatsCount > 10) {
     chairSize = Math.max(5, chairSize * (10 / seatsCount) * 1.5);
   }
-  const chairW = chairSize * 1.35;
-  const chairH = chairSize * 0.95;
-  const offset = 3.5;
+  
+  const offset = 4;
+  const activeColor = isSelected ? "#FF5E1A" : (backgroundTheme === "light" ? "#22C55E" : "#D1C7BD");
+  const activeBg = isSelected ? "#FFF4EC" : (backgroundTheme === "light" ? "#FFFFFF" : "#FAF8F5");
 
-  const activeColor = isSelected ? "#FF5E1A" : "#D2C8BC";
-  const tableBorderColor = activeColor;
+  const chairColor = activeColor;
+  const chairBg = "#FFFFFF";
 
   const chairPositions: { x: number; y: number; rotate?: string; backrestStyle?: any }[] = [];
   if (seatsCount > 0) {
     if (tableType === "round" || tableType === "oval") {
       const rx = tableW / 2;
       const ry = tableH / 2;
-      const radiusOffset = chairH / 2 + offset;
+      const radiusOffset = chairSize / 2 + offset;
       for (let i = 0; i < seatsCount; i++) {
         const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2;
-        const x = cx + (rx + radiusOffset) * Math.cos(angle) - chairW / 2;
-        const y = cy + (ry + radiusOffset) * Math.sin(angle) - chairH / 2;
+        const x = cx + (rx + radiusOffset) * Math.cos(angle) - chairSize / 2;
+        const y = cy + (ry + radiusOffset) * Math.sin(angle) - chairSize / 2;
         const rotationAngle = angle + Math.PI / 2;
         chairPositions.push({ 
           x, 
           y, 
           rotate: `${rotationAngle}rad`,
-          backrestStyle: { top: 0, left: 0, right: 0, height: 3, borderTopLeftRadius: 3, borderTopRightRadius: 3 }
+          backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 }
         });
       }
     } else {
-      const topCount = Math.ceil(seatsCount / 2);
-      const bottomCount = Math.floor(seatsCount / 2);
+      let topCount = 0, bottomCount = 0, leftCount = 0, rightCount = 0;
+      if (seatsCount === 2) {
+        leftCount = 1;
+        rightCount = 1;
+      } else {
+        const base = Math.floor(seatsCount / 4);
+        const rem = seatsCount % 4;
+        topCount = base + (rem > 0 ? 1 : 0);
+        bottomCount = base + (rem > 1 ? 1 : 0);
+        leftCount = base + (rem > 2 ? 1 : 0);
+        rightCount = base;
+      }
 
-      // Top chairs
       for (let i = 0; i < topCount; i++) {
         chairPositions.push({ 
-          x: cx - tableW / 2 + (i + 0.5) * (tableW / topCount) - chairW / 2, 
-          y: cy - tableH / 2 - chairH - offset, 
-          backrestStyle: { top: 0, left: 0, right: 0, height: 2.5, borderTopLeftRadius: 2, borderTopRightRadius: 2 } 
+          x: tx + (i + 0.5) * (tableW / topCount) - chairSize / 2, 
+          y: ty - chairSize - offset, 
+          backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 } 
         });
       }
-      // Bottom chairs
       for (let i = 0; i < bottomCount; i++) {
         chairPositions.push({ 
-          x: cx - tableW / 2 + (i + 0.5) * (tableW / bottomCount) - chairW / 2, 
-          y: cy + tableH / 2 + offset, 
-          backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.5, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 } 
+          x: tx + (i + 0.5) * (tableW / bottomCount) - chairSize / 2, 
+          y: ty + tableH + offset, 
+          backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.2, borderBottomLeftRadius: 1.5, borderBottomRightRadius: 1.5 } 
         });
       }
+      for (let i = 0; i < leftCount; i++) {
+        chairPositions.push({ 
+          x: tx - chairSize - offset, 
+          y: ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2, 
+          backrestStyle: { left: 0, top: 0, bottom: 0, width: 2.2, borderTopLeftRadius: 1.5, borderBottomLeftRadius: 1.5 } 
+        });
+      }
+      for (let i = 0; i < rightCount; i++) {
+        chairPositions.push({ 
+          x: tx + tableW + offset, 
+          y: ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2, 
+          backrestStyle: { right: 0, top: 0, bottom: 0, width: 2.2, borderTopRightRadius: 1.5, borderBottomRightRadius: 1.5 } 
+        });
+      }
+    }
+  }
+
+  const gradientColors: [string, string] = isSelected 
+    ? ["#FFF4EC", "#FFEEDB"] 
+    : (backgroundTheme === "light" ? ["#FFFFFF", "#FFFFFF"] : ["#FAF8F5", "#F0EAE1"]);
+  const tableBorderColor = activeColor;
+
+  const platePositions: { x: number; y: number }[] = [];
+  if (seatsCount > 0) {
+    if (tableType === "round" || tableType === "oval") {
+      const plateRadiusOffset = Math.max(6, (tableW / 2) - 8);
+      for (let i = 0; i < seatsCount; i++) {
+        const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2;
+        platePositions.push({ 
+          x: tableW / 2 + plateRadiusOffset * Math.cos(angle), 
+          y: tableH / 2 + plateRadiusOffset * Math.sin(angle) 
+        });
+      }
+    } else {
+      let topCount = 0, bottomCount = 0, leftCount = 0, rightCount = 0;
+      if (seatsCount === 2) {
+        leftCount = 1;
+        rightCount = 1;
+      } else {
+        const base = Math.floor(seatsCount / 4);
+        const rem = seatsCount % 4;
+        topCount = base + (rem > 0 ? 1 : 0);
+        bottomCount = base + (rem > 1 ? 1 : 0);
+        leftCount = base + (rem > 2 ? 1 : 0);
+        rightCount = base;
+      }
+      const distFromEdge = Math.min(8, tableH * 0.18);
+      const distFromEdgeH = Math.min(8, tableW * 0.18);
+
+      for (let i = 0; i < topCount; i++) platePositions.push({ x: (i + 0.5) * (tableW / topCount), y: distFromEdge });
+      for (let i = 0; i < bottomCount; i++) platePositions.push({ x: (i + 0.5) * (tableW / bottomCount), y: tableH - distFromEdge });
+      for (let i = 0; i < leftCount; i++) platePositions.push({ x: distFromEdgeH, y: (i + 0.5) * (tableH / leftCount) });
+      for (let i = 0; i < rightCount; i++) platePositions.push({ x: tableW - distFromEdgeH, y: (i + 0.5) * (tableH / rightCount) });
     }
   }
 
@@ -235,8 +297,7 @@ const DraggableTable = ({
         width: tableW,
         height: tableH,
         backgroundColor: "transparent",
-        padding: 0,
-        overflow: "visible",
+        padding: 8,
         ...Platform.select({
           web: { 
             cursor: "move",
@@ -247,31 +308,43 @@ const DraggableTable = ({
       }}
     >
       {/* Chairs */}
-      {chairPositions.map((pos, idx) => {
-        const transform = pos.rotate ? [{ rotate: pos.rotate }] : undefined;
-        return (
-          <View
-            key={`chair-${idx}`}
-            style={{
-              position: "absolute",
-              left: pos.x,
-              top: pos.y,
-              width: chairW,
-              height: chairH,
-              borderRadius: 3,
-              borderWidth: 1,
-              borderColor: "#8C6239", // wood outline
-              backgroundColor: "#DFD0BC", // warm wood seat
-              transform,
-              overflow: "hidden",
-            }}
-          >
-            {pos.backrestStyle && (
-              <View style={[{ position: "absolute", backgroundColor: "#8C6239" }, pos.backrestStyle]} />
-            )}
+      {chairPositions.map((pos, idx) => (
+        <View
+          key={`chair-${idx}`}
+          style={{
+            position: "absolute",
+            left: pos.x,
+            top: pos.y,
+            width: chairSize,
+            height: chairSize,
+            borderRadius: chairSize / 4,
+            borderWidth: 1.2,
+            borderColor: chairColor,
+            backgroundColor: chairBg,
+            transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
+            justifyContent: "center",
+            alignItems: "center",
+            overflow: "hidden",
+          }}
+        >
+          <View style={{
+            width: "70%",
+            height: "70%",
+            borderRadius: chairSize / 6,
+            backgroundColor: "#FAF6F0",
+            opacity: 0.85,
+            justifyContent: "center",
+            alignItems: "center",
+          }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.45, color: "#64748B" }}>
+              {idx + 1}
+            </Text>
           </View>
-        );
-      })}
+          {pos.backrestStyle && (
+            <View style={[{ position: "absolute", backgroundColor: chairColor }, pos.backrestStyle]} />
+          )}
+        </View>
+      ))}
 
       <View
         style={{
@@ -281,32 +354,44 @@ const DraggableTable = ({
           width: tableW,
           height: tableH,
           borderRadius,
-          borderColor: tableBorderColor,
-          borderWidth: isSelected ? 3.0 : 2.2,
-          backgroundColor: "#FFFFFF",
+          borderColor: isSelected ? "#FF5E1A" : tableBorderColor,
+          borderWidth: isSelected ? 3.5 : 2,
           overflow: "hidden",
-          justifyContent: "center",
-          alignItems: "center",
         }}
       >
-        <View style={{
-          flex: 1,
-          width: "100%",
-          height: "100%",
-          borderRadius: Math.max(0, borderRadius - 2),
-          borderWidth: 1,
-          borderColor: isSelected ? "rgba(255,94,26,0.15)" : "rgba(210, 200, 188, 0.3)",
-          justifyContent: "center",
-          alignItems: "center",
-        }}>
-          {/* Table Number & Capacity */}
-          <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#1E293B", fontWeight: "900" }}>
-            {table.label}
-          </Text>
-          <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748B", marginTop: 1 }}>
-            {table.Seats} Pax
-          </Text>
-        </View>
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            padding: 2,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <View style={{
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            borderRadius: Math.max(0, borderRadius - 2),
+            borderWidth: 0.8,
+            borderColor: isSelected ? "rgba(255,94,26,0.15)" : "rgba(209,199,189,0.3)",
+            justifyContent: "center",
+            alignItems: "center",
+          }}>
+            {/* Table Number & Capacity */}
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#475569" }}>
+              {table.label}
+            </Text>
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748B", marginTop: 1 }}>
+              {table.Seats} Pax
+            </Text>
+
+          </View>
+        </LinearGradient>
       </View>
     </View>
   );
@@ -657,6 +742,16 @@ export default function TableMasterScreen() {
     }
   };
 
+  const updateSeats = (val: number) => {
+    setSeats(val);
+    if (selectedTable) {
+      setSelectedTable((prev) => (prev ? { ...prev, Seats: val } : null));
+      setTables((prev) =>
+        prev.map((t) => (t.id === selectedTable.id ? { ...t, Seats: val } : t))
+      );
+    }
+  };
+
   const updateTableType = (val: string) => {
     setTableType(val);
     if (selectedTable) {
@@ -964,6 +1059,30 @@ export default function TableMasterScreen() {
                           </TouchableOpacity>
                         );
                       })}
+                    </View>
+                  </View>
+
+                  <View style={styles.inputDivider} />
+                  
+                  {/* Seats (Chairs) stepper */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>SEATS (CHAIRS)</Text>
+                    <View style={styles.seatsRow}>
+                      <TouchableOpacity
+                        style={styles.seatsBtn}
+                        onPress={() => updateSeats(Math.max(1, seats - 1))}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="remove" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <Text style={styles.seatsValue}>{seats}</Text>
+                      <TouchableOpacity
+                        style={styles.seatsBtn}
+                        onPress={() => updateSeats(seats + 1)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="add" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
                     </View>
                   </View>
 
