@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Animated,
+  Easing,
 } from "react-native";
 import { FontAwesome5, Ionicons } from "@expo/vector-icons";
 import { Fonts } from "../../constants/Fonts";
@@ -32,7 +34,7 @@ const ongoingSplitSessions: Record<string, {
   splitRowId: string;
   amount: number;
   payMode: string;
-  onUpdate?: (status: "processing" | "success" | "cancelled" | "failed") => void;
+  onUpdate?: (status: "processing" | "success" | "cancelled" | "failed", message?: string) => void;
 }> = {};
 const formatMoney = (symbol: string, amount: number) => {
   try {
@@ -40,6 +42,34 @@ const formatMoney = (symbol: string, amount: number) => {
   } catch (e) {
     return `${symbol}${(amount || 0).toFixed(2)}`;
   }
+};
+
+// --- ROTATING SYNC ICON COMPONENT ---
+const RotatingSyncIcon = ({ size = 16, color = "#3b82f6" }: { size?: number; color?: string }) => {
+  const spinValue = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [spinValue]);
+
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ rotate: spin }] }}>
+      <Ionicons name="sync" size={size} color={color} />
+    </Animated.View>
+  );
 };
 
 export type SplitPaymentRow = {
@@ -125,6 +155,22 @@ export default function SplitPaymentComponent({
   onSelectMember,
 }: SplitPaymentComponentProps) {
   const [rows, setRows] = useState<SplitPaymentRow[]>([]);
+  const context = useOrderContextStore((s) => s.currentOrder);
+  const tableId = context?.tableId?.toString();
+
+  const storeSplitRows = useTerminalPaymentStore(
+    (s) => tableId ? s.splitRows[tableId] : undefined
+  );
+
+  useEffect(() => {
+    if (storeSplitRows && storeSplitRows.length > 0) {
+      const rowsChanged = JSON.stringify(storeSplitRows) !== JSON.stringify(rows);
+      if (rowsChanged) {
+        setRows(storeSplitRows);
+      }
+    }
+  }, [storeSplitRows]);
+
   const [activeDropdownRowId, setActiveDropdownRowId] = useState<string | null>(null);
 
   // Digital verification modal states
@@ -145,7 +191,7 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
   }, [paymentMethods, memberFlow]);
 
   // Helper: FOC rows are discounts, not real payments (Disabled: FOC is now a regular paymode)
-  const isFocRow = (r: SplitPaymentRow) => String(r.payMode || r.payModeName || "").trim().toUpperCase() === "FOC";
+  const isFocRow = (r: SplitPaymentRow) => String(r.payMode || "").trim().toUpperCase() === "FOC";
 
   // Sum of ALL rows (including FOC) — used for validation and balance
   const totalAllRows = useMemo(() => {
@@ -199,8 +245,18 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
     }
   }, [rows, selectedMember, targetTotal]);
 
-  // Initial rows: default to 2 payment rows
+  // Initial rows: default to 2 payment rows or load from store
   useEffect(() => {
+    const context = useOrderContextStore.getState().currentOrder;
+    const tableId = context?.tableId?.toString();
+    if (tableId && rows.length === 0) {
+      const persistedRows = useTerminalPaymentStore.getState().splitRows[tableId];
+      if (persistedRows && persistedRows.length > 0) {
+        setRows(persistedRows);
+        return;
+      }
+    }
+
     if (availableMethods.length > 0 && rows.length === 0) {
       const firstMode = availableMethods[0];
       const secondMode = availableMethods.length > 1 ? availableMethods[1] : availableMethods[0];
@@ -231,7 +287,16 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
         },
       ]);
     }
-  }, [availableMethods, targetTotal]);
+  }, [availableMethods, targetTotal, rows.length]);
+
+  // Autosave rows to Zustand store for persistence
+  useEffect(() => {
+    const context = useOrderContextStore.getState().currentOrder;
+    const tableId = context?.tableId?.toString();
+    if (tableId && rows.length > 0) {
+      useTerminalPaymentStore.getState().setSplitRows(tableId, rows);
+    }
+  }, [rows]);
 
   // 🚀 RESTORE FLOW: On mount, check if a terminal session completed in the background
   useEffect(() => {
@@ -260,7 +325,7 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
       delete ongoingSplitSessions[tableId];
     } else if (pending.status === "processing") {
       // Still running — reconnect the onUpdate callback
-      pending.onUpdate = (status) => {
+      pending.onUpdate = (status, msg) => {
         if (status === "success") {
           setRows(prevRows =>
             prevRows.map(r =>
@@ -280,14 +345,26 @@ const [isGeneratingQR, setIsGeneratingQR] = useState(false);
           setRows(prevRows =>
             prevRows.map(r =>
               r.id === pending.splitRowId
-                ? { ...r, terminalStatus: status, terminalMsg: status === "cancelled" ? "❌ Transaction cancelled" : "❌ Payment failed" }
+                ? { ...r, terminalStatus: status, terminalMsg: msg || (status === "cancelled" ? "❌ Transaction cancelled" : "❌ Payment failed") }
                 : r
             )
           );
-          useTerminalPaymentStore.getState().clearSession(tableId);
+          useTerminalPaymentStore.getState().updateSession(tableId, { status, message: msg });
           delete ongoingSplitSessions[tableId];
         }
       };
+    } else if (pending.status === "cancelled" || pending.status === "failed") {
+      const store = useTerminalPaymentStore.getState();
+      const session = store.sessions[tableId];
+      const errorMsg = session?.message || (pending.status === "cancelled" ? "❌ Transaction cancelled" : "❌ Payment failed");
+      setRows(prevRows =>
+        prevRows.map(r =>
+          r.id === pending.splitRowId
+            ? { ...r, terminalStatus: pending.status, terminalMsg: errorMsg }
+            : r
+        )
+      );
+      delete ongoingSplitSessions[tableId];
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -562,6 +639,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
         method: row.payMode,
         total: amt,
         splitRowId: row.id,
+        isSplit: true,
       });
     }
 
@@ -579,7 +657,10 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       body: JSON.stringify({
         amount: amt,
         deviceSn: deviceSn,
-        salt: salt || ''
+        salt: salt || '',
+        tableId: tableId || '',
+        isSplit: true,
+        splitRowId: row.id
       })
     });
 
@@ -624,8 +705,8 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
     } else if (responseCode === -1027) {
       if (tblId && ongoingSplitSessions[tblId]) {
         ongoingSplitSessions[tblId].status = "cancelled";
-        ongoingSplitSessions[tblId].onUpdate?.("cancelled");
-        useTerminalPaymentStore.getState().clearSession(tblId);
+        ongoingSplitSessions[tblId].onUpdate?.("cancelled", '❌ Transaction cancelled on terminal');
+        useTerminalPaymentStore.getState().updateSession(tblId, { status: "cancelled", message: '❌ Transaction cancelled on terminal' });
         delete ongoingSplitSessions[tblId];
       }
       setRows(prevRows =>
@@ -654,8 +735,8 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
     } else if (responseCode === -1028 || responseCode === -1008) {
       if (tblId && ongoingSplitSessions[tblId]) {
         ongoingSplitSessions[tblId].status = "failed";
-        ongoingSplitSessions[tblId].onUpdate?.("failed");
-        useTerminalPaymentStore.getState().clearSession(tblId);
+        ongoingSplitSessions[tblId].onUpdate?.("failed", '⏰ Transaction timeout');
+        useTerminalPaymentStore.getState().updateSession(tblId, { status: "failed", message: '⏰ Transaction timeout' });
         delete ongoingSplitSessions[tblId];
       }
       setRows(prevRows =>
@@ -680,8 +761,8 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       const errorMsg = result.msg || result.error || 'Payment failed';
       if (tblId && ongoingSplitSessions[tblId]) {
         ongoingSplitSessions[tblId].status = "failed";
-        ongoingSplitSessions[tblId].onUpdate?.("failed");
-        useTerminalPaymentStore.getState().clearSession(tblId);
+        ongoingSplitSessions[tblId].onUpdate?.("failed", `❌ ${errorMsg}`);
+        useTerminalPaymentStore.getState().updateSession(tblId, { status: "failed", message: `❌ ${errorMsg}` });
         delete ongoingSplitSessions[tblId];
       }
       setRows(prevRows =>
@@ -705,8 +786,8 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
     const tblId2 = ctx2?.tableId?.toString();
     if (tblId2 && ongoingSplitSessions[tblId2]) {
       ongoingSplitSessions[tblId2].status = "failed";
-      ongoingSplitSessions[tblId2].onUpdate?.("failed");
-      useTerminalPaymentStore.getState().clearSession(tblId2);
+      ongoingSplitSessions[tblId2].onUpdate?.("failed", `❌ ${errorMsg}`);
+      useTerminalPaymentStore.getState().updateSession(tblId2, { status: "failed", message: `❌ ${errorMsg}` });
       delete ongoingSplitSessions[tblId2];
     }
     setRows(prevRows =>
@@ -931,31 +1012,53 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
                   row.terminalStatus === "cancelled" && styles.statusCancelled,
                   row.terminalStatus === "failed" && styles.statusFailed,
                   row.terminalStatus === "processing" && styles.statusProcessing,
+                  { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }
                 ]}>
-                  <Ionicons
-                    name={
-                      row.terminalStatus === "success" ? "checkmark-circle" :
-                        row.terminalStatus === "cancelled" ? "close-circle" :
-                          row.terminalStatus === "failed" ? "alert-circle" :
-                            "sync"
-                    }
-                    size={16}
-                    color={
-                      row.terminalStatus === "success" ? "#22c55e" :
-                        row.terminalStatus === "cancelled" ? "#f59e0b" :
-                          row.terminalStatus === "failed" ? "#ef4444" :
-                            "#3b82f6"
-                    }
-                  />
-                  <Text style={[
-                    styles.statusMessageText,
-                    row.terminalStatus === "success" && styles.statusMessageSuccess,
-                    row.terminalStatus === "cancelled" && styles.statusMessageCancelled,
-                    row.terminalStatus === "failed" && styles.statusMessageFailed,
-                    row.terminalStatus === "processing" && styles.statusMessageProcessing,
-                  ]}>
-                    {row.terminalMsg}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 6 }}>
+                    {row.terminalStatus === "processing" ? (
+                      <RotatingSyncIcon size={16} color="#3b82f6" />
+                    ) : (
+                      <Ionicons
+                        name={
+                          row.terminalStatus === "success" ? "checkmark-circle" :
+                            row.terminalStatus === "cancelled" ? "close-circle" :
+                              "alert-circle"
+                        }
+                        size={16}
+                        color={
+                          row.terminalStatus === "success" ? "#22c55e" :
+                            row.terminalStatus === "cancelled" ? "#f59e0b" :
+                              "#ef4444"
+                        }
+                      />
+                    )}
+                    <Text style={[
+                      styles.statusMessageText,
+                      row.terminalStatus === "success" && styles.statusMessageSuccess,
+                      row.terminalStatus === "cancelled" && styles.statusMessageCancelled,
+                      row.terminalStatus === "failed" && styles.statusMessageFailed,
+                      row.terminalStatus === "processing" && styles.statusMessageProcessing,
+                      { flex: 1 }
+                    ]}>
+                      {row.terminalMsg}
+                    </Text>
+                  </View>
+                  {/* X dismiss button — only shown for failed/cancelled states */}
+                  {(row.terminalStatus === "failed" || row.terminalStatus === "cancelled") && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setRows(prev => prev.map(r =>
+                          r.id === row.id
+                            ? { ...r, terminalStatus: undefined, terminalMsg: undefined }
+                            : r
+                        ));
+                      }}
+                      style={{ padding: 4, marginLeft: 4 }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close" size={16} color={row.terminalStatus === "cancelled" ? "#f59e0b" : "#ef4444"} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 

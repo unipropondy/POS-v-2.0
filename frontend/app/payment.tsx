@@ -19,6 +19,8 @@ import {
   TouchableWithoutFeedback,
   useWindowDimensions,
   View,
+  Animated,
+  Easing,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -48,6 +50,34 @@ import { useTableStatusStore } from "../stores/tableStatusStore";
 import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
 import { useTableNavigationStore } from "../stores/tableNavigationStore";
 import { CustomerDisplaySync } from "../utils/CustomerDisplaySync";
+
+// --- ROTATING SYNC ICON COMPONENT ---
+const RotatingSyncIcon = ({ size = 16, color = "#3b82f6" }: { size?: number; color?: string }) => {
+  const spinValue = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const anim = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [spinValue]);
+
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ rotate: spin }] }}>
+      <Ionicons name="sync" size={size} color={color} />
+    </Animated.View>
+  );
+};
 
 const EMPTY_ARRAY: any[] = [];
 
@@ -236,89 +266,69 @@ export default function PaymentScreen() {
   const [checkoutSessionId, setCheckoutSessionId] = useState("");
   const cacheKey = (context?.tableId || displayOrderId || "").toString();
 
-  // --- RECOVERY EFFECT FOR ONGOING YEAPAY TERMINAL TRANSACTIONS ---
+  // --- YEAPAY TERMINAL ZUSTAND STORE SUBSCRIPTION & RECOVERY ---
+  const terminalSession = useTerminalPaymentStore(
+    (s) => context?.tableId ? s.sessions[context.tableId] : undefined
+  );
+
   useEffect(() => {
-    if (cacheKey && ongoingPayments[cacheKey]) {
-      const ongoing = ongoingPayments[cacheKey];
-      console.log(`🔌 [PaymentScreen] Reconnecting to ongoing transaction for ${cacheKey} (${ongoing.status})`);
-      
-      if (ongoing.status === "processing") {
-        setPaymentStatus("processing");
-        setPaymentMessage(ongoing.message);
-        setProcessing(true);
-        setMethod(ongoing.method);
-        
-        ongoing.onUpdate = (status, message, result, error) => {
-          setPaymentStatus(status);
-          setPaymentMessage(message);
-          setProcessing(status === "processing");
-          
-          if (status === "success") {
-            showToast({
-              type: 'success',
-              message: '✅ Payment Successful',
-              subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
-            });
-            executeFinalPayment();
-            delete ongoingPayments[cacheKey];
-          } else if (status === "cancelled") {
-            Alert.alert(
-              '❌ Transaction Cancelled',
-              'Payment was cancelled on the terminal. Please try again.',
-              [{ text: 'OK' }]
-            );
-            delete ongoingPayments[cacheKey];
-          } else if (status === "failed") {
-            Alert.alert(
-              error ? 'Error' : '❌ Payment Failed',
-              message || 'Failed to connect to terminal',
-              [{ text: 'OK' }]
-            );
-            delete ongoingPayments[cacheKey];
-          }
-        };
-      } else {
-        // Already completed in background while screen was unmounted
-        setPaymentStatus(ongoing.status);
-        setPaymentMessage(ongoing.message);
-        setMethod(ongoing.method);
-        
-        if (ongoing.status === "success") {
-          showToast({
-            type: 'success',
-            message: '✅ Payment Successful',
-            subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
-          });
-          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
-          delete ongoingPayments[cacheKey];
-          executeFinalPayment();
-        } else if (ongoing.status === "cancelled") {
-          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
-          delete ongoingPayments[cacheKey];
-          Alert.alert(
-            '❌ Transaction Cancelled',
-            'Payment was cancelled on the terminal. Please try again.',
-            [{ text: 'OK' }]
-          );
-        } else if (ongoing.status === "failed") {
-          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
-          delete ongoingPayments[cacheKey];
-          Alert.alert(
-            '❌ Payment Failed',
-            ongoing.message || 'Failed to connect to terminal',
-            [{ text: 'OK' }]
-          );
+    // Reconstruct ongoingPayments cache if we refreshed/reloaded so the request flows correctly
+    if (terminalSession && terminalSession.status === "processing" && cacheKey && !ongoingPayments[cacheKey]) {
+      ongoingPayments[cacheKey] = {
+        status: "processing",
+        message: terminalSession.message,
+        method: terminalSession.method,
+        total: terminalSession.total,
+        promise: Promise.resolve(null),
+      };
+    }
+
+    if (terminalSession) {
+      if (terminalSession.isSplit) {
+        return;
+      }
+
+      setPaymentStatus(terminalSession.status);
+      setPaymentMessage(terminalSession.message);
+      setProcessing(terminalSession.status === "processing");
+      if (terminalSession.method) {
+        setMethod(terminalSession.method);
+      }
+
+      if (terminalSession.status === "success") {
+        showToast({
+          type: 'success',
+          message: '✅ Payment Successful',
+          subtitle: `${currencySymbol}${terminalSession.total.toFixed(2)} paid via ${terminalSession.method}`
+        });
+        if (context?.tableId) {
+          useTerminalPaymentStore.getState().clearSession(context.tableId);
         }
+        delete ongoingPayments[cacheKey];
+        executeFinalPayment();
+      } else if (terminalSession.status === "cancelled") {
+        Alert.alert(
+          '❌ Transaction Cancelled',
+          'Payment was cancelled on the terminal. Please try again.',
+          [{ text: 'OK' }]
+        );
+        delete ongoingPayments[cacheKey];
+      } else if (terminalSession.status === "failed") {
+        Alert.alert(
+          '❌ Payment Failed',
+          terminalSession.message || 'Failed to connect to terminal',
+          [{ text: 'OK' }]
+        );
+        delete ongoingPayments[cacheKey];
+      }
+    } else {
+      if (paymentStatus !== "idle") {
+        setPaymentStatus("idle");
+        setPaymentMessage("");
+        setProcessing(false);
       }
     }
-    
-    return () => {
-      // Disconnect listener on unmount
-      if (cacheKey && ongoingPayments[cacheKey]) {
-        ongoingPayments[cacheKey].onUpdate = undefined;
-      }
-    };
-  }, [cacheKey]);
+  }, [terminalSession, cacheKey]);
 
   useEffect(() => {
     if (isFocused) {
@@ -363,7 +373,24 @@ export default function PaymentScreen() {
     }
   };
   const [time, setTime] = useState(new Date());
-  const [isSplitActive, setIsSplitActive] = useState(false);
+  const [isSplitActive, setIsSplitActive] = useState(params.isSplit === "true");
+
+  useEffect(() => {
+    if (params.isSplit === "true") {
+      setIsSplitActive(true);
+    }
+  }, [params.isSplit]);
+
+  useEffect(() => {
+    if (context?.tableId) {
+      // Only restore split mode from the explicit toggle flag — NOT session.isSplit,
+      // which persists in the store after the terminal resolves.
+      const isSplitPersisted = useTerminalPaymentStore.getState().activeSplitTables[context.tableId] === true;
+      if (isSplitPersisted) {
+        setIsSplitActive(true);
+      }
+    }
+  }, [context?.tableId]);
 
   // Member flow state
   const [showMemberModal, setShowMemberModal] = useState(false);
@@ -1178,7 +1205,8 @@ export default function PaymentScreen() {
             body: JSON.stringify({
               amount: total,
               deviceSn: deviceSn,
-              salt: salt || ''
+              salt: salt || '',
+              tableId: context?.tableId || ''
             })
           });
 
@@ -1206,8 +1234,13 @@ export default function PaymentScreen() {
           if (ongoingPayments[cacheKey]) {
             ongoingPayments[cacheKey].status = status;
             ongoingPayments[cacheKey].message = message;
-            if (ongoingPayments[cacheKey].onUpdate) {
-              ongoingPayments[cacheKey].onUpdate(status, message, result, null);
+          }
+
+          if (context?.tableId) {
+            if (status === "success") {
+              useTerminalPaymentStore.getState().updateSession(context.tableId, { status: "success", message });
+            } else {
+              useTerminalPaymentStore.getState().updateSession(context.tableId, { status, message });
             }
           }
           return result;
@@ -1219,11 +1252,12 @@ export default function PaymentScreen() {
           if (ongoingPayments[cacheKey]) {
             ongoingPayments[cacheKey].status = status;
             ongoingPayments[cacheKey].message = message;
-            if (ongoingPayments[cacheKey].onUpdate) {
-              ongoingPayments[cacheKey].onUpdate(status, message, null, error);
-            }
           }
-          throw error;
+
+          if (context?.tableId) {
+            useTerminalPaymentStore.getState().updateSession(context.tableId, { status: "failed", message });
+          }
+          return { success: false, code: -1, msg: error.message };
         }
       })();
 
@@ -1245,41 +1279,6 @@ export default function PaymentScreen() {
           total: total,
         });
       }
-
-      // Set up the listener on this newly created ongoing instance
-      const ongoing = ongoingPayments[cacheKey];
-      ongoing.onUpdate = (status, message, result, error) => {
-        setPaymentStatus(status);
-        setPaymentMessage(message);
-        setProcessing(status === "processing");
-
-        if (status === "success") {
-          showToast({
-            type: 'success',
-            message: '✅ Payment Successful',
-            subtitle: `${currencySymbol}${ongoing.total.toFixed(2)} paid via ${ongoing.method}`
-          });
-          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
-          delete ongoingPayments[cacheKey];
-          executeFinalPayment();
-        } else if (status === "cancelled") {
-          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
-          delete ongoingPayments[cacheKey];
-          Alert.alert(
-            '❌ Transaction Cancelled',
-            'Payment was cancelled on the terminal. Please try again.',
-            [{ text: 'OK' }]
-          );
-        } else if (status === "failed") {
-          if (context?.tableId) useTerminalPaymentStore.getState().clearSession(context.tableId);
-          delete ongoingPayments[cacheKey];
-          Alert.alert(
-            error ? 'Error' : '❌ Payment Failed',
-            message || 'Failed to connect to terminal',
-            [{ text: 'OK' }]
-          );
-        }
-      };
 
       return;
     }
@@ -2531,7 +2530,13 @@ export default function PaymentScreen() {
                   gap: 6,
                 },
               ]}
-              onPress={() => setIsSplitActive(!isSplitActive)}
+              onPress={() => {
+                const nextActive = !isSplitActive;
+                setIsSplitActive(nextActive);
+                if (context?.tableId) {
+                  useTerminalPaymentStore.getState().setSplitTableActive(context.tableId, nextActive);
+                }
+              }}
               activeOpacity={0.7}
             >
               <Ionicons
@@ -2747,31 +2752,49 @@ export default function PaymentScreen() {
                         paymentStatus === "cancelled" && styles.statusCancelled,
                         paymentStatus === "failed" && styles.statusFailed,
                         paymentStatus === "processing" && styles.statusProcessing,
+                        { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }
                       ]}>
-                        <Ionicons
-                          name={
-                            paymentStatus === "success" ? "checkmark-circle" :
-                              paymentStatus === "cancelled" ? "close-circle" :
-                                paymentStatus === "failed" ? "alert-circle" :
-                                  "sync"
-                          }
-                          size={24}
-                          color={
-                            paymentStatus === "success" ? "#22c55e" :
-                              paymentStatus === "cancelled" ? "#f59e0b" :
-                                paymentStatus === "failed" ? "#ef4444" :
-                                  "#3b82f6"
-                          }
-                        />
-                        <Text style={[
-                          styles.statusMessage,
-                          paymentStatus === "success" && styles.statusMessageSuccess,
-                          paymentStatus === "cancelled" && styles.statusMessageCancelled,
-                          paymentStatus === "failed" && styles.statusMessageFailed,
-                          paymentStatus === "processing" && styles.statusMessageProcessing,
-                        ]}>
-                          {paymentMessage}
-                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 8 }}>
+                          {paymentStatus === "processing" ? (
+                            <RotatingSyncIcon size={24} color="#3b82f6" />
+                          ) : (
+                            <Ionicons
+                              name={
+                                paymentStatus === "success" ? "checkmark-circle" :
+                                  paymentStatus === "cancelled" ? "close-circle" :
+                                    "alert-circle"
+                              }
+                              size={24}
+                              color={
+                                paymentStatus === "success" ? "#22c55e" :
+                                  paymentStatus === "cancelled" ? "#f59e0b" :
+                                    "#ef4444"
+                              }
+                            />
+                          )}
+                          <Text style={[
+                            styles.statusMessage,
+                            paymentStatus === "success" && styles.statusMessageSuccess,
+                            paymentStatus === "cancelled" && styles.statusMessageCancelled,
+                            paymentStatus === "failed" && styles.statusMessageFailed,
+                            paymentStatus === "processing" && styles.statusMessageProcessing,
+                            { flex: 1, marginRight: 8 }
+                          ]}>
+                            {paymentMessage}
+                          </Text>
+                        </View>
+                        {paymentStatus !== "processing" && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (context?.tableId) {
+                                useTerminalPaymentStore.getState().clearSession(context.tableId);
+                              }
+                            }}
+                            style={{ padding: 4 }}
+                          >
+                            <Ionicons name="close" size={20} color="#64748b" />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
 

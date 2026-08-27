@@ -4,17 +4,53 @@ const express = require('express');
 const router = express.Router();
 const YeahPayService = require('../services/yeahpay.service');  // ✅ Class
 
-const FIXED_APP_ID = process.env.APP_ID || '';
+const FIXED_APP_ID = process.env.APP_ID || 'bin38m42efz4ta6f';
 
 // ✅ CREATE INSTANCE with config
 const yeahpayService = new YeahPayService();
 
+function broadcastTerminalStatus(io, tableId, amount, isCard, result, isSplit, splitRowId) {
+    if (!io || !tableId) return;
+    
+    let status = "failed";
+    let message = "";
+    const responseCode = result.code;
+    
+    if (result.success || responseCode === 0) {
+        status = "success";
+        message = `✅ $${parseFloat(amount).toFixed(2)} paid successfully`;
+    } else if (responseCode === -1027) {
+        status = "cancelled";
+        message = `❌ Transaction cancelled on terminal`;
+    } else if (responseCode === -1028 || responseCode === -1008) {
+        status = "failed";
+        message = `⏰ Transaction timeout`;
+    } else {
+        status = "failed";
+        message = `❌ ${result.msg || result.error || 'Payment declined'}`;
+    }
+
+    console.log(`🔌 [Server] Broadcasting terminal sync for Table ${tableId} → Status: ${status}`);
+    io.emit("terminal_payment_sync", {
+        tableId,
+        session: {
+            tableId,
+            status,
+            message,
+            method: isCard ? 'YEAHPAY CARD' : 'YEAHPAY PAYNOW',
+            total: parseFloat(amount) || 0,
+            isSplit: !!isSplit,
+            splitRowId
+        }
+    });
+}
+
 // YeahPay PayNow Payment
 router.post('/paynow-payment', async (req, res) => {
     try {
-        const { amount, deviceSn, salt } = req.body;
+        const { amount, deviceSn, salt, tableId, isSplit, splitRowId } = req.body;
         
-        console.log('📱 YeahPay PayNow:', { amount, deviceSn, salt: salt ? 'Yes' : 'No' });
+        console.log('📱 YeahPay PayNow:', { amount, deviceSn, salt: salt ? 'Yes' : 'No', tableId });
         
         if (!deviceSn) {
             return res.status(400).json({ 
@@ -33,24 +69,28 @@ router.post('/paynow-payment', async (req, res) => {
         });
         
         console.log('📤 YeahPay Result:', result);
+        
+        // Broadcast the status via socket
+        broadcastTerminalStatus(req.io, tableId, amount, false, result, isSplit, splitRowId);
+        
         res.json(result);
         
     } catch (error) {
         console.error('❌ YeahPay Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            code: -1, 
-            msg: error.message 
-        });
+        
+        const failResult = { success: false, code: -1, msg: error.message };
+        broadcastTerminalStatus(req.io, req.body.tableId, req.body.amount, false, failResult, req.body.isSplit, req.body.splitRowId);
+        
+        res.status(500).json(failResult);
     }
 });
 
 // YeahPay Card Payment
 router.post('/card-payment', async (req, res) => {
     try {
-        const { amount, deviceSn, salt } = req.body;
+        const { amount, deviceSn, salt, tableId, isSplit, splitRowId } = req.body;
         
-        console.log('💳 YeahPay Card:', { amount, deviceSn });
+        console.log('💳 YeahPay Card:', { amount, deviceSn, tableId });
         
         if (!deviceSn) {
             return res.status(400).json({ 
@@ -68,9 +108,15 @@ router.post('/card-payment', async (req, res) => {
             appId: FIXED_APP_ID
         });
         
+        // Broadcast the status via socket
+        broadcastTerminalStatus(req.io, tableId, amount, true, result, isSplit, splitRowId);
+        
         res.json(result);
     } catch (error) {
-        res.status(500).json({ success: false, code: -1, msg: error.message });
+        const failResult = { success: false, code: -1, msg: error.message };
+        broadcastTerminalStatus(req.io, req.body.tableId, req.body.amount, true, failResult, req.body.isSplit, req.body.splitRowId);
+        
+        res.status(500).json(failResult);
     }
 });
 

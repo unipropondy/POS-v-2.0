@@ -8,6 +8,7 @@ import { useTableStatusStore } from "../stores/tableStatusStore";
 import { API_URL } from "../constants/Config";
 import UniversalPrinter from "../components/UniversalPrinter";
 import { useNotificationStore } from "../stores/notificationStore";
+import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
 
 /**
  * useGlobalSocketSync
@@ -191,6 +192,7 @@ export function useGlobalSocketSync() {
 
         if (computedStatus === "EMPTY" && tableId) {
           useCartStore.getState().clearTableSession(tableId);
+          useTerminalPaymentStore.getState().clearSession(tableId);
         }
       }
 
@@ -368,6 +370,44 @@ export function useGlobalSocketSync() {
       UniversalPrinter.processPendingPrintJobs();
     };
 
+    const handleTerminalPaymentSync = (payload: { tableId: string; session: any }) => {
+      const { tableId, session } = payload;
+      if (!tableId) return;
+      if (session) {
+        useTerminalPaymentStore.getState().setSession(tableId, session, false);
+
+        // If it's split payment, also update the splitRows status!
+        if (session.isSplit && session.splitRowId) {
+          const store = useTerminalPaymentStore.getState();
+          const rows = store.splitRows[tableId] || [];
+          const updatedRows = rows.map((r: any) => {
+            if (r.id === session.splitRowId) {
+              return {
+                ...r,
+                status: session.status === "success" ? "Paid" : session.status === "cancelled" ? "Cancelled" : r.status,
+                terminalStatus: session.status,
+                terminalMsg: session.message
+              };
+            }
+            return r;
+          });
+          store.setSplitRows(tableId, updatedRows, false);
+        }
+      } else {
+        useTerminalPaymentStore.getState().clearSession(tableId, false);
+      }
+    };
+
+    const handleTerminalSplitRowsSync = (payload: { tableId: string; rows: any[] }) => {
+      const { tableId, rows } = payload;
+      if (!tableId) return;
+      if (rows) {
+        useTerminalPaymentStore.getState().setSplitRows(tableId, rows, false);
+      } else {
+        useTerminalPaymentStore.getState().clearSplitRows(tableId, false);
+      }
+    };
+
     socket.on("connect", handleConnect);
     socket.on("connect_error", handleConnectError);
     socket.on("new_order", handleNewOrder);
@@ -379,6 +419,8 @@ export function useGlobalSocketSync() {
     socket.on("qr_payment_confirmed", handleQrPaymentConfirmed);
     socket.on("cart_change", handleCartChange);
     socket.on("print_jobs_available", handlePrintJobsAvailable);
+    socket.on("terminal_payment_sync", handleTerminalPaymentSync);
+    socket.on("terminal_split_rows_sync", handleTerminalSplitRowsSync);
 
     return () => {
       clearInterval(keepAliveInterval);
@@ -395,6 +437,8 @@ export function useGlobalSocketSync() {
       socket.off("qr_payment_confirmed", handleQrPaymentConfirmed);
       socket.off("cart_change", handleCartChange);
       socket.off("print_jobs_available", handlePrintJobsAvailable);
+      socket.off("terminal_payment_sync", handleTerminalPaymentSync);
+      socket.off("terminal_split_rows_sync", handleTerminalSplitRowsSync);
     };
   }, []);
 

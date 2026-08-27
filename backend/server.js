@@ -153,6 +153,18 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Relay terminal payment status to other tablets
+  socket.on("terminal_payment_sync", (data) => {
+    console.log(`🔌 [Server] Terminal payment sync:`, data);
+    socket.broadcast.emit("terminal_payment_sync", data);
+  });
+
+  // Relay terminal split rows status to other tablets
+  socket.on("terminal_split_rows_sync", (data) => {
+    console.log(`🔌 [Server] Terminal split rows sync:`, data);
+    socket.broadcast.emit("terminal_split_rows_sync", data);
+  });
+
   socket.on("disconnect", () => {
     console.log("🔌 Client disconnected:", socket.id);
   });
@@ -302,7 +314,10 @@ app.use("/api/export", exportRoutes);
 app.use("/api/credit-customers", creditCustomerRoutes);
 app.use("/api/settlement", settlementRoutes);
 app.use("/api/settlement", settlementLegacyRoutes);
-app.use('/api/yeahpay', yeahpayRoutes);
+app.use('/api/yeahpay', (req, res, next) => {
+  req.io = io;
+  next();
+}, yeahpayRoutes);
 app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/loyalty/configs", loyaltyConfigRoutes);
 app.use("/api/combo", comboRoutes);

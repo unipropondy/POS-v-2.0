@@ -23,6 +23,8 @@ import {
   TouchableWithoutFeedback,
   useWindowDimensions,
   View,
+  Animated,
+  Easing,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import {
@@ -99,6 +101,34 @@ const getStatusUI = (status: number, diningSection?: number) => {
   }
 };
 
+// --- ROTATING SYNC ICON COMPONENT ---
+const RotatingSyncIcon = ({ size = 16, color = "#3b82f6" }: { size?: number; color?: string }) => {
+  const spinValue = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [spinValue]);
+
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ rotate: spin }] }}>
+      <Ionicons name="sync" size={size} color={color} />
+    </Animated.View>
+  );
+};
+
 // --- MEMOIZED TABLE COMPONENT ---
 const TableItemComponent = React.memo(
   ({
@@ -124,8 +154,8 @@ const TableItemComponent = React.memo(
     const tableData = useTableStatusStore((state) => state.tableMap[tableId]);
 
     // Subscribe to terminal payment session — re-renders only when this table's session changes
-    const isTerminalProcessing = useTerminalPaymentStore(
-      (state) => state.sessions[tableId]?.status === "processing"
+    const terminalStatus = useTerminalPaymentStore(
+      (state) => state.sessions[tableId]?.status
     );
 
     // 🚀 SYNC-FIRST: Prioritize real-time data from the global store
@@ -180,7 +210,17 @@ const TableItemComponent = React.memo(
       ui = { text: "PAID", color: "#f43f5e", lightBg: "#fff1f2" };
     }
 
-    const borderColor = status === 0 ? Theme.border : ui.color;
+    let borderColor = status === 0 ? Theme.border : ui.color;
+    let borderWidth = status !== 0 ? 2 : 1.5;
+
+    if (terminalStatus === "processing") {
+      borderColor = "#3b82f6";
+      borderWidth = 3;
+    } else if (terminalStatus === "failed" || terminalStatus === "cancelled") {
+      borderColor = "#ef4444";
+      borderWidth = 3;
+    }
+
     const bgColor = status !== 0 ? ui.lightBg : Theme.bgCard;
     const textColor = status === 0 ? Theme.textPrimary : ui.color;
     const labelColor = Theme.textPrimary;
@@ -205,7 +245,7 @@ const TableItemComponent = React.memo(
             height: itemSize,
             borderColor,
             backgroundColor: bgColor,
-            borderWidth: status !== 0 ? 2 : 1.5,
+            borderWidth,
             elevation: status !== 0 ? 0 : 2,
             opacity: isPaid ? 0.92 : 1,
           },
@@ -335,12 +375,25 @@ const TableItemComponent = React.memo(
               </View>
             )}
 
-          {/* 🟢 LIVE TERMINAL INDICATOR: pulsing blue badge when a payment terminal call is running */}
-          {isTerminalProcessing && (
-            <View style={styles.terminalProcessingBadge}>
-              <ActivityIndicator size="small" color="#3b82f6" />
-              <Text style={styles.terminalProcessingText}>Terminal Active</Text>
-            </View>
+          {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
+          {terminalStatus && terminalStatus !== "idle" && (
+            <TouchableOpacity
+              style={[
+                styles.terminalProcessingBadge,
+                (terminalStatus === "cancelled" || terminalStatus === "failed") &&
+                  styles.terminalErrorBadge,
+              ]}
+              onPress={(e) => {
+                e.stopPropagation();
+                useTerminalPaymentStore.getState().clearSession(tableId);
+              }}
+            >
+              {terminalStatus === "processing" ? (
+                <RotatingSyncIcon size={20} color="#3b82f6" />
+              ) : (
+                <Ionicons name="alert" size={16} color="#ffffff" />
+              )}
+            </TouchableOpacity>
           )}
         </View>
       </TouchableOpacity>
@@ -481,6 +534,8 @@ export default function Category() {
       })
       .catch((err) => console.log("Error fetching company settings for license:", err));
   }, []);
+
+
 
   // ──── Move Table modal states ────────────────────────────────────────────
   const [isMoveTableVisible, setIsMoveTableVisible] = useState(false);
@@ -1286,7 +1341,12 @@ export default function Category() {
       // 🚀 RESTORE FLOW: If there is a live terminal session for this table, bypass all
       // popups and route directly to /payment so staff can monitor the ongoing transaction.
       const activeTerminalSession = useTerminalPaymentStore.getState().getSession(item.id);
-      if (activeTerminalSession && activeTerminalSession.status === "processing") {
+      // Only use the explicit toggle flag — NOT session.isSplit, which persists after terminal resolves
+      const isSplitPersisted = useTerminalPaymentStore.getState().activeSplitTables[item.id] === true;
+      if (
+        (activeTerminalSession && (activeTerminalSession.status === "processing" || activeTerminalSession.status === "cancelled" || activeTerminalSession.status === "failed")) ||
+        isSplitPersisted
+      ) {
         const section = getSectionFromDiningSection(item.DiningSection);
         setOrderContext({
           orderType: "DINE_IN",
@@ -1294,7 +1354,10 @@ export default function Category() {
           tableNo: item.label,
           tableId: item.id,
         });
-        router.push("/payment");
+        router.push({
+          pathname: "/payment",
+          params: isSplitPersisted ? { isSplit: "true" } : {},
+        });
         return;
       }
 
@@ -5234,24 +5297,21 @@ const styles = StyleSheet.create({
   },
   terminalProcessingBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    flexDirection: "row",
+    top: 8,
+    left: 8,
+    width: 26,
+    height: 26,
+    justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(59, 130, 246, 0.15)",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: "#3b82f6",
     zIndex: 11,
   },
-  terminalProcessingText: {
-    fontSize: 9,
-    color: "#3b82f6",
-    fontWeight: "bold",
-    fontFamily: Fonts.medium,
+  terminalErrorBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#ef4444",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   /* ──────────────────────────────────────────────────────────────────
