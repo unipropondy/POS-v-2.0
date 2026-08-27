@@ -822,7 +822,7 @@ class UniversalPrinter {
             background: #fff;
           }
           .kot-container { 
-            padding: 1mm 2mm; 
+            padding: 15mm 2mm 1mm 2mm; 
             width: 76mm;
           }
           
@@ -878,7 +878,7 @@ class UniversalPrinter {
           }
           
           .item-qty {
-            font-size: 14px;
+            font-size: 22px;
             font-weight: 900;
             width: 30px;
             line-height: 1;
@@ -886,7 +886,7 @@ class UniversalPrinter {
           }
           
           .item-name {
-            font-size: 13px;
+            font-size: 20px;
             font-weight: 900;
             flex: 1;
             line-height: 1.1;
@@ -898,7 +898,7 @@ class UniversalPrinter {
           }
           
           .modifier-item {
-            font-size: 11px;
+            font-size: 16px;
             font-weight: 900;
             color: #000;
             display: block;
@@ -906,7 +906,7 @@ class UniversalPrinter {
           
           .remarks {
             margin-left: 34px;
-            font-size: 11px;
+            font-size: 16px;
             font-weight: 900;
             margin-top: 2px;
           }
@@ -920,7 +920,7 @@ class UniversalPrinter {
           
           .kitchen-name {
             text-align: center;
-            font-size: 13px;
+            font-size: 18px;
             font-weight: bold;
             margin-top: 6px;
             text-transform: uppercase;
@@ -965,7 +965,7 @@ class UniversalPrinter {
 
                 return Object.entries(kitchenGroups).map(([kName, groupItems]) => {
                   return `
-                    <div style="font-size: 16px; font-weight: bold; margin-top: 10px; border-bottom: 1.5px solid #000; padding-bottom: 2px; text-transform: uppercase;">
+                    <div style="font-size: 18px; font-weight: bold; margin-top: 10px; border-bottom: 1.5px solid #000; padding-bottom: 2px; text-transform: uppercase;">
                       <b>${kName}</b>
                     </div>
                     ${groupItems.map((item: any) => {
@@ -981,7 +981,7 @@ class UniversalPrinter {
                           <div class="item-main">
                             <div class="item-qty">${item.quantity || item.qty || 1}</div>
                             <div class="item-name">
-                              ${(item.name || "").replace(/\n/g, '<br/>')}
+                              <b>${(item.name || "").replace(/\n/g, '<br/>')}</b>
                               ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
                             </div>
                           </div>
@@ -996,7 +996,7 @@ class UniversalPrinter {
                               : ""
                           }
                           ${
-                            hasCombo
+                            hasCombo && !data.disableComboPrint
                               ? `<div class="modifier-list">${comboSels.map((g: any) => {
                                   const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
                                   if (Array.isArray(choices)) {
@@ -1027,7 +1027,7 @@ class UniversalPrinter {
                     <div class="item-main">
                       <div class="item-qty">${item.quantity || item.qty || 1}</div>
                       <div class="item-name">
-                        ${(item.name || "").replace(/\n/g, '<br/>')}
+                        <b>${(item.name || "").replace(/\n/g, '<br/>')}</b>
                         ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
                       </div>
                     </div>
@@ -1059,7 +1059,7 @@ class UniversalPrinter {
                         : ""
                     }
                     ${
-                      hasCombo
+                      hasCombo && !data.disableComboPrint
                         ? `
                       <div class="modifier-list">
                         ${comboSels
@@ -1119,8 +1119,8 @@ class UniversalPrinter {
 
     const DIV = "[L]------------------------------------------------\n";
 
-    const DISH_WRAP = 40;
-    const BIG_MOD_WRAP = 40;
+    const DISH_WRAP = 20;
+    const BIG_MOD_WRAP = 20;
 
     const wrapText = (str: string, maxChars: number): string[] => {
       const words = String(str || "").split(" ");
@@ -1147,22 +1147,22 @@ class UniversalPrinter {
       const itemName = item.name || item.DishName || "";
 
       wrapText(itemName.replace(/\n/g, " "), DISH_WRAP).forEach((chunk: string, idx: number) => {
-        if (idx === 0) t += `[L]<B>[${qtyNum}] ${chunk}</B>\n`;
-        else           t += `[L]<B>    ${chunk}</B>\n`;
+        if (idx === 0) t += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
+        else           t += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
       });
 
       const songName = item.songName || item.SongName || "";
-      if (songName) t += `[L]<B>  ♪ ${songName}</B>\n`;
+      if (songName) t += `[L]<font size='big'><B>  ♪ ${songName}</B></font>\n`;
 
       const isTw = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
-      if (isTw) t += `[L]<B>  >> TAKEAWAY <<</B>\n`;
+      if (isTw) t += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
 
       if (item.modifiers && item.modifiers.length > 0) {
         item.modifiers.forEach((m: any) => {
           const modName = m.ModifierName || m.modifierName || m.name || m.ModifierNameEn || "";
           if (modName) {
             wrapText(modName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-              t += idx === 0 ? `[L]<B>  + ${chunk}</B>\n` : `[L]<B>    ${chunk}</B>\n`;
+              t += idx === 0 ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
             });
           }
         });
@@ -1187,7 +1187,9 @@ class UniversalPrinter {
         }
       }
 
-      if (Array.isArray(comboSels) && comboSels.length > 0) {
+      // Respect "Disable Combo Print" setting: skip sub-items when flag is true
+      const disableComboPrint = !!(data as any).disableComboPrint;
+      if (!disableComboPrint && Array.isArray(comboSels) && comboSels.length > 0) {
         comboSels.forEach((g: any) => {
           const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
           if (Array.isArray(choices)) {
@@ -1195,7 +1197,7 @@ class UniversalPrinter {
               const optName = opt.name || opt.DishName || opt.itemName || "";
               if (optName) {
                 wrapText(optName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-                  t += idx === 0 ? `[L]<B>  - ${chunk}</B>\n` : `[L]<B>    ${chunk}</B>\n`;
+                  t += idx === 0 ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
                 });
               }
             });
@@ -1206,7 +1208,7 @@ class UniversalPrinter {
       const noteText = item.note || item.notes || item.Remarks || item.remarks;
       if (noteText) {
         wrapText(noteText, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-          t += idx === 0 ? `[L]<B>  * ${chunk}</B>\n` : `[L]<B>    ${chunk}</B>\n`;
+          t += idx === 0 ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
         });
       }
 
@@ -1214,7 +1216,7 @@ class UniversalPrinter {
     };
 
     let text = "";
-    text += "[L]\n";
+    text += "[L]\n".repeat(4);
     text += `[C]<font size='big'><B>${title}</B></font>\n`;
     text += `[C]<B>${kotDateStr}  ${kotTimeStr}</B>\n`;
     text += DIV;
@@ -1282,13 +1284,13 @@ class UniversalPrinter {
             : "");
       if (kotLabel) {
         text += DIV;
-        text += `[C]<font size='big'><B>${kotLabel}</B></font>\n`;
+        text += `[C]<B>${kotLabel}</B>\n`;
         text += DIV;
       }
     }
 
-    // â”€â”€ FEED LINES at end to prevent last line being cut â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    text += "[L]\n".repeat(6);
+    // ── FEED LINES at end ──
+    text += "[L]\n";
 
     return text;
   }
@@ -1612,14 +1614,14 @@ class UniversalPrinter {
   }
 
   private static formatTwoCols48(left: any, right: any): string {
-    const cleanLeft = String(left || "");
-    const cleanRight = String(right || "");
+    const cleanLeft = String(left || "").replace(/<[^>]*>/g, "");
+    const cleanRight = String(right || "").replace(/<[^>]*>/g, "");
     const totalWidth = 48;
     const spaceCount = totalWidth - cleanLeft.length - cleanRight.length;
     if (spaceCount > 0) {
-      return `[L]${cleanLeft}${" ".repeat(spaceCount)}${cleanRight}\n`;
+      return `[L]${left}${" ".repeat(spaceCount)}${right}\n`;
     } else {
-      return `[L]${cleanLeft}\n[L]${cleanRight.padStart(totalWidth, " ")}\n`;
+      return `[L]${left}\n[L]${right.padStart(totalWidth, " ")}\n`;
     }
   }
 
@@ -1631,8 +1633,8 @@ class UniversalPrinter {
     const symbol = company.currencySymbol || "$";
     const isCheckout = !!saleData.isCheckout;
 
-    // ðŸ“ 80mm standard is ~48 characters
-    let text = "[C]================================================\n";
+    // ── Upside White Space ──
+    let text = "\n\n[C]================================================\n";
     if (isCheckout) {
       text += "[C]<font size='big'><B>CHECKOUT BILL</B></font>\n";
       text += "[C]<B>PAYMENT PENDING</B>\n";
@@ -1652,23 +1654,23 @@ class UniversalPrinter {
                      saleData.date ? parseDatabaseDate(saleData.date) : 
                      new Date();
 
-    text += `[L]Bill No: ${saleData.invoiceNumber || saleData.id || ""}\n`;
+    text += `[L]<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>\n`;
     if (saleData.tableNo) {
       text += `[L]<font size=\'big\'><B>TABLE: ${saleData.tableNo}</B></font>\n`;
     }
     const dateFormatted = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
-    text += `[L]Date: ${dateFormatted} ${formatToSingaporeTime(saleDate)}\n`;
+    text += `[L]<B>Date: ${dateFormatted} ${formatToSingaporeTime(saleDate)}</B>\n`;
     if (saleData.waiterName && saleData.waiterName !== "Staff") {
-      text += `[L]Waiter: ${saleData.waiterName}\n`;
+      text += `[L]<B>Waiter: ${saleData.waiterName}</B>\n`;
     }
-    // ðŸ† Print Member Mobile Number on receipt
+    // Print Member Mobile Number on receipt
     if (saleData.mobileNo) {
-      text += `[L]Member Phone: ${saleData.mobileNo}\n`;
+      text += `[L]<B>Member Phone: ${saleData.mobileNo}</B>\n`;
     }
     text += "[L]------------------------------------------------\n";
 
     // Items Header
-    text += "[L]ITEM                        QTY   PRICE    TOTAL\n";
+    text += "[L]<B>ITEM                        QTY   PRICE    TOTAL</B>\n";
     text += "[L]------------------------------------------------\n";
 
     const printItems = (saleData.items || []).filter(
@@ -1681,7 +1683,7 @@ class UniversalPrinter {
     });
 
     printItems.forEach((item: any) => {
-      // ðŸ›¡ï¸ Robust field mapping
+      // Robust field mapping
       const name = (item.name || item.DishName || item.ProductName || "")
         .substring(0, 26)
         .padEnd(26);
@@ -1696,16 +1698,16 @@ class UniversalPrinter {
       const totalNum = priceNum * qtyNum;
       const total = `${symbol}${totalNum.toFixed(2)}`.padStart(9);
 
-      text += `[L]${name}${qty}${price}${total}\n`;
+      text += `[L]<B>${name}${qty}${price}${total}</B>\n`;
 
       const songName = item.songName || item.SongName || "";
       if (songName) {
-        text += `[L]   ðŸŽµ ${songName}\n`;
+        text += `[L]<B>   ♪ ${songName}</B>\n`;
       }
 
       // If name was truncated, print full name on next line
       if ((item.name || "").length > 26) {
-        text += `[L]   ${item.name}\n`;
+        text += `[L]<B>   ${item.name}</B>\n`;
       }
 
       // Modifiers
@@ -1713,7 +1715,7 @@ class UniversalPrinter {
         item.modifiers.forEach((m: any) => {
           const mName = (m.ModifierName || m.name || "").trim();
           if (mName) {
-            text += `[L]   + ${mName}\n`;
+            text += `[L]<B>   + ${mName}</B>\n`;
           }
         });
       }
@@ -1731,7 +1733,7 @@ class UniversalPrinter {
             : discType === "percentage"
             ? `-${discAmt}%`
             : `-${symbol}${effectiveDisc.toFixed(2)}`;
-        text += `[L]      Discount: ${discStr}\n`;
+        text += `[L]<B>      Discount: ${discStr}</B>\n`;
       }
     });
 
@@ -1785,30 +1787,28 @@ class UniversalPrinter {
     const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
     const orderDiscount = finalDiscountInfo?.amount || 0;
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
-    // ✅ FOC is a payment method, not a pre-tax discount — exclude from subtotal calculation
+    // FOC is a payment method, not a pre-tax discount — exclude from subtotal calculation
     const hasAnyDiscount = totalItemDiscount > 0 || normalDiscount > 0;
     let currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - normalDiscount);
-    // âœ… FOC Fix: if entire bill is FOC, currentSubtotal may be 0 but grossTotal is > 0.
-    // We still need to show items correctly â€” keep grossTotal for display.
 
-    text += this.formatTwoCols48("Sub Total:", `${symbol}${grossTotal.toFixed(2)}`);
+    text += this.formatTwoCols48("<B>Sub Total:</B>", `<B>${symbol}${grossTotal.toFixed(2)}</B>`);
 
     if (totalItemDiscount > 0) {
-      text += this.formatTwoCols48("Item Discounts:", `-${symbol}${totalItemDiscount.toFixed(2)}`);
+      text += this.formatTwoCols48("<B>Item Discounts:</B>", `<B>-${symbol}${totalItemDiscount.toFixed(2)}</B>`);
     }
 
     if (normalDiscount > 0) {
       const discLabel =
         finalDiscountInfo?.type === "percentage"
-          ? `Discount (${finalDiscountInfo.value}%):`
-          : "Discount:";
-      text += this.formatTwoCols48(discLabel, `-${symbol}${normalDiscount.toFixed(2)}`);
+          ? `<B>Discount (${finalDiscountInfo.value}%):</B>`
+          : "<B>Discount:</B>";
+      text += this.formatTwoCols48(discLabel, `<B>-${symbol}${normalDiscount.toFixed(2)}</B>`);
     }
 
     if (hasAnyDiscount) {
       text += "[L]------------------------------------------------\n";
-      const netLabel = "Net Amount:";
-      text += this.formatTwoCols48(netLabel, `${symbol}${currentSubtotal.toFixed(2)}`);
+      const netLabel = "<B>Net Amount:</B>";
+      text += this.formatTwoCols48(netLabel, `<B>${symbol}${currentSubtotal.toFixed(2)}</B>`);
     }
 
     let finalTotal = saleData.total || saleData.totalAmount || currentSubtotal;
@@ -1901,15 +1901,11 @@ class UniversalPrinter {
     const gstAmountRaw = hasGST ? taxableAmount * (gstRate / 100) : 0;
     const gstAmount = Math.round(gstAmountRaw * 100) / 100;
     
-    // ✅ FOC Fix: When FOC is involved, always recompute finalTotal from
+    // FOC Fix: When FOC is involved, always recompute finalTotal from
     // taxableAmount + GST so payments (FOC + Cash) add up to the displayed total.
-    // e.g. Sub=$12, GST=$1.08 → Total=$13.08, FOC=$8.08 + Cash=$5.00 = $13.08 ✓
     if (finalTotal === 0 || isCheckout || focAmt > 0) {
       finalTotal = taxableAmount + gstAmount;
     }
-    // âœ… FOC Fix: if still 0 but grossTotal > 0, it's a full-FOC bill. Use 0 as the paid total but
-    // ensure the receipt still prints (do not suppress). finalTotal=0 is valid for full FOC.
-    // Force at least showing the bill even if total is zero.
     
     const printedRoundOff = saleData.roundOff && saleData.roundOff !== 0
       ? parseFloat((finalTotal - (taxableAmount + gstAmount)).toFixed(2))
@@ -1917,21 +1913,21 @@ class UniversalPrinter {
 
 
     if (hasSC) {
-      text += this.formatTwoCols48(allItemsHaveSC ? "Service Charge:" : "Item Service Charge:", `${symbol}${serviceChargeAmount.toFixed(2)}`);
+      text += this.formatTwoCols48(allItemsHaveSC ? "<B>Service Charge:</B>" : "<B>Item Service Charge:</B>", `<B>${symbol}${serviceChargeAmount.toFixed(2)}</B>`);
     }
 
     if (takeawayCharge > 0) {
-      text += this.formatTwoCols48("Takeaway Charges:", `${symbol}${takeawayCharge.toFixed(2)}`);
+      text += this.formatTwoCols48("<B>Takeaway Charges:</B>", `<B>${symbol}${takeawayCharge.toFixed(2)}</B>`);
     }
 
     if (hasGST && gstAmount > 0) {
-      text += this.formatTwoCols48(`GST (${gstRate}%):`, `${symbol}${gstAmount.toFixed(2)}`);
+      text += this.formatTwoCols48(`<B>GST (${gstRate}%):</B>`, `<B>${symbol}${gstAmount.toFixed(2)}</B>`);
       text += "[L]------------------------------------------------\n";
     }
 
     if (printedRoundOff && printedRoundOff !== 0) {
       const roSign = printedRoundOff > 0 ? "+" : "";
-      text += this.formatTwoCols48("Round Off:", `${roSign}${symbol}${printedRoundOff.toFixed(2)}`);
+      text += this.formatTwoCols48("<B>Round Off:</B>", `<B>${roSign}${symbol}${printedRoundOff.toFixed(2)}</B>`);
       text += "[L]------------------------------------------------\n";
     }
 
@@ -1941,13 +1937,13 @@ class UniversalPrinter {
         text += "[L]------------------------------------------------\n";
       }
       if (saleData.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0) {
-        text += "[L]Payment Details:\n";
+        text += "[L]<B>Payment Details:</B>\n";
         saleData.payments.forEach((p: any) => {
           let modeText = String(p.payMode || p.payModeName || p.Remarks || "Payment");
           if (modeText.toUpperCase().trim() === "FOC") modeText = "FOC (Discount)";
           const modeLabel = `  ${modeText}`;
           const amountVal = `${symbol}${parseFloat(p.amount).toFixed(2)}`;
-          text += this.formatTwoCols48(modeLabel, amountVal);
+          text += this.formatTwoCols48(`<B>${modeLabel}</B>`, `<B>${amountVal}</B>`);
         });
         text += "[L]------------------------------------------------\n";
       } else {
@@ -1955,7 +1951,7 @@ class UniversalPrinter {
         if (methodText.toUpperCase().trim() === "FOC") methodText = "FOC (Discount)";
         const methodLabel = `  ${methodText}`;
         const amountVal = `${symbol}${parseFloat(finalTotal).toFixed(2)}`;
-        text += this.formatTwoCols48(methodLabel, amountVal);
+        text += this.formatTwoCols48(`<B>${methodLabel}</B>`, `<B>${amountVal}</B>`);
         text += "[L]------------------------------------------------\n";
       }
     }
@@ -1963,17 +1959,17 @@ class UniversalPrinter {
     text += `[R]<font size=\'big\'><B>TOTAL: ${symbol}${finalTotal.toFixed(2)}</B></font>\n`;
     text += "[C]================================================\n";
 
-    // ðŸ† Print Reward point transaction stats
+    // Print Reward point transaction stats
     if (parseFloat(saleData.rewardPointsEarned) > 0) {
-      text += `[L]Reward Points Earned: +$${parseFloat(saleData.rewardPointsEarned).toFixed(2)}\n`;
+      text += `[L]<B>Reward Points Earned: +$${parseFloat(saleData.rewardPointsEarned).toFixed(2)}</B>\n`;
     }
     if (parseFloat(saleData.memberRewardBalance) > 0) {
-      text += `[L]Available Member Credit: $${parseFloat(saleData.memberRewardBalance).toFixed(2)}\n`;
+      text += `[L]<B>Available Member Credit: $${parseFloat(saleData.memberRewardBalance).toFixed(2)}</B>\n`;
       text += "[C]------------------------------------------------\n";
     }
 
     text += "[C]<B>THANK YOU! COME AGAIN!</B>\n";
-    text += "[C]SMART-CAFE BY UNIPROSG\n\n\n\n";
+    text += "[C]SMART-CAFE BY UNIPROSG\n";
 
     return text;
   }
@@ -2129,7 +2125,7 @@ class UniversalPrinter {
         }
       });
 
-      // 4. Group by KitchenTypeCode â†’ one KOT per kitchen
+      // 4. Group by KitchenTypeCode → one KOT per kitchen
       const kitchenGroups: Record<string, any[]> = {};
       expandedItems.forEach((item: any) => {
         const kCode = item.KitchenTypeCode || "0";
@@ -2146,7 +2142,7 @@ class UniversalPrinter {
       for (const [kCode, groupItems] of Object.entries(kitchenGroups)) {
         const printerIp = groupItems[0].PrinterIP;
         if (!printerIp || String(printerIp).trim() === "") {
-          console.log(`ðŸ–¨ï¸ [UniversalPrinter] Skipping routing KOT for kitchen "${groupItems[0].KitchenTypeName || kCode}" - IP is empty/disabled.`);
+          console.log(`🖨️ [UniversalPrinter] Skipping routing KOT for kitchen "${groupItems[0].KitchenTypeName || kCode}" - IP is empty/disabled.`);
           continue;
         }
         const kotData = {
@@ -2157,9 +2153,11 @@ class UniversalPrinter {
           items: groupItems,
           kitchenName:
             groupItems[0].KitchenTypeName || (kCode === "0" ? "KITCHEN" : kCode),
+          // Pass Disable Combo Print flag so both HTML and thermal renderers honour it
+          disableComboPrint: !!enableComboPrint,
         };
         try {
-          console.log(`ðŸ–¨ï¸ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
+          console.log(`🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
           await this.printKOT(
             kotData,
             "SYSTEM",
@@ -2426,8 +2424,8 @@ class UniversalPrinter {
       const normalSize  = [GS,  0x21, 0x00];
       const cut         = [GS,  0x56, 0x42, 0x00];
 
-      // â”€â”€ Download QR image (200Ã—200 px PNG) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&format=png&margin=5`;
+      // ── Download QR image (350x350 px PNG) ──────────────────────────
+      const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(qrUrl)}&format=png&margin=5`;
       const imgRes = await fetch(qrImgUrl);
       if (!imgRes.ok) throw new Error("QR image download failed");
       const imgBlob = await imgRes.blob();
@@ -2469,7 +2467,7 @@ class UniversalPrinter {
       const yH = (H >> 8) & 0xFF;
       const gsv0Header = [GS, 0x76, 0x30, 0x00, xL, xH, yL, yH];
 
-      // â”€â”€ Assemble full ESC/POS payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Assemble full ESC/POS payload ────────────────────────────────
       const parts: number[][] = [
         [LF],
         alignCenter,
@@ -2495,8 +2493,6 @@ class UniversalPrinter {
         enc(`Scan to Order\n`),
         boldOff,
         alignCenter,
-        enc(`${qrUrl}\n`),
-        alignCenter,
         enc("================================\n"),
         [LF, LF, LF],
         cut,
@@ -2521,7 +2517,7 @@ class UniversalPrinter {
     outletId?: string | number
   ): Promise<boolean> {
     // Fallback text-only payload (used if image conversion fails or for BT/LAN path)
-    const payload = `\n[C]================================================\n[C]<font size='big'><B>TABLE QR CODE</B></font>\n[C]================================================\n[C]<font size='big'><B>Table ${tableLabel}</B></font>\n[C]${sectionName}\n[C]\n[C]<qrcode size='15'>${qrUrl}</qrcode>\n[C]\n[C]<font size='normal'><B>Scan to Order</B></font>\n[C]${qrUrl}\n[C]================================================\n\n\n\n`;
+    const payload = `\n[C]================================================\n[C]<font size='big'><B>TABLE QR CODE</B></font>\n[C]================================================\n[C]<font size='big'><B>Table ${tableLabel}</B></font>\n[C]${sectionName}\n[C]\n[C]<qrcode size='22'>${qrUrl}</qrcode>\n[C]\n[C]<font size='normal'><B>Scan to Order</B></font>\n[C]================================================\n\n\n\n`;
 
     if (Platform.OS === "web") {
       try {

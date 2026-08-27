@@ -1649,7 +1649,13 @@ const fetchDayHistory = async () => {
                   <td class="right">${formatCurrency(totalClosing)}</td>
                 </tr>
                 <tr>
-                  <td>Variance</td>
+                  <td>${
+                    (totalClosing - (totalCashIn - totalCashOutSum)) === 0
+                      ? "Variance (Balances)"
+                      : (totalClosing > (totalCashIn - totalCashOutSum))
+                      ? "Variance (Surplus)"
+                      : "Variance (Shortage)"
+                  }</td>
                   <td class="right" style="color: ${totalClosing >= (totalCashIn - totalCashOutSum) ? '#2e7d32' : '#c62828'}">${totalClosing >= (totalCashIn - totalCashOutSum) ? '+' : ''}${formatCurrency(totalClosing - (totalCashIn - totalCashOutSum))}</td>
                 </tr>` : ''}
               </table>
@@ -1716,7 +1722,10 @@ const fetchDayHistory = async () => {
       if (totalClosing > 0) {
         text += formatTwoCols48("<B>CLOSING AMOUNT:</B>", "<B>" + formatCurrency(totalClosing) + "</B>\n");
         const variance = totalClosing - (totalCashIn - totalCashOutSum);
-        text += formatTwoCols48("Variance:", (variance >= 0 ? '+' : '') + formatCurrency(variance) + "\n");
+        const varianceLabel = variance === 0
+          ? "Variance (Balances):"
+          : (variance > 0 ? "Variance (Surplus):" : "Variance (Shortage):");
+        text += formatTwoCols48(varianceLabel, (variance >= 0 ? '+' : '') + formatCurrency(variance) + "\n");
       }
       text += "[C]========================================\n";
       text += "[C]SMART-CAFE BY UNIPROSG\n";
@@ -2484,15 +2493,17 @@ const fetchDayHistory = async () => {
                 {totalClosing > 0 && (() => {
                   const variance = totalClosing - (totalCashIn - totalCashOutSum);
                   const isShortage = variance < 0;
-                  const varColor = isShortage ? Theme.danger : Theme.success;
+                  const isBalanced = variance === 0;
+                  const varColor = isBalanced ? "#475569" : (isShortage ? Theme.danger : Theme.success);
+                  const statusText = isBalanced ? "Balances" : (isShortage ? "SHORTAGE" : "SURPLUS");
                   return (
-                    <View style={{ flexDirection: "row", paddingVertical: 13, paddingHorizontal: 12, backgroundColor: isShortage ? Theme.danger + '12' : Theme.success + '12', borderTopWidth: 1, borderTopColor: isShortage ? Theme.danger + '40' : Theme.success + '40', alignItems: "center" }}>
+                    <View style={{ flexDirection: "row", paddingVertical: 13, paddingHorizontal: 12, backgroundColor: isBalanced ? "#f1f5f9" : (isShortage ? Theme.danger + '12' : Theme.success + '12'), borderTopWidth: 1, borderTopColor: isBalanced ? "#cbd5e1" : (isShortage ? Theme.danger + '40' : Theme.success + '40'), alignItems: "center" }}>
                       <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <View style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: varColor, alignItems: 'center', justifyContent: 'center' }}>
-                          <Ionicons name={isShortage ? "trending-down" : "trending-up"} size={14} color="#fff" />
+                          <Ionicons name={isBalanced ? "checkmark" : (isShortage ? "trending-down" : "trending-up")} size={14} color="#fff" />
                         </View>
                         <Text style={{ fontFamily: Fonts.black, fontSize: 13, color: varColor, letterSpacing: 0.6 }}>
-                          VARIANCE ({isShortage ? 'SHORTAGE' : 'SURPLUS'})
+                          VARIANCE ({statusText})
                         </Text>
                       </View>
                       <Text style={{ flex: 2, textAlign: "right", fontFamily: Fonts.black, fontSize: 17, color: varColor }}>

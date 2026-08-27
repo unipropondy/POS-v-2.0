@@ -399,6 +399,7 @@ router.put("/save-positions", async (req, res) => {
           .input("tableType", sql.VarChar(50), pos.tableType || null)
           .input("xSize", sql.Int, pos.xSize !== undefined ? Number(pos.xSize) : null)
           .input("ySize", sql.Int, pos.ySize !== undefined ? Number(pos.ySize) : null)
+          .input("seats", sql.Int, pos.seats !== undefined ? Number(pos.seats) : null)
           .query(`
             UPDATE TableMaster
             SET XPos = @xPos,
@@ -406,6 +407,7 @@ router.put("/save-positions", async (req, res) => {
                 TableType = ISNULL(@tableType, TableType),
                 XSize = ISNULL(@xSize, XSize),
                 YSize = ISNULL(@ySize, YSize),
+                Seats = ISNULL(@seats, Seats),
                 ModifiedOn = GETDATE()
             WHERE TableId = TRY_CAST(@tableId AS UNIQUEIDENTIFIER) OR CAST(TableNumber AS VARCHAR(50)) = @tableId
           `);

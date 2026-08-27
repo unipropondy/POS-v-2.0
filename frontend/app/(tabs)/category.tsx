@@ -566,6 +566,99 @@ const TableItemComponent = React.memo(
       }
     }
 
+    if (!isAbsoluteLayout) {
+      return (
+        <TouchableOpacity
+          activeOpacity={isPaid ? 1 : 0.8}
+          disabled={isPaid}
+          style={[
+            styles.tableBox,
+            {
+              width: itemSize,
+              height: itemSize,
+              borderColor,
+              backgroundColor: bgColor,
+              borderWidth,
+              elevation: status !== 0 ? 0 : 2,
+              opacity: isPaid ? 0.92 : 1,
+              justifyContent: "center",
+              alignItems: "center",
+              borderRadius: 12,
+            },
+          ]}
+          onPress={() => onPress(item, tableData)}
+        >
+          <Text
+            style={[
+              styles.tableNumber,
+              { 
+                fontSize: numberFont, 
+                color: labelColor, 
+                fontFamily: Fonts.black,
+                fontWeight: "900"
+              },
+            ]}
+          >
+            {item.label}
+          </Text>
+
+          {status !== 0 && (
+            <View style={[styles.tableInfo, { gap: 1 }]}>
+              <View
+                style={[
+                  styles.statusChip,
+                  { 
+                    backgroundColor: activeBg, 
+                    borderColor: activeColor,
+                    paddingHorizontal: 4,
+                    paddingVertical: 2,
+                    borderRadius: 6,
+                    marginBottom: 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusChipText,
+                    { color: activeColor, fontSize: smallFont },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tableData?.customerName ? tableData.customerName : ui.text}
+                </Text>
+              </View>
+
+              {status !== 5 && (
+                <View style={styles.tableStats}>
+                  {timeText ? (
+                    <Text style={[styles.timeText, { fontSize: smallFont - 1, color: textColor }]}>
+                      <Ionicons name="time-outline" size={smallFont - 1} color={textColor} /> {timeText}
+                    </Text>
+                  ) : null}
+                  {billAmount > 0 && (
+                    <Text style={[styles.billText, { fontSize: smallFont + 1, color: textColor, fontWeight: "800" }]}>
+                      ${billAmount.toFixed(2)}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
+          {status === 5 && (
+            <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
+              <Ionicons name="lock-closed" size={16} color={ui.color} />
+              {tableData?.lockedByName ? (
+                <Text style={[styles.lockedNameText, { fontSize: smallFont - 1 }]}>
+                  {tableData.lockedByName}
+                </Text>
+              ) : null}
+            </View>
+          )}
+        </TouchableOpacity>
+      );
+    }
+
     return (
       <TouchableOpacity
         activeOpacity={isPaid ? 1 : 0.8}
@@ -719,7 +812,8 @@ const TableItemComponent = React.memo(
                 color: labelColor, 
                 marginTop: 0, 
                 marginBottom: 0,
-                fontFamily: Fonts.bold 
+                fontFamily: Fonts.black,
+                fontWeight: "900"
               },
             ]}
           >
@@ -2396,13 +2490,13 @@ export default function Category() {
           style={{
             flexDirection: "row",
             alignItems: "center",
-            borderRadius: 12,
-            padding: 8,
+            borderRadius: 16,
+            padding: 12,
             borderWidth: 1,
             borderColor: "#E2E8F0",
-            maxWidth: 320,
-            width: isFloating ? 260 : "100%",
-            gap: 8,
+            maxWidth: 380,
+            width: isFloating ? 320 : "100%",
+            gap: 12,
             shadowColor: "#6366F1",
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.04,
@@ -2415,7 +2509,7 @@ export default function Category() {
               borderRadius: 8,
               borderWidth: 1,
               borderColor: "#E2E8F0",
-              padding: 1.5,
+              padding: 2,
               backgroundColor: "#FFFFFF",
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 1 },
@@ -2425,7 +2519,7 @@ export default function Category() {
             }}>
               <Image
                 source={{ uri: companyInfo.CompanyLogoUrl }}
-                style={{ width: 36, height: 36, borderRadius: 6 }}
+                style={{ width: 46, height: 46, borderRadius: 8 }}
                 contentFit="contain"
               />
             </View>
@@ -2433,24 +2527,24 @@ export default function Category() {
             <LinearGradient
               colors={["#EEF2FF", "#E0E7FF"]}
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 8,
+                width: 48,
+                height: 48,
+                borderRadius: 10,
                 alignItems: "center",
                 justifyContent: "center",
                 borderWidth: 1,
                 borderColor: "#E0E7FF",
               }}
             >
-              <Ionicons name="storefront" size={18} color="#4F46E5" />
+              <Ionicons name="storefront" size={22} color="#4F46E5" />
             </LinearGradient>
           )}
 
-          <View style={{ flex: 1, gap: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
               <Text style={{
                 fontFamily: Fonts.bold,
-                fontSize: 11,
+                fontSize: 14,
                 color: "#1E293B",
                 letterSpacing: 0.1,
               }}>
@@ -2462,15 +2556,15 @@ export default function Category() {
                   flexDirection: "row",
                   alignItems: "center",
                   backgroundColor: "#DCFCE7",
-                  paddingHorizontal: 5,
-                  paddingVertical: 1,
-                  borderRadius: 6,
-                  gap: 2,
+                  paddingHorizontal: 7,
+                  paddingVertical: 3,
+                  borderRadius: 8,
+                  gap: 3,
                 }}>
-                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: "#15803D" }} />
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#15803D" }} />
                   <Text style={{
                     fontFamily: Fonts.bold,
-                    fontSize: 7.5,
+                    fontSize: 10,
                     color: "#166534",
                     textTransform: "uppercase",
                     letterSpacing: 0.2,
@@ -2482,11 +2576,11 @@ export default function Category() {
             </View>
 
             {companyInfo.Address ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                <Ionicons name="location-outline" size={9} color="#64748B" />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Ionicons name="location-outline" size={12} color="#64748B" />
                 <Text style={{
                   fontFamily: Fonts.medium,
-                  fontSize: 8.5,
+                  fontSize: 11.5,
                   color: "#64748B",
                   flex: 1,
                 }} numberOfLines={1}>
@@ -2499,18 +2593,18 @@ export default function Category() {
               <View style={{
                 flexDirection: "row",
                 alignItems: "center",
-                gap: 3,
-                marginTop: 1,
+                gap: 4,
+                marginTop: 2,
                 backgroundColor: "#F1F5F9",
-                paddingHorizontal: 6,
-                paddingVertical: 2,
-                borderRadius: 4,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 6,
                 alignSelf: "flex-start"
               }}>
-                <Ionicons name="shield-checkmark" size={10} color="#10B981" />
+                <Ionicons name="shield-checkmark" size={13} color="#10B981" />
                 <Text style={{
                   fontFamily: Fonts.semiBold,
-                  fontSize: 8,
+                  fontSize: 10.5,
                   color: "#475569",
                 }}>
                   Valid: <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{fromDate}</Text> to <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{toDate}</Text>
@@ -2520,9 +2614,9 @@ export default function Category() {
 
             <Text style={{
               fontFamily: Fonts.medium,
-              fontSize: 7.5,
+              fontSize: 9.5,
               color: "#94A3B8",
-              marginTop: 1,
+              marginTop: 2,
             }}>
               © 2026 UNIPRO. All rights reserved.
             </Text>

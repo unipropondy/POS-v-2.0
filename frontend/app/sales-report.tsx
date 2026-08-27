@@ -229,6 +229,41 @@ export default function SalesReport() {
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [changePaymentSplits, setChangePaymentSplits] = useState<{ payMode: string; amount: string }[]>([]);
 
+  // Member selection states for payment change
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [isMemberSearch, setIsMemberSearch] = useState(true); // true for MEMBER, false for CREDIT
+  const [memberQuery, setMemberQuery] = useState("");
+  const [membersList, setMembersList] = useState<any[]>([]);
+  const [searchingMembers, setSearchingMembers] = useState(false);
+  const [selectedMemberForPay, setSelectedMemberForPay] = useState<any | null>(null);
+  const [selectedCreditForPay, setSelectedCreditForPay] = useState<any | null>(null);
+  const [currentSelectionStep, setCurrentSelectionStep] = useState<"MEMBER" | "CREDIT" | null>(null);
+  const [activeModalSelection, setActiveModalSelection] = useState<any | null>(null);
+  const [pendingPayMode, setPendingPayMode] = useState<string | null>(null);
+  const [pendingSplits, setPendingSplits] = useState<any[] | null>(null);
+
+  const searchMembers = async (q: string, isMemberType: boolean) => {
+    try {
+      setSearchingMembers(true);
+      const url = isMemberType
+        ? `${API_URL}/api/members/search?query=${encodeURIComponent(q)}`
+        : `${API_URL}/api/credit-customers/search?query=${encodeURIComponent(q)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setMembersList(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Search error:", err);
+    } finally {
+      setSearchingMembers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showMemberModal) {
+      searchMembers(memberQuery, isMemberSearch);
+    }
+  }, [memberQuery, showMemberModal, isMemberSearch]);
+
   // Supervisor Password Verification State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
@@ -1584,15 +1619,16 @@ export default function SalesReport() {
     }
   };
 
-  const handleConfirmChangePayment = async (newPayMode: string, splits?: any[]) => {
+  const handleConfirmChangePayment = async (newPayMode: string, splits?: any[], memberId?: string, creditCustomerId?: string) => {
     if (!selectedOrder) return;
     try {
       setShowChangePaymentModal(false);
+      setShowMemberModal(false);
       setLoadingDetails(true);
       const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payMode: newPayMode, splits }),
+        body: JSON.stringify({ payMode: newPayMode, splits, memberId, creditCustomerId }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -4096,7 +4132,22 @@ export default function SalesReport() {
                       {["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"].map((mode) => (
                         <TouchableOpacity
                           key={mode}
-                          onPress={() => handleConfirmChangePayment(mode)}
+                          onPress={() => {
+                            if (mode === "MEMBER" || mode === "CREDIT") {
+                              setIsMemberSearch(mode === "MEMBER");
+                              setCurrentSelectionStep(mode === "MEMBER" ? "MEMBER" : "CREDIT");
+                              setPendingPayMode(mode);
+                              setPendingSplits(null);
+                              setMemberQuery("");
+                              setSelectedMemberForPay(null);
+                              setSelectedCreditForPay(null);
+                              setActiveModalSelection(null);
+                              setMembersList([]);
+                              setShowMemberModal(true);
+                            } else {
+                              handleConfirmChangePayment(mode);
+                            }
+                          }}
                           style={{
                             paddingVertical: 12,
                             paddingHorizontal: 16,
@@ -4143,7 +4194,7 @@ export default function SalesReport() {
                     <ScrollView style={{ maxHeight: 250, marginBottom: 15 }} keyboardShouldPersistTaps="handled">
                       {changePaymentSplits.map((split, idx) => {
                         const nextMode = () => {
-                          const modes = ["CASH", "CARD", "NETS", "PAYNOW"];
+                          const modes = ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
                           const currentIdx = modes.indexOf(split.payMode);
                           const next = modes[(currentIdx + 1) % modes.length]!;
                           const newSplits = [...changePaymentSplits];
@@ -4258,7 +4309,30 @@ export default function SalesReport() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         disabled={Math.abs(remainingSplitsBalance) >= 0.02}
-                        onPress={() => handleConfirmChangePayment("SPLIT", changePaymentSplits)}
+                        onPress={() => {
+                          const hasMemberSplit = changePaymentSplits.some(s => s.payMode === "MEMBER");
+                          const hasCreditSplit = changePaymentSplits.some(s => s.payMode === "CREDIT");
+
+                          setPendingPayMode("SPLIT");
+                          setPendingSplits(changePaymentSplits);
+                          setSelectedMemberForPay(null);
+                          setSelectedCreditForPay(null);
+                          setActiveModalSelection(null);
+                          setMemberQuery("");
+                          setMembersList([]);
+
+                          if (hasMemberSplit) {
+                            setCurrentSelectionStep("MEMBER");
+                            setIsMemberSearch(true);
+                            setShowMemberModal(true);
+                          } else if (hasCreditSplit) {
+                            setCurrentSelectionStep("CREDIT");
+                            setIsMemberSearch(false);
+                            setShowMemberModal(true);
+                          } else {
+                            handleConfirmChangePayment("SPLIT", changePaymentSplits);
+                          }
+                        }}
                         style={{
                           flex: 1.5,
                           backgroundColor: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.success : Theme.textMuted,
@@ -4274,6 +4348,188 @@ export default function SalesReport() {
                     </View>
                   </View>
                 )}
+              </View>
+            </View>
+          </Modal>
+
+          {/* Member Selection Modal */}
+          <Modal visible={showMemberModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={[styles.modalContent, { width: 360, padding: 20 }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
+                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                    {isMemberSearch ? "Select Member" : "Select Credit Customer"}
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowMemberModal(false)}>
+                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Search Type Selector (Member vs Credit Customer) */}
+                <View style={{ flexDirection: "row", backgroundColor: Theme.border + "15", borderRadius: 8, padding: 4, marginBottom: 12 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsMemberSearch(true);
+                      setSelectedMemberForPay(null);
+                      setMemberQuery("");
+                      setMembersList([]);
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      alignItems: "center",
+                      backgroundColor: isMemberSearch ? "#fff" : "transparent",
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: isMemberSearch ? Theme.primary : Theme.textSecondary }}>Member</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsMemberSearch(false);
+                      setSelectedMemberForPay(null);
+                      setMemberQuery("");
+                      setMembersList([]);
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      alignItems: "center",
+                      backgroundColor: !isMemberSearch ? "#fff" : "transparent",
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: !isMemberSearch ? Theme.primary : Theme.textSecondary }}>Credit Customer</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TextInput
+                  placeholder={isMemberSearch ? "Search Member (Name or Phone)" : "Search Credit Customer (Name)"}
+                  placeholderTextColor={Theme.textSecondary + "70"}
+                  value={memberQuery}
+                  onChangeText={setMemberQuery}
+                  style={{
+                    height: 40,
+                    borderWidth: 1.5,
+                    borderColor: Theme.border + "60",
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    fontSize: 13,
+                    color: Theme.textPrimary,
+                    fontFamily: Fonts.medium,
+                    backgroundColor: "#FAF7F2",
+                    marginBottom: 12
+                  }}
+                />
+
+                {searchingMembers ? (
+                  <View style={{ height: 180, justifyContent: "center", alignItems: "center" }}>
+                    <ActivityIndicator size="small" color={Theme.primary} />
+                  </View>
+                ) : (
+                  <ScrollView style={{ maxHeight: 180, marginBottom: 15 }}>
+                    {membersList.length === 0 ? (
+                      <Text style={{ textAlign: "center", color: Theme.textSecondary, fontFamily: Fonts.medium, fontSize: 12, paddingVertical: 20 }}>
+                        No matches found.
+                      </Text>
+                    ) : (
+                      membersList.map((m: any) => {
+                        const isSelected = !!activeModalSelection && (
+                          (m.MemberId && activeModalSelection.MemberId === m.MemberId) ||
+                          (m.CustomerId && activeModalSelection.CustomerId === m.CustomerId)
+                        );
+                        return (
+                          <TouchableOpacity
+                            key={m.MemberId || m.CustomerId}
+                            onPress={() => setActiveModalSelection(m)}
+                            style={{
+                              paddingVertical: 10,
+                              paddingHorizontal: 12,
+                              borderRadius: 8,
+                              backgroundColor: isSelected ? Theme.primary + "10" : "transparent",
+                              borderWidth: 1,
+                              borderColor: isSelected ? Theme.primary : "transparent",
+                              marginBottom: 4,
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center"
+                            }}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: isSelected ? Theme.primary : Theme.textPrimary }}>
+                                {m.Name}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
+                                {m.Phone || m.MobileNo || "No phone"}
+                              </Text>
+                            </View>
+                            {isSelected && (
+                              <Ionicons name="checkmark" size={16} color={Theme.primary} />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })
+                    )}
+                  </ScrollView>
+                )}
+
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setShowMemberModal(false)}
+                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                  >
+                    <Text style={styles.premiumSecondaryBtnText}>CANCEL</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    disabled={!activeModalSelection}
+                    onPress={() => {
+                      if (currentSelectionStep === "MEMBER") {
+                        const chosenMember = activeModalSelection;
+                        setSelectedMemberForPay(chosenMember);
+                        
+                        // Check if we also need to select a Credit Customer
+                        const hasCredit = pendingPayMode === "SPLIT" && pendingSplits?.some(s => s.payMode === "CREDIT");
+                        if (hasCredit) {
+                          setCurrentSelectionStep("CREDIT");
+                          setIsMemberSearch(false);
+                          setActiveModalSelection(null);
+                          setMemberQuery("");
+                          setMembersList([]);
+                        } else {
+                          setShowMemberModal(false);
+                          handleConfirmChangePayment(pendingPayMode || "", pendingSplits || undefined, chosenMember.MemberId);
+                        }
+                      } else if (currentSelectionStep === "CREDIT") {
+                        const chosenCredit = activeModalSelection;
+                        setSelectedCreditForPay(chosenCredit);
+                        setShowMemberModal(false);
+                        
+                        // Pass both IDs if it's a split with member and credit
+                        const hasMember = pendingPayMode === "SPLIT" && pendingSplits?.some(s => s.payMode === "MEMBER");
+                        const mId = hasMember ? selectedMemberForPay?.MemberId : null;
+                        
+                        handleConfirmChangePayment(pendingPayMode || "", pendingSplits || undefined, mId || undefined, chosenCredit.CustomerId);
+                      } else {
+                        // Fallback for single modes
+                        setShowMemberModal(false);
+                        const id = activeModalSelection.MemberId || activeModalSelection.CustomerId;
+                        handleConfirmChangePayment(pendingPayMode || "", undefined, id);
+                      }
+                    }}
+                    style={{
+                      flex: 1.5,
+                      backgroundColor: activeModalSelection ? Theme.primary : Theme.textMuted,
+                      borderRadius: 10,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingVertical: 10,
+                      opacity: activeModalSelection ? 1 : 0.6
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>CONFIRM</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </Modal>

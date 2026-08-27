@@ -427,6 +427,21 @@ export default function TableMasterScreen() {
 
   const [availableWidth, setAvailableWidth] = useState(780);
 
+  // Custom alert & confirmation modal states
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmOnSuccess, setConfirmOnSuccess] = useState<(() => void) | null>(null);
+  const [isConfirmAlertOnly, setIsConfirmAlertOnly] = useState(false);
+
+  const showCustomConfirm = (title: string, message: string, onConfirm: () => void, isAlertOnly = false) => {
+    setConfirmTitle(title);
+    setConfirmMessage(message);
+    setConfirmOnSuccess(() => onConfirm);
+    setIsConfirmAlertOnly(isAlertOnly);
+    setConfirmModalVisible(true);
+  };
+
   const onContainerLayout = (event: any) => {
     const { width } = event.nativeEvent.layout;
     if (width > 0) {
@@ -581,62 +596,66 @@ export default function TableMasterScreen() {
   // Handle Reset Layout (discard custom positions, reset to standard grid layout)
   const handleResetToPrevious = () => {
     console.log("👉 [Reset Clicked] activeSection:", activeSection);
-    Alert.alert(
+
+    const performReset = async () => {
+      try {
+        setSaving(true);
+        console.log("🔄 [Reset Action] Mapping and resetting tables to 0...");
+        const updatedTables = tables.map((t) =>
+          String(t.DiningSection) === activeSection
+            ? { ...t, XPos: 0, YPos: 0, TableType: "Rectangular", Seats: 4, XSize: 100, YSize: 80 }
+            : t
+        );
+        setTables(updatedTables);
+        setIsEditingLayout(false);
+
+        const sectionTablesToReset = updatedTables.filter(t => String(t.DiningSection) === activeSection);
+        console.log("📦 [Reset Action] Payload size:", sectionTablesToReset.length);
+        const positions = sectionTablesToReset.map((t) => ({
+          id: t.id,
+          xPos: 0,
+          yPos: 0,
+          tableType: "Rectangular",
+          xSize: 100,
+          ySize: 80,
+          seats: 4,
+        }));
+
+        const url = `${API_URL}/api/tables/save-positions`;
+        console.log("🌐 [Reset Action] Fetching PUT URL:", url);
+        const response = await fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ positions }),
+        });
+
+        console.log("💾 [Reset Action] Response status:", response.status);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Failed to reset layout on database: ${text}`);
+        }
+
+        if (socket) {
+          console.log("🔌 [Reset Action] Emitting table_config_updated via socket...");
+          socket.emit("table_config_updated", {});
+        }
+
+        // Fetch tables again to refresh local state/UI from DB
+        await fetchTables();
+
+        showCustomConfirm("Success", "Section layout reset to standard grid successfully!", () => {}, true);
+      } catch (err: any) {
+        console.error("❌ [Reset Action] Error:", err);
+        showCustomConfirm("Error", err.message || "Could not save reset configuration.", () => {}, true);
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    showCustomConfirm(
       "Reset Layout",
       "Do you want to reset this section back to the standard grid layout?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Yes, Reset", 
-          onPress: async () => {
-            try {
-              setSaving(true);
-              console.log("🔄 [Reset Action] Mapping and resetting tables to 0...");
-              const updatedTables = tables.map((t) =>
-                String(t.DiningSection) === activeSection ? { ...t, XPos: 0, YPos: 0 } : t
-              );
-              setTables(updatedTables);
-              setIsEditingLayout(false);
-
-              const sectionTablesToReset = updatedTables.filter(t => String(t.DiningSection) === activeSection);
-              console.log("📦 [Reset Action] Payload size:", sectionTablesToReset.length);
-              const positions = sectionTablesToReset.map((t) => ({
-                id: t.id,
-                xPos: 0,
-                yPos: 0,
-                tableType: t.TableType,
-                xSize: t.XSize,
-                ySize: t.YSize,
-              }));
-
-              const url = `${API_URL}/api/tables/save-positions`;
-              console.log("🌐 [Reset Action] Fetching PUT URL:", url);
-              const response = await fetch(url, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ positions }),
-              });
-
-              console.log("💾 [Reset Action] Response status:", response.status);
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Failed to reset layout on database: ${text}`);
-              }
-
-              if (socket) {
-                console.log("🔌 [Reset Action] Emitting table_config_updated via socket...");
-                socket.emit("table_config_updated", {});
-              }
-              Alert.alert("Success", "Section layout reset to standard grid successfully!");
-            } catch (err: any) {
-              console.error("❌ [Reset Action] Error:", err);
-              Alert.alert("Error", err.message || "Could not save reset configuration.");
-            } finally {
-              setSaving(false);
-            }
-          } 
-        },
-      ]
+      performReset
     );
   };
 
@@ -787,7 +806,13 @@ export default function TableMasterScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/category");
+              }
+            }}
             style={styles.backButton}
             activeOpacity={0.7}
           >
@@ -900,55 +925,7 @@ export default function TableMasterScreen() {
                         borderWidth: 1,
                         borderColor: "#E8E0D5",
                       }}
-                      onPress={() => {
-                        Alert.alert(
-                          "Reset Layout",
-                          "Do you want to reset this section back to the standard grid layout?",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Yes, Reset",
-                              onPress: async () => {
-                                try {
-                                  setSaving(true);
-                                  const updatedTables = tables.map((t) =>
-                                    String(t.DiningSection) === activeSection ? { ...t, XPos: 0, YPos: 0 } : t
-                                  );
-                                  setTables(updatedTables);
-                                  setIsEditingLayout(false);
-
-                                  const sectionTablesToReset = updatedTables.filter(t => String(t.DiningSection) === activeSection);
-                                  const positions = sectionTablesToReset.map((t) => ({
-                                    id: t.id,
-                                    xPos: 0,
-                                    yPos: 0,
-                                    tableType: t.TableType,
-                                    xSize: t.XSize,
-                                    ySize: t.YSize,
-                                  }));
-
-                                  const response = await fetch(`${API_URL}/api/tables/save-positions`, {
-                                    method: "PUT",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ positions }),
-                                  });
-
-                                  if (!response.ok) throw new Error("Failed to reset layout on database");
-
-                                  if (socket) {
-                                    socket.emit("table_config_updated", {});
-                                  }
-                                  Alert.alert("Success", "Section layout reset to standard grid successfully!");
-                                } catch (err: any) {
-                                  Alert.alert("Error", err.message || "Could not save reset configuration.");
-                                } finally {
-                                  setSaving(false);
-                                }
-                              },
-                            },
-                          ]
-                        );
-                      }}
+                      onPress={handleResetToPrevious}
                       activeOpacity={0.7}
                     >
                       <Ionicons name="refresh-outline" size={14} color="#6B6B6B" style={{ marginRight: 4 }} />
@@ -1275,6 +1252,120 @@ export default function TableMasterScreen() {
                 ) : (
                   <Text style={styles.modalCreateText}>Create Table</Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* BEAUTIFUL CUSTOM CONFIRM / ALERT MODAL */}
+      <Modal
+        visible={confirmModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={{
+            width: 380,
+            backgroundColor: "#FFFFFF",
+            borderRadius: 24,
+            padding: 24,
+            alignItems: "center",
+            borderWidth: 1,
+            borderColor: "#E8E0D5",
+            ...Platform.select({
+              ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16 },
+              android: { elevation: 8 },
+              web: { boxShadow: "0px 12px 30px rgba(15, 23, 42, 0.12)" } as any,
+            }),
+          }}>
+            {/* Header Icon */}
+            <View style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: confirmTitle.toLowerCase().includes("success") ? "#E6F4EA" : "#FFF4EC",
+              justifyContent: "center",
+              alignItems: "center",
+              marginBottom: 16,
+            }}>
+              <Ionicons 
+                name={isConfirmAlertOnly ? (confirmTitle.toLowerCase().includes("success") ? "checkmark-circle" : "alert-circle") : "help-circle"} 
+                size={32} 
+                color={confirmTitle.toLowerCase().includes("success") ? "#137333" : "#FF5E1A"} 
+              />
+            </View>
+
+            {/* Title */}
+            <Text style={{
+              fontFamily: Fonts.bold,
+              fontSize: 18,
+              color: "#1C1C1E",
+              marginBottom: 8,
+              textAlign: "center",
+            }}>
+              {confirmTitle}
+            </Text>
+
+            {/* Message Body */}
+            <Text style={{
+              fontFamily: Fonts.medium,
+              fontSize: 13,
+              color: "#5F6368",
+              lineHeight: 18,
+              textAlign: "center",
+              marginBottom: 24,
+              paddingHorizontal: 8,
+            }}>
+              {confirmMessage}
+            </Text>
+
+            {/* Buttons Row */}
+            <View style={{
+              flexDirection: "row",
+              gap: 12,
+              width: "100%",
+            }}>
+              {!isConfirmAlertOnly && (
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 11,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: "#E8E0D5",
+                    backgroundColor: "#FFFFFF",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                  onPress={() => setConfirmModalVisible(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: "#5F6368" }}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 11,
+                  borderRadius: 12,
+                  backgroundColor: confirmTitle.toLowerCase().includes("success") ? "#10B981" : "#FF5E1A",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  ...Platform.select({
+                    web: { boxShadow: confirmTitle.toLowerCase().includes("success") ? "0 2px 4px rgba(16,185,129,0.2)" : "0 2px 4px rgba(255,94,26,0.2)" } as any,
+                  }),
+                }}
+                onPress={() => {
+                  setConfirmModalVisible(false);
+                  if (confirmOnSuccess) confirmOnSuccess();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: "#FFFFFF" }}>
+                  {isConfirmAlertOnly ? "OK" : "Yes"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

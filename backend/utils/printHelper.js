@@ -34,8 +34,8 @@ function formatKOTThermalText(data, type = 'NEW') {
 
   // ── HEADER ──────────────────────────────────────────────────────────
   let text = '';
-  // Only 1 empty line at the top to save paper
-  text += '[L]\n';
+  // 1.5 cm white space (approx 4 empty lines) at the top
+  text += '[L]\n'.repeat(4);
   text += `[C]<font size='big'><B>${title}</B></font>\n`;
   text += `[C]<B>${dateStr}  ${timeStr}</B>\n`;
   text += DIV;
@@ -157,25 +157,25 @@ function _formatItem(item) {
   const qtyNum   = item.quantity || item.qty || 1;
   const itemName = item.name     || item.DishName || '';
 
-  // Item name: normal font size, bold, wrapped at 40 chars
-  const DISH_WRAP = 40;
-  const BIG_MOD_WRAP = 40;
+  // Item name: normal font size, bold, wrapped at 20 chars for big font
+  const DISH_WRAP = 20;
+  const BIG_MOD_WRAP = 20;
 
   _wrapText(itemName.replace(/\n/g, ' '), DISH_WRAP).forEach((chunk, idx) => {
     if (idx === 0) {
-      text += `[L]<B>[${qtyNum}] ${chunk}</B>\n`;
+      text += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
     } else {
-      text += `[L]<B>    ${chunk}</B>\n`;
+      text += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
     }
   });
 
   // Song name
   const songName = item.songName || item.SongName || '';
-  if (songName) text += `[L]<B>  ♪ ${songName}</B>\n`;
+  if (songName) text += `[L]<font size='big'><B>  ♪ ${songName}</B></font>\n`;
 
   // Takeaway flag
   const isTakeaway = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
-  if (isTakeaway) text += `[L]<B>  >> TAKEAWAY <<</B>\n`;
+  if (isTakeaway) text += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
 
   // Modifiers
   if (item.modifiers && item.modifiers.length > 0) {
@@ -184,8 +184,8 @@ function _formatItem(item) {
       if (modName) {
         _wrapText(modName, BIG_MOD_WRAP).forEach((chunk, idx) => {
           text += idx === 0
-            ? `[L]<B>  + ${chunk}</B>\n`
-            : `[L]<B>    ${chunk}</B>\n`;
+            ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n`
+            : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
         });
       }
     });
@@ -220,8 +220,8 @@ function _formatItem(item) {
           if (optName) {
             _wrapText(optName, BIG_MOD_WRAP).forEach((chunk, idx) => {
               text += idx === 0
-                ? `[L]<B>  - ${chunk}</B>\n`
-                : `[L]<B>    ${chunk}</B>\n`;
+                ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n`
+                : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
             });
           }
         });
@@ -234,8 +234,8 @@ function _formatItem(item) {
   if (noteText) {
     _wrapText(noteText, BIG_MOD_WRAP).forEach((chunk, idx) => {
       text += idx === 0 
-        ? `[L]<B>  * ${chunk}</B>\n` 
-        : `[L]<B>    ${chunk}</B>\n`;
+        ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` 
+        : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
     });
   }
 

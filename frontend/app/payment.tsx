@@ -1138,6 +1138,28 @@ export default function PaymentScreen() {
   };
 
   const handleSelectMethod = (m: PaymentMethod) => {
+    // 🚫 Block switching payment method while a terminal payment is in flight
+    if (paymentStatus === "processing") {
+      Alert.alert(
+        "Payment In Progress",
+        "A payment is currently being processed on the terminal. Please wait for it to complete.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    // 🧹 If a previous YeahPay result (success/failed/cancelled) is still showing,
+    // clear it so the new method starts with a clean slate.
+    if (paymentStatus !== "idle") {
+      setPaymentStatus("idle");
+      setPaymentMessage("");
+      setProcessing(false);
+      const tableId = useOrderContextStore.getState().currentOrder?.tableId;
+      if (tableId) {
+        useTerminalPaymentStore.getState().clearSession(tableId);
+      }
+    }
+
     setMethod(m.payMode);
 
     if (!isCashMethod(m.payMode)) {

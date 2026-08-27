@@ -576,27 +576,79 @@ router.get("/settlement/:id", async (req, res) => {
       .input("OrderId", sql.UniqueIdentifier, orderId)
       .query("SELECT TOP 1 * FROM SettlementHeader WHERE OrderId = @OrderId OR SettlementID = @OrderId");
     
-    if (headerResult.recordset.length === 0) {
-      return res.status(404).json({ error: "Settlement not found" });
+    let header;
+    let items = [];
+    let payments = [];
+
+    if (headerResult.recordset.length > 0) {
+      header = headerResult.recordset[0];
+      const settlementId = header.SettlementID;
+
+      // Fetch the items
+      const itemsResult = await pool.request()
+        .input("SettlementID", sql.UniqueIdentifier, settlementId)
+        .query("SELECT * FROM SettlementItemDetail WHERE SettlementID = @SettlementID");
+      items = itemsResult.recordset || [];
+
+      // Fetch the payments
+      const paymentsResult = await pool.request()
+        .input("SettlementID", sql.UniqueIdentifier, settlementId)
+        .query("SELECT * FROM PaymentDetailCur WHERE SettlementId = @SettlementID UNION SELECT * FROM PaymentDetail WHERE SettlementId = @SettlementID");
+      payments = paymentsResult.recordset || [];
+    } else {
+      // Check CustomerCreditTransactions for LEDGER
+      const ledgerResult = await pool.request()
+        .input("TxId", sql.UniqueIdentifier, orderId)
+        .query("SELECT * FROM CustomerCreditTransactions WHERE TransactionId = @TxId");
+      
+      if (ledgerResult.recordset.length === 0) {
+        return res.status(404).json({ error: "Settlement not found" });
+      }
+
+      const ledger = ledgerResult.recordset[0];
+      const customerName = ledger.Remarks ? ledger.Remarks.split('(')[0].trim() : 'Customer';
+      header = {
+        SettlementID: ledger.TransactionId,
+        SettlementDate: ledger.CreatedDate,
+        BillNo: ledger.Remarks || 'LEDGER_PAY',
+        PayMode: ledger.PaymentMethod,
+        SysAmount: ledger.PaidAmount,
+        SubTotal: ledger.PaidAmount,
+        OrderType: 'LEDGER',
+        MemberId: ledger.MemberId,
+        SER_NAME: 'Cashier',
+        TableNo: 'LEDGER',
+        Section: customerName
+      };
+
+      items = [{
+        DishName: ledger.Remarks || 'Member Outstanding Payment',
+        Qty: 1,
+        Price: ledger.PaidAmount
+      }];
+
+      // Fetch the payments
+      const ptdResult = await pool.request()
+        .input("TxId", sql.UniqueIdentifier, orderId)
+        .query("SELECT ptd.PayModeId, ptd.Amount, pm.PayMode FROM [dbo].[PaymentTransactionDetails] ptd LEFT JOIN [dbo].[Paymode] pm ON ptd.PayModeId = pm.Position WHERE ptd.ReferenceId = @TxId");
+      
+      if (ptdResult.recordset.length > 0) {
+        payments = ptdResult.recordset.map(p => ({
+          Paymode: p.PayMode || 'CASH',
+          Amount: p.Amount
+        }));
+      } else {
+        payments = [{
+          Paymode: ledger.PaymentMethod || 'CASH',
+          Amount: ledger.PaidAmount
+        }];
+      }
     }
-
-    const header = headerResult.recordset[0];
-    const settlementId = header.SettlementID;
-
-    // Fetch the items
-    const itemsResult = await pool.request()
-      .input("SettlementID", sql.UniqueIdentifier, settlementId)
-      .query("SELECT * FROM SettlementItemDetail WHERE SettlementID = @SettlementID");
-
-    // Fetch the payments
-    const paymentsResult = await pool.request()
-      .input("SettlementID", sql.UniqueIdentifier, settlementId)
-      .query("SELECT * FROM PaymentDetailCur WHERE SettlementId = @SettlementID UNION SELECT * FROM PaymentDetail WHERE SettlementId = @SettlementID");
 
     res.json({
       header,
-      items: itemsResult.recordset || [],
-      payments: paymentsResult.recordset || []
+      items,
+      payments
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1602,16 +1654,19 @@ router.post("/save", async (req, res) => {
             Amount: totalAmount || 0
           }];
 
-      const creditAmount = unifiedPayments
-        .filter(
-          p =>
-            ["CREDIT", "MEMBER"].includes(
-              String(p.PaymentMethod || "").trim().toUpperCase()
-            )
-        )
+      const memberAmount = unifiedPayments
+        .filter(p => String(p.PaymentMethod || "").trim().toUpperCase() === "MEMBER")
         .reduce((sum, p) => sum + Number(p.Amount || 0), 0);
 
-      if (creditAmount > 0) {
+      const creditAmount = unifiedPayments
+        .filter(p => String(p.PaymentMethod || "").trim().toUpperCase() === "CREDIT")
+        .reduce((sum, p) => sum + Number(p.Amount || 0), 0);
+
+      const totalCreditAndMember = memberAmount + creditAmount;
+      const finalMemberAmount = customerType === "CREDIT" ? 0 : memberAmount;
+      const finalCreditAmount = customerType === "CREDIT" ? totalCreditAndMember : creditAmount;
+
+      if (totalCreditAndMember > 0) {
         if (!memberId) {
           throw new Error("Customer/Member selection is required for credit transactions");
         }
@@ -1624,9 +1679,9 @@ router.post("/save", async (req, res) => {
 
         const currentBalance = Number(customerRecord.CurrentBalance || 0);
         const creditLimit = Number(customerRecord.CreditLimit || 0);
-        const projectedBalance = currentBalance + creditAmount;
+        const projectedBalance = currentBalance + totalCreditAndMember;
 
-        console.log(`[SAVE SALE DIAGNOSTIC] Validation: memberId=${memberId}, customerType=${customerType}, creditAmount=${creditAmount}, oldBalance=${currentBalance}, projectedBalance=${projectedBalance}`);
+        console.log(`[SAVE SALE DIAGNOSTIC] Validation: memberId=${memberId}, customerType=${customerType}, totalCreditAndMember=${totalCreditAndMember}, oldBalance=${currentBalance}, projectedBalance=${projectedBalance}`);
 
         if (projectedBalance > creditLimit) {
           throw new Error("Credit limit exceeded");
@@ -2028,14 +2083,15 @@ router.post("/save", async (req, res) => {
           });
 
           // Update member/customer balance if credit was used
-          if (memberId && creditAmount > 0) {
+          const totalCreditAndMember = finalMemberAmount + finalCreditAmount;
+          if (memberId && totalCreditAndMember > 0) {
             const oldBalance = Number(customerRecord.CurrentBalance || 0);
-            const newBalance = oldBalance + creditAmount;
+            const newBalance = oldBalance + totalCreditAndMember;
 
             console.log({
               memberId,
               customerType,
-              creditAmount,
+              totalCreditAndMember,
               oldBalance,
               newBalance
             });
@@ -2044,35 +2100,42 @@ router.post("/save", async (req, res) => {
               isMemberPayment = true;
               await transaction.request()
                 .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(memberId))
-                .input("Amount", sql.Decimal(18, 2), creditAmount)
-                .query(`UPDATE MemberMaster SET CurrentBalance = CurrentBalance + @Amount WHERE MemberId = @MemberId`);
+                .input("SubAmt", sql.Decimal(18, 2), finalMemberAmount)
+                .input("AddAmt", sql.Decimal(18, 2), finalCreditAmount)
+                .query(`UPDATE MemberMaster SET CurrentBalance = CurrentBalance - @SubAmt + @AddAmt WHERE MemberId = @MemberId`);
               
               await transaction.request()
                 .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(memberId))
                 .input("SettlementId", sql.UniqueIdentifier, toGuidOrNull(settlementId))
                 .input("BillNo", sql.NVarChar(50), finalBillNo)
-                .input("Amount", sql.Decimal(18, 2), creditAmount)
+                .input("BillAmount", sql.Decimal(18, 2), totalCreditAndMember)
+                .input("PaidAmount", sql.Decimal(18, 2), finalMemberAmount)
+                .input("OutstandingAmount", sql.Decimal(18, 2), finalCreditAmount)
+                .input("Status", sql.NVarChar(20), finalCreditAmount > 0 ? 'OPEN' : 'PAID')
                 .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
                 .query(`
                   INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
-                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @Amount, 0, @Amount, 'OPEN', 'Split member credit purchase', @CreatedBy, 'MEMBER')
+                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Split member credit purchase', @CreatedBy, 'MEMBER')
                 `);
               console.log(`[SAVE SALE DIAGNOSTIC] Balance update success (MEMBER): memberId=${memberId}, oldBalance=${oldBalance}, newBalance=${newBalance}`);
             } else if (customerType === "CREDIT") {
               await transaction.request()
                 .input("CustomerId", sql.UniqueIdentifier, toGuidOrNull(memberId))
-                .input("Amount", sql.Decimal(18, 2), creditAmount)
+                .input("Amount", sql.Decimal(18, 2), totalCreditAndMember)
                 .query(`UPDATE CreditCustomerMaster SET CurrentBalance = CurrentBalance + @Amount WHERE CustomerId = @CustomerId`);
               
               await transaction.request()
                 .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(memberId))
                 .input("SettlementId", sql.UniqueIdentifier, toGuidOrNull(settlementId))
                 .input("BillNo", sql.NVarChar(50), finalBillNo)
-                .input("Amount", sql.Decimal(18, 2), creditAmount)
+                .input("BillAmount", sql.Decimal(18, 2), totalCreditAndMember)
+                .input("PaidAmount", sql.Decimal(18, 2), 0)
+                .input("OutstandingAmount", sql.Decimal(18, 2), totalCreditAndMember)
+                .input("Status", sql.NVarChar(20), 'OPEN')
                 .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
                 .query(`
                   INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
-                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @Amount, 0, @Amount, 'OPEN', 'Split credit purchase', @CreatedBy, 'CREDIT')
+                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Split credit purchase', @CreatedBy, 'CREDIT')
                 `);
               console.log(`[SAVE SALE DIAGNOSTIC] Balance update success (CREDIT): memberId=${memberId}, oldBalance=${oldBalance}, newBalance=${newBalance}`);
             }
@@ -3286,7 +3349,7 @@ async function logLoyaltyVisitAsync(pool, settlementId, billNo, phone, name, ite
 
 router.post("/settlement/:id/change-payment", async (req, res) => {
   try {
-    const { payMode, splits } = req.body;
+    const { payMode, splits, memberId, creditCustomerId } = req.body;
     const settlementId = req.params.id;
     if (!payMode && (!splits || splits.length === 0)) {
       return res.status(400).json({ error: "payMode or splits is required" });
@@ -3294,22 +3357,59 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
 
     const pool = await poolPromise;
     
-    // Fetch SettlementHeader details to get total bill amount
-    const shRes = await pool.request()
-      .input("Sid", sql.UniqueIdentifier, settlementId)
-      .query(`
-        SELECT sh.SysAmount, sh.SubTotal, sh.CreatedBy, sh.BusinessUnitId, ri.OrderId 
-        FROM SettlementHeader sh
-        LEFT JOIN RestaurantInvoice ri ON sh.SettlementID = ri.RestaurantBillId
-        WHERE sh.SettlementID = @Sid
-      `);
-    
-    if (shRes.recordset.length === 0) {
-      return res.status(404).json({ error: "Order/Settlement not found" });
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(settlementId);
+    let queryStr = `
+      SELECT sh.SettlementID, sh.SysAmount, sh.SubTotal, sh.CreatedBy, sh.BusinessUnitId, sh.MemberId, sh.BillNo, ri.OrderId 
+      FROM SettlementHeader sh
+      LEFT JOIN RestaurantInvoice ri ON sh.SettlementID = ri.RestaurantBillId
+    `;
+
+    const request = pool.request();
+    if (isGuid) {
+      request.input("Sid", sql.UniqueIdentifier, settlementId);
+      queryStr += " WHERE sh.SettlementID = @Sid";
+    } else {
+      request.input("OrderId", sql.Int, parseInt(settlementId, 10) || 0);
+      queryStr += " WHERE sh.OrderId = @OrderId";
     }
 
-    const { SysAmount, SubTotal, CreatedBy, BusinessUnitId, OrderId } = shRes.recordset[0];
-    const totalBillAmount = Number(SysAmount || SubTotal || 0);
+    const shRes = await request.query(queryStr);
+    
+    let realSettlementId = settlementId;
+    let totalBillAmount = 0;
+    let CreatedBy = null;
+    let BusinessUnitId = null;
+    let oldMemberId = null;
+    let BillNo = 'LEDGER_PAY';
+    let OrderId = null;
+    let isLedger = false;
+
+    if (shRes.recordset.length === 0) {
+      // Check CustomerCreditTransactions for LEDGER
+      const ledgerResult = await pool.request()
+        .input("TxId", sql.UniqueIdentifier, settlementId)
+        .query("SELECT * FROM CustomerCreditTransactions WHERE TransactionId = @TxId");
+      
+      if (ledgerResult.recordset.length === 0) {
+        return res.status(404).json({ error: "Order/Settlement/Ledger not found" });
+      }
+      isLedger = true;
+      const ledger = ledgerResult.recordset[0];
+      realSettlementId = ledger.TransactionId;
+      totalBillAmount = Number(ledger.PaidAmount || 0);
+      CreatedBy = ledger.CreatedBy;
+      oldMemberId = ledger.MemberId;
+      BillNo = ledger.Remarks || 'LEDGER_PAY';
+    } else {
+      const row = shRes.recordset[0];
+      realSettlementId = row.SettlementID;
+      totalBillAmount = Number(row.SysAmount || row.SubTotal || 0);
+      CreatedBy = row.CreatedBy;
+      BusinessUnitId = row.BusinessUnitId;
+      oldMemberId = row.MemberId;
+      BillNo = row.BillNo;
+      OrderId = row.OrderId;
+    }
 
     let finalSplits = splits;
     if (!finalSplits && payMode) {
@@ -3353,13 +3453,98 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
       });
     }
 
+    if (isLedger) {
+      const transaction = new sql.Transaction(pool);
+      await transaction.begin();
+      try {
+        // Delete existing payment details for ledger collection
+        await transaction.request()
+          .input("Sid", sql.UniqueIdentifier, realSettlementId)
+          .query(`
+            DELETE FROM [dbo].[PaymentDetailCur] WHERE RestaurantBillId = @Sid;
+            DELETE FROM [dbo].[PaymentDetail] WHERE RestaurantBillId = @Sid OR SettlementId = @Sid;
+            DELETE FROM [dbo].[PaymentTransactionDetails] WHERE ReferenceId = @Sid AND ReferenceType = 'MEMBER';
+          `);
+
+        // Insert new payment details
+        await processSplitPayments({
+          referenceType: "MEMBER",
+          referenceId: oldMemberId,
+          payments: validatedSplits,
+          transaction,
+          cashierId: toGuidOrNull(CreatedBy)
+        });
+
+        // Update main ledger payment method
+        const joinedPayMode = payModeNames.map(p => String(p).trim()).join(" + ");
+        await transaction.request()
+          .input("TxId", sql.UniqueIdentifier, realSettlementId)
+          .input("PayMode", sql.NVarChar(50), joinedPayMode)
+          .query("UPDATE CustomerCreditTransactions SET PaymentMethod = @PayMode WHERE TransactionId = @TxId");
+
+        await transaction.commit();
+        return res.json({ success: true, message: "Payment mode updated successfully" });
+      } catch (txErr) {
+        await transaction.rollback();
+        throw txErr;
+      }
+    }
+
+    // Fetch old payment records to revert previous credit balances if any
+    const oldPaymentsRes = await pool.request()
+      .input("Sid", sql.UniqueIdentifier, realSettlementId)
+      .query(`
+        SELECT ptd.PayModeId, ptd.Amount 
+        FROM [dbo].[PaymentTransactionDetails] ptd
+        WHERE ptd.ReferenceId = @Sid AND ptd.ReferenceType = 'BILL'
+      `);
+
+    const memberPmId = activePaymodes.find(x => String(x.PayMode).trim().toUpperCase() === 'MEMBER')?.Position;
+    const creditPmId = activePaymodes.find(x => String(x.PayMode).trim().toUpperCase() === 'CREDIT')?.Position;
+
+    let oldMemberAmount = 0;
+    let oldCreditAmount = 0;
+    oldPaymentsRes.recordset.forEach(p => {
+      if (p.PayModeId === memberPmId) {
+        oldMemberAmount += Number(p.Amount || 0);
+      } else if (p.PayModeId === creditPmId) {
+        oldCreditAmount += Number(p.Amount || 0);
+      }
+    });
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
     try {
+      // Revert old member/credit customer balances
+      const totalOldAmt = oldMemberAmount + oldCreditAmount;
+      if (totalOldAmt > 0 && oldMemberId) {
+        const isMem = await transaction.request()
+          .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(oldMemberId))
+          .query("SELECT MemberId FROM MemberMaster WHERE MemberId = @MemberId");
+        
+        if (isMem.recordset.length > 0) {
+          await transaction.request()
+            .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(oldMemberId))
+            .input("AddAmt", sql.Decimal(18, 2), oldMemberAmount)
+            .input("SubAmt", sql.Decimal(18, 2), oldCreditAmount)
+            .query("UPDATE MemberMaster SET CurrentBalance = CurrentBalance + @AddAmt - @SubAmt WHERE MemberId = @MemberId");
+        } else {
+          await transaction.request()
+            .input("CustomerId", sql.UniqueIdentifier, toGuidOrNull(oldMemberId))
+            .input("Amount", sql.Decimal(18, 2), totalOldAmt)
+            .query("UPDATE CreditCustomerMaster SET CurrentBalance = CurrentBalance - @Amount WHERE CustomerId = @CustomerId");
+        }
+
+        // Delete old credit transaction logs
+        await transaction.request()
+          .input("Sid", sql.UniqueIdentifier, realSettlementId)
+          .query("DELETE FROM CustomerCreditTransactions WHERE SettlementId = @Sid");
+      }
+
       // 1. Delete existing payment records
       const deleteReq = new sql.Request(transaction);
-      deleteReq.input("Sid", sql.UniqueIdentifier, settlementId);
+      deleteReq.input("Sid", sql.UniqueIdentifier, realSettlementId);
       await deleteReq.query(`
         DELETE FROM [dbo].[PaymentDetailCur] WHERE RestaurantBillId = @Sid;
         DELETE FROM [dbo].[PaymentDetail] WHERE RestaurantBillId = @Sid OR SettlementId = @Sid;
@@ -3373,7 +3558,7 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
       // 2. Insert new split payments
       await processSplitPayments({
         referenceType: "BILL",
-        referenceId: settlementId,
+        referenceId: realSettlementId,
         payments: validatedSplits,
         transaction,
         businessUnitId: toGuidOrNull(BusinessUnitId),
@@ -3387,26 +3572,114 @@ router.post("/settlement/:id/change-payment", async (req, res) => {
       const payModeCode = validatedSplits.length > 1 ? 3 : (firstSplitMode === "CASH" ? 1 : firstSplitMode === "CARD" ? 2 : 3);
 
       await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Sid", sql.UniqueIdentifier, realSettlementId)
         .input("PayModeCode", sql.Int, payModeCode)
         .query("UPDATE RestaurantInvoice SET PaymentTermCode = @PayModeCode WHERE RestaurantBillId = @Sid");
 
       await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Sid", sql.UniqueIdentifier, realSettlementId)
         .input("PayModeCode", sql.Int, payModeCode)
         .query("UPDATE RestaurantInvoiceCur SET PaymentTermCode = @PayModeCode WHERE RestaurantBillId = @Sid");
 
-      // 4. Update SettlementHeader PayMode
+       // 4. Update SettlementHeader PayMode & MemberId
       const joinedPayMode = payModeNames.map(p => String(p).trim()).join(" + ");
       await transaction.request()
-        .input("Sid", sql.UniqueIdentifier, settlementId)
+        .input("Sid", sql.UniqueIdentifier, realSettlementId)
         .input("PayMode", sql.NVarChar(100), joinedPayMode)
+        .input("MemberId", sql.UniqueIdentifier, (memberId || creditCustomerId) ? toGuidOrNull(memberId || creditCustomerId) : null)
         .query(`
           IF COL_LENGTH('SettlementHeader', 'PayMode') IS NOT NULL
           BEGIN
-            EXEC sp_executesql N'UPDATE SettlementHeader SET PayMode = @pPayMode WHERE SettlementID = @pSid', N'@pPayMode NVARCHAR(100), @pSid UNIQUEIDENTIFIER', @pPayMode = @PayMode, @pSid = @Sid
+            EXEC sp_executesql N'UPDATE SettlementHeader SET PayMode = @pPayMode, MemberId = @pMemberId WHERE SettlementID = @pSid', N'@pPayMode NVARCHAR(100), @pMemberId UNIQUEIDENTIFIER, @pSid UNIQUEIDENTIFIER', @pPayMode = @PayMode, @pMemberId = @MemberId, @pSid = @Sid
+          END
+          ELSE
+          BEGIN
+            UPDATE SettlementHeader SET MemberId = @MemberId WHERE SettlementID = @Sid
           END
         `);
+
+      // 5. Update new member/customer credit balance
+      let newMemberAmount = 0;
+      let newCreditAmount = 0;
+      validatedSplits.forEach(p => {
+        if (String(p.payMode).trim().toUpperCase() === 'MEMBER') {
+          newMemberAmount += Number(p.amount || 0);
+        } else if (String(p.payMode).trim().toUpperCase() === 'CREDIT') {
+          newCreditAmount += Number(p.amount || 0);
+        }
+      });
+
+      // Member balance update (prepaid portion - subtract from CurrentBalance)
+      if (newMemberAmount > 0 && memberId) {
+        await transaction.request()
+          .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(memberId))
+          .input("Amount", sql.Decimal(18, 2), newMemberAmount)
+          .query("UPDATE MemberMaster SET CurrentBalance = CurrentBalance - @Amount WHERE MemberId = @MemberId");
+        
+        await transaction.request()
+          .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(memberId))
+          .input("SettlementId", sql.UniqueIdentifier, toGuidOrNull(realSettlementId))
+          .input("BillNo", sql.NVarChar(50), BillNo || 'CHANGE_PAY')
+          .input("BillAmount", sql.Decimal(18, 2), newMemberAmount)
+          .input("PaidAmount", sql.Decimal(18, 2), newMemberAmount)
+          .input("OutstandingAmount", sql.Decimal(18, 2), 0)
+          .input("Status", sql.NVarChar(20), 'PAID')
+          .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(CreatedBy))
+          .query(`
+            INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
+            VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Payment mode change member prepaid', @CreatedBy, 'MEMBER')
+          `);
+      }
+
+      // Credit Customer balance update (outstanding credit portion)
+      const targetCreditId = creditCustomerId || memberId;
+      if (newCreditAmount > 0 && targetCreditId) {
+        const isMem = await transaction.request()
+          .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(targetCreditId))
+          .query("SELECT MemberId FROM MemberMaster WHERE MemberId = @MemberId");
+        
+        const isMemberCust = isMem.recordset.length > 0;
+
+        if (isMemberCust) {
+          await transaction.request()
+            .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(targetCreditId))
+            .input("Amount", sql.Decimal(18, 2), newCreditAmount)
+            .query("UPDATE MemberMaster SET CurrentBalance = CurrentBalance + @Amount WHERE MemberId = @MemberId");
+          
+          await transaction.request()
+            .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(targetCreditId))
+            .input("SettlementId", sql.UniqueIdentifier, toGuidOrNull(realSettlementId))
+            .input("BillNo", sql.NVarChar(50), BillNo || 'CHANGE_PAY')
+            .input("BillAmount", sql.Decimal(18, 2), newCreditAmount)
+            .input("PaidAmount", sql.Decimal(18, 2), 0)
+            .input("OutstandingAmount", sql.Decimal(18, 2), newCreditAmount)
+            .input("Status", sql.NVarChar(20), 'OPEN')
+            .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(CreatedBy))
+            .query(`
+              INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
+              VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Payment mode change member credit', @CreatedBy, 'MEMBER')
+            `);
+        } else {
+          await transaction.request()
+            .input("CustomerId", sql.UniqueIdentifier, toGuidOrNull(targetCreditId))
+            .input("Amount", sql.Decimal(18, 2), newCreditAmount)
+            .query("UPDATE CreditCustomerMaster SET CurrentBalance = CurrentBalance + @Amount WHERE CustomerId = @CustomerId");
+          
+          await transaction.request()
+            .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(targetCreditId))
+            .input("SettlementId", sql.UniqueIdentifier, toGuidOrNull(realSettlementId))
+            .input("BillNo", sql.NVarChar(50), BillNo || 'CHANGE_PAY')
+            .input("BillAmount", sql.Decimal(18, 2), newCreditAmount)
+            .input("PaidAmount", sql.Decimal(18, 2), 0)
+            .input("OutstandingAmount", sql.Decimal(18, 2), newCreditAmount)
+            .input("Status", sql.NVarChar(20), 'OPEN')
+            .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(CreatedBy))
+            .query(`
+              INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
+              VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Payment mode change credit purchase', @CreatedBy, 'CREDIT')
+            `);
+        }
+      }
 
       await transaction.commit();
       res.json({ success: true, message: "Payment mode updated successfully" });

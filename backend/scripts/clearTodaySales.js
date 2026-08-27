@@ -1,6 +1,6 @@
 /**
  * clearTodaySales.js
- * Wipes all sales/settlements recorded today (2026-06-08 in SGT) and restores credit balances.
+ * Wipes all sales/settlements recorded today (SGT/UTC+8) and restores credit balances.
  * Run with: node scripts/clearTodaySales.js
  */
 
@@ -13,9 +13,17 @@ async function clearTodaySales() {
   const pool = await poolPromise;
   console.log("✅ Connected.");
 
-  // Get start and end of today in SGT (2026-06-08)
-  const todayStart = "2026-06-08 00:00:00";
-  const todayEnd = "2026-06-08 23:59:59.999";
+  // Dynamically compute today's date in SGT (UTC+8)
+  const now = new Date();
+  const sgtOffset = 8 * 60 * 60 * 1000; // UTC+8
+  const sgtNow = new Date(now.getTime() + sgtOffset);
+  const yyyy = sgtNow.getUTCFullYear();
+  const mm = String(sgtNow.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(sgtNow.getUTCDate()).padStart(2, "0");
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+
+  const todayStart = `${todayStr} 00:00:00`;
+  const todayEnd   = `${todayStr} 23:59:59.999`;
 
   console.log(`📅 Targeting sales between: ${todayStart} and ${todayEnd} (SGT)`);
 
@@ -94,7 +102,7 @@ async function clearTodaySales() {
           // Check in CreditCustomerMaster
           const isCustRes = await transaction.request()
             .input("CustomerId", sql.UniqueIdentifier, memberId)
-            .query("SELECT 1 FROM CreditCustomerMaster WHERE CustomerId = @MemberId");
+            .query("SELECT 1 FROM CreditCustomerMaster WHERE CustomerId = @CustomerId");
 
           if (isCustRes.recordset.length > 0) {
             await transaction.request()
