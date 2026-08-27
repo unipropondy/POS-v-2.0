@@ -1565,12 +1565,24 @@ const fetchDayHistory = async () => {
                 </tr>
                 <tr>
                   <td>Discount</td>
-                  <td class="right">${formatCurrency(totalSales.DiscountAmount)}</td>
+                  <td class="right">${(parseFloat(totalSales.DiscountAmount) || 0) > 0 ? "-" : ""}${formatCurrency(totalSales.DiscountAmount)}</td>
                 </tr>
                 <tr>
                   <td>Service Charge</td>
                   <td class="right">${formatCurrency(totalSales.ServiceCharge)}</td>
                 </tr>
+                ${(parseFloat(totalSales.AdditionalServiceCharge) || 0) !== 0 ? `
+                <tr>
+                  <td>Add. Service Charge</td>
+                  <td class="right">${formatCurrency(totalSales.AdditionalServiceCharge)}</td>
+                </tr>
+                ` : ''}
+                ${(parseFloat(totalSales.TakeawayCharge) || 0) !== 0 ? `
+                <tr>
+                  <td>Takeaway Charge</td>
+                  <td class="right">${formatCurrency(totalSales.TakeawayCharge)}</td>
+                </tr>
+                ` : ''}
                 <tr>
                   <td>GST Collected</td>
                   <td class="right">${formatCurrency(totalSales.TotalTax)}</td>
@@ -1691,8 +1703,14 @@ const fetchDayHistory = async () => {
       text += "[C]<B>SALES SUMMARY</B>\n";
       text += "[C]========================================\n";
       text += formatTwoCols48("Gross Sales:", formatCurrency(totalSales.SubTotal));
-      text += formatTwoCols48("Discount:", formatCurrency(totalSales.DiscountAmount));
+      text += formatTwoCols48("Discount:", ((parseFloat(totalSales.DiscountAmount) || 0) > 0 ? "-" : "") + formatCurrency(totalSales.DiscountAmount));
       text += formatTwoCols48("Service Charge:", formatCurrency(totalSales.ServiceCharge));
+      if ((parseFloat(totalSales.AdditionalServiceCharge) || 0) !== 0) {
+        text += formatTwoCols48("Add. Service Charge:", formatCurrency(totalSales.AdditionalServiceCharge));
+      }
+      if ((parseFloat(totalSales.TakeawayCharge) || 0) !== 0) {
+        text += formatTwoCols48("Takeaway Charge:", formatCurrency(totalSales.TakeawayCharge));
+      }
       text += formatTwoCols48("GST Collected:", formatCurrency(totalSales.TotalTax));
 
       text += formatTwoCols48("Round Off:", formatCurrency(totalSales.RoundedBy));
@@ -1829,8 +1847,14 @@ const fetchDayHistory = async () => {
             await SunmiModule.printText("         SALES SUMMARY\n");
             await SunmiModule.printText("================================\n");
             await SunmiModule.printText(formatTwoCols32("Gross Sales:", formatCurrency(totalSales.SubTotal)));
-            await SunmiModule.printText(formatTwoCols32("Discount:", formatCurrency(totalSales.DiscountAmount)));
+            await SunmiModule.printText(formatTwoCols32("Discount:", ((parseFloat(totalSales.DiscountAmount) || 0) > 0 ? "-" : "") + formatCurrency(totalSales.DiscountAmount)));
             await SunmiModule.printText(formatTwoCols32("Service Charge:", formatCurrency(totalSales.ServiceCharge)));
+            if ((parseFloat(totalSales.AdditionalServiceCharge) || 0) !== 0) {
+              await SunmiModule.printText(formatTwoCols32("Add. Service Charge:", formatCurrency(totalSales.AdditionalServiceCharge)));
+            }
+            if ((parseFloat(totalSales.TakeawayCharge) || 0) !== 0) {
+              await SunmiModule.printText(formatTwoCols32("Takeaway Charge:", formatCurrency(totalSales.TakeawayCharge)));
+            }
             await SunmiModule.printText(formatTwoCols32("GST Collected:", formatCurrency(totalSales.TotalTax)));
             await SunmiModule.printText(formatTwoCols32("Round Off:", formatCurrency(totalSales.RoundedBy)));
             await SunmiModule.printText(formatTwoCols32("Tips:", formatCurrency(totalSales.Tips)));
@@ -2250,6 +2274,18 @@ const fetchDayHistory = async () => {
                     <Text style={styles.rowLabel}>Service Charge</Text>
                     <Text style={styles.rowValue}>{formatCurrency(totalSales.ServiceCharge)}</Text>
                   </View>
+                  {(parseFloat(totalSales.AdditionalServiceCharge) || 0) !== 0 && (
+                    <View style={styles.row}>
+                      <Text style={styles.rowLabel}>Add. Service Charge</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(totalSales.AdditionalServiceCharge)}</Text>
+                    </View>
+                  )}
+                  {(parseFloat(totalSales.TakeawayCharge) || 0) !== 0 && (
+                    <View style={styles.row}>
+                      <Text style={styles.rowLabel}>Takeaway Charge</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(totalSales.TakeawayCharge)}</Text>
+                    </View>
+                  )}
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>GST</Text>
                     <Text style={styles.rowValue}>{formatCurrency(totalSales.TotalTax)}</Text>

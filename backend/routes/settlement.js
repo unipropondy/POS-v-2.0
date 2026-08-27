@@ -25,6 +25,7 @@ router.get("/total-sales/:terminal", async (req, res) => {
         ISNULL(SUM(sh.DiscountAmount),0) AS DiscountAmount,
         ISNULL(SUM(sh.ServiceCharge),0) AS ServiceCharge,
         ISNULL(SUM(ric.AdditionalServiceCharge),0) AS AdditionalServiceCharge,
+        ISNULL(SUM(sh.TakeawayCharge),0) AS TakeawayCharge,
         ISNULL(SUM(sh.TotalTax),0) AS TotalTax,
         ISNULL(SUM(sh.RoundedBy),0) AS RoundedBy,
         ISNULL(SUM(ric.Tips),0) AS Tips,
