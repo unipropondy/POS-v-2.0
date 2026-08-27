@@ -484,8 +484,10 @@ export default function TableMasterScreen() {
       }));
       
       setTables(mapped);
+      return mapped;
     } catch (err: any) {
       Alert.alert("Error", err.message || "Could not load tables.");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -583,7 +585,20 @@ export default function TableMasterScreen() {
       "Are you sure you want to discard current unsaved layout modifications and reload the last saved layout?",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Yes, Reset", onPress: () => fetchTables() },
+        { 
+          text: "Yes, Reset", 
+          onPress: async () => {
+            const refreshedTables = await fetchTables();
+            if (selectedTable) {
+              const refreshed = refreshedTables.find((t) => t.id === selectedTable.id);
+              if (refreshed) {
+                selectAndLoadTable(refreshed);
+              } else {
+                setSelectedTable(null);
+              }
+            }
+          } 
+        },
       ]
     );
   };
@@ -855,13 +870,42 @@ export default function TableMasterScreen() {
                             { text: "Cancel", style: "cancel" },
                             {
                               text: "Yes, Reset",
-                              onPress: () => {
-                                setTables((prev) =>
-                                  prev.map((t) =>
+                              onPress: async () => {
+                                try {
+                                  setSaving(true);
+                                  const updatedTables = tables.map((t) =>
                                     String(t.DiningSection) === activeSection ? { ...t, XPos: 0, YPos: 0 } : t
-                                  )
-                                );
-                                setIsEditingLayout(false);
+                                  );
+                                  setTables(updatedTables);
+                                  setIsEditingLayout(false);
+
+                                  const sectionTablesToReset = updatedTables.filter(t => String(t.DiningSection) === activeSection);
+                                  const positions = sectionTablesToReset.map((t) => ({
+                                    id: t.id,
+                                    xPos: 0,
+                                    yPos: 0,
+                                    tableType: t.TableType,
+                                    xSize: t.XSize,
+                                    ySize: t.YSize,
+                                  }));
+
+                                  const response = await fetch(`${API_URL}/api/tables/save-positions`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ positions }),
+                                  });
+
+                                  if (!response.ok) throw new Error("Failed to reset layout on database");
+
+                                  if (socket) {
+                                    socket.emit("table_config_updated", {});
+                                  }
+                                  Alert.alert("Success", "Section layout reset to standard grid successfully!");
+                                } catch (err: any) {
+                                  Alert.alert("Error", err.message || "Could not save reset configuration.");
+                                } finally {
+                                  setSaving(false);
+                                }
                               },
                             },
                           ]
