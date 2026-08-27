@@ -578,32 +578,51 @@ export default function TableMasterScreen() {
     }
   };
 
-  // Handle Reset to last saved layout configuration (discard unsaved edits, reload from DB)
+  // Handle Reset Layout (discard custom positions, reset to standard grid layout)
   const handleResetToPrevious = () => {
     Alert.alert(
       "Reset Layout",
-      "Are you sure you want to discard unsaved modifications and reload the last saved layout?",
+      "Do you want to reset this section back to the standard grid layout?",
       [
         { text: "Cancel", style: "cancel" },
         { 
           text: "Yes, Reset", 
           onPress: async () => {
-            const refreshedTables = await fetchTables();
-            
-            if (selectedTable) {
-              const refreshed = refreshedTables.find((t) => t.id === selectedTable.id);
-              if (refreshed) {
-                selectAndLoadTable(refreshed);
-              } else {
-                setSelectedTable(null);
+            try {
+              setSaving(true);
+              const updatedTables = tables.map((t) =>
+                String(t.DiningSection) === activeSection ? { ...t, XPos: 0, YPos: 0 } : t
+              );
+              setTables(updatedTables);
+              setIsEditingLayout(false);
+
+              const sectionTablesToReset = updatedTables.filter(t => String(t.DiningSection) === activeSection);
+              const positions = sectionTablesToReset.map((t) => ({
+                id: t.id,
+                xPos: 0,
+                yPos: 0,
+                tableType: t.TableType,
+                xSize: t.XSize,
+                ySize: t.YSize,
+              }));
+
+              const response = await fetch(`${API_URL}/api/tables/save-positions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ positions }),
+              });
+
+              if (!response.ok) throw new Error("Failed to reset layout on database");
+
+              if (socket) {
+                socket.emit("table_config_updated", {});
               }
+              Alert.alert("Success", "Section layout reset to standard grid successfully!");
+            } catch (err: any) {
+              Alert.alert("Error", err.message || "Could not save reset configuration.");
+            } finally {
+              setSaving(false);
             }
-
-            if (socket) {
-              socket.emit("table_config_updated", {});
-            }
-
-            Alert.alert("Success", "Restored the last saved layout successfully!");
           } 
         },
       ]
