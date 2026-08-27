@@ -378,9 +378,9 @@ const TableItemComponent = React.memo(
     
     // Label color mapping for high-readability text
     if (backgroundTheme === "light") {
-      labelColor = "#334155";
+      labelColor = "#000000";
     } else if (status === 0) {
-      labelColor = "#475569";
+      labelColor = "#000000";
     } else if (isPaid) {
       labelColor = "#9E1F4B";
     } else {
