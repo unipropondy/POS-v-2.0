@@ -580,6 +580,7 @@ export default function TableMasterScreen() {
 
   // Handle Reset Layout (discard custom positions, reset to standard grid layout)
   const handleResetToPrevious = () => {
+    console.log("👉 [Reset Clicked] activeSection:", activeSection);
     Alert.alert(
       "Reset Layout",
       "Do you want to reset this section back to the standard grid layout?",
@@ -590,6 +591,7 @@ export default function TableMasterScreen() {
           onPress: async () => {
             try {
               setSaving(true);
+              console.log("🔄 [Reset Action] Mapping and resetting tables to 0...");
               const updatedTables = tables.map((t) =>
                 String(t.DiningSection) === activeSection ? { ...t, XPos: 0, YPos: 0 } : t
               );
@@ -597,6 +599,7 @@ export default function TableMasterScreen() {
               setIsEditingLayout(false);
 
               const sectionTablesToReset = updatedTables.filter(t => String(t.DiningSection) === activeSection);
+              console.log("📦 [Reset Action] Payload size:", sectionTablesToReset.length);
               const positions = sectionTablesToReset.map((t) => ({
                 id: t.id,
                 xPos: 0,
@@ -606,19 +609,27 @@ export default function TableMasterScreen() {
                 ySize: t.YSize,
               }));
 
-              const response = await fetch(`${API_URL}/api/tables/save-positions`, {
+              const url = `${API_URL}/api/tables/save-positions`;
+              console.log("🌐 [Reset Action] Fetching PUT URL:", url);
+              const response = await fetch(url, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ positions }),
               });
 
-              if (!response.ok) throw new Error("Failed to reset layout on database");
+              console.log("💾 [Reset Action] Response status:", response.status);
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Failed to reset layout on database: ${text}`);
+              }
 
               if (socket) {
+                console.log("🔌 [Reset Action] Emitting table_config_updated via socket...");
                 socket.emit("table_config_updated", {});
               }
               Alert.alert("Success", "Section layout reset to standard grid successfully!");
             } catch (err: any) {
+              console.error("❌ [Reset Action] Error:", err);
               Alert.alert("Error", err.message || "Could not save reset configuration.");
             } finally {
               setSaving(false);

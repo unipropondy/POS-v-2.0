@@ -379,6 +379,7 @@ router.put("/update-config", async (req, res) => {
 // ✅ Route to update multiple table layout positions (XPos, YPos) in bulk
 router.put("/save-positions", async (req, res) => {
   const { positions } = req.body; // Array of { id, xPos, yPos }
+  console.log("📥 [API] save-positions received:", positions ? positions.length : 0, "positions");
   if (!Array.isArray(positions)) {
     return res.status(400).json({ error: "positions array is required" });
   }
