@@ -607,7 +607,7 @@ export default function TableMasterScreen() {
               }));
 
               const response = await fetch(`${API_URL}/api/tables/save-positions`, {
-                method: "POST",
+                method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ positions }),
               });
@@ -917,7 +917,7 @@ export default function TableMasterScreen() {
                                   }));
 
                                   const response = await fetch(`${API_URL}/api/tables/save-positions`, {
-                                    method: "POST",
+                                    method: "PUT",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({ positions }),
                                   });
