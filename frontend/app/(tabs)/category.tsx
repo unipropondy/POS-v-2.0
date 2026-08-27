@@ -1,11 +1,12 @@
 import CalendarPicker from "@/components/CalendarPicker";
+import { socket } from "@/constants/socket";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
 import { Theme } from "@/constants/theme";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -25,6 +26,7 @@ import {
   View,
   Animated,
   Easing,
+  ImageBackground,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import {
@@ -39,10 +41,9 @@ import {
   parseDatabaseDate,
 } from "../../utils/timezoneHelper";
 
-import StoreSettingsModal from "@/components/payment/StoreSettingsModal";
 import AvatarPickerModal from "@/components/AvatarPickerModal";
+import StoreSettingsModal from "@/components/payment/StoreSettingsModal";
 import { getAvatarSource } from "@/constants/avatars";
-import { Image } from "expo-image";
 import { useActiveOrdersStore } from "@/stores/activeOrdersStore";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -54,13 +55,14 @@ import {
 } from "@/stores/cartStore";
 import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 import { getHeldOrders } from "@/stores/heldOrdersStore";
-import { OrderContext, setOrderContext, clearOrderContext } from "@/stores/orderContextStore";
+import { useNotificationStore } from "@/stores/notificationStore";
+import { clearOrderContext, OrderContext, setOrderContext } from "@/stores/orderContextStore";
 import { usePaymentSettingsStore } from "@/stores/paymentSettingsStore";
+import { Image } from "expo-image";
 import {
   TableStatusType,
   useTableStatusStore,
 } from "../../stores/tableStatusStore";
-import { useNotificationStore } from "@/stores/notificationStore";
 import { useTerminalPaymentStore } from "../../stores/terminalPaymentStore";
 
 // --- MOBILE SOLID COLORS ---
@@ -71,6 +73,56 @@ const SOLID_LIGHT_RED = "#FEF2F2";
 const SOLID_LIGHT_BLUE = "#F0F9FF";
 const SOLID_LIGHT_AMBER = "#FFFBEB";
 const SOLID_LIGHT_VIOLET = "#F5F3FF";
+
+const woodFloorTexture = require("../../assets/images/wood_floor_texture.jpg");
+
+// --- CANVAS BACKGROUND COMPONENT ---
+const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
+  if (theme === "dark") {
+    return (
+      <LinearGradient colors={["#1E293B", "#0F172A"]} style={[{ backgroundColor: "#0F172A" }, style]}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  if (theme === "grey") {
+    return (
+      <LinearGradient colors={["#F1F5F9", "#E2E8F0"]} style={[{ backgroundColor: "#E2E8F0" }, style]}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  if (theme === "beige") {
+    return (
+      <LinearGradient colors={["#FAF7F2", "#EFEAE0"]} style={[{ backgroundColor: "#EFEAE0" }, style]}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  if (theme === "light") {
+    return (
+      <LinearGradient colors={["#FFFFFF", "#F8FAFC"]} style={[{ backgroundColor: "#FFFFFF" }, style]}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  if (theme === "emerald") {
+    return (
+      <LinearGradient colors={["#064E3B", "#022C22"]} style={[{ backgroundColor: "#022C22" }, style]}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  return (
+    <ImageBackground
+      source={woodFloorTexture}
+      style={style}
+      resizeMode="cover"
+    >
+      {children}
+    </ImageBackground>
+  );
+};
 
 const formatSectionGlobal = (sec: string) => {
   if (!sec) return "";
@@ -97,7 +149,7 @@ const getStatusUI = (status: number, diningSection?: number) => {
       return { text: "RESERVED", color: "#ef4444", lightBg: "#FEF2F2" };
     case 0:
     default:
-      return { text: "AVAILABLE", color: "#94A3B8", lightBg: "transparent" }; // Gray
+      return { text: "AVAILABLE", color: "#C2A580", lightBg: "#FAF6F0" }; // Tan/Beige
   }
 };
 
@@ -140,6 +192,9 @@ const TableItemComponent = React.memo(
     numberFont,
     smallFont,
     isTabletPortrait,
+    isAbsoluteLayout,
+    layoutScale = 1,
+    backgroundTheme = "wood",
   }: {
     tableId: string;
     item: TableItem;
@@ -149,6 +204,9 @@ const TableItemComponent = React.memo(
     numberFont: number;
     smallFont: number;
     isTabletPortrait?: boolean;
+    isAbsoluteLayout?: boolean;
+    layoutScale?: number;
+    backgroundTheme?: string;
   }) => {
     // 🚀 O(1) Store Subscription: Only re-renders when THIS table changes
     const tableData = useTableStatusStore((state) => state.tableMap[tableId]);
@@ -223,7 +281,8 @@ const TableItemComponent = React.memo(
 
     const bgColor = status !== 0 ? ui.lightBg : Theme.bgCard;
     const textColor = status === 0 ? Theme.textPrimary : ui.color;
-    const labelColor = Theme.textPrimary;
+    let labelColor = Theme.textPrimary;
+
 
     let timeText = "";
     if (rawStartTime && status !== 0 && status !== 5) {
@@ -234,11 +293,296 @@ const TableItemComponent = React.memo(
       });
     }
 
+    // Shape logic
+    const tableType = item.TableType ? String(item.TableType).trim().toLowerCase() : "rectangular";
+    const seatsCount = item.Seats !== undefined && item.Seats !== null ? Number(item.Seats) : 4;
+    const xSize = item.XSize !== undefined && item.XSize !== null && Number(item.XSize) > 0 ? Number(item.XSize) : 100;
+    const ySize = item.YSize !== undefined && item.YSize !== null && Number(item.YSize) > 0 ? Number(item.YSize) : 80;
+
+    // Outer table size calculations (leaving space for chairs)
+    const maxTableDim = itemSize - 28; // Padding on all sides for chairs
+    const maxDimension = Math.max(xSize, ySize) || 100;
+
+    let tableW = isAbsoluteLayout ? (xSize * 0.6) * layoutScale : Math.max(itemSize * 0.45, (xSize / maxDimension) * maxTableDim);
+    let tableH = isAbsoluteLayout ? (ySize * 0.6) * layoutScale : Math.max(itemSize * 0.45, (ySize / maxDimension) * maxTableDim);
+
+    let borderRadius = 8; // rectangular default
+    if (tableType === "square") {
+      const size = Math.max(tableW, tableH);
+      tableW = size;
+      tableH = size;
+      borderRadius = 8;
+    } else if (tableType === "round") {
+      const size = Math.max(tableW, tableH);
+      tableW = size;
+      tableH = size;
+      borderRadius = size / 2;
+    } else if (tableType === "oval") {
+      borderRadius = Math.min(tableW, tableH) / 2;
+    } else if (tableType === "rectangular") {
+      borderRadius = 8;
+    } else {
+      borderRadius = 12;
+    }
+
+    const tx = isAbsoluteLayout ? 0 : (itemSize - tableW) / 2;
+    const ty = isAbsoluteLayout ? 0 : (itemSize - tableH) / 2;
+    const cx = isAbsoluteLayout ? tableW / 2 : itemSize / 2;
+    const cy = isAbsoluteLayout ? tableH / 2 : itemSize / 2;
+
+    // Dynamically adjust chair size based on seat density to prevent overlap
+    let chairSize = Math.max(10, itemSize * 0.09);
+    if (seatsCount > 10) {
+      chairSize = Math.max(5, chairSize * (10 / seatsCount) * 1.5);
+    }
+    
+    const offset = 4; // elegant gap between table and chairs
+    
+    // Override AVAILABLE colors for premium beige look matching reference
+    let activeColor = status === 0 ? "#D1C7BD" : ui.color;
+    let activeBg = status === 0 ? "#FAF8F5" : ui.lightBg;
+
+    if (backgroundTheme === "light") {
+      if (status === 0) {
+        activeColor = "#22C55E"; // Free -> clean emerald green
+        activeBg = "#FFFFFF";
+      } else if (isPaid) {
+        activeColor = "#F43F5E";
+        activeBg = "#FFFFFF";
+      } else {
+        const effectiveStatus = ((status === 1 || status === 3) && isOvertime) ? 4 : status;
+        switch (effectiveStatus) {
+          case 1: // Dining
+            activeColor = "#22C55E";
+            activeBg = "#FFFFFF";
+            break;
+          case 2: // Checkout
+            activeColor = "#F97316";
+            activeBg = "#FFFFFF";
+            break;
+          case 3: // Hold
+            activeColor = "#3B82F6";
+            activeBg = "#FFFFFF";
+            break;
+          case 4: // Overtime
+            activeColor = "#8B5CF6";
+            activeBg = "#FFFFFF";
+            break;
+          case 5: // Reserved
+            activeColor = "#3B82F6";
+            activeBg = "#FFFFFF";
+            break;
+        }
+      }
+    }
+    
+    // Label color mapping for high-readability text
+    if (backgroundTheme === "light") {
+      labelColor = "#334155";
+    } else if (status === 0) {
+      labelColor = "#475569";
+    } else if (isPaid) {
+      labelColor = "#9E1F4B";
+    } else {
+      switch (status) {
+        case 1: labelColor = "#1B5E20"; break; // Dark green
+        case 2: labelColor = "#B66000"; break; // Dark yellow/orange
+        case 3: labelColor = "#0D47A1"; break; // Dark blue
+        case 4:
+        case 5: labelColor = "#B71C1C"; break; // Dark red
+        default: labelColor = activeColor;
+      }
+    }
+
+    // Chair styling (white background with matching color border, top-down chair backrest design!)
+    const chairColor = status === 0 ? (backgroundTheme === "light" ? "#22C55E" : "#D1C7BD") : activeColor;
+    const chairBg = "#FFFFFF";
+
+    // Chair placement calculation
+    const chairPositions: { x: number; y: number; rotate?: string; backrestStyle?: any }[] = [];
+    if (seatsCount > 0) {
+      if (tableType === "round" || tableType === "oval") {
+        const rx = tableW / 2;
+        const ry = tableH / 2;
+        const radiusOffset = chairSize / 2 + offset;
+        for (let i = 0; i < seatsCount; i++) {
+          const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2; // start from top
+          const x = cx + (rx + radiusOffset) * Math.cos(angle) - chairSize / 2;
+          const y = cy + (ry + radiusOffset) * Math.sin(angle) - chairSize / 2;
+          
+          // Rotation so backrest (top border) faces outwards
+          const rotationAngle = angle + Math.PI / 2;
+          chairPositions.push({ 
+            x, 
+            y, 
+            rotate: `${rotationAngle}rad`,
+            backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 }
+          });
+        }
+      } else {
+        // Rectangular / Square logic
+        let topCount = 0;
+        let bottomCount = 0;
+        let leftCount = 0;
+        let rightCount = 0;
+
+        if (seatsCount === 2) {
+          leftCount = 1;
+          rightCount = 1;
+        } else {
+          const base = Math.floor(seatsCount / 4);
+          const rem = seatsCount % 4;
+          topCount = base + (rem > 0 ? 1 : 0);
+          bottomCount = base + (rem > 1 ? 1 : 0);
+          leftCount = base + (rem > 2 ? 1 : 0);
+          rightCount = base;
+        }
+
+        // Top chairs (backrest is on the top)
+        for (let i = 0; i < topCount; i++) {
+          const x = tx + (i + 0.5) * (tableW / topCount) - chairSize / 2;
+          const y = ty - chairSize - offset;
+          chairPositions.push({ 
+            x, 
+            y, 
+            backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 } 
+          });
+        }
+        // Bottom chairs (backrest is on the bottom)
+        for (let i = 0; i < bottomCount; i++) {
+          const x = tx + (i + 0.5) * (tableW / bottomCount) - chairSize / 2;
+          const y = ty + tableH + offset;
+          chairPositions.push({ 
+            x, 
+            y, 
+            backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.2, borderBottomLeftRadius: 1.5, borderBottomRightRadius: 1.5 } 
+          });
+        }
+        // Left chairs (backrest is on the left)
+        for (let i = 0; i < leftCount; i++) {
+          const x = tx - chairSize - offset;
+          const y = ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2;
+          chairPositions.push({ 
+            x, 
+            y, 
+            backrestStyle: { left: 0, top: 0, bottom: 0, width: 2.2, borderTopLeftRadius: 1.5, borderBottomLeftRadius: 1.5 } 
+          });
+        }
+        // Right chairs (backrest is on the right)
+        for (let i = 0; i < rightCount; i++) {
+          const x = tx + tableW + offset;
+          const y = ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2;
+          chairPositions.push({ 
+            x, 
+            y, 
+            backrestStyle: { right: 0, top: 0, bottom: 0, width: 2.2, borderTopRightRadius: 1.5, borderBottomRightRadius: 1.5 } 
+          });
+        }
+      }
+    }
+
+    // Dynamic color gradient for the table body
+    let gradientColors: [string, string] = ["#FFFFFF", "#FFFFFF"];
+    let tableBorderColor = activeColor;
+    if (backgroundTheme === "light") {
+      gradientColors = ["#FFFFFF", "#FFFFFF"];
+      tableBorderColor = activeColor;
+    } else if (status === 0) {
+      gradientColors = ["#FAF8F5", "#F0EAE1"]; // Subtle blonde-wood / warm linen look
+      tableBorderColor = "#D1C7BD";
+    } else if (isPaid) {
+      gradientColors = ["#FFF1F2", "#FFE4E6"];
+      tableBorderColor = "#FDA4AF";
+    } else {
+      const effectiveStatus = ((status === 1 || status === 3) && isOvertime) ? 4 : status;
+      switch (effectiveStatus) {
+        case 1: // Dining (Subtle Green)
+          gradientColors = ["#F0FDF4", "#DCFCE7"];
+          tableBorderColor = "#22c55e";
+          break;
+        case 2: // Checkout (Subtle Orange)
+          gradientColors = ["#FFF7ED", "#FFEDD5"];
+          tableBorderColor = "#fd7e14";
+          break;
+        case 3: // Hold (Subtle Blue)
+          gradientColors = ["#F0F9FF", "#E0F2FE"];
+          tableBorderColor = "#3b82f6";
+          break;
+        case 4: // Overtime (Subtle Purple)
+          gradientColors = ["#F5F3FF", "#EDE9FE"];
+          tableBorderColor = "#8b5cf6";
+          break;
+        case 5: // Reserved (Subtle Red)
+          gradientColors = ["#FEF2F2", "#FEE2E2"];
+          tableBorderColor = "#ef4444";
+          break;
+      }
+    }
+
+    // Placings/plates coordinates inside table body
+    const platePositions: { x: number; y: number }[] = [];
+    if (seatsCount > 0) {
+      if (tableType === "round" || tableType === "oval") {
+        const plateRadiusOffset = Math.max(6, (tableW / 2) - 8);
+        for (let i = 0; i < seatsCount; i++) {
+          const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2;
+          const px = tableW / 2 + plateRadiusOffset * Math.cos(angle);
+          const py = tableH / 2 + plateRadiusOffset * Math.sin(angle);
+          platePositions.push({ x: px, y: py });
+        }
+      } else {
+        let topCount = 0;
+        let bottomCount = 0;
+        let leftCount = 0;
+        let rightCount = 0;
+
+        if (seatsCount === 2) {
+          leftCount = 1;
+          rightCount = 1;
+        } else {
+          const base = Math.floor(seatsCount / 4);
+          const rem = seatsCount % 4;
+          topCount = base + (rem > 0 ? 1 : 0);
+          bottomCount = base + (rem > 1 ? 1 : 0);
+          leftCount = base + (rem > 2 ? 1 : 0);
+          rightCount = base;
+        }
+
+        const distFromEdge = Math.min(8, tableH * 0.18);
+        const distFromEdgeH = Math.min(8, tableW * 0.18);
+
+        for (let i = 0; i < topCount; i++) {
+          platePositions.push({ x: (i + 0.5) * (tableW / topCount), y: distFromEdge });
+        }
+        for (let i = 0; i < bottomCount; i++) {
+          platePositions.push({ x: (i + 0.5) * (tableW / bottomCount), y: tableH - distFromEdge });
+        }
+        for (let i = 0; i < leftCount; i++) {
+          platePositions.push({ x: distFromEdgeH, y: (i + 0.5) * (tableH / leftCount) });
+        }
+        for (let i = 0; i < rightCount; i++) {
+          platePositions.push({ x: tableW - distFromEdgeH, y: (i + 0.5) * (tableH / rightCount) });
+        }
+      }
+    }
+
     return (
       <TouchableOpacity
         activeOpacity={isPaid ? 1 : 0.8}
         disabled={isPaid}
-        style={[
+        style={isAbsoluteLayout ? {
+          width: itemSize,
+          height: itemSize,
+          position: "relative",
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "transparent",
+          borderColor: "transparent",
+          borderWidth: 0,
+          borderRadius: 14,
+          padding: 8,
+          opacity: isPaid ? 0.92 : 1,
+        } : [
           styles.tableBox,
           {
             width: itemSize,
@@ -252,28 +596,156 @@ const TableItemComponent = React.memo(
         ]}
         onPress={() => onPress(item, tableData)}
       >
-        <View style={styles.tableContent}>
+        {/* Render Chairs */}
+        {chairPositions.map((pos, idx) => {
+          const transform = pos.rotate ? [{ rotate: pos.rotate }] : undefined;
+          return (
+            <View
+              key={`chair-${idx}`}
+              style={{
+                position: "absolute",
+                left: pos.x,
+                top: pos.y,
+                width: chairSize,
+                height: chairSize,
+                borderRadius: chairSize / 4,
+                borderWidth: 1.2,
+                borderColor: chairColor,
+                backgroundColor: chairBg,
+                transform,
+                justifyContent: "center",
+                alignItems: "center",
+                overflow: "hidden",
+              }}
+            >
+              {/* Cushion */}
+              <View style={{
+                width: "70%",
+                height: "70%",
+                borderRadius: chairSize / 6,
+                backgroundColor: status === 0 ? "#FAF6F0" : activeBg,
+                opacity: 0.85,
+                justifyContent: "center",
+                alignItems: "center",
+              }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.45, color: status === 0 ? "#64748B" : activeColor }}>
+                  {idx + 1}
+                </Text>
+              </View>
+              {/* Realistic Backrest bar */}
+              {pos.backrestStyle && (
+                <View style={[{
+                  position: "absolute",
+                  backgroundColor: chairColor,
+                }, pos.backrestStyle]} />
+              )}
+            </View>
+          );
+        })}
+
+        {/* Clock/Timer Overlay Badge */}
+        {status > 0 && (
+          <View style={{
+            position: "absolute",
+            top: ty - 6,
+            left: tx + tableW / 2 - 7,
+            width: 14,
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: "#FFFFFF",
+            borderWidth: 1.2,
+            borderColor: activeColor,
+            justifyContent: "center",
+            alignItems: "center",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.15,
+            shadowRadius: 1.5,
+            elevation: 3,
+            zIndex: 99,
+          }}>
+            <Ionicons name="time" size={9} color={activeColor} />
+          </View>
+        )}
+
+        {/* Render Table Body */}
+        <View
+          style={{
+            position: "absolute",
+            left: tx,
+            top: ty,
+            width: tableW,
+            height: tableH,
+            borderRadius,
+            borderColor: tableBorderColor,
+            borderWidth: 2,
+            overflow: "hidden",
+            ...Platform.select({
+              ios: { shadowColor: tableBorderColor, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 3 },
+              android: { elevation: 2 },
+              web: { boxShadow: `0 3px 6px ${tableBorderColor}24` } as any,
+            }),
+          }}
+        >
+          <LinearGradient
+            colors={gradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              flex: 1,
+              width: "100%",
+              height: "100%",
+              padding: 2,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            {/* Inner table margin line for craftsmanship style */}
+            <View style={{
+              flex: 1,
+              width: "100%",
+              height: "100%",
+              borderRadius: Math.max(0, borderRadius - 2),
+              borderWidth: 1,
+              borderColor: status === 0 ? "rgba(163, 117, 78, 0.25)" : "rgba(255, 255, 255, 0.4)",
+              justifyContent: "center",
+              alignItems: "center",
+            }}>
           <Text
             style={[
               styles.tableNumber,
-              { fontSize: numberFont, color: labelColor },
+              { 
+                fontSize: Math.max(12, numberFont * (tableW / itemSize) * 0.9), 
+                color: labelColor, 
+                marginTop: 0, 
+                marginBottom: 0,
+                fontFamily: Fonts.bold 
+              },
             ]}
           >
             {item.label}
           </Text>
 
           {status !== 0 && (
-            <View style={styles.tableInfo}>
+            <View style={[styles.tableInfo, { gap: 1 }]}>
               <View
                 style={[
                   styles.statusChip,
-                  { backgroundColor: bgColor, borderColor: ui.color },
+                  { 
+                    backgroundColor: activeBg, 
+                    borderColor: activeColor,
+                    paddingHorizontal: 4,
+                    paddingVertical: 0.5,
+                    borderRadius: 4,
+                    maxWidth: tableW - 8,
+                    marginBottom: 0,
+                  },
                 ]}
               >
                 <Text
                   style={[
                     styles.statusChipText,
-                    { color: ui.color, fontSize: smallFont },
+                    { color: activeColor, fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.8) },
                   ]}
                   numberOfLines={1}
                 >
@@ -287,12 +759,12 @@ const TableItemComponent = React.memo(
                     <Text
                       style={[
                         styles.timeText,
-                        { fontSize: smallFont, color: textColor },
+                        { fontSize: Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8), color: textColor },
                       ]}
                     >
                       <Ionicons
                         name="time-outline"
-                        size={smallFont}
+                        size={Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8)}
                         color={textColor}
                       />{" "}
                       {timeText}
@@ -303,7 +775,7 @@ const TableItemComponent = React.memo(
                       style={[
                         styles.billText,
                         {
-                          fontSize: smallFont + 2,
+                          fontSize: Math.max(8, (smallFont + 1) * (tableW / itemSize) * 0.9),
                           color: textColor,
                           fontWeight: "800",
                         },
@@ -318,26 +790,25 @@ const TableItemComponent = React.memo(
           )}
 
           {status === 5 && (
-            <View style={styles.lockedOverlay}>
+            <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
               <Ionicons
                 name="lock-closed"
-                size={Math.max(12, itemSize * 0.15)}
+                size={Math.max(10, tableW * 0.15)}
                 color={ui.color}
               />
               {tableData?.lockedByName ? (
                 <View
                   style={{
                     backgroundColor: ui.color,
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                    borderRadius: 4,
-                    marginTop: 2,
-                    marginBottom: 4,
+                    paddingHorizontal: 4,
+                    paddingVertical: 1,
+                    borderRadius: 3,
+                    maxWidth: tableW - 8,
                   }}
                 >
                   <Text
                     style={{
-                      fontSize: smallFont - 1,
+                      fontSize: Math.max(7, (smallFont - 2) * (tableW / itemSize)),
                       color: "#FFF",
                       fontWeight: "bold",
                     }}
@@ -349,32 +820,34 @@ const TableItemComponent = React.memo(
               ) : null}
             </View>
           )}
+            </View>
+          </LinearGradient>
+        </View>
 
-          {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
-          {status === 3 && !!tableData?.isHoldOvertime && (
-            <View style={styles.holdOvertimeBadge}>
-              <MaterialCommunityIcons
-                name="alpha-h-circle"
+        {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
+        {status === 3 && !!tableData?.isHoldOvertime && (
+          <View style={styles.holdOvertimeBadge}>
+            <MaterialCommunityIcons
+              name="alpha-h-circle"
+              size={Math.max(14, itemSize * 0.18)}
+              color={Theme.primary}
+            />
+          </View>
+        )}
+
+        {/* 🚀 QR ORDER INDICATOR (QR badge) */}
+        {(tableData?.entryStatus !== undefined
+          ? tableData.entryStatus
+          : item.entryStatus) === "q" &&
+          status !== 0 && (
+            <View style={styles.qrBadge}>
+              <Ionicons
+                name="qr-code"
                 size={Math.max(14, itemSize * 0.18)}
-                color={Theme.primary}
+                color={ui.color}
               />
             </View>
           )}
-
-          {/* 🚀 QR ORDER INDICATOR (QR badge) */}
-          {(tableData?.entryStatus !== undefined
-            ? tableData.entryStatus
-            : item.entryStatus) === "q" &&
-            status !== 0 && (
-              <View style={styles.qrBadge}>
-                <Ionicons
-                  name="qr-code"
-                  size={Math.max(14, itemSize * 0.18)}
-                  color={ui.color}
-                />
-              </View>
-            )}
-
           {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
           {terminalStatus && terminalStatus !== "idle" && (
             <TouchableOpacity
@@ -395,7 +868,6 @@ const TableItemComponent = React.memo(
               )}
             </TouchableOpacity>
           )}
-        </View>
       </TouchableOpacity>
     );
   },
@@ -448,14 +920,20 @@ type TableItem = {
   paymentStatus?: number;
   customerName?: string;
   pax?: number;
+  TableType?: string;
+  Seats?: number;
+  XSize?: number;
+  YSize?: number;
+  XPos?: number;
+  YPos?: number;
 };
 
 const SECTIONS = ["SECTION_1", "SECTION_2", "SECTION_3", "TAKEAWAY"];
 
 const SECTION_LABELS: Record<string, string> = {
-  SECTION_1: "Section-1",
-  SECTION_2: "Section-2",
-  SECTION_3: "Section-3",
+  SECTION_1: "Section 1",
+  SECTION_2: "Section 2",
+  SECTION_3: "Section 3",
   TAKEAWAY: "Takeaway",
 };
 
@@ -484,11 +962,48 @@ let lastGuestOpenedTable: {
 export default function Category() {
   const { width, height } = useWindowDimensions();
   const router = useRouter();
+  const [availableWidth, setAvailableWidth] = useState(780);
+
+  const onContainerLayout = (event: any) => {
+    const { width } = event.nativeEvent.layout;
+    if (width > 0) {
+      setAvailableWidth(width - 32); // 16px padding on left/right
+    }
+  };
+
+  const [backgroundTheme, setBackgroundTheme] = useState("wood");
+
+  const [activeTab, setActiveTab] = useState<string>("SECTION_1");
+
+  const getSectionNum = (tab: string) => {
+    if (tab === "TAKEAWAY") return "4";
+    if (tab === "SECTION_1") return "1";
+    if (tab === "SECTION_2") return "2";
+    if (tab === "SECTION_3") return "3";
+    return "1";
+  };
+
+  const loadBackgroundTheme = async () => {
+    try {
+      const sectionNum = getSectionNum(activeTab);
+      const savedTheme = await AsyncStorage.getItem(`layout_background_theme_${sectionNum}`);
+      if (savedTheme) {
+        setBackgroundTheme(savedTheme);
+      } else {
+        setBackgroundTheme("wood");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    loadBackgroundTheme();
+  }, [activeTab]);
+
   const { showToast } = useToast();
   const { section: urlSection } = useLocalSearchParams<{ section?: string }>();
   const isWindows = Platform.OS === "windows" || (Platform.OS === "web" && typeof navigator !== "undefined" && /win/i.test(navigator.platform || navigator.userAgent));
-
-  const [activeTab, setActiveTab] = useState<string>("SECTION_1");
   const [allTables, setAllTables] = useState<TableItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
@@ -497,6 +1012,7 @@ export default function Category() {
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
   const [isTablesExpanded, setIsTablesExpanded] = useState(false);
+  const [isTableMasterExpanded, setIsTableMasterExpanded] = useState(false);
   const [isStaffExpanded, setIsStaffExpanded] = useState(false);
   const [isCustomerExpanded, setIsCustomerExpanded] = useState(false);
   const [isReportsExpanded, setIsReportsExpanded] = useState(false);
@@ -890,6 +1406,16 @@ export default function Category() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    socket.on("table_config_updated", () => {
+      fetchTables();
+      loadBackgroundTheme();
+    });
+    return () => {
+      socket.off("table_config_updated");
+    };
+  }, []);
+
   // fetchLockedTables consolidated into fetchTables
 
   const fetchTables = async () => {
@@ -933,6 +1459,12 @@ export default function Category() {
           paymentStatus: Number(item.paymentStatus) || 0,
           customerName: item.customerName || item.CustomerName || null,
           pax: item.pax || item.Pax || null,
+          TableType: item.TableType,
+          Seats: item.Seats !== undefined && item.Seats !== null ? Number(item.Seats) : undefined,
+          XSize: item.XSize !== undefined && item.XSize !== null ? Number(item.XSize) : undefined,
+          YSize: item.YSize !== undefined && item.YSize !== null ? Number(item.YSize) : undefined,
+          XPos: item.XPos !== undefined && item.XPos !== null ? Number(item.XPos) : undefined,
+          YPos: item.YPos !== undefined && item.YPos !== null ? Number(item.YPos) : undefined,
         }));
 
         const uniqueTables = convertedData.filter(
@@ -944,7 +1476,16 @@ export default function Category() {
           if (prev.length !== uniqueTables.length) return uniqueTables;
           const isSame = prev.every(
             (t, i) =>
-              t.id === uniqueTables[i].id && t.label === uniqueTables[i].label,
+              t.id === uniqueTables[i].id &&
+              t.label === uniqueTables[i].label &&
+              t.XPos === uniqueTables[i].XPos &&
+              t.YPos === uniqueTables[i].YPos &&
+              t.XSize === uniqueTables[i].XSize &&
+              t.YSize === uniqueTables[i].YSize &&
+              t.TableType === uniqueTables[i].TableType &&
+              t.Status === uniqueTables[i].Status &&
+              t.Seats === uniqueTables[i].Seats &&
+              t.totalAmount === uniqueTables[i].totalAmount
           );
           return isSame ? prev : uniqueTables;
         });
@@ -1090,6 +1631,17 @@ export default function Category() {
       });
     });
   }, [allTables, activeTab]);
+
+  // Check if any table in the current section has saved layout positions (XPos > 0 or YPos > 0)
+  const hasCustomLayout = useMemo(() => {
+    return currentTables.some((t) => (t.XPos && t.XPos > 0) || (t.YPos && t.YPos > 0));
+  }, [currentTables]);
+
+  // Dynamic Canvas Height based on table positions in current section
+  const canvasHeight = useMemo(() => {
+    const maxY = currentTables.reduce((max, t) => Math.max(max, t.YPos || 0), 0);
+    return Math.max(650, maxY + 140);
+  }, [currentTables]);
 
   // 🚀 Optimized Occupied Count: Only re-renders when the count changes
   const occupiedCount = useTableStatusStore(
@@ -1275,8 +1827,8 @@ export default function Category() {
       if (userLicenseToDate) {
         const today = new Date();
         const licDate = new Date(userLicenseToDate);
-        today.setHours(0,0,0,0);
-        licDate.setHours(0,0,0,0);
+        today.setHours(0, 0, 0, 0);
+        licDate.setHours(0, 0, 0, 0);
         if (today > licDate) {
           showToast({
             type: "error",
@@ -1762,6 +2314,7 @@ export default function Category() {
           numberFont={numberFont}
           smallFont={smallFont}
           isTabletPortrait={!isLandscape && isTablet}
+          backgroundTheme={backgroundTheme}
         />
       );
     },
@@ -1773,6 +2326,7 @@ export default function Category() {
       smallFont,
       width,
       height,
+      backgroundTheme,
     ],
   );
 
@@ -1809,12 +2363,12 @@ export default function Category() {
 
   const renderLicenseView = (isFloating: boolean) => {
     if (!companyInfo) return null;
-    
-    const fromDate = (user?.licenseFromDate || companyInfo.LicenseFromDate) 
-      ? (user?.licenseFromDate || companyInfo.LicenseFromDate).split("T")[0] 
+
+    const fromDate = (user?.licenseFromDate || companyInfo.LicenseFromDate)
+      ? (user?.licenseFromDate || companyInfo.LicenseFromDate).split("T")[0]
       : "N/A";
-    const toDate = (user?.licenseToDate || companyInfo.LicenseToDate) 
-      ? (user?.licenseToDate || companyInfo.LicenseToDate).split("T")[0] 
+    const toDate = (user?.licenseToDate || companyInfo.LicenseToDate)
+      ? (user?.licenseToDate || companyInfo.LicenseToDate).split("T")[0]
       : "N/A";
 
     const hasLicense = (user?.licenseFromDate || user?.licenseToDate || companyInfo.LicenseFromDate || companyInfo.LicenseToDate);
@@ -1842,36 +2396,36 @@ export default function Category() {
           style={{
             flexDirection: "row",
             alignItems: "center",
-            borderRadius: 16,
-            padding: 14,
+            borderRadius: 12,
+            padding: 8,
             borderWidth: 1,
             borderColor: "#E2E8F0",
-            maxWidth: 420,
-            width: isFloating ? 330 : "100%",
-            gap: 14,
+            maxWidth: 320,
+            width: isFloating ? 260 : "100%",
+            gap: 8,
             shadowColor: "#6366F1",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.06,
-            shadowRadius: 10,
-            elevation: 2,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            elevation: 1,
           }}
         >
           {companyInfo.CompanyLogoUrl ? (
             <View style={{
-              borderRadius: 12,
+              borderRadius: 8,
               borderWidth: 1,
               borderColor: "#E2E8F0",
-              padding: 2,
+              padding: 1.5,
               backgroundColor: "#FFFFFF",
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.05,
-              shadowRadius: 2,
+              shadowOpacity: 0.03,
+              shadowRadius: 1,
               elevation: 1,
             }}>
               <Image
                 source={{ uri: companyInfo.CompanyLogoUrl }}
-                style={{ width: 54, height: 54, borderRadius: 10 }}
+                style={{ width: 36, height: 36, borderRadius: 6 }}
                 contentFit="contain"
               />
             </View>
@@ -1879,60 +2433,60 @@ export default function Category() {
             <LinearGradient
               colors={["#EEF2FF", "#E0E7FF"]}
               style={{
-                width: 58,
-                height: 58,
-                borderRadius: 12,
+                width: 38,
+                height: 38,
+                borderRadius: 8,
                 alignItems: "center",
                 justifyContent: "center",
                 borderWidth: 1,
                 borderColor: "#E0E7FF",
               }}
             >
-              <Ionicons name="storefront" size={26} color="#4F46E5" />
+              <Ionicons name="storefront" size={18} color="#4F46E5" />
             </LinearGradient>
           )}
-          
-          <View style={{ flex: 1, gap: 3 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+
+          <View style={{ flex: 1, gap: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
               <Text style={{
                 fontFamily: Fonts.bold,
-                fontSize: 14,
+                fontSize: 11,
                 color: "#1E293B",
                 letterSpacing: 0.1,
               }}>
                 {companyInfo.CompanyName || "Smart POS"}
               </Text>
-              
+
               {hasLicense && (
                 <View style={{
                   flexDirection: "row",
                   alignItems: "center",
                   backgroundColor: "#DCFCE7",
-                  paddingHorizontal: 7,
-                  paddingVertical: 2,
-                  borderRadius: 10,
-                  gap: 3.5,
+                  paddingHorizontal: 5,
+                  paddingVertical: 1,
+                  borderRadius: 6,
+                  gap: 2,
                 }}>
-                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#15803D" }} />
+                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: "#15803D" }} />
                   <Text style={{
                     fontFamily: Fonts.bold,
-                    fontSize: 8.5,
+                    fontSize: 7.5,
                     color: "#166534",
                     textTransform: "uppercase",
-                    letterSpacing: 0.3,
+                    letterSpacing: 0.2,
                   }}>
                     Active
                   </Text>
                 </View>
               )}
             </View>
-            
+
             {companyInfo.Address ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <Ionicons name="location-outline" size={11} color="#64748B" />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                <Ionicons name="location-outline" size={9} color="#64748B" />
                 <Text style={{
                   fontFamily: Fonts.medium,
-                  fontSize: 10,
+                  fontSize: 8.5,
                   color: "#64748B",
                   flex: 1,
                 }} numberOfLines={1}>
@@ -1942,33 +2496,33 @@ export default function Category() {
             ) : null}
 
             {hasLicense ? (
-              <View style={{ 
-                flexDirection: "row", 
-                alignItems: "center", 
-                gap: 5, 
-                marginTop: 2,
+              <View style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 3,
+                marginTop: 1,
                 backgroundColor: "#F1F5F9",
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-                borderRadius: 8,
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 4,
                 alignSelf: "flex-start"
               }}>
-                <Ionicons name="shield-checkmark" size={12} color="#10B981" />
+                <Ionicons name="shield-checkmark" size={10} color="#10B981" />
                 <Text style={{
                   fontFamily: Fonts.semiBold,
-                  fontSize: 9.5,
+                  fontSize: 8,
                   color: "#475569",
                 }}>
                   Valid: <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{fromDate}</Text> to <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{toDate}</Text>
                 </Text>
               </View>
             ) : null}
-            
+
             <Text style={{
               fontFamily: Fonts.medium,
-              fontSize: 8.5,
+              fontSize: 7.5,
               color: "#94A3B8",
-              marginTop: 2,
+              marginTop: 1,
             }}>
               © 2026 UNIPRO. All rights reserved.
             </Text>
@@ -2290,7 +2844,7 @@ export default function Category() {
               styles.topNavContainer,
               { paddingHorizontal: isTablet ? 20 : 12, borderBottomWidth: 0, shadowColor: 'transparent', elevation: 0 },
               !isTablet &&
-                isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
+              isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
             ]}
           >
             {/* CENTER — Section Tabs */}
@@ -2336,10 +2890,10 @@ export default function Category() {
                         styles.tabBtn,
                         isActive && styles.activeTabBtn,
                         !isTablet &&
-                          isLandscape && {
-                            paddingVertical: 6,
-                            paddingHorizontal: 12,
-                          },
+                        isLandscape && {
+                          paddingVertical: 6,
+                          paddingHorizontal: 12,
+                        },
                       ]}
                     >
                       <Ionicons
@@ -2357,9 +2911,9 @@ export default function Category() {
                       >
                         {!isTablet && !isLandscape
                           ? formatSectionGlobal(SECTION_LABELS[section]).replace(
-                              "Section ",
-                              "Sec-",
-                            )
+                            "Section ",
+                            "Sec-",
+                          )
                           : formatSectionGlobal(SECTION_LABELS[section])}
                       </Text>
                       {occupied > 0 && (
@@ -2578,7 +3132,7 @@ export default function Category() {
             styles.topNavContainer,
             { paddingHorizontal: isTablet ? 20 : 12 },
             !isTablet &&
-              isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
+            isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
           ]}
         >
           {/* CENTER — Section Tabs */}
@@ -2624,10 +3178,10 @@ export default function Category() {
                       styles.tabBtn,
                       isActive && styles.activeTabBtn,
                       !isTablet &&
-                        isLandscape && {
-                          paddingVertical: 6,
-                          paddingHorizontal: 12,
-                        },
+                      isLandscape && {
+                        paddingVertical: 6,
+                        paddingHorizontal: 12,
+                      },
                     ]}
                   >
                     <Ionicons
@@ -2645,9 +3199,9 @@ export default function Category() {
                     >
                       {!isTablet && !isLandscape
                         ? formatSectionGlobal(SECTION_LABELS[section]).replace(
-                            "Section ",
-                            "Sec-",
-                          )
+                          "Section ",
+                          "Sec-",
+                        )
                         : formatSectionGlobal(SECTION_LABELS[section])}
                     </Text>
                     {occupied > 0 && (
@@ -3112,6 +3666,29 @@ export default function Category() {
                       />
                     </View>
                     <Text style={styles.subMenuItemText}>Transfer Table</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.subMenuItem}
+                    onPress={() => {
+                      setIsMenuVisible(false);
+                      router.push("/table-master");
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.menuIconContainer,
+                        { backgroundColor: Theme.primary + "10" },
+                      ]}
+                    >
+                      <Ionicons
+                        name="create-outline"
+                        size={18}
+                        color={Theme.primary}
+                      />
+                    </View>
+                    <Text style={styles.subMenuItemText}>Table Master</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -3693,11 +4270,11 @@ export default function Category() {
                     </Text>
                     <View style={{ gap: 8 }}>
                       {[
-                        { color: "#22c55e", label: "Dining" },
-                        { color: "#3b82f6", label: "Hold" },
-                        { color: "#f59e0b", label: "Checkout" },
-                        { color: "#ef4444", label: "Reserved" },
-                        { color: "#8b5cf6", label: "Overtime" },
+                        { color: "#81C995", label: "Dining" },
+                        { color: "#93C5FD", label: "Hold" },
+                        { color: "#FCD34D", label: "Checkout" },
+                        { color: "#FCA5A5", label: "Reserved" },
+                        { color: "#C084FC", label: "Overtime" },
                       ].map((item) => (
                         <View key={item.label} style={styles.legendItem}>
                           <View
@@ -3766,7 +4343,7 @@ export default function Category() {
           style={[
             styles.sectionHeader,
             !isTablet &&
-              isLandscape && { paddingVertical: 4, paddingHorizontal: 14 },
+            isLandscape && { paddingVertical: 4, paddingHorizontal: 14 },
           ]}
         >
           <View style={styles.sectionHeaderLeft}>
@@ -3813,11 +4390,11 @@ export default function Category() {
           {isTablet && (
             <View style={styles.legend}>
               {[
-                { color: "#22c55e", label: "Dining" },
-                { color: "#3b82f6", label: "Hold" },
-                { color: "#f59e0b", label: "Checkout" },
-                { color: "#ef4444", label: "Reserved" },
-                { color: "#8b5cf6", label: "Overtime" },
+                { color: "#81C995", label: "Dining" },
+                { color: "#93C5FD", label: "Hold" },
+                { color: "#FCD34D", label: "Checkout" },
+                { color: "#FCA5A5", label: "Reserved" },
+                { color: "#C084FC", label: "Overtime" },
               ].map((item) => (
                 <View key={item.label} style={styles.legendItem}>
                   <View
@@ -3832,45 +4409,154 @@ export default function Category() {
       )}
 
       {/* â•â•â•â•â•â•â•â•â•â•â• TABLE GRID â•â•â•â•â•â•â•â•â•â•â• */}
-      <FlatList
-        data={currentTables}
-        key={columns}
-        numColumns={columns}
-        keyExtractor={(item: TableItem) => item.id}
-        renderItem={renderItem}
-        columnWrapperStyle={{ gap: GAP }}
-        getItemLayout={(data, index) => ({
-          length: itemSize + GAP,
-          offset: (itemSize + GAP) * Math.floor(index / columns),
-          index,
-        })}
-        removeClippedSubviews={Platform.OS !== "web"}
-        maxToRenderPerBatch={isTablet ? 20 : 10}
-        windowSize={3}
-        initialNumToRender={isTablet ? 30 : 15}
-        contentContainerStyle={{
-          gap: GAP,
-          paddingHorizontal: PADDING,
-          paddingBottom: isTablet ? 160 : 100,
-          paddingTop: 8,
-        }}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="grid-outline" size={48} color={Theme.border} />
-            <Text style={styles.emptyText}>No tables found</Text>
-            <TouchableOpacity onPress={fetchTables} style={styles.retryBtn}>
-              <Ionicons
-                name="refresh-outline"
-                size={16}
-                color={Theme.primary}
-              />
-              <Text style={styles.retryText}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-        }
-        ListFooterComponent={null}
-      />
+      {/* ═════════════ TABLE VISUAL FLOOR MAP ═════════════ */}
+      {/* ═════════════ TABLE LAYOUT RENDERER ═════════════ */}
+      {!hasCustomLayout ? (
+        <FlatList
+          data={currentTables}
+          key={columns}
+          numColumns={columns}
+          keyExtractor={(item: TableItem) => item.id}
+          renderItem={renderItem}
+          columnWrapperStyle={{ gap: GAP }}
+          getItemLayout={(data, index) => ({
+            length: itemSize + GAP,
+            offset: (itemSize + GAP) * Math.floor(index / columns),
+            index,
+          })}
+          removeClippedSubviews={Platform.OS !== "web"}
+          maxToRenderPerBatch={isTablet ? 20 : 10}
+          windowSize={3}
+          initialNumToRender={isTablet ? 30 : 15}
+          contentContainerStyle={{
+            gap: GAP,
+            paddingHorizontal: PADDING,
+            paddingBottom: isTablet ? 160 : 100,
+            paddingTop: 8,
+          }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="grid-outline" size={48} color={Theme.border} />
+              <Text style={styles.emptyText}>No tables found</Text>
+              <TouchableOpacity onPress={fetchTables} style={styles.retryBtn}>
+                <Ionicons
+                  name="refresh-outline"
+                  size={16}
+                  color={Theme.primary}
+                />
+                <Text style={styles.retryText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      ) : (
+        <View style={{ flex: 1 }}>
+          {currentTables.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="grid-outline" size={48} color={Theme.border} />
+              <Text style={styles.emptyText}>No tables found</Text>
+              <TouchableOpacity onPress={fetchTables} style={styles.retryBtn}>
+                <Ionicons
+                  name="refresh-outline"
+                  size={16}
+                  color={Theme.primary}
+                />
+                <Text style={styles.retryText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ flex: 1 }} onLayout={onContainerLayout}>
+              <ScrollView 
+                contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
+                showsVerticalScrollIndicator={false}
+                style={{ flex: 1 }}
+              >
+                <CanvasBackground
+                  theme={backgroundTheme}
+                  style={{
+                    width: availableWidth,
+                    height: canvasHeight * (availableWidth / 780),
+                    borderRadius: 16,
+                    position: "relative",
+                    overflow: "hidden",
+                  }}
+                  isCategory={true}
+                >
+                  {/* Subtle floor grid lines to align layout */}
+                  {(() => {
+                    let gridLineColor = "rgba(232, 224, 213, 0.4)";
+                    if (backgroundTheme === "dark") gridLineColor = "rgba(255, 255, 255, 0.04)";
+                    if (backgroundTheme === "emerald") gridLineColor = "rgba(255, 255, 255, 0.05)";
+                    if (backgroundTheme === "grey") gridLineColor = "rgba(0, 0, 0, 0.06)";
+                    if (backgroundTheme === "wood") gridLineColor = "rgba(255, 255, 255, 0.07)";
+                    if (backgroundTheme === "light") gridLineColor = "rgba(0, 0, 0, 0.04)";
+
+                    return (
+                      <View style={{
+                        position: "absolute",
+                        top: 0, left: 0, right: 0, bottom: 0,
+                      }} pointerEvents="none">
+                        {Array.from({ length: 25 }).map((_, i) => (
+                          <View key={`grid-h-${i}`} style={{
+                            position: "absolute",
+                            left: 0, right: 0, height: 1,
+                            backgroundColor: gridLineColor,
+                            top: (i + 1) * 30 * (availableWidth / 780)
+                          }} />
+                        ))}
+                        {Array.from({ length: 32 }).map((_, i) => (
+                          <View key={`grid-v-${i}`} style={{
+                            position: "absolute",
+                            top: 0, bottom: 0, width: 1,
+                            backgroundColor: gridLineColor,
+                            left: (i + 1) * 30 * (availableWidth / 780)
+                          }} />
+                        ))}
+                      </View>
+                    );
+                  })()}
+
+                  {/* Render each Table component placed absolute */}
+                  {(() => {
+                    const layoutScale = availableWidth / 780;
+
+                    return currentTables.map((item, index) => {
+                      const defaultX = (item.XPos || 30 + (index % 4) * 170) * layoutScale;
+                      const defaultY = (item.YPos || 30 + Math.floor(index / 4) * 130) * layoutScale;
+
+                      return (
+                        <View
+                          key={item.id}
+                          style={{
+                            position: "absolute",
+                            left: defaultX,
+                            top: defaultY,
+                          }}
+                        >
+                          <TableItemComponent
+                            tableId={item.id}
+                            item={item}
+                            itemSize={90}
+                            activeTab={activeTab}
+                            onPress={handleTablePress}
+                            numberFont={numberFont}
+                            smallFont={smallFont}
+                            isTabletPortrait={!isLandscape && isTablet}
+                            isAbsoluteLayout={true}
+                            layoutScale={layoutScale}
+                            backgroundTheme={backgroundTheme}
+                          />
+                        </View>
+                      );
+                    });
+                  })()}
+                </CanvasBackground>
+              </ScrollView>
+            </View>
+        )}
+      </View>
+    )}
       {/* 〰〰〰〰〰〰〰〰〰〰〰 CUSTOMER GUEST & PAX MODAL 〰〰〰〰〰〰〰〰〰〰〰 */}
       <Modal
         visible={guestModalVisible}
@@ -3891,7 +4577,7 @@ export default function Category() {
         >
           <TouchableOpacity
             activeOpacity={1}
-            onPress={() => {}} // Stop propagation
+            onPress={() => { }} // Stop propagation
             style={{
               backgroundColor: Theme.bgCard,
               padding: 24,
@@ -4270,7 +4956,7 @@ export default function Category() {
                   pax: tableData.pax !== undefined ? tableData.pax : t.pax,
                   currentOrderId:
                     tableData.orderId !== "EMPTY" &&
-                    tableData.orderId !== "SYNC"
+                      tableData.orderId !== "SYNC"
                       ? tableData.orderId
                       : t.currentOrderId,
                 };
@@ -4426,7 +5112,7 @@ export default function Category() {
                     <Text style={styles.moveTableSection}>
                       {
                         SECTION_SHORT[
-                          getSectionFromDiningSection(item.DiningSection)
+                        getSectionFromDiningSection(item.DiningSection)
                         ]
                       }
                     </Text>
@@ -4584,7 +5270,7 @@ export default function Category() {
                 </View>
 
                 {/* Modal Content */}
-                <ScrollView 
+                <ScrollView
                   contentContainerStyle={{ padding: 16, gap: 10 }}
                   showsVerticalScrollIndicator={false}
                 >
@@ -4646,10 +5332,10 @@ export default function Category() {
                           alignItems: "center",
                           justifyContent: "center",
                         }}>
-                          <Ionicons 
-                            name={item.type === "QR_ORDER" ? "qr-code-outline" : "information-circle-outline"} 
-                            size={18} 
-                            color={item.read ? "#64748B" : Theme.primary} 
+                          <Ionicons
+                            name={item.type === "QR_ORDER" ? "qr-code-outline" : "information-circle-outline"}
+                            size={18}
+                            color={item.read ? "#64748B" : Theme.primary}
                           />
                         </View>
                         <View style={{ flex: 1, gap: 2 }}>
@@ -4667,13 +5353,13 @@ export default function Category() {
                                 Order #{item.orderId ? item.orderId.split("-").pop() : "Order"}
                               </Text>
                               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                <Text style={{ 
-                                  fontSize: 15, 
-                                  fontFamily: Fonts.bold, 
-                                  color: Theme.primary, 
-                                  backgroundColor: "#FFF7ED", 
-                                  paddingHorizontal: 8, 
-                                  paddingVertical: 4, 
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontFamily: Fonts.bold,
+                                  color: Theme.primary,
+                                  backgroundColor: "#FFF7ED",
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4,
                                   borderRadius: 6,
                                   borderWidth: 1,
                                   borderColor: "#FFEDD5",
@@ -4715,7 +5401,7 @@ export default function Category() {
                     backgroundColor: "#F8FAFC",
                     alignItems: "center",
                   }}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       onPress={() => {
                         useNotificationStore.getState().clearNotifications();
                         showToast({ type: "success", message: "Cleared", subtitle: "All notifications cleared." });

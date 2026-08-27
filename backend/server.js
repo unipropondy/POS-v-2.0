@@ -197,6 +197,10 @@ async function pollTables() {
           entry_status AS entryStatus,
           CustomerName as customerName,
           Pax as pax,
+          TableType,
+          Seats,
+          XSize,
+          YSize,
           CASE 
             WHEN Status IN (1, 2, 3) AND StartTime IS NOT NULL AND StartTime > '2000-01-01' AND DATEDIFF(MINUTE, StartTime, GETDATE()) >= 60 THEN 1 
             ELSE 0 

@@ -71,6 +71,7 @@ router.get("/all", async (req, res) => {
       CAST(DiningSection AS VARCHAR(10)) AS DiningSection, LockedByName as lockedByName,
       Status, CONVERT(VARCHAR, StartTime, 126) as StartTime, ISNULL(TotalAmount, 0) as totalAmount, CurrentOrderId as currentOrderId,
       entry_status AS entryStatus, ISNULL(PAYMENT_STATUS, 0) AS paymentStatus, CustomerName as customerName, Pax as pax,
+      TableType, Seats, XSize, YSize, XPos, YPos,
       CASE 
         WHEN Status IN (1, 2, 3) AND StartTime IS NOT NULL AND StartTime > '2000-01-01' AND DATEDIFF(MINUTE, StartTime, GETDATE()) >= 60 THEN 1 
         ELSE 0 
@@ -287,6 +288,142 @@ router.post("/save-guest", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("SAVE GUEST ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Route to create a new Table
+router.post("/create", async (req, res) => {
+  const { tableNumber, diningSection, seats, tableType, xSize, ySize } = req.body;
+  try {
+    const pool = await poolPromise;
+    if (!tableNumber) return res.status(400).json({ error: "tableNumber is required" });
+    if (!diningSection) return res.status(400).json({ error: "diningSection is required" });
+
+    const request = pool.request();
+    request.input("tableNumber", sql.VarChar(50), String(tableNumber));
+    request.input("diningSection", sql.VarChar(10), String(diningSection));
+    request.input("seats", sql.Int, Number(seats) || 4);
+    request.input("tableType", sql.VarChar(50), tableType || "Rectangular");
+    request.input("xSize", sql.Int, Number(xSize) || 100);
+    request.input("ySize", sql.Int, Number(ySize) || 80);
+
+    // Let's get the max SortCode to append it to the end
+    const maxSortResult = await pool.request().query("SELECT ISNULL(MAX(SortCode), 0) as maxSort FROM TableMaster");
+    const nextSortCode = (maxSortResult.recordset[0]?.maxSort || 0) + 1;
+    request.input("sortCode", sql.Int, nextSortCode);
+
+    await request.query(`
+      INSERT INTO TableMaster (
+        TableId, TableNumber, DiningSection, Seats, TableType, XSize, YSize,
+        SortCode, ReservationAllowed, Status, IstakeAway, IsLocked, TotalAmount,
+        CreatedOn, ModifiedOn, PrintSection, Row, Col
+      )
+      VALUES (
+        NEWID(), @tableNumber, @diningSection, @seats, @tableType, @xSize, @ySize,
+        @sortCode, 0, 0, 0, 0, 0,
+        GETDATE(), GETDATE(), 1, 0, 0
+      )
+    `);
+
+    // Broadcast change
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("table_config_updated", {});
+    }
+
+    res.json({ success: true, message: "Table created successfully" });
+  } catch (err) {
+    console.error("CREATE TABLE ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Route to update Table visual configurations (Seats, TableType, XSize, YSize)
+router.put("/update-config", async (req, res) => {
+  const { tableId, seats, tableType, xSize, ySize } = req.body;
+  try {
+    const pool = await poolPromise;
+    if (!tableId) return res.status(400).json({ error: "tableId is required" });
+
+    const cleanTableId = tableId.replace(/^\{|\}$/g, "").trim();
+    const request = pool.request();
+    request.input("tableId", sql.VarChar(50), cleanTableId);
+    request.input("seats", sql.Int, Number(seats));
+    request.input("tableType", sql.VarChar(50), tableType);
+    request.input("xSize", sql.Int, Number(xSize));
+    request.input("ySize", sql.Int, Number(ySize));
+
+    await request.query(`
+      UPDATE TableMaster
+      SET Seats = @seats,
+          TableType = @tableType,
+          XSize = @xSize,
+          YSize = @ySize,
+          ModifiedOn = GETDATE()
+      WHERE TableId = TRY_CAST(@tableId AS UNIQUEIDENTIFIER) OR CAST(TableNumber AS VARCHAR(50)) = @tableId
+    `);
+
+    // Broadcast update via socket
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("table_config_updated", { tableId: cleanTableId });
+    }
+
+    res.json({ success: true, message: "Table configuration updated successfully" });
+  } catch (err) {
+    console.error("UPDATE CONFIG ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// ✅ Route to update multiple table layout positions (XPos, YPos) in bulk
+router.put("/save-positions", async (req, res) => {
+  const { positions } = req.body; // Array of { id, xPos, yPos }
+  if (!Array.isArray(positions)) {
+    return res.status(400).json({ error: "positions array is required" });
+  }
+
+  try {
+    const pool = await poolPromise;
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      for (const pos of positions) {
+        const cleanTableId = String(pos.id).replace(/^\{|\}$/g, "").trim();
+        await transaction.request()
+          .input("tableId", sql.VarChar(50), cleanTableId)
+          .input("xPos", sql.Int, Math.round(Number(pos.xPos)))
+          .input("yPos", sql.Int, Math.round(Number(pos.yPos)))
+          .input("tableType", sql.VarChar(50), pos.tableType || null)
+          .input("xSize", sql.Int, pos.xSize !== undefined ? Number(pos.xSize) : null)
+          .input("ySize", sql.Int, pos.ySize !== undefined ? Number(pos.ySize) : null)
+          .query(`
+            UPDATE TableMaster
+            SET XPos = @xPos,
+                YPos = @yPos,
+                TableType = ISNULL(@tableType, TableType),
+                XSize = ISNULL(@xSize, XSize),
+                YSize = ISNULL(@ySize, YSize),
+                ModifiedOn = GETDATE()
+            WHERE TableId = TRY_CAST(@tableId AS UNIQUEIDENTIFIER) OR CAST(TableNumber AS VARCHAR(50)) = @tableId
+          `);
+      }
+      await transaction.commit();
+    } catch (txErr) {
+      await transaction.rollback();
+      throw txErr;
+    }
+
+    // Broadcast layout update via socket
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("table_config_updated", {});
+    }
+
+    res.json({ success: true, message: "Table positions saved successfully" });
+  } catch (err) {
+    console.error("SAVE POSITIONS ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
