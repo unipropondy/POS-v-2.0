@@ -742,16 +742,6 @@ export default function TableMasterScreen() {
     }
   };
 
-  const updateSeats = (val: number) => {
-    setSeats(val);
-    if (selectedTable) {
-      setSelectedTable((prev) => (prev ? { ...prev, Seats: val } : null));
-      setTables((prev) =>
-        prev.map((t) => (t.id === selectedTable.id ? { ...t, Seats: val } : t))
-      );
-    }
-  };
-
   const updateTableType = (val: string) => {
     setTableType(val);
     if (selectedTable) {
