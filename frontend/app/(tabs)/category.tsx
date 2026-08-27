@@ -602,6 +602,19 @@ const TableItemComponent = React.memo(
             {item.label}
           </Text>
 
+          {status === 0 && (
+            <Text
+              style={{
+                fontSize: smallFont - 1,
+                color: "#64748B",
+                fontFamily: Fonts.medium,
+                marginTop: 2,
+              }}
+            >
+              {seatsCount} Pax
+            </Text>
+          )}
+
           {status !== 0 && (
             <View style={[styles.tableInfo, { gap: 1 }]}>
               <View
@@ -627,6 +640,19 @@ const TableItemComponent = React.memo(
                   {tableData?.customerName ? tableData.customerName : ui.text}
                 </Text>
               </View>
+
+              <Text
+                style={{
+                  fontSize: smallFont - 1,
+                  color: labelColor,
+                  fontFamily: Fonts.medium,
+                  textAlign: "center",
+                  marginTop: 1,
+                  marginBottom: 1,
+                }}
+              >
+                {seatsCount} Pax
+              </Text>
 
               {status !== 5 && (
                 <View style={styles.tableStats}>
@@ -820,6 +846,19 @@ const TableItemComponent = React.memo(
             {item.label}
           </Text>
 
+          {status === 0 && (
+            <Text
+              style={{
+                fontSize: Math.max(8, (smallFont - 1) * (tableW / itemSize) * 0.9),
+                color: "#64748B",
+                fontFamily: Fonts.medium,
+                marginTop: 2,
+              }}
+            >
+              {seatsCount} Pax
+            </Text>
+          )}
+
           {status !== 0 && (
             <View style={[styles.tableInfo, { gap: 1 }]}>
               <View
@@ -846,6 +885,19 @@ const TableItemComponent = React.memo(
                   {tableData?.customerName ? tableData.customerName : ui.text}
                 </Text>
               </View>
+
+              <Text
+                style={{
+                  fontSize: Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8),
+                  color: labelColor,
+                  fontFamily: Fonts.medium,
+                  textAlign: "center",
+                  marginTop: 1,
+                  marginBottom: 1,
+                }}
+              >
+                {seatsCount} Pax
+              </Text>
 
               {status !== 0 && status !== 5 && (
                 <View style={styles.tableStats}>
