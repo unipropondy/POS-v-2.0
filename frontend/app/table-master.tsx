@@ -782,6 +782,7 @@ export default function TableMasterScreen() {
           { key: "1", label: "Section 1" },
           { key: "2", label: "Section 2" },
           { key: "3", label: "Section 3" },
+          { key: "4", label: "Takeaway" },
         ].map((sec) => (
           <TouchableOpacity
             key={sec.key}
