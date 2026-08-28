@@ -79,6 +79,78 @@ const woodFloorTexture = require("../../assets/images/wood_floor_texture.jpg");
 // --- CANVAS BACKGROUND COMPONENT ---
 // --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
+  if (theme === "champagne") {
+    return (
+      <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+        {Platform.OS === "web" ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "linear-gradient(145deg, #fffbeb 0%, #fef3c7 38%, #fde68a 68%, #fcd34d 100%)",
+                mixBlendMode: "normal",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(ellipse 55% 40% at 55% 38%, rgba(255,255,255,0.42) 0%, transparent 65%)",
+                mixBlendMode: "multiply",
+                filter: "blur(80px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                mixBlendMode: "overlay",
+                opacity: 0.85,
+                pointerEvents: "none",
+              }}
+            >
+              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                <filter id="grain">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="4" stitchTiles="stitch" />
+                  <feColorMatrix
+                    type="matrix"
+                    values="0.181 0.608 0.061 0 0.075
+                          0.181 0.608 0.061 0 0.075
+                          0.181 0.608 0.061 0 0.075
+                          0     0     0     1 0"
+                  />
+                </filter>
+                <rect width="100%" height="100%" filter="url(#grain)" />
+              </svg>
+            </div>
+          </>
+        ) : (
+          <>
+            <LinearGradient
+              colors={["#fffbeb", "#fef3c7", "#fde68a", "#fcd34d"]}
+              locations={[0, 0.38, 0.68, 1.0]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={["rgba(255,255,255,0.42)", "transparent"]}
+              locations={[0, 0.65]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
+        )}
+        <View style={{ flex: 1, zIndex: 1 }}>{children}</View>
+      </View>
+    );
+  }
+
   if (theme === "citrine") {
     return (
       <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
@@ -152,7 +224,7 @@ const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme
     );
   }
 
-  // Default: Champagne Fizz
+  // Default / champagne_fizz - Champagne Fizz
   return (
     <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
       {/* Layer 1 - Champagne Fizz Aura */}
@@ -1142,7 +1214,7 @@ export default function Category() {
     }
   };
 
-  const [backgroundTheme, setBackgroundTheme] = useState("champagne");
+  const [backgroundTheme, setBackgroundTheme] = useState("champagne_fizz");
 
   const [activeTab, setActiveTab] = useState<string>("SECTION_1");
 
@@ -1158,10 +1230,10 @@ export default function Category() {
     try {
       const sectionNum = getSectionNum(activeTab);
       const savedTheme = await AsyncStorage.getItem(`layout_background_theme_${sectionNum}`);
-      if (savedTheme === "champagne" || savedTheme === "citrine") {
+      if (savedTheme === "champagne" || savedTheme === "champagne_fizz" || savedTheme === "citrine") {
         setBackgroundTheme(savedTheme);
       } else {
-        setBackgroundTheme("champagne");
+        setBackgroundTheme("champagne_fizz");
       }
     } catch (e) {
       console.error(e);
