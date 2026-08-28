@@ -50,18 +50,14 @@ const CanvasBackground = ({ theme, children, style, isCategory = false }: { them
           "rgba(230, 170, 100, 0.90)"
         ]}
         locations={[0, 0.28, 0.48, 0.68, 1.0]}
-        style={StyleSheet.absoluteFill}
-        // Web blend modes
-        {...(Platform.OS === "web" ? {
-          style: [
-            StyleSheet.absoluteFill,
-            {
-              mixBlendMode: "multiply",
-              filter: "blur(90px)",
-              transform: [{ translateZ: 0 }],
-            } as any
-          ]
-        } : {})}
+        style={[
+          StyleSheet.absoluteFill,
+          Platform.OS === "web" ? {
+            mixBlendMode: "multiply",
+            filter: "blur(90px)",
+            transform: "translateZ(0)",
+          } as any : {}
+        ]}
       />
       {/* Layer 2 - Champagne Fizz Aura */}
       <LinearGradient
@@ -73,18 +69,14 @@ const CanvasBackground = ({ theme, children, style, isCategory = false }: { them
           "rgba(230, 170, 100, 1.0)"
         ]}
         locations={[0, 0.34, 0.66, 0.82, 1.0]}
-        style={StyleSheet.absoluteFill}
-        // Web blend modes
-        {...(Platform.OS === "web" ? {
-          style: [
-            StyleSheet.absoluteFill,
-            {
-              mixBlendMode: "multiply",
-              filter: "blur(90px)",
-              transform: [{ translateZ: 0 }],
-            } as any
-          ]
-        } : {})}
+        style={[
+          StyleSheet.absoluteFill,
+          Platform.OS === "web" ? {
+            mixBlendMode: "multiply",
+            filter: "blur(90px)",
+            transform: "translateZ(0)",
+          } as any : {}
+        ]}
       />
       {/* Content wrapper */}
       <View style={{ flex: 1, zIndex: 1 }}>
