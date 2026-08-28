@@ -594,61 +594,65 @@ const DraggableTable = ({
       }}
     >
       {/* Chairs */}
-      {chairPositions.map((pos, idx) => (
-        <View
-          key={`chair-${idx}`}
-          style={{
-            position: "absolute",
-            left: pos.x,
-            top: pos.y,
-            width: chairSize,
-            height: chairSize * 1.25,
-            transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          {/* Chair back */}
-          <LinearGradient
-            colors={["#637b60", "#526c4f", "#465d43"]}
-            locations={[0, 0.60, 1.0]}
-            style={{
-              position: "absolute",
-              left: 1,
-              right: 1,
-              top: 0,
-              height: "45%",
-              borderWidth: 1,
-              borderColor: "#9a6a38",
-              borderTopLeftRadius: chairSize / 4,
-              borderTopRightRadius: chairSize / 4,
-            }}
-          />
-          {/* Chair seat */}
+      {chairPositions.map((pos, idx) => {
+        const backH = Math.round(chairSize * 0.42);
+        const seatTop = Math.round(chairSize * 0.32);
+        return (
           <View
+            key={`chair-${idx}`}
             style={{
               position: "absolute",
-              left: 2.2,
-              right: 2.2,
-              top: "35%",
-              bottom: 0,
-              backgroundColor: "#536d50",
-              borderWidth: 1,
-              borderColor: "#9a6a38",
-              borderBottomLeftRadius: chairSize / 5,
-              borderBottomRightRadius: chairSize / 5,
-              borderTopLeftRadius: chairSize / 8,
-              borderTopRightRadius: chairSize / 8,
-              justifyContent: "center",
-              alignItems: "center",
+              left: pos.x,
+              top: pos.y,
+              width: chairSize,
+              height: chairSize,
+              transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
             }}
           >
-            <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.35, color: "#fffeb0" }}>
-              {idx + 1}
-            </Text>
+            {/* Chair back cushion */}
+            <LinearGradient
+              colors={["#637b60", "#526c4f", "#465d43"]}
+              locations={[0, 0.60, 1.0]}
+              style={{
+                position: "absolute",
+                left: 1,
+                right: 1,
+                top: 0,
+                height: backH,
+                borderWidth: 1,
+                borderColor: "#9a6a38",
+                borderTopLeftRadius: chairSize / 4,
+                borderTopRightRadius: chairSize / 4,
+                borderBottomLeftRadius: 2,
+                borderBottomRightRadius: 2,
+              }}
+            />
+            {/* Chair seat cushion */}
+            <View
+              style={{
+                position: "absolute",
+                left: 2,
+                right: 2,
+                top: seatTop,
+                bottom: 1,
+                backgroundColor: "#536d50",
+                borderWidth: 1,
+                borderColor: "#9a6a38",
+                borderBottomLeftRadius: chairSize / 5,
+                borderBottomRightRadius: chairSize / 5,
+                borderTopLeftRadius: chairSize / 8,
+                borderTopRightRadius: chairSize / 8,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontFamily: Fonts.bold, fontSize: Math.max(5, chairSize * 0.32), color: "#fffeb0" }}>
+                {idx + 1}
+              </Text>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
 
       <View
         style={{

@@ -980,6 +980,8 @@ const TableItemComponent = React.memo(
         {chairPositions.map((pos, idx) => {
           const transform = pos.rotate ? [{ rotate: pos.rotate }] : undefined;
           const statusChairBorder = status === 0 ? "#9a6a38" : chairColor;
+          const backH = Math.round(chairSize * 0.42);
+          const seatTop = Math.round(chairSize * 0.32);
           return (
             <View
               key={`chair-${idx}`}
@@ -988,13 +990,11 @@ const TableItemComponent = React.memo(
                 left: pos.x,
                 top: pos.y,
                 width: chairSize,
-                height: chairSize * 1.25,
+                height: chairSize,
                 transform,
-                justifyContent: "center",
-                alignItems: "center",
               }}
             >
-              {/* Chair back */}
+              {/* Chair back cushion */}
               <LinearGradient
                 colors={["#637b60", "#526c4f", "#465d43"]}
                 locations={[0, 0.60, 1.0]}
@@ -1003,21 +1003,23 @@ const TableItemComponent = React.memo(
                   left: 1,
                   right: 1,
                   top: 0,
-                  height: "45%",
+                  height: backH,
                   borderWidth: 1,
                   borderColor: statusChairBorder,
                   borderTopLeftRadius: chairSize / 4,
                   borderTopRightRadius: chairSize / 4,
+                  borderBottomLeftRadius: 2,
+                  borderBottomRightRadius: 2,
                 }}
               />
-              {/* Chair seat */}
+              {/* Chair seat cushion */}
               <View
                 style={{
                   position: "absolute",
-                  left: 2.2,
-                  right: 2.2,
-                  top: "35%",
-                  bottom: 0,
+                  left: 2,
+                  right: 2,
+                  top: seatTop,
+                  bottom: 1,
                   backgroundColor: "#536d50",
                   borderWidth: 1,
                   borderColor: statusChairBorder,
@@ -1029,7 +1031,7 @@ const TableItemComponent = React.memo(
                   alignItems: "center",
                 }}
               >
-                <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.35, color: "#fffeb0" }}>
+                <Text style={{ fontFamily: Fonts.bold, fontSize: Math.max(5, chairSize * 0.32), color: "#fffeb0" }}>
                   {idx + 1}
                 </Text>
               </View>
@@ -1037,28 +1039,28 @@ const TableItemComponent = React.memo(
           );
         })}
 
-        {/* Clock/Timer Overlay Badge */}
-        {status > 0 && (
+        {/* Clock/Timer Overlay Badge — top-right corner */}
+        {status > 0 && status !== 5 && (
           <View style={{
             position: "absolute",
-            top: ty - 6,
-            left: tx + tableW / 2 - 7,
-            width: 14,
-            height: 14,
-            borderRadius: 7,
+            top: ty + 3,
+            right: -(tx) + 3,
+            width: 16,
+            height: 16,
+            borderRadius: 8,
             backgroundColor: "#FFFFFF",
-            borderWidth: 1.2,
+            borderWidth: 1.5,
             borderColor: activeColor,
             justifyContent: "center",
             alignItems: "center",
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 1 },
             shadowOpacity: 0.15,
-            shadowRadius: 1.5,
-            elevation: 3,
+            shadowRadius: 2,
+            elevation: 4,
             zIndex: 99,
           }}>
-            <Ionicons name="time" size={9} color={activeColor} />
+            <Ionicons name="time" size={10} color={activeColor} />
           </View>
         )}
 
@@ -1072,153 +1074,152 @@ const TableItemComponent = React.memo(
             height: tableH,
             borderRadius,
             borderColor: status === 0 ? "#99652f" : activeColor,
-            borderWidth: 2.2,
+            borderWidth: status === 0 ? 2 : 2.5,
             overflow: "hidden",
-            backgroundColor: "#b77d3d",
+            backgroundColor: status === 0 ? "#b77d3d" : "transparent",
             ...Platform.select({
-              ios: { shadowColor: "#000000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 3 },
-              android: { elevation: 2 },
-              web: { boxShadow: `0 3px 6px rgba(0,0,0,0.16)` } as any,
+              ios: { shadowColor: "#000000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.14, shadowRadius: 4 },
+              android: { elevation: 3 },
+              web: { boxShadow: status === 0 ? `0 3px 8px rgba(0,0,0,0.18)` : `0 3px 8px ${activeColor}44` } as any,
             }),
           }}
         >
-          <LinearGradient
-            colors={["#d9a866", "#c99452", "#b77d3d"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            locations={[0, 0.45, 1.0]}
-            style={{
-              flex: 1,
-              width: "100%",
-              height: "100%",
-              padding: 2,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {/* Inner table margin line for craftsmanship style */}
-            <View style={{
-              flex: 1,
-              width: "100%",
-              height: "100%",
-              borderRadius: Math.max(0, borderRadius - 2),
-              borderWidth: 1,
-              borderColor: status === 0 ? "rgba(163, 117, 78, 0.25)" : "rgba(255, 255, 255, 0.4)",
-              justifyContent: "center",
-              alignItems: "center",
-            }}>
-          <Text
-            style={[
-              styles.tableNumber,
-              { 
-                fontSize: Math.max(12, numberFont * (tableW / itemSize) * 0.9), 
-                color: labelColor, 
-                marginTop: 0, 
-                marginBottom: 0,
+          {status === 0 ? (
+            /* ── Empty table: warm wood gradient ── */
+            <LinearGradient
+              colors={["#e8b96a", "#d19a50", "#b77d3d"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              locations={[0, 0.45, 1.0]}
+              style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+            >
+              {/* Inner wood grain line */}
+              <View style={{
+                position: "absolute",
+                inset: 0,
+                margin: 4,
+                borderRadius: Math.max(0, borderRadius - 4),
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.18)",
+              }} />
+              <Text style={{
                 fontFamily: Fonts.black,
-                fontWeight: "900"
-              },
-            ]}
-          >
-            {item.label}
-          </Text>
+                fontWeight: "900",
+                fontSize: Math.max(13, numberFont * (tableW / itemSize) * 0.9),
+                color: "#3d2000",
+                textShadowColor: "rgba(255,220,150,0.6)",
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 2,
+              }}>
+                {item.label}
+              </Text>
+              <Text style={{
+                fontFamily: Fonts.medium,
+                fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.75),
+                color: "rgba(61,32,0,0.6)",
+                marginTop: 1,
+              }}>
+                {seatsCount} Pax
+              </Text>
+            </LinearGradient>
+          ) : (
+            /* ── Occupied table: status gradient ── */
+            <LinearGradient
+              colors={gradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 4 }}
+            >
+              {/* Table number */}
+              <Text style={{
+                fontFamily: Fonts.black,
+                fontWeight: "900",
+                fontSize: Math.max(13, numberFont * (tableW / itemSize) * 0.9),
+                color: labelColor,
+                lineHeight: Math.max(14, numberFont * (tableW / itemSize) * 0.9) + 2,
+              }}>
+                {item.label}
+              </Text>
 
-          {status !== 0 && (
-            <View style={[styles.tableInfo, { gap: 1 }]}>
-              <View
-                style={[
-                  styles.statusChip,
-                  { 
-                    backgroundColor: activeBg, 
-                    borderColor: activeColor,
-                    paddingHorizontal: 4,
-                    paddingVertical: 0.5,
-                    borderRadius: 4,
-                    maxWidth: tableW - 8,
-                    marginBottom: 0,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusChipText,
-                    { color: activeColor, fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.8) },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {tableData?.customerName ? tableData.customerName : ui.text}
+              {/* Status badge */}
+              <View style={{
+                marginTop: 2,
+                paddingHorizontal: 5,
+                paddingVertical: 1.5,
+                borderRadius: 4,
+                backgroundColor: activeColor,
+                maxWidth: tableW - 10,
+              }}>
+                <Text style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: Math.max(6, smallFont * (tableW / itemSize) * 0.78),
+                  color: "#ffffff",
+                  letterSpacing: 0.4,
+                }} numberOfLines={1}>
+                  {ui.text}
                 </Text>
               </View>
 
-              {status !== 0 && status !== 5 && (
-                <View style={styles.tableStats}>
+              {/* Customer name */}
+              {tableData?.customerName ? (
+                <Text style={{
+                  fontFamily: Fonts.medium,
+                  fontSize: Math.max(6, (smallFont - 1) * (tableW / itemSize) * 0.75),
+                  color: labelColor,
+                  marginTop: 1.5,
+                  opacity: 0.85,
+                }} numberOfLines={1}>
+                  {tableData.customerName}
+                </Text>
+              ) : null}
+
+              {/* Time + Amount row */}
+              {status !== 5 && (timeText || billAmount > 0) ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
                   {timeText ? (
-                    <Text
-                      style={[
-                        styles.timeText,
-                        { fontSize: Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8), color: textColor },
-                      ]}
-                    >
-                      <Ionicons
-                        name="time-outline"
-                        size={Math.max(7, (smallFont - 1) * (tableW / itemSize) * 0.8)}
-                        color={textColor}
-                      />{" "}
-                      {timeText}
-                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                      <Ionicons name="time-outline" size={Math.max(7, (smallFont - 2) * (tableW / itemSize) * 0.8)} color={textColor} />
+                      <Text style={{
+                        fontFamily: Fonts.medium,
+                        fontSize: Math.max(6, (smallFont - 2) * (tableW / itemSize) * 0.8),
+                        color: textColor,
+                      }}>
+                        {timeText}
+                      </Text>
+                    </View>
                   ) : null}
-                  {billAmount > 0 && (
-                    <Text
-                      style={[
-                        styles.billText,
-                        {
-                          fontSize: Math.max(8, (smallFont + 1) * (tableW / itemSize) * 0.9),
-                          color: textColor,
-                          fontWeight: "800",
-                        },
-                      ]}
-                    >
+                  {billAmount > 0 ? (
+                    <Text style={{
+                      fontFamily: Fonts.bold,
+                      fontWeight: "800",
+                      fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.85),
+                      color: textColor,
+                    }}>
                       ${billAmount.toFixed(2)}
                     </Text>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-
-          {status === 5 && (
-            <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
-              <Ionicons
-                name="lock-closed"
-                size={Math.max(10, tableW * 0.15)}
-                color={ui.color}
-              />
-              {tableData?.lockedByName ? (
-                <View
-                  style={{
-                    backgroundColor: ui.color,
-                    paddingHorizontal: 4,
-                    paddingVertical: 1,
-                    borderRadius: 3,
-                    maxWidth: tableW - 8,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: Math.max(7, (smallFont - 2) * (tableW / itemSize)),
-                      color: "#FFF",
-                      fontWeight: "bold",
-                    }}
-                    numberOfLines={1}
-                  >
-                    {tableData.lockedByName}
-                  </Text>
+                  ) : null}
                 </View>
               ) : null}
-            </View>
+
+              {/* Reserved lock */}
+              {status === 5 && (
+                <View style={{ alignItems: "center", marginTop: 2 }}>
+                  <Ionicons name="lock-closed" size={Math.max(10, tableW * 0.14)} color={activeColor} />
+                  {tableData?.lockedByName ? (
+                    <Text style={{
+                      fontFamily: Fonts.medium,
+                      fontSize: Math.max(6, (smallFont - 2) * (tableW / itemSize)),
+                      color: labelColor,
+                      opacity: 0.85,
+                      marginTop: 1,
+                    }} numberOfLines={1}>
+                      {tableData.lockedByName}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+            </LinearGradient>
           )}
-            </View>
-          </LinearGradient>
         </View>
 
         {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
