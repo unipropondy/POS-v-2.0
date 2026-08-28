@@ -38,49 +38,59 @@ const woodFloorTexture = require("../assets/images/wood_floor_texture.jpg");
 
 // --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = false }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
-  if (theme === "dark") {
-    return (
-      <LinearGradient colors={["#1E293B", "#0F172A"]} style={[{ backgroundColor: "#0F172A" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "grey") {
-    return (
-      <LinearGradient colors={["#F1F5F9", "#E2E8F0"]} style={[{ backgroundColor: "#E2E8F0" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "beige") {
-    return (
-      <LinearGradient colors={["#FAF7F2", "#EFEAE0"]} style={[{ backgroundColor: "#EFEAE0" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "light") {
-    return (
-      <LinearGradient colors={["#FFFFFF", "#F8FAFC"]} style={[{ backgroundColor: "#FFFFFF" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "emerald") {
-    return (
-      <LinearGradient colors={["#064E3B", "#022C22"]} style={[{ backgroundColor: "#022C22" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
   return (
-    <ImageBackground
-      source={woodFloorTexture}
-      style={style}
-      resizeMode="cover"
-    >
-      {children}
-    </ImageBackground>
+    <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+      {/* Layer 1 - Champagne Fizz Aura */}
+      <LinearGradient
+        colors={[
+          "transparent",
+          "rgba(255, 230, 180, 0.12)",
+          "rgba(255, 255, 255, 0.18)",
+          "rgba(255, 200, 140, 0.68)",
+          "rgba(230, 170, 100, 0.90)"
+        ]}
+        locations={[0, 0.28, 0.48, 0.68, 1.0]}
+        style={StyleSheet.absoluteFill}
+        // Web blend modes
+        {...(Platform.OS === "web" ? {
+          style: [
+            StyleSheet.absoluteFill,
+            {
+              mixBlendMode: "multiply",
+              filter: "blur(90px)",
+              transform: [{ translateZ: 0 }],
+            } as any
+          ]
+        } : {})}
+      />
+      {/* Layer 2 - Champagne Fizz Aura */}
+      <LinearGradient
+        colors={[
+          "transparent",
+          "rgba(255, 230, 180, 0.22)",
+          "rgba(255, 255, 255, 0.66)",
+          "rgba(255, 200, 140, 0.82)",
+          "rgba(230, 170, 100, 1.0)"
+        ]}
+        locations={[0, 0.34, 0.66, 0.82, 1.0]}
+        style={StyleSheet.absoluteFill}
+        // Web blend modes
+        {...(Platform.OS === "web" ? {
+          style: [
+            StyleSheet.absoluteFill,
+            {
+              mixBlendMode: "multiply",
+              filter: "blur(90px)",
+              transform: [{ translateZ: 0 }],
+            } as any
+          ]
+        } : {})}
+      />
+      {/* Content wrapper */}
+      <View style={{ flex: 1, zIndex: 1 }}>
+        {children}
+      </View>
+    </View>
   );
 };
 
@@ -449,16 +459,10 @@ export default function TableMasterScreen() {
     }
   };
 
-  const [backgroundTheme, setBackgroundTheme] = useState("wood");
+  const [backgroundTheme, setBackgroundTheme] = useState("light");
 
   const loadBackgroundTheme = async () => {
-    try {
-      const saved = await AsyncStorage.getItem(`layout_background_theme_${activeSection}`);
-      if (saved) setBackgroundTheme(saved);
-      else setBackgroundTheme("wood"); // default layout background theme
-    } catch (e) {
-      console.error(e);
-    }
+    setBackgroundTheme("light");
   };
 
   const updateBackgroundTheme = async (themeName: string) => {
@@ -574,7 +578,6 @@ export default function TableMasterScreen() {
         tableType: t.TableType,
         xSize: t.XSize,
         ySize: t.YSize,
-        seats: t.Seats,
       }));
 
       const response = await fetch(`${API_URL}/api/tables/save-positions`, {
@@ -883,37 +886,6 @@ export default function TableMasterScreen() {
                     <Text style={styles.workspaceInstruction}>Drag tables directly to change layout positions</Text>
                   </View>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    {/* Background Floor Themes Selector */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginRight: 8 }}>
-                      <Text style={{ fontFamily: Fonts.medium, fontSize: 10, color: "#64748B", marginRight: 2 }}>FLOOR:</Text>
-                      {[
-                        { id: "wood", label: "Wood", color: "#8B5A2B" },
-                        { id: "dark", label: "Dark", color: "#1E293B" },
-                        { id: "grey", label: "Grey", color: "#64748B" },
-                        { id: "beige", label: "Beige", color: "#E1D9CE" },
-                        { id: "emerald", label: "Emerald", color: "#064E3B" },
-                        { id: "light", label: "Light", color: "#FFFFFF" }
-                      ].map((theme) => {
-                        const isThemeActive = backgroundTheme === theme.id;
-                        return (
-                          <TouchableOpacity
-                            key={theme.id}
-                            style={{
-                              width: 18,
-                              height: 18,
-                              borderRadius: 9,
-                              backgroundColor: theme.color,
-                              borderWidth: isThemeActive ? 2 : 0.5,
-                              borderColor: isThemeActive ? "#FF5E1A" : "#CBD5E1",
-                              justifyContent: "center",
-                              alignItems: "center"
-                            }}
-                            onPress={() => updateBackgroundTheme(theme.id)}
-                            activeOpacity={0.8}
-                          />
-                        );
-                      })}
-                    </View>
                     {/* Reset Button */}
                     <TouchableOpacity
                       style={{
@@ -1049,30 +1021,6 @@ export default function TableMasterScreen() {
                           </TouchableOpacity>
                         );
                       })}
-                    </View>
-                  </View>
-
-                  <View style={styles.inputDivider} />
-                  
-                  {/* Seats (Chairs) stepper */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>SEATS (CHAIRS)</Text>
-                    <View style={styles.seatsRow}>
-                      <TouchableOpacity
-                        style={styles.seatsBtn}
-                        onPress={() => updateSeats(Math.max(1, seats - 1))}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="remove" size={18} color="#FFFFFF" />
-                      </TouchableOpacity>
-                      <Text style={styles.seatsValue}>{seats}</Text>
-                      <TouchableOpacity
-                        style={styles.seatsBtn}
-                        onPress={() => updateSeats(seats + 1)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="add" size={18} color="#FFFFFF" />
-                      </TouchableOpacity>
                     </View>
                   </View>
 

@@ -78,49 +78,59 @@ const woodFloorTexture = require("../../assets/images/wood_floor_texture.jpg");
 
 // --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
-  if (theme === "dark") {
-    return (
-      <LinearGradient colors={["#1E293B", "#0F172A"]} style={[{ backgroundColor: "#0F172A" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "grey") {
-    return (
-      <LinearGradient colors={["#F1F5F9", "#E2E8F0"]} style={[{ backgroundColor: "#E2E8F0" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "beige") {
-    return (
-      <LinearGradient colors={["#FAF7F2", "#EFEAE0"]} style={[{ backgroundColor: "#EFEAE0" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "light") {
-    return (
-      <LinearGradient colors={["#FFFFFF", "#F8FAFC"]} style={[{ backgroundColor: "#FFFFFF" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
-  if (theme === "emerald") {
-    return (
-      <LinearGradient colors={["#064E3B", "#022C22"]} style={[{ backgroundColor: "#022C22" }, style]}>
-        {children}
-      </LinearGradient>
-    );
-  }
   return (
-    <ImageBackground
-      source={woodFloorTexture}
-      style={style}
-      resizeMode="cover"
-    >
-      {children}
-    </ImageBackground>
+    <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+      {/* Layer 1 - Champagne Fizz Aura */}
+      <LinearGradient
+        colors={[
+          "transparent",
+          "rgba(255, 230, 180, 0.12)",
+          "rgba(255, 255, 255, 0.18)",
+          "rgba(255, 200, 140, 0.68)",
+          "rgba(230, 170, 100, 0.90)"
+        ]}
+        locations={[0, 0.28, 0.48, 0.68, 1.0]}
+        style={StyleSheet.absoluteFill}
+        // Web blend modes
+        {...(Platform.OS === "web" ? {
+          style: [
+            StyleSheet.absoluteFill,
+            {
+              mixBlendMode: "multiply",
+              filter: "blur(90px)",
+              transform: [{ translateZ: 0 }],
+            } as any
+          ]
+        } : {})}
+      />
+      {/* Layer 2 - Champagne Fizz Aura */}
+      <LinearGradient
+        colors={[
+          "transparent",
+          "rgba(255, 230, 180, 0.22)",
+          "rgba(255, 255, 255, 0.66)",
+          "rgba(255, 200, 140, 0.82)",
+          "rgba(230, 170, 100, 1.0)"
+        ]}
+        locations={[0, 0.34, 0.66, 0.82, 1.0]}
+        style={StyleSheet.absoluteFill}
+        // Web blend modes
+        {...(Platform.OS === "web" ? {
+          style: [
+            StyleSheet.absoluteFill,
+            {
+              mixBlendMode: "multiply",
+              filter: "blur(90px)",
+              transform: [{ translateZ: 0 }],
+            } as any
+          ]
+        } : {})}
+      />
+      {/* Content wrapper */}
+      <View style={{ flex: 1, zIndex: 1 }}>
+        {children}
+      </View>
+    </View>
   );
 };
 
@@ -1065,7 +1075,7 @@ export default function Category() {
     }
   };
 
-  const [backgroundTheme, setBackgroundTheme] = useState("wood");
+  const [backgroundTheme, setBackgroundTheme] = useState("light");
 
   const [activeTab, setActiveTab] = useState<string>("SECTION_1");
 
@@ -1078,17 +1088,7 @@ export default function Category() {
   };
 
   const loadBackgroundTheme = async () => {
-    try {
-      const sectionNum = getSectionNum(activeTab);
-      const savedTheme = await AsyncStorage.getItem(`layout_background_theme_${sectionNum}`);
-      if (savedTheme) {
-        setBackgroundTheme(savedTheme);
-      } else {
-        setBackgroundTheme("wood");
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    setBackgroundTheme("light");
   };
 
   useEffect(() => {
