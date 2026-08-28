@@ -602,33 +602,51 @@ const DraggableTable = ({
             left: pos.x,
             top: pos.y,
             width: chairSize,
-            height: chairSize,
-            borderRadius: chairSize / 4,
-            borderWidth: 1.2,
-            borderColor: chairColor,
-            backgroundColor: chairBg,
+            height: chairSize * 1.25,
             transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
             justifyContent: "center",
             alignItems: "center",
-            overflow: "hidden",
           }}
         >
-          <View style={{
-            width: "70%",
-            height: "70%",
-            borderRadius: chairSize / 6,
-            backgroundColor: "#FAF6F0",
-            opacity: 0.85,
-            justifyContent: "center",
-            alignItems: "center",
-          }}>
-            <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.45, color: "#64748B" }}>
+          {/* Chair back */}
+          <LinearGradient
+            colors={["#637b60", "#526c4f", "#465d43"]}
+            locations={[0, 0.60, 1.0]}
+            style={{
+              position: "absolute",
+              left: 1,
+              right: 1,
+              top: 0,
+              height: "45%",
+              borderWidth: 1,
+              borderColor: "#9a6a38",
+              borderTopLeftRadius: chairSize / 4,
+              borderTopRightRadius: chairSize / 4,
+            }}
+          />
+          {/* Chair seat */}
+          <View
+            style={{
+              position: "absolute",
+              left: 2.2,
+              right: 2.2,
+              top: "35%",
+              bottom: 0,
+              backgroundColor: "#536d50",
+              borderWidth: 1,
+              borderColor: "#9a6a38",
+              borderBottomLeftRadius: chairSize / 5,
+              borderBottomRightRadius: chairSize / 5,
+              borderTopLeftRadius: chairSize / 8,
+              borderTopRightRadius: chairSize / 8,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.35, color: "#fffeb0" }}>
               {idx + 1}
             </Text>
           </View>
-          {pos.backrestStyle && (
-            <View style={[{ position: "absolute", backgroundColor: chairColor }, pos.backrestStyle]} />
-          )}
         </View>
       ))}
 
@@ -640,15 +658,17 @@ const DraggableTable = ({
           width: tableW,
           height: tableH,
           borderRadius,
-          borderColor: isSelected ? "#FF5E1A" : tableBorderColor,
+          borderColor: isSelected ? "#FF5E1A" : "#99652f",
           borderWidth: isSelected ? 3.5 : 2,
           overflow: "hidden",
+          backgroundColor: "#b77d3d",
         }}
       >
         <LinearGradient
-          colors={gradientColors}
+          colors={["#d9a866", "#c99452", "#b77d3d"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
+          locations={[0, 0.45, 1.0]}
           style={{
             flex: 1,
             width: "100%",
@@ -663,19 +683,16 @@ const DraggableTable = ({
             width: "100%",
             height: "100%",
             borderRadius: Math.max(0, borderRadius - 2),
-            borderWidth: 0.8,
-            borderColor: isSelected ? "rgba(255,94,26,0.15)" : "rgba(209,199,189,0.3)",
             justifyContent: "center",
             alignItems: "center",
           }}>
             {/* Table Number & Capacity */}
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#475569" }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#334155" }}>
               {table.label}
             </Text>
-            <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748B", marginTop: 1 }}>
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748b", marginTop: 1 }}>
               {table.Seats} Pax
             </Text>
-
           </View>
         </LinearGradient>
       </View>

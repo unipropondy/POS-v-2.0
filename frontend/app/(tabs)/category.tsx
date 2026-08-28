@@ -979,6 +979,7 @@ const TableItemComponent = React.memo(
         {/* Render Chairs */}
         {chairPositions.map((pos, idx) => {
           const transform = pos.rotate ? [{ rotate: pos.rotate }] : undefined;
+          const statusChairBorder = status === 0 ? "#9a6a38" : chairColor;
           return (
             <View
               key={`chair-${idx}`}
@@ -987,38 +988,51 @@ const TableItemComponent = React.memo(
                 left: pos.x,
                 top: pos.y,
                 width: chairSize,
-                height: chairSize,
-                borderRadius: chairSize / 4,
-                borderWidth: 1.2,
-                borderColor: chairColor,
-                backgroundColor: chairBg,
+                height: chairSize * 1.25,
                 transform,
                 justifyContent: "center",
                 alignItems: "center",
-                overflow: "hidden",
               }}
             >
-              {/* Cushion */}
-              <View style={{
-                width: "70%",
-                height: "70%",
-                borderRadius: chairSize / 6,
-                backgroundColor: status === 0 ? "#FAF6F0" : activeBg,
-                opacity: 0.85,
-                justifyContent: "center",
-                alignItems: "center",
-              }}>
-                <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.45, color: status === 0 ? "#64748B" : activeColor }}>
+              {/* Chair back */}
+              <LinearGradient
+                colors={["#637b60", "#526c4f", "#465d43"]}
+                locations={[0, 0.60, 1.0]}
+                style={{
+                  position: "absolute",
+                  left: 1,
+                  right: 1,
+                  top: 0,
+                  height: "45%",
+                  borderWidth: 1,
+                  borderColor: statusChairBorder,
+                  borderTopLeftRadius: chairSize / 4,
+                  borderTopRightRadius: chairSize / 4,
+                }}
+              />
+              {/* Chair seat */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: 2.2,
+                  right: 2.2,
+                  top: "35%",
+                  bottom: 0,
+                  backgroundColor: "#536d50",
+                  borderWidth: 1,
+                  borderColor: statusChairBorder,
+                  borderBottomLeftRadius: chairSize / 5,
+                  borderBottomRightRadius: chairSize / 5,
+                  borderTopLeftRadius: chairSize / 8,
+                  borderTopRightRadius: chairSize / 8,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.35, color: "#fffeb0" }}>
                   {idx + 1}
                 </Text>
               </View>
-              {/* Realistic Backrest bar */}
-              {pos.backrestStyle && (
-                <View style={[{
-                  position: "absolute",
-                  backgroundColor: chairColor,
-                }, pos.backrestStyle]} />
-              )}
             </View>
           );
         })}
@@ -1057,20 +1071,22 @@ const TableItemComponent = React.memo(
             width: tableW,
             height: tableH,
             borderRadius,
-            borderColor: tableBorderColor,
-            borderWidth: 2,
+            borderColor: status === 0 ? "#99652f" : activeColor,
+            borderWidth: 2.2,
             overflow: "hidden",
+            backgroundColor: "#b77d3d",
             ...Platform.select({
-              ios: { shadowColor: tableBorderColor, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 3 },
+              ios: { shadowColor: "#000000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 3 },
               android: { elevation: 2 },
-              web: { boxShadow: `0 3px 6px ${tableBorderColor}24` } as any,
+              web: { boxShadow: `0 3px 6px rgba(0,0,0,0.16)` } as any,
             }),
           }}
         >
           <LinearGradient
-            colors={gradientColors}
+            colors={["#d9a866", "#c99452", "#b77d3d"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
+            locations={[0, 0.45, 1.0]}
             style={{
               flex: 1,
               width: "100%",
