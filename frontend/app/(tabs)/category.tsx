@@ -79,6 +79,67 @@ const woodFloorTexture = require("../../assets/images/wood_floor_texture.jpg");
 // --- CANVAS BACKGROUND COMPONENT ---
 // --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
+  if (theme === "cloud_nine") {
+    return (
+      <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+        {Platform.OS === "web" ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(ellipse 55% 45% at 30% 50%, rgba(253,186,116,0.6) 0%, transparent 60%)",
+                mixBlendMode: "normal",
+                filter: "blur(150px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(ellipse 45% 55% at 65% 40%, rgba(251,146,60,0.45) 0%, transparent 55%)",
+                mixBlendMode: "normal",
+                filter: "blur(163px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(ellipse 40% 35% at 50% 70%, rgba(254,215,170,0.5) 0%, transparent 50%)",
+                mixBlendMode: "normal",
+                filter: "blur(138px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+          </>
+        ) : (
+          <>
+            <LinearGradient
+              colors={["rgba(253,186,116,0.6)", "rgba(251,146,60,0.45)", "transparent"]}
+              locations={[0, 0.5, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={["transparent", "rgba(254,215,170,0.5)", "transparent"]}
+              locations={[0, 0.7, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
+        )}
+        <View style={{ flex: 1, zIndex: 1 }}>{children}</View>
+      </View>
+    );
+  }
+
   if (theme === "champagne_glass") {
     return (
       <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
@@ -1307,7 +1368,7 @@ export default function Category() {
     try {
       const sectionNum = getSectionNum(activeTab);
       const savedTheme = await AsyncStorage.getItem(`layout_background_theme_${sectionNum}`);
-      if (savedTheme === "champagne" || savedTheme === "champagne_fizz" || savedTheme === "citrine" || savedTheme === "champagne_glass") {
+      if (savedTheme === "champagne" || savedTheme === "champagne_fizz" || savedTheme === "citrine" || savedTheme === "champagne_glass" || savedTheme === "cloud_nine") {
         setBackgroundTheme(savedTheme);
       } else {
         setBackgroundTheme("champagne_fizz");
