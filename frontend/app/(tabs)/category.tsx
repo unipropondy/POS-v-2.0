@@ -79,6 +79,83 @@ const woodFloorTexture = require("../../assets/images/wood_floor_texture.jpg");
 // --- CANVAS BACKGROUND COMPONENT ---
 // --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
+  if (theme === "champagne_glass") {
+    return (
+      <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+        {Platform.OS === "web" ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "linear-gradient(135deg, rgba(255,251,235,0.95) 0%, rgba(254,243,199,0.62) 50%, rgba(253,230,138,0.34) 100%)",
+                mixBlendMode: "normal",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(ellipse 50% 45% at 32% 42%, rgba(251,191,36,0.26) 0%, transparent 68%)",
+                mixBlendMode: "multiply",
+                filter: "blur(125px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(ellipse 42% 50% at 72% 60%, rgba(245,158,11,0.20) 0%, transparent 70%)",
+                mixBlendMode: "multiply",
+                filter: "blur(138px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "linear-gradient(120deg, rgba(255,255,255,0.65), transparent 42%, rgba(255,255,255,0.30) 72%)",
+                mixBlendMode: "multiply",
+                filter: "blur(45px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+          </>
+        ) : (
+          <>
+            <LinearGradient
+              colors={["rgba(255,251,235,0.95)", "rgba(254,243,199,0.62)", "rgba(253,230,138,0.34)"]}
+              locations={[0, 0.5, 1.0]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={["rgba(251,191,36,0.26)", "transparent"]}
+              locations={[0, 0.68]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={["transparent", "rgba(245,158,11,0.20)"]}
+              locations={[0, 0.70]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
+        )}
+        <View style={{ flex: 1, zIndex: 1 }}>{children}</View>
+      </View>
+    );
+  }
+
   if (theme === "champagne") {
     return (
       <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
@@ -1230,7 +1307,7 @@ export default function Category() {
     try {
       const sectionNum = getSectionNum(activeTab);
       const savedTheme = await AsyncStorage.getItem(`layout_background_theme_${sectionNum}`);
-      if (savedTheme === "champagne" || savedTheme === "champagne_fizz" || savedTheme === "citrine") {
+      if (savedTheme === "champagne" || savedTheme === "champagne_fizz" || savedTheme === "citrine" || savedTheme === "champagne_glass") {
         setBackgroundTheme(savedTheme);
       } else {
         setBackgroundTheme("champagne_fizz");
