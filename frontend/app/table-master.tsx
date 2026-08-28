@@ -38,6 +38,80 @@ const woodFloorTexture = require("../assets/images/wood_floor_texture.jpg");
 
 // --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = false }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
+  if (theme === "citrine") {
+    return (
+      <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+        {Platform.OS === "web" ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 22% 28%, rgba(250,204,21,0.6) 0%, transparent 45%)",
+                mixBlendMode: "normal",
+                filter: "blur(175px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 78% 32%, rgba(253,224,71,0.5) 0%, transparent 40%)",
+                mixBlendMode: "normal",
+                filter: "blur(200px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 50% 78%, rgba(234,179,8,0.4) 0%, transparent 50%)",
+                mixBlendMode: "normal",
+                filter: "blur(200px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 85% 75%, rgba(202,138,4,0.3) 0%, transparent 35%)",
+                mixBlendMode: "multiply",
+                filter: "blur(138px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+          </>
+        ) : (
+          <>
+            <LinearGradient
+              colors={["rgba(250,204,21,0.4)", "rgba(253,224,71,0.3)", "transparent"]}
+              locations={[0, 0.4, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={["transparent", "rgba(234,179,8,0.25)", "rgba(202,138,4,0.15)"]}
+              locations={[0, 0.7, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
+        )}
+        <View style={{ flex: 1, zIndex: 1 }}>{children}</View>
+      </View>
+    );
+  }
+
+  // Default: Champagne Fizz
   return (
     <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
       {/* Layer 1 - Champagne Fizz Aura */}
@@ -451,17 +525,25 @@ export default function TableMasterScreen() {
     }
   };
 
-  const [backgroundTheme, setBackgroundTheme] = useState("light");
+  const [backgroundTheme, setBackgroundTheme] = useState("champagne");
 
   const loadBackgroundTheme = async () => {
-    setBackgroundTheme("light");
+    try {
+      const saved = await AsyncStorage.getItem(`layout_background_theme_${activeSection}`);
+      if (saved === "champagne" || saved === "citrine") {
+        setBackgroundTheme(saved);
+      } else {
+        setBackgroundTheme("champagne");
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const updateBackgroundTheme = async (themeName: string) => {
     try {
       await AsyncStorage.setItem(`layout_background_theme_${activeSection}`, themeName);
       setBackgroundTheme(themeName);
-      // Notify active listeners/sockets
       if (socket) {
         socket.emit("table_config_updated", {});
       }
@@ -878,6 +960,33 @@ export default function TableMasterScreen() {
                     <Text style={styles.workspaceInstruction}>Drag tables directly to change layout positions</Text>
                   </View>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    {/* Background Floor Themes Selector */}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginRight: 8 }}>
+                      <Text style={{ fontFamily: Fonts.medium, fontSize: 10, color: "#64748B", marginRight: 2 }}>FLOOR:</Text>
+                      {[
+                        { id: "champagne", label: "Champagne Fizz", color: "#FAF7F2" },
+                        { id: "citrine", label: "Citrine Mesh", color: "#FACC15" }
+                      ].map((theme) => {
+                        const isThemeActive = backgroundTheme === theme.id;
+                        return (
+                          <TouchableOpacity
+                            key={theme.id}
+                            style={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: 9,
+                              backgroundColor: theme.color,
+                              borderWidth: isThemeActive ? 2 : 0.5,
+                              borderColor: isThemeActive ? "#FF5E1A" : "#CBD5E1",
+                              justifyContent: "center",
+                              alignItems: "center"
+                            }}
+                            onPress={() => updateBackgroundTheme(theme.id)}
+                            activeOpacity={0.8}
+                          />
+                        );
+                      })}
+                    </View>
                     {/* Reset Button */}
                     <TouchableOpacity
                       style={{

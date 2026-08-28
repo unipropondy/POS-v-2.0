@@ -77,7 +77,82 @@ const SOLID_LIGHT_VIOLET = "#F5F3FF";
 const woodFloorTexture = require("../../assets/images/wood_floor_texture.jpg");
 
 // --- CANVAS BACKGROUND COMPONENT ---
+// --- CANVAS BACKGROUND COMPONENT ---
 const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme: string; children: React.ReactNode; style: any; isCategory?: boolean }) => {
+  if (theme === "citrine") {
+    return (
+      <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
+        {Platform.OS === "web" ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 22% 28%, rgba(250,204,21,0.6) 0%, transparent 45%)",
+                mixBlendMode: "normal",
+                filter: "blur(175px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 78% 32%, rgba(253,224,71,0.5) 0%, transparent 40%)",
+                mixBlendMode: "normal",
+                filter: "blur(200px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 50% 78%, rgba(234,179,8,0.4) 0%, transparent 50%)",
+                mixBlendMode: "normal",
+                filter: "blur(200px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "radial-gradient(circle at 85% 75%, rgba(202,138,4,0.3) 0%, transparent 35%)",
+                mixBlendMode: "multiply",
+                filter: "blur(138px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+          </>
+        ) : (
+          <>
+            <LinearGradient
+              colors={["rgba(250,204,21,0.4)", "rgba(253,224,71,0.3)", "transparent"]}
+              locations={[0, 0.4, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={["transparent", "rgba(234,179,8,0.25)", "rgba(202,138,4,0.15)"]}
+              locations={[0, 0.7, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
+        )}
+        <View style={{ flex: 1, zIndex: 1 }}>{children}</View>
+      </View>
+    );
+  }
+
+  // Default: Champagne Fizz
   return (
     <View style={[{ backgroundColor: "#faf8f2", position: "relative", overflow: "hidden" }, style]}>
       {/* Layer 1 - Champagne Fizz Aura */}
@@ -1067,7 +1142,7 @@ export default function Category() {
     }
   };
 
-  const [backgroundTheme, setBackgroundTheme] = useState("light");
+  const [backgroundTheme, setBackgroundTheme] = useState("champagne");
 
   const [activeTab, setActiveTab] = useState<string>("SECTION_1");
 
@@ -1080,7 +1155,17 @@ export default function Category() {
   };
 
   const loadBackgroundTheme = async () => {
-    setBackgroundTheme("light");
+    try {
+      const sectionNum = getSectionNum(activeTab);
+      const savedTheme = await AsyncStorage.getItem(`layout_background_theme_${sectionNum}`);
+      if (savedTheme === "champagne" || savedTheme === "citrine") {
+        setBackgroundTheme(savedTheme);
+      } else {
+        setBackgroundTheme("champagne");
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   useEffect(() => {
