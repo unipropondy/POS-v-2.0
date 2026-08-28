@@ -459,12 +459,12 @@ const DraggableTable = ({
   const cx = tableW / 2;
   const cy = tableH / 2;
 
-  let chairSize = Math.max(8, 90 * 0.09 * layoutScale);
+  let chairSize = Math.max(16, 90 * 0.13 * layoutScale);
   if (seatsCount > 10) {
-    chairSize = Math.max(5, chairSize * (10 / seatsCount) * 1.5);
+    chairSize = Math.max(10, chairSize * (10 / seatsCount) * 1.4);
   }
-  
-  const offset = 4;
+
+  const offset = 5;
   const activeColor = isSelected ? "#FF5E1A" : (backgroundTheme === "light" ? "#22C55E" : "#D1C7BD");
   const activeBg = isSelected ? "#FFF4EC" : (backgroundTheme === "light" ? "#FFFFFF" : "#FAF8F5");
 
@@ -593,10 +593,13 @@ const DraggableTable = ({
         }),
       }}
     >
-      {/* Chairs */}
+      {/* Chairs — clean professional top-view shape */}
       {chairPositions.map((pos, idx) => {
-        const backH = Math.round(chairSize * 0.42);
-        const seatTop = Math.round(chairSize * 0.32);
+        const chairFill  = isSelected ? "#ff9a6c" : "#7a9c72";
+        const backFill   = isSelected ? "#FF5E1A" : "#4e6b47";
+        const chairBdr   = isSelected ? "#FF5E1A" : "#3d5438";
+        const backH  = Math.round(chairSize * 0.36);
+        const radius = Math.round(chairSize * 0.28);
         return (
           <View
             key={`chair-${idx}`}
@@ -606,50 +609,36 @@ const DraggableTable = ({
               top: pos.y,
               width: chairSize,
               height: chairSize,
+              borderRadius: radius,
+              backgroundColor: chairFill,
+              borderWidth: 1.5,
+              borderColor: chairBdr,
               transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
+              overflow: "hidden",
+              ...Platform.select({
+                ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 2 },
+                android: { elevation: 2 },
+                web: { boxShadow: `0 1px 3px rgba(0,0,0,0.22)` } as any,
+              }),
             }}
           >
-            {/* Chair back cushion */}
-            <LinearGradient
-              colors={["#637b60", "#526c4f", "#465d43"]}
-              locations={[0, 0.60, 1.0]}
-              style={{
-                position: "absolute",
-                left: 1,
-                right: 1,
-                top: 0,
-                height: backH,
-                borderWidth: 1,
-                borderColor: "#9a6a38",
-                borderTopLeftRadius: chairSize / 4,
-                borderTopRightRadius: chairSize / 4,
-                borderBottomLeftRadius: 2,
-                borderBottomRightRadius: 2,
-              }}
-            />
-            {/* Chair seat cushion */}
-            <View
-              style={{
-                position: "absolute",
-                left: 2,
-                right: 2,
-                top: seatTop,
-                bottom: 1,
-                backgroundColor: "#536d50",
-                borderWidth: 1,
-                borderColor: "#9a6a38",
-                borderBottomLeftRadius: chairSize / 5,
-                borderBottomRightRadius: chairSize / 5,
-                borderTopLeftRadius: chairSize / 8,
-                borderTopRightRadius: chairSize / 8,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ fontFamily: Fonts.bold, fontSize: Math.max(5, chairSize * 0.32), color: "#fffeb0" }}>
-                {idx + 1}
-              </Text>
-            </View>
+            {/* Backrest — darker top strip */}
+            <View style={{
+              position: "absolute",
+              top: 0, left: 0, right: 0,
+              height: backH,
+              backgroundColor: backFill,
+              borderTopLeftRadius: radius - 1,
+              borderTopRightRadius: radius - 1,
+            }} />
+            {/* Seat highlight */}
+            <View style={{
+              position: "absolute",
+              bottom: 3, left: 3, right: 3,
+              height: Math.round(chairSize * 0.25),
+              borderRadius: Math.round(chairSize * 0.12),
+              backgroundColor: "rgba(255,255,255,0.14)",
+            }} />
           </View>
         );
       })}

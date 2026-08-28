@@ -617,13 +617,13 @@ const TableItemComponent = React.memo(
     const cx = isAbsoluteLayout ? tableW / 2 : itemSize / 2;
     const cy = isAbsoluteLayout ? tableH / 2 : itemSize / 2;
 
-    // Dynamically adjust chair size based on seat density to prevent overlap
-    let chairSize = Math.max(10, itemSize * 0.09);
+    // Chair size — bigger base so they're clearly visible
+    let chairSize = Math.max(16, itemSize * 0.13);
     if (seatsCount > 10) {
-      chairSize = Math.max(5, chairSize * (10 / seatsCount) * 1.5);
+      chairSize = Math.max(10, chairSize * (10 / seatsCount) * 1.4);
     }
-    
-    const offset = 4; // elegant gap between table and chairs
+
+    const offset = 5; // gap between table edge and chair
     
     // Override AVAILABLE colors for premium beige look matching reference
     let activeColor = status === 0 ? "#D1C7BD" : ui.color;
@@ -976,12 +976,15 @@ const TableItemComponent = React.memo(
         ]}
         onPress={() => onPress(item, tableData)}
       >
-        {/* Render Chairs */}
+        {/* Render Chairs — clean top-view floor plan style */}
         {chairPositions.map((pos, idx) => {
           const transform = pos.rotate ? [{ rotate: pos.rotate }] : undefined;
-          const statusChairBorder = status === 0 ? "#9a6a38" : chairColor;
-          const backH = Math.round(chairSize * 0.42);
-          const seatTop = Math.round(chairSize * 0.32);
+          // Chair colors: muted olive for empty, status-tinted for occupied
+          const chairFill   = status === 0 ? "#7a9c72" : activeBg;
+          const backFill    = status === 0 ? "#4e6b47" : activeColor;
+          const chairBorder = status === 0 ? "#3d5438" : activeColor;
+          const backH = Math.round(chairSize * 0.36);
+          const radius = Math.round(chairSize * 0.28);
           return (
             <View
               key={`chair-${idx}`}
@@ -991,50 +994,40 @@ const TableItemComponent = React.memo(
                 top: pos.y,
                 width: chairSize,
                 height: chairSize,
+                borderRadius: radius,
+                backgroundColor: chairFill,
+                borderWidth: 1.5,
+                borderColor: chairBorder,
                 transform,
+                overflow: "hidden",
+                ...Platform.select({
+                  ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 2 },
+                  android: { elevation: 2 },
+                  web: { boxShadow: `0 1px 3px rgba(0,0,0,0.22)` } as any,
+                }),
               }}
             >
-              {/* Chair back cushion */}
-              <LinearGradient
-                colors={["#637b60", "#526c4f", "#465d43"]}
-                locations={[0, 0.60, 1.0]}
-                style={{
-                  position: "absolute",
-                  left: 1,
-                  right: 1,
-                  top: 0,
-                  height: backH,
-                  borderWidth: 1,
-                  borderColor: statusChairBorder,
-                  borderTopLeftRadius: chairSize / 4,
-                  borderTopRightRadius: chairSize / 4,
-                  borderBottomLeftRadius: 2,
-                  borderBottomRightRadius: 2,
-                }}
-              />
-              {/* Chair seat cushion */}
+              {/* Backrest strip — darker band at the "top" of the chair */}
               <View
                 style={{
                   position: "absolute",
-                  left: 2,
-                  right: 2,
-                  top: seatTop,
-                  bottom: 1,
-                  backgroundColor: "#536d50",
-                  borderWidth: 1,
-                  borderColor: statusChairBorder,
-                  borderBottomLeftRadius: chairSize / 5,
-                  borderBottomRightRadius: chairSize / 5,
-                  borderTopLeftRadius: chairSize / 8,
-                  borderTopRightRadius: chairSize / 8,
-                  justifyContent: "center",
-                  alignItems: "center",
+                  top: 0, left: 0, right: 0,
+                  height: backH,
+                  backgroundColor: backFill,
+                  borderTopLeftRadius: radius - 1,
+                  borderTopRightRadius: radius - 1,
                 }}
-              >
-                <Text style={{ fontFamily: Fonts.bold, fontSize: Math.max(5, chairSize * 0.32), color: "#fffeb0" }}>
-                  {idx + 1}
-                </Text>
-              </View>
+              />
+              {/* Subtle seat highlight */}
+              <View
+                style={{
+                  position: "absolute",
+                  bottom: 3, left: 3, right: 3,
+                  height: Math.round(chairSize * 0.25),
+                  borderRadius: Math.round(chairSize * 0.12),
+                  backgroundColor: "rgba(255,255,255,0.12)",
+                }}
+              />
             </View>
           );
         })}
