@@ -119,6 +119,34 @@ export default function DayEndScreen() {
     }
   };
 
+  const changeDate = (amount: number) => {
+    const currentStart = parseLocalDate(dateRange.start);
+    let newStart = currentStart;
+    let newEnd = currentStart;
+
+    if (selectedFilter === "DAILY") {
+      newStart.setDate(newStart.getDate() + amount);
+      newEnd = new Date(newStart);
+    } else if (selectedFilter === "WEEKLY") {
+      newStart.setDate(newStart.getDate() + (amount * 7));
+      newStart = startOfWeek(newStart);
+      newEnd = endOfWeek(newStart);
+    } else if (selectedFilter === "MONTHLY") {
+      newStart.setMonth(newStart.getMonth() + amount);
+      newStart = startOfMonth(newStart);
+      newEnd = endOfMonth(newStart);
+    } else if (selectedFilter === "YEARLY") {
+      newStart.setFullYear(newStart.getFullYear() + amount);
+      newStart = startOfYear(newStart);
+      newEnd = endOfYear(newStart);
+    }
+
+    setDateRange({
+      start: format(newStart, "yyyy-MM-dd"),
+      end: format(newEnd, "yyyy-MM-dd"),
+    });
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -237,15 +265,48 @@ export default function DayEndScreen() {
             </View>
           )}
 
-          <View style={styles.dateDisplay}>
-            <Ionicons name="calendar-outline" size={16} color={Theme.textSecondary} />
-            <Text style={styles.dateDisplayText}>
-              {dateRange.start === dateRange.end 
-                ? format(parseLocalDate(dateRange.start), "dd MMM yyyy")
-                : `${format(parseLocalDate(dateRange.start), "dd MMM")} - ${format(parseLocalDate(dateRange.end), "dd MMM yyyy")}`
-              }
-            </Text>
-          </View>
+          {/* Date Navigation / Display */}
+          {selectedFilter !== "CUSTOM" ? (
+            <View style={styles.dateControl}>
+              <TouchableOpacity onPress={() => changeDate(-1)} style={styles.navBtn}>
+                <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setIsRangeMode(false);
+                  setShowCalendar(true);
+                }}
+                style={styles.dateDisplay}
+              >
+                <Text style={styles.dateText}>
+                  {dateRange.start === dateRange.end 
+                    ? format(parseLocalDate(dateRange.start), "dd MMM yyyy")
+                    : `${format(parseLocalDate(dateRange.start), "dd MMM")} - ${format(parseLocalDate(dateRange.end), "dd MMM yyyy")}`
+                  }
+                </Text>
+                <Ionicons
+                  name="calendar-outline"
+                  size={16}
+                  color={Theme.primary}
+                  style={{ marginLeft: 8 }}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => changeDate(1)} style={styles.navBtn}>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={Theme.textPrimary}
+                />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.dateDisplayContainer}>
+              <Ionicons name="calendar-outline" size={16} color={Theme.textSecondary} />
+              <Text style={styles.dateDisplayText}>
+                {`${format(parseLocalDate(dateRange.start), "dd MMM")} - ${format(parseLocalDate(dateRange.end), "dd MMM yyyy")}`}
+              </Text>
+            </View>
+          )}
 
           {showCalendar && tempRange.start ? (
             <Modal
@@ -278,7 +339,31 @@ export default function DayEndScreen() {
                   <CalendarPicker
                     selectedDate={tempRange.start}
                     onDateChange={(date) => {
-                      setTempRange({ start: date, end: date });
+                      if (selectedFilter !== "CUSTOM") {
+                        const clicked = parseLocalDate(date);
+                        let start = clicked;
+                        let end = clicked;
+                        if (selectedFilter === "DAILY") {
+                          start = clicked;
+                          end = clicked;
+                        } else if (selectedFilter === "WEEKLY") {
+                          start = startOfWeek(clicked);
+                          end = endOfWeek(clicked);
+                        } else if (selectedFilter === "MONTHLY") {
+                          start = startOfMonth(clicked);
+                          end = endOfMonth(clicked);
+                        } else if (selectedFilter === "YEARLY") {
+                          start = startOfYear(clicked);
+                          end = endOfYear(clicked);
+                        }
+                        setDateRange({
+                          start: format(start, "yyyy-MM-dd"),
+                          end: format(end, "yyyy-MM-dd"),
+                        });
+                        setShowCalendar(false);
+                      } else {
+                        setTempRange({ start: date, end: date });
+                      }
                     }}
                     isRangeMode={isRangeMode}
                     rangeStart={tempRange.start}
@@ -286,7 +371,7 @@ export default function DayEndScreen() {
                     onRangeChange={(start, end) => {
                       setTempRange({ start, end });
                     }}
-                    onModeChange={(mode) => setIsRangeMode(mode)}
+                    onModeChange={selectedFilter === "CUSTOM" ? undefined : (mode) => setIsRangeMode(mode)}
                   />
                   
                   {/* Confirm Button */}
@@ -658,7 +743,42 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: Theme.textPrimary,
   },
+  dateControl: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 12,
+  },
+  navBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Theme.bgCard,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Theme.border,
+  },
   dateDisplay: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Theme.border,
+    backgroundColor: Theme.bgCard,
+  },
+  dateText: { 
+    color: Theme.textPrimary, 
+    fontFamily: Fonts.bold, 
+    fontSize: 14 
+  },
+  dateDisplayContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

@@ -19,6 +19,18 @@ interface CalendarPickerProps {
 
 type ViewMode = "calendar" | "month" | "year";
 
+const parseLocalDate = (dateStr: string | null | undefined): Date => {
+  if (!dateStr) return new Date();
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  }
+  return new Date(dateStr);
+};
+
 export default function CalendarPicker({ 
   selectedDate, 
   onDateChange, 
@@ -30,10 +42,10 @@ export default function CalendarPicker({
   onlyAllowToday = false
 }: CalendarPickerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
-  const [viewDate, setViewDate] = useState(new Date(selectedDate));
+  const [viewDate, setViewDate] = useState(() => parseLocalDate(selectedDate));
 
   useEffect(() => {
-    setViewDate(new Date(selectedDate));
+    setViewDate(parseLocalDate(selectedDate));
   }, [selectedDate]);
 
   const days = useMemo(() => {
@@ -61,7 +73,7 @@ export default function CalendarPicker({
       if (!rangeStart || (rangeStart && rangeEnd)) {
         onRangeChange?.(formattedDate, "");
       } else {
-        const start = new Date(rangeStart);
+        const start = parseLocalDate(rangeStart);
         if (isBefore(date, start)) {
           onRangeChange?.(formattedDate, rangeStart);
         } else {
@@ -185,14 +197,14 @@ export default function CalendarPicker({
 
       <View style={styles.grid}>
         {days.map((day, i) => {
-          const isSelected = !isRangeMode && isSameDay(day, new Date(selectedDate));
+          const isSelected = !isRangeMode && isSameDay(day, parseLocalDate(selectedDate));
           const isCurrentMonth = isSameMonth(day, viewDate);
           let isInRange = false, isRangeStart = false, isRangeEnd = false;
           if (rangeStart) {
-            isRangeStart = isSameDay(day, new Date(rangeStart));
+            isRangeStart = isSameDay(day, parseLocalDate(rangeStart));
             if (rangeEnd) {
-              isRangeEnd = isSameDay(day, new Date(rangeEnd));
-              isInRange = isAfter(day, new Date(rangeStart)) && isBefore(day, new Date(rangeEnd));
+              isRangeEnd = isSameDay(day, parseLocalDate(rangeEnd));
+              isInRange = isAfter(day, parseLocalDate(rangeStart)) && isBefore(day, parseLocalDate(rangeEnd));
             }
           }
           const isRangePoint = isRangeStart || isRangeEnd;

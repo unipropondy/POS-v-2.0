@@ -455,12 +455,23 @@ private static escapeHtml(str: string): string {
               }).join('')
             : '';
 
-          const comboSelectionsHTML = (item.isCombo && item.comboSelections && Array.isArray(item.comboSelections))
-            ? item.comboSelections.map((group: any) => {
-                return group.items?.map((opt: any) => {
-                  const effectiveAdd = (parseFloat(opt.surcharge || 0) + parseFloat(opt.dishPrice || 0));
-                  return `<div class="item-modifiers">↳ ${opt.name}${effectiveAdd > 0 ? ` (+${currencySymbol}${effectiveAdd.toFixed(2)})` : ''}</div>`;
-                }).join('') || '';
+          const comboSels = item.comboSelections || 
+            (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
+              ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : p.groups || p.items || []; } catch { return undefined; } })() 
+              : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : undefined)) || [];
+          const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
+
+          const comboSelectionsHTML = hasCombo
+            ? comboSels.map((group: any) => {
+                const choices = group.items || group.dishes || (Array.isArray(group) ? group : [group]);
+                if (Array.isArray(choices)) {
+                  return choices.map((opt: any) => {
+                    const effectiveAdd = (parseFloat(opt.surcharge || 0) + parseFloat(opt.dishPrice || 0));
+                    const optName = opt.name || opt.DishName || opt.itemName || "";
+                    return `<div class="item-modifiers">↳ ${optName}${effectiveAdd > 0 ? ` (+${currencySymbol}${effectiveAdd.toFixed(2)})` : ''}</div>`;
+                  }).join('') || '';
+                }
+                return '';
               }).join('')
             : '';
 
@@ -766,15 +777,11 @@ private static escapeHtml(str: string): string {
           <div class="bill-details">
             <div class="bill-box">
               <div class="detail-row">
-                <span class="detail-label">INVOICE NO:</span>
-                <span class="detail-value">${billNo}</span>
+                <span class="detail-label">INVOICE NO: ${billNo}</span>
+                ${saleData.tableNo ? `
+                  <span class="detail-value" style="font-size: 14px; font-weight: bold;">TABLE: ${/^\d+$/.test(String(saleData.tableNo).trim()) ? String(saleData.tableNo).trim().padStart(2, '0') : saleData.tableNo}</span>
+                ` : ''}
               </div>
-              ${saleData.tableNo ? `
-                <div class="detail-row" style="margin-top: 1.5mm; padding-top: 1mm; border-top: 1px dashed #ccc;">
-                  <span class="detail-label" style="font-size: 14px; font-weight: 900;">TABLE NO:</span>
-                  <span class="detail-value" style="font-size: 14px; font-weight: 900;">${saleData.tableNo}</span>
-                </div>
-              ` : ''}
               ${saleData.waiterName && saleData.waiterName !== "Staff" ? `
                 <div class="detail-row" style="margin-top: 1mm;">
                   <span class="detail-label" style="font-size: 9px; color: #666;">WAITER:</span>
