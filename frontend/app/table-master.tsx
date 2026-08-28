@@ -506,29 +506,29 @@ const DraggableTable = ({
       for (let i = 0; i < topCount; i++) {
         chairPositions.push({ 
           x: tx + (i + 0.5) * (tableW / topCount) - chairSize / 2, 
-          y: ty - chairSize - offset, 
-          backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 } 
+          y: ty - chairSize - offset,
+          // no rotate — backrest at top faces away from table
         });
       }
       for (let i = 0; i < bottomCount; i++) {
         chairPositions.push({ 
           x: tx + (i + 0.5) * (tableW / bottomCount) - chairSize / 2, 
-          y: ty + tableH + offset, 
-          backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.2, borderBottomLeftRadius: 1.5, borderBottomRightRadius: 1.5 } 
+          y: ty + tableH + offset,
+          rotate: '180deg',
         });
       }
       for (let i = 0; i < leftCount; i++) {
         chairPositions.push({ 
           x: tx - chairSize - offset, 
-          y: ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2, 
-          backrestStyle: { left: 0, top: 0, bottom: 0, width: 2.2, borderTopLeftRadius: 1.5, borderBottomLeftRadius: 1.5 } 
+          y: ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2,
+          rotate: '-90deg',
         });
       }
       for (let i = 0; i < rightCount; i++) {
         chairPositions.push({ 
           x: tx + tableW + offset, 
-          y: ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2, 
-          backrestStyle: { right: 0, top: 0, bottom: 0, width: 2.2, borderTopRightRadius: 1.5, borderBottomRightRadius: 1.5 } 
+          y: ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2,
+          rotate: '90deg',
         });
       }
     }
@@ -573,37 +573,19 @@ const DraggableTable = ({
     }
   }
 
-  // Effective "safe" content area accounts for shape:
-  // Round/Oval: text must fit inside the inscribed circle/ellipse
-  // Rectangular/Square: full area minus inset
-  const inset = Math.round(Math.min(tableW, tableH) * 0.08); // proportional inset
-  const safeW = tableType === "round"
-    ? tableW * 0.6          // inscribed square in circle
-    : tableType === "oval"
-    ? tableW * 0.7          // inscribed rect in ellipse
-    : tableW - inset * 2;
-  const safeH = tableType === "round"
-    ? tableH * 0.6
-    : tableType === "oval"
-    ? tableH * 0.6
-    : tableH - inset * 2;
-
-  const numFontSize   = Math.max(10, Math.min(safeW, safeH) * 0.36);
-  const subFontSize   = Math.max(7,  Math.min(safeW, safeH) * 0.18);
-  const shapeInsetR   = Math.max(0, borderRadius - inset);
-
   return (
     <View
       {...panResponder.panHandlers}
       style={{
         position: "absolute",
-        left: posX - 10,       // extra overflow space for chairs
-        top: posY - 10,
-        width: tableW + 20,
-        height: tableH + 20,
+        left: posX,
+        top: posY,
+        width: tableW,
+        height: tableH,
         backgroundColor: "transparent",
+        padding: 8,
         ...Platform.select({
-          web: {
+          web: { 
             cursor: "move",
             userSelect: "none",
             touchAction: "none",
@@ -611,142 +593,126 @@ const DraggableTable = ({
         }),
       }}
     >
-      {/* Chairs — clean professional top-view shape */}
+      {/* Chairs — professional top-view chair shape */}
       {chairPositions.map((pos, idx) => {
-        const chairFill  = isSelected ? "#ff9a6c" : "#7a9c72";
+        const chairFill  = isSelected ? "#fff0e8" : "#7cb474";
         const backFill   = isSelected ? "#FF5E1A" : "#4e6b47";
-        const chairBdr   = isSelected ? "#FF5E1A" : "#3d5438";
-        const backH  = Math.round(chairSize * 0.36);
-        const radius = Math.round(chairSize * 0.28);
-        // Offset chair positions by 10 to match our new outer wrapper origin
+        const bdrColor   = isSelected ? "#FF5E1A" : "#3a5234";
+        const legColor   = isSelected ? "#FF5E1A" : "#2d3d28";
+
+        const backH   = Math.round(chairSize * 0.34);
+        const seatPad = Math.round(chairSize * 0.12);
+        const legS    = Math.max(3, Math.round(chairSize * 0.2));
+        const br      = Math.round(chairSize * 0.25);
+
         return (
           <View
             key={`chair-${idx}`}
             style={{
               position: "absolute",
-              left: pos.x + 10,
-              top: pos.y + 10,
+              left: pos.x,
+              top: pos.y,
               width: chairSize,
               height: chairSize,
-              borderRadius: radius,
-              backgroundColor: chairFill,
-              borderWidth: 1.5,
-              borderColor: chairBdr,
               transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
-              overflow: "hidden",
-              ...Platform.select({
-                ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 2 },
-                android: { elevation: 2 },
-                web: { boxShadow: `0 1px 3px rgba(0,0,0,0.22)` } as any,
-              }),
             }}
           >
-            {/* Backrest — darker top strip */}
+            {/* Backrest — curved top band */}
             <View style={{
               position: "absolute",
-              top: 0, left: 0, right: 0,
+              top: 0, left: 2, right: 2,
               height: backH,
               backgroundColor: backFill,
-              borderTopLeftRadius: radius - 1,
-              borderTopRightRadius: radius - 1,
+              borderTopLeftRadius: br,
+              borderTopRightRadius: br,
+              borderBottomLeftRadius: 2,
+              borderBottomRightRadius: 2,
+              borderWidth: 1.2,
+              borderColor: bdrColor,
             }} />
-            {/* Seat highlight */}
+            {/* Seat cushion */}
             <View style={{
               position: "absolute",
-              bottom: 3, left: 3, right: 3,
-              height: Math.round(chairSize * 0.25),
-              borderRadius: Math.round(chairSize * 0.12),
-              backgroundColor: "rgba(255,255,255,0.14)",
+              top: Math.round(chairSize * 0.26),
+              left: 0, right: 0,
+              bottom: Math.round(chairSize * 0.2),
+              backgroundColor: chairFill,
+              borderRadius: Math.round(chairSize * 0.18),
+              borderWidth: 1.2,
+              borderColor: bdrColor,
+              ...Platform.select({
+                ios: { shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 2, shadowOffset: {width:0, height:1} },
+                android: { elevation: 1 },
+                web: { boxShadow: '0 1px 2px rgba(0,0,0,0.15)' } as any,
+              }),
+            }} />
+            {/* Front left leg */}
+            <View style={{
+              position: "absolute",
+              bottom: 0, left: seatPad,
+              width: legS, height: legS,
+              borderRadius: 2,
+              backgroundColor: legColor,
+              opacity: 0.8,
+            }} />
+            {/* Front right leg */}
+            <View style={{
+              position: "absolute",
+              bottom: 0, right: seatPad,
+              width: legS, height: legS,
+              borderRadius: 2,
+              backgroundColor: legColor,
+              opacity: 0.8,
             }} />
           </View>
         );
       })}
 
-      {/* ── TABLE BODY ── offset by 10 to match wrapper origin */}
       <View
         style={{
           position: "absolute",
-          left: tx + 10,
-          top: ty + 10,
+          left: tx,
+          top: ty,
           width: tableW,
           height: tableH,
           borderRadius,
+          borderColor: isSelected ? "#FF5E1A" : "#99652f",
+          borderWidth: isSelected ? 3.5 : 2,
           overflow: "hidden",
-          borderWidth: isSelected ? 3 : 2,
-          borderColor: isSelected ? "#FF5E1A" : "#8b5e2a",
-          ...Platform.select({
-            ios: {
-              shadowColor: isSelected ? "#FF5E1A" : "#6b4010",
-              shadowOffset: { width: 0, height: 3 },
-              shadowOpacity: isSelected ? 0.35 : 0.22,
-              shadowRadius: 6,
-            },
-            android: { elevation: isSelected ? 5 : 3 },
-            web: {
-              boxShadow: isSelected
-                ? `0 0 0 2px rgba(255,94,26,0.25), 0 4px 12px rgba(255,94,26,0.28)`
-                : `0 4px 12px rgba(100,60,0,0.22), 0 1px 3px rgba(0,0,0,0.12)`,
-            } as any,
-          }),
+          backgroundColor: "#b77d3d",
         }}
       >
-        {/* Wood base gradient — always present */}
         <LinearGradient
-          colors={isSelected ? ["#ffe8d6", "#ffd0a8", "#ffb97a"] : ["#e6b668", "#cf9448", "#b07235"]}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
-          locations={[0, 0.5, 1.0]}
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-        />
-
-        {/* Inset border for depth — proportional to shape */}
-        <View
+          colors={["#d9a866", "#c99452", "#b77d3d"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          locations={[0, 0.45, 1.0]}
           style={{
-            position: "absolute",
-            top: inset, left: inset, right: inset, bottom: inset,
-            borderRadius: shapeInsetR,
-            borderWidth: 1,
-            borderColor: isSelected ? "rgba(255,94,26,0.35)" : "rgba(255,255,255,0.25)",
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            padding: 2,
+            justifyContent: "center",
+            alignItems: "center",
           }}
-        />
-
-        {/* Content — centered within safe area */}
-        <View style={{
-          position: "absolute",
-          top: 0, left: 0, right: 0, bottom: 0,
-          justifyContent: "center",
-          alignItems: "center",
-        }}>
-          <Text
-            style={{
-              fontFamily: Fonts.black,
-              fontWeight: "900",
-              fontSize: numFontSize,
-              color: isSelected ? "#FF5E1A" : "#2d1500",
-              letterSpacing: -0.3,
-              textShadowColor: isSelected ? "rgba(255,150,50,0.4)" : "rgba(255,210,120,0.5)",
-              textShadowOffset: { width: 0, height: 1 },
-              textShadowRadius: 2,
-              textAlign: "center",
-            }}
-            numberOfLines={1}
-          >
-            {table.label}
-          </Text>
-          <Text
-            style={{
-              fontFamily: Fonts.medium,
-              fontSize: subFontSize,
-              color: isSelected ? "rgba(200,80,0,0.75)" : "rgba(45,21,0,0.55)",
-              marginTop: Math.max(1, subFontSize * 0.2),
-              letterSpacing: 0.1,
-              textAlign: "center",
-            }}
-            numberOfLines={1}
-          >
-            {table.Seats} Pax
-          </Text>
-        </View>
+        >
+          <View style={{
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            borderRadius: Math.max(0, borderRadius - 2),
+            justifyContent: "center",
+            alignItems: "center",
+          }}>
+            {/* Table Number & Capacity */}
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#334155" }}>
+              {table.label}
+            </Text>
+            <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748b", marginTop: 1 }}>
+              {table.Seats} Pax
+            </Text>
+          </View>
+        </LinearGradient>
       </View>
     </View>
   );
