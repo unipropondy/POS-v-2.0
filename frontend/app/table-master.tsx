@@ -370,12 +370,23 @@ const CanvasBackground = ({ theme, children, style, isCategory = false }: { them
   );
 };
 
+// ─────────────────────────────────────────
+// Grid snap helper
+// ─────────────────────────────────────────
+const GRID_SIZE = 30; // px on the 780-wide base canvas
+const snapToGrid = (value: number, scale: number) => {
+  const g = GRID_SIZE * scale;
+  return Math.round(value / g) * g;
+};
+
+// ─────────────────────────────────────────
 // --- DRAGGABLE TABLE ITEM COMPONENT ---
 const DraggableTable = ({
   table,
   initialX,
   initialY,
   onDragEnd,
+  onDragMove,
   onPress,
   isSelected,
   canvasHeight = 650,
@@ -386,6 +397,7 @@ const DraggableTable = ({
   initialX: number;
   initialY: number;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string | null, x: number, y: number, w: number, h: number) => void;
   onPress: () => void;
   isSelected: boolean;
   canvasHeight?: number;
@@ -420,17 +432,23 @@ const DraggableTable = ({
         onPanResponderMove: (evt, gestureState) => {
           const limitX = 780 * layoutScale;
           const limitY = canvasHeight * layoutScale;
-          const newX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
-          const newY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
-          setPosX(newX);
-          setPosY(newY);
+          const rawX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
+          const rawY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
+          const snappedX = snapToGrid(rawX, layoutScale);
+          const snappedY = snapToGrid(rawY, layoutScale);
+          setPosX(snappedX);
+          setPosY(snappedY);
+          onDragMove?.(table.id, snappedX, snappedY, tableW, tableH);
         },
         onPanResponderRelease: (evt, gestureState) => {
           const limitX = 780 * layoutScale;
           const limitY = canvasHeight * layoutScale;
-          const newX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
-          const newY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
-          onDragEnd(table.id, newX, newY);
+          const rawX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
+          const rawY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
+          const snappedX = snapToGrid(rawX, layoutScale);
+          const snappedY = snapToGrid(rawY, layoutScale);
+          onDragMove?.(null, 0, 0, 0, 0); // clear guide
+          onDragEnd(table.id, snappedX, snappedY);
         },
       }),
     [initialX, initialY, canvasHeight, layoutScale, tableW, tableH]
@@ -747,6 +765,18 @@ export default function TableMasterScreen() {
   const [creating, setCreating] = useState(false);
 
   const [availableWidth, setAvailableWidth] = useState(780);
+
+  // Snap guide state — set while a table is being dragged
+  const [snapGuide, setSnapGuide] = useState<{
+    id: string; x: number; y: number; w: number; h: number;
+  } | null>(null);
+
+  const handleDragMove = (
+    id: string | null, x: number, y: number, w: number, h: number
+  ) => {
+    if (id === null) { setSnapGuide(null); return; }
+    setSnapGuide({ id, x, y, w, h });
+  };
 
   // Custom alert & confirmation modal states
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
@@ -1253,6 +1283,32 @@ export default function TableMasterScreen() {
                       <Ionicons name="refresh-outline" size={14} color="#6B6B6B" style={{ marginRight: 4 }} />
                       <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: "#6B6B6B" }}>Reset to Grid</Text>
                     </TouchableOpacity>
+                    {/* Grid Snap indicator */}
+                    <View style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      backgroundColor: snapGuide ? "rgba(255,94,26,0.12)" : "#F5F0E8",
+                      paddingHorizontal: 9,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: snapGuide ? "#FF5E1A" : "#E8E0D5",
+                      gap: 4,
+                    }}>
+                      <Ionicons
+                        name="magnet-outline"
+                        size={13}
+                        color={snapGuide ? "#FF5E1A" : "#94A3B8"}
+                      />
+                      <Text style={{
+                        fontFamily: Fonts.bold,
+                        fontSize: 10,
+                        color: snapGuide ? "#FF5E1A" : "#94A3B8",
+                        letterSpacing: 0.5,
+                      }}>
+                        {snapGuide ? "SNAPPING" : "SNAP ON"}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -1303,6 +1359,7 @@ export default function TableMasterScreen() {
                               initialX={defaultX}
                               initialY={defaultY}
                               onDragEnd={handleDragEnd}
+                              onDragMove={handleDragMove}
                               onPress={() => selectAndLoadTable(t)}
                               isSelected={selectedTable?.id === t.id}
                               canvasHeight={canvasHeight}
@@ -1311,6 +1368,94 @@ export default function TableMasterScreen() {
                             />
                           );
                         });
+                      })()}
+
+                      {/* ── Snap Alignment Guides ── */}
+                      {snapGuide && (() => {
+                        const cx = snapGuide.x + snapGuide.w / 2;
+                        const cy = snapGuide.y + snapGuide.h / 2;
+                        const guideColor = "rgba(255,94,26,0.65)";
+                        const canW = availableWidth;
+                        const canH = canvasHeight * (availableWidth / 780);
+                        return (
+                          <View
+                            style={{ position: "absolute", inset: 0 }}
+                            pointerEvents="none"
+                          >
+                            {/* Horizontal guide line */}
+                            <View style={{
+                              position: "absolute",
+                              left: 0, right: 0,
+                              top: cy - 0.75,
+                              height: 1.5,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Vertical guide line */}
+                            <View style={{
+                              position: "absolute",
+                              top: 0, bottom: 0,
+                              left: cx - 0.75,
+                              width: 1.5,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Center dot */}
+                            <View style={{
+                              position: "absolute",
+                              left: cx - 5,
+                              top: cy - 5,
+                              width: 10, height: 10,
+                              borderRadius: 5,
+                              backgroundColor: "#FF5E1A",
+                              borderWidth: 2,
+                              borderColor: "#fff",
+                              shadowColor: "#FF5E1A",
+                              shadowOpacity: 0.6,
+                              shadowRadius: 4,
+                              shadowOffset: { width: 0, height: 0 },
+                              elevation: 6,
+                            }} />
+                            {/* Edge tick — top */}
+                            <View style={{
+                              position: "absolute",
+                              left: cx - 3,
+                              top: snapGuide.y - 6,
+                              width: 6, height: 6,
+                              borderRadius: 3,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Edge tick — bottom */}
+                            <View style={{
+                              position: "absolute",
+                              left: cx - 3,
+                              top: snapGuide.y + snapGuide.h,
+                              width: 6, height: 6,
+                              borderRadius: 3,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Coordinate pill */}
+                            <View style={{
+                              position: "absolute",
+                              left: Math.min(cx + 8, canW - 80),
+                              top: Math.max(cy - 26, 4),
+                              backgroundColor: "rgba(255,94,26,0.9)",
+                              paddingHorizontal: 8,
+                              paddingVertical: 3,
+                              borderRadius: 6,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4,
+                            }}>
+                              <Text style={{
+                                fontFamily: Fonts.bold,
+                                fontSize: 10,
+                                color: "#fff",
+                                letterSpacing: 0.3,
+                              }}>
+                                {`X:${Math.round(snapGuide.x / (availableWidth / 780))}  Y:${Math.round(snapGuide.y / (availableWidth / 780))}`}
+                              </Text>
+                            </View>
+                          </View>
+                        );
                       })()}
                     </CanvasBackground>
                   </ScrollView>
