@@ -391,9 +391,19 @@ class SunmiPrinterService {
       const dateStr = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
       const timeStr = formatToSingaporeTime(saleDate);
 
-      await SunmiModule.printText(formatter.left(`INVOICE NO: ${saleData.invoiceNumber || saleData.id}`));
       if (saleData.tableNo) {
-        await SunmiModule.printText(formatter.left(`TABLE NO: ${saleData.tableNo}`));
+        const cleanTableNo = /^\d+$/.test(String(saleData.tableNo).trim()) 
+          ? String(saleData.tableNo).trim().padStart(2, '0') 
+          : saleData.tableNo;
+        try {
+          if (SunmiModule.setBold) await SunmiModule.setBold(true);
+        } catch (_) {}
+        await SunmiModule.printText(formatter.twoCols(`INVOICE NO: ${saleData.invoiceNumber || saleData.id}`, `TABLE: ${cleanTableNo}`));
+        try {
+          if (SunmiModule.setBold) await SunmiModule.setBold(false);
+        } catch (_) {}
+      } else {
+        await SunmiModule.printText(formatter.left(`INVOICE NO: ${saleData.invoiceNumber || saleData.id}`));
       }
       await SunmiModule.printText(formatter.left(`DATE: ${dateStr} ${timeStr}`));
       if (saleData.waiterName && saleData.waiterName !== "Staff") {

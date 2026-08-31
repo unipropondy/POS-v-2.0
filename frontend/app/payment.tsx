@@ -940,10 +940,10 @@ export default function PaymentScreen() {
   const total = isLedgerCollection
     ? parseFloat(collectionAmount) || 0
     : Math.max(0, Math.round((baseTotal + roundOff) * 100) / 100);
-  const displayedTax = isLedgerCollection ? 0 : Math.round(tax * 100) / 100;
+  const displayedTax = isLedgerCollection ? 0 : Math.round((tax + Number.EPSILON) * 100) / 100;
   const displayedServiceCharge = isLedgerCollection
     ? 0
-    : Math.round(serviceChargeAmt * 100) / 100;
+    : Math.round((serviceChargeAmt + Number.EPSILON) * 100) / 100;
   const netAmountForDisplay = netAfterDiscount;
   const displayedRoundOff =
     roundOff !== 0

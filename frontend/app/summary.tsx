@@ -1762,9 +1762,7 @@ export default function SummaryScreen() {
                 const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway || (item as any).isTakeaway === true || (item as any).IsTakeaway === true || String((item as any).isTakeaway) === "1" || String((item as any).IsTakeaway) === "1";
                 const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true) && useGeneralSettingsStore.getState().settings.SVCIdentification !== false;
                 return (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => handleItemClick(item)}
+                  <View
                     style={[
                       styles.row,
                       isSC && {
@@ -1913,7 +1911,7 @@ export default function SummaryScreen() {
                       <Ionicons name="trash-outline" size={18} color={Theme.danger} />
                     </TouchableOpacity>
                   )}
-                </TouchableOpacity>
+                </View>
                 );
               }}
             />

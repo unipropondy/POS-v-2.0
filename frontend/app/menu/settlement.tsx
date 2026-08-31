@@ -918,12 +918,26 @@ const fetchDayHistory = async () => {
     .filter(p => p.PaymodeName?.toUpperCase().trim() === "FOC")
     .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
 
-  const netSales = Math.max(0, (parseFloat(totalSales.NetTotal) || 0));
-
   const salesTotal = sales.reduce((sum, s) => sum + (parseFloat(s.Amount) || 0), 0);
   const paymentsTotal = payments
     .filter(p => p.PaymodeName?.toUpperCase().trim() !== "FOC")
     .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
+
+  const netSales = paymentsTotal + focTotal;
+
+  const baseCalculatedNetWithoutTax = (parseFloat(totalSales.SubTotal) || 0) 
+    - (parseFloat(totalSales.DiscountAmount) || 0)
+    + (parseFloat(totalSales.ServiceCharge) || 0)
+    + (parseFloat(totalSales.AdditionalServiceCharge) || 0)
+    + (parseFloat(totalSales.TakeawayCharge) || 0)
+    + (parseFloat(totalSales.RoundedBy) || 0)
+    + (parseFloat(totalSales.Tips) || 0);
+
+  const displayGST = netSales > 0 
+    ? parseFloat((netSales - baseCalculatedNetWithoutTax).toFixed(2))
+    : (parseFloat(totalSales.TotalTax) || 0);
+
+  const displayRoundOff = parseFloat((totalSales.RoundedBy || 0).toFixed(2));
   const displayOpeningAmount = totalOpening > 0 ? totalOpening : (parseFloat(openingCash) || 0);
   const totalCashOut = cashOutEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
   const totalCashInEntries = cashInEntries.reduce((sum, entry) => sum + (parseFloat(entry.Amount) || 0), 0);
@@ -1585,12 +1599,12 @@ const fetchDayHistory = async () => {
                 ` : ''}
                 <tr>
                   <td>GST Collected</td>
-                  <td class="right">${formatCurrency(totalSales.TotalTax)}</td>
+                  <td class="right">${formatCurrency(displayGST)}</td>
                 </tr>
 
                 <tr>
                   <td>Round Off</td>
-                  <td class="right">${formatCurrency(totalSales.RoundedBy)}</td>
+                  <td class="right">${formatCurrency(displayRoundOff)}</td>
                 </tr>
                 <tr>
                   <td>Tips</td>
@@ -1711,9 +1725,9 @@ const fetchDayHistory = async () => {
       if ((parseFloat(totalSales.TakeawayCharge) || 0) !== 0) {
         text += formatTwoCols48("Takeaway Charge:", formatCurrency(totalSales.TakeawayCharge));
       }
-      text += formatTwoCols48("GST Collected:", formatCurrency(totalSales.TotalTax));
+      text += formatTwoCols48("GST Collected:", formatCurrency(displayGST));
 
-      text += formatTwoCols48("Round Off:", formatCurrency(totalSales.RoundedBy));
+      text += formatTwoCols48("Round Off:", formatCurrency(displayRoundOff));
       text += formatTwoCols48("Tips:", formatCurrency(totalSales.Tips));
       text += "[L]----------------------------------------\n";
       text += formatTwoCols48("<B>NET SALES:</B>", "<B>" + formatCurrency(netSales) + "</B>\n");
@@ -1855,8 +1869,8 @@ const fetchDayHistory = async () => {
             if ((parseFloat(totalSales.TakeawayCharge) || 0) !== 0) {
               await SunmiModule.printText(formatTwoCols32("Takeaway Charge:", formatCurrency(totalSales.TakeawayCharge)));
             }
-            await SunmiModule.printText(formatTwoCols32("GST Collected:", formatCurrency(totalSales.TotalTax)));
-            await SunmiModule.printText(formatTwoCols32("Round Off:", formatCurrency(totalSales.RoundedBy)));
+            await SunmiModule.printText(formatTwoCols32("GST Collected:", formatCurrency(displayGST)));
+            await SunmiModule.printText(formatTwoCols32("Round Off:", formatCurrency(displayRoundOff)));
             await SunmiModule.printText(formatTwoCols32("Tips:", formatCurrency(totalSales.Tips)));
             await SunmiModule.printText("--------------------------------\n");
             await SunmiModule.printText(formatTwoCols32("NET SALES:", formatCurrency(netSales)));
@@ -2288,11 +2302,11 @@ const fetchDayHistory = async () => {
                   )}
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>GST</Text>
-                    <Text style={styles.rowValue}>{formatCurrency(totalSales.TotalTax)}</Text>
+                    <Text style={styles.rowValue}>{formatCurrency(displayGST)}</Text>
                   </View>
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Round Off</Text>
-                    <Text style={styles.rowValue}>{formatCurrency(totalSales.RoundedBy)}</Text>
+                    <Text style={styles.rowValue}>{formatCurrency(displayRoundOff)}</Text>
                   </View>
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Tips</Text>

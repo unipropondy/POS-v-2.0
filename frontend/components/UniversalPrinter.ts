@@ -1654,9 +1654,13 @@ class UniversalPrinter {
                      saleData.date ? parseDatabaseDate(saleData.date) : 
                      new Date();
 
-    text += `[L]<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>\n`;
     if (saleData.tableNo) {
-      text += `[L]<font size=\'big\'><B>TABLE: ${saleData.tableNo}</B></font>\n`;
+      const cleanTableNo = /^\d+$/.test(String(saleData.tableNo).trim()) 
+        ? String(saleData.tableNo).trim().padStart(2, '0') 
+        : saleData.tableNo;
+      text += this.formatTwoCols48(`<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>`, `<B>TABLE: ${cleanTableNo}</B>`);
+    } else {
+      text += `[L]<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>\n`;
     }
     const dateFormatted = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
     text += `[L]<B>Date: ${dateFormatted} ${formatToSingaporeTime(saleDate)}</B>\n`;
@@ -1716,6 +1720,26 @@ class UniversalPrinter {
           const mName = (m.ModifierName || m.name || "").trim();
           if (mName) {
             text += `[L]<B>   + ${mName}</B>\n`;
+          }
+        });
+      }
+
+      // Combo selections
+      const comboSels = item.comboSelections || 
+        (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
+          ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : p.groups || p.items || []; } catch { return undefined; } })() 
+          : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : undefined)) || [];
+      const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
+      if (hasCombo) {
+        comboSels.forEach((group: any) => {
+          const choices = group.items || group.dishes || (Array.isArray(group) ? group : [group]);
+          if (Array.isArray(choices)) {
+            choices.forEach((opt: any) => {
+              const optName = opt.name || opt.DishName || opt.itemName || "";
+              if (optName) {
+                text += `[L]<B>   - ${optName}</B>\n`;
+              }
+            });
           }
         });
       }

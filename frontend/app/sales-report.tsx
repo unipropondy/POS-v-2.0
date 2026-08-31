@@ -1030,7 +1030,9 @@ export default function SalesReport() {
   };
 
   const formatCurrency = (amount: number) => {
-    return `$${amount?.toFixed(2) || "0.00"}`;
+    if (amount === undefined || amount === null) return "$0.00";
+    const rounded = Math.round((amount + Number.EPSILON) * 100) / 100;
+    return `$${rounded.toFixed(2)}`;
   };
 
   const changeDate = (days: number) => {
@@ -1223,45 +1225,47 @@ export default function SalesReport() {
           return acc;
         }
 
+        const roundedSysAmount = Math.round(((s.SysAmount || 0) + Number.EPSILON) * 100) / 100;
+
         if (s.OrderType === 'LEDGER') {
           if (s.OrderId === 'Credit Payment Collected') {
-            acc.CreditPaymentsCollected += s.SysAmount || 0;
+            acc.CreditPaymentsCollected += roundedSysAmount;
           } else {
-            acc.MemberPaymentsCollected += s.SysAmount || 0;
+            acc.MemberPaymentsCollected += roundedSysAmount;
           }
           return acc;
         }
 
         const mode = s.PayMode?.trim().toUpperCase() || "";
 
-        acc.TotalSales += s.SysAmount || 0;
-          const isUpi = mode.includes("UPI") || mode.includes("GPAY");
-          if (mode === "CASH") acc.Cash += s.SysAmount;
-          else if (mode === "CARD") acc.Card += s.SysAmount;
-          else if (mode === "NETS") acc.Nets += s.SysAmount;
-          else if (mode === "PAYNOW") acc.PayNow += s.SysAmount;
-          else if (mode === "GRAB") acc.Grab += s.SysAmount;
-          else if (mode === "FOODPANDA") acc.Foodpanda += s.SysAmount;
-          else if (isUpi) acc.Upi += s.SysAmount;
-          else if (mode === "MEMBER") {
-            acc.Member += s.SysAmount;
-          } else if (mode === "CREDIT") {
-            acc.Credit += s.SysAmount;
-            acc.CreditOutstanding += Number(s.OutstandingAmount) || 0;
-          } else if (mode === "FOC") {
-            acc.FocSales += s.SysAmount;
-          }
+        acc.TotalSales += roundedSysAmount;
+        const isUpi = mode.includes("UPI") || mode.includes("GPAY");
+        if (mode === "CASH") acc.Cash += roundedSysAmount;
+        else if (mode === "CARD") acc.Card += roundedSysAmount;
+        else if (mode === "NETS") acc.Nets += roundedSysAmount;
+        else if (mode === "PAYNOW") acc.PayNow += roundedSysAmount;
+        else if (mode === "GRAB") acc.Grab += roundedSysAmount;
+        else if (mode === "FOODPANDA") acc.Foodpanda += roundedSysAmount;
+        else if (isUpi) acc.Upi += roundedSysAmount;
+        else if (mode === "MEMBER") {
+          acc.Member += roundedSysAmount;
+        } else if (mode === "CREDIT") {
+          acc.Credit += roundedSysAmount;
+          acc.CreditOutstanding += Math.round(((Number(s.OutstandingAmount) || 0) + Number.EPSILON) * 100) / 100;
+        } else if (mode === "FOC") {
+          acc.FocSales += roundedSysAmount;
+        }
 
         if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
           processedBills.add(s.SettlementID);
           acc.TotalTransactions += 1;
           acc.TotalItems += (s.ReceiptCount || 0);
           acc.TotalVoids += s.VoidQty || 0;
-          acc.TotalVoidAmount += s.VoidAmount || 0;
-          acc.ServiceCharge += Number(s.ServiceCharge) || 0;
-          acc.TotalTax += Number(s.TotalTax) || 0;
-          acc.TotalDiscount += Number(s.DiscountAmount) || 0;
-          acc.TakeawayCharge += Number(s.TakeawayCharge) || 0;
+          acc.TotalVoidAmount += Math.round(((s.VoidAmount || 0) + Number.EPSILON) * 100) / 100;
+          acc.ServiceCharge += Math.round(((Number(s.ServiceCharge) || 0) + Number.EPSILON) * 100) / 100;
+          acc.TotalTax += Math.round(((Number(s.TotalTax) || 0) + Number.EPSILON) * 100) / 100;
+          acc.TotalDiscount += Math.round(((Number(s.DiscountAmount) || 0) + Number.EPSILON) * 100) / 100;
+          acc.TakeawayCharge += Math.round(((Number(s.TakeawayCharge) || 0) + Number.EPSILON) * 100) / 100;
         }
 
         return acc;
@@ -1736,6 +1740,9 @@ export default function SalesReport() {
         discountAmount: item.DiscountAmount || 0,
         discountType: item.DiscountType || "fixed",
         modifiers: item.modifiers || [],
+        comboSelections: item.comboSelections,
+        ComboDetailsJSON: item.ComboDetailsJSON || item.comboDetailsJSON,
+        isCombo: item.isCombo,
       }));
 
       const isPercentage = selectedOrder.DiscountType === "percentage";
@@ -4129,44 +4136,52 @@ export default function SalesReport() {
                 {!isSplitMode ? (
                   <>
                     <ScrollView style={{ maxHeight: 250 }}>
-                      {["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"].map((mode) => (
-                        <TouchableOpacity
-                          key={mode}
-                          onPress={() => {
-                            if (mode === "MEMBER" || mode === "CREDIT") {
-                              setIsMemberSearch(mode === "MEMBER");
-                              setCurrentSelectionStep(mode === "MEMBER" ? "MEMBER" : "CREDIT");
-                              setPendingPayMode(mode);
-                              setPendingSplits(null);
-                              setMemberQuery("");
-                              setSelectedMemberForPay(null);
-                              setSelectedCreditForPay(null);
-                              setActiveModalSelection(null);
-                              setMembersList([]);
-                              setShowMemberModal(true);
-                            } else {
-                              handleConfirmChangePayment(mode);
-                            }
-                          }}
-                          style={{
-                            paddingVertical: 12,
-                            paddingHorizontal: 16,
-                            borderRadius: 8,
-                            backgroundColor: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary + "15" : "transparent",
-                            marginBottom: 6,
-                            flexDirection: "row",
-                            justifyContent: "space-between",
-                            alignItems: "center"
-                          }}
-                        >
-                          <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary : Theme.textPrimary }}>
-                            {mode}
-                          </Text>
-                          {(selectedOrder?.PayMode || '').toUpperCase() === mode && (
-                            <Ionicons name="checkmark" size={18} color={Theme.primary} />
-                          )}
-                        </TouchableOpacity>
-                      ))}
+                      {(() => {
+                        const activeModes = dbPaymentModes
+                          .map((m: any) => (m.payMode || m.PayMode || '').toUpperCase().trim())
+                          .filter((mode: string) => mode.length > 0);
+                        const displayModes = activeModes.length > 0 ? activeModes : ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
+                        const uniqueModes = Array.from(new Set(displayModes));
+
+                        return uniqueModes.map((mode) => (
+                          <TouchableOpacity
+                            key={mode}
+                            onPress={() => {
+                              if (mode === "MEMBER" || mode === "CREDIT") {
+                                setIsMemberSearch(mode === "MEMBER");
+                                setCurrentSelectionStep(mode === "MEMBER" ? "MEMBER" : "CREDIT");
+                                setPendingPayMode(mode);
+                                setPendingSplits(null);
+                                setMemberQuery("");
+                                setSelectedMemberForPay(null);
+                                setSelectedCreditForPay(null);
+                                setActiveModalSelection(null);
+                                setMembersList([]);
+                                setShowMemberModal(true);
+                              } else {
+                                handleConfirmChangePayment(mode);
+                              }
+                            }}
+                            style={{
+                              paddingVertical: 12,
+                              paddingHorizontal: 16,
+                              borderRadius: 8,
+                              backgroundColor: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary + "15" : "transparent",
+                              marginBottom: 6,
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center"
+                            }}
+                          >
+                            <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary : Theme.textPrimary }}>
+                              {mode}
+                            </Text>
+                            {(selectedOrder?.PayMode || '').toUpperCase() === mode && (
+                              <Ionicons name="checkmark" size={18} color={Theme.primary} />
+                            )}
+                          </TouchableOpacity>
+                        ));
+                      })()}
                     </ScrollView>
 
                     <TouchableOpacity
@@ -4194,9 +4209,14 @@ export default function SalesReport() {
                     <ScrollView style={{ maxHeight: 250, marginBottom: 15 }} keyboardShouldPersistTaps="handled">
                       {changePaymentSplits.map((split, idx) => {
                         const nextMode = () => {
-                          const modes = ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
+                          const activeModes = dbPaymentModes
+                            .map((m: any) => (m.payMode || m.PayMode || '').toUpperCase().trim())
+                            .filter((mode: string) => mode.length > 0);
+                          const displayModes = activeModes.length > 0 ? activeModes : ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
+                          const modes = Array.from(new Set(displayModes));
+
                           const currentIdx = modes.indexOf(split.payMode);
-                          const next = modes[(currentIdx + 1) % modes.length]!;
+                          const next = modes[currentIdx !== -1 ? (currentIdx + 1) % modes.length : 0]!;
                           const newSplits = [...changePaymentSplits];
                           newSplits[idx] = { ...split, payMode: next };
                           setChangePaymentSplits(newSplits);
@@ -5055,15 +5075,7 @@ export default function SalesReport() {
                     }
                     rangeStart={downloadRangeStart}
                     rangeEnd={downloadRangeEnd}
-                    isRangeMode={true}
-                    onModeChange={() => { }}
-                    onRangeChange={(start, end) => {
-                      setDownloadRangeStart(start);
-                      setDownloadRangeEnd(end);
-                      if (start && end) {
-                        setShowDownloadDatePicker(false);
-                      }
-                    }}
+                    isRangeMode={false}
                     onDateChange={(date) => {
                       if (downloadPickerMode === "START") {
                         setDownloadRangeStart(date);
