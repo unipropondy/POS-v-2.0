@@ -4,6 +4,16 @@ const sql = require("mssql");
 const { poolPromise } = require("../config/db");
 const { getHoldOvertimeMinutes } = require("../utils/settingsCache");
 
+const toGuidOrNull = (value) => {
+  if (!value) return null;
+  const s = String(value)
+    .trim()
+    .replace(/^\{|\}$/g, "");
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+    ? s
+    : null;
+};
+
 // In-memory table locks
 const tableLocks = new Map();
 
@@ -123,7 +133,7 @@ router.post("/lock-persistent", async (req, res) => {
     const request = pool.request(); // ✅ Fixed: request was not defined
     request.input("tableId", sql.VarChar(50), cleanTableId);
     request.input("lockedByName", sql.NVarChar, lockedByName || null);
-    request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
+    request.input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId));
 
     const result = await request.query(`
       UPDATE TableMaster 
@@ -172,7 +182,7 @@ router.post("/unlock-persistent", async (req, res) => {
     const cleanTableId = tableId.replace(/^\{|\}$/g, "").trim();
     const result = await pool.request()
       .input("tableId", sql.VarChar(50), cleanTableId)
-      .input("ModifiedBy", sql.UniqueIdentifier, userId || null)
+      .input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId))
       .query(`
         UPDATE TableMaster 
         SET Status = 0, entry_status = NULL, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL
@@ -227,7 +237,7 @@ router.post("/save-guest", async (req, res) => {
     request.input("tableId", sql.VarChar(50), cleanTableId);
     request.input("customerName", sql.NVarChar, guestNameVal);
     request.input("pax", sql.Int, paxVal);
-    request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
+    request.input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId));
 
     // Update TableMaster
     const updateTM = await request.query(`
@@ -446,7 +456,7 @@ router.put("/status", async (req, res) => {
     const request = pool.request();
     request.input("tableId", sql.VarChar(50), cleanTableId);
     request.input("status", sql.Int, Number(status));
-    request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
+    request.input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId));
     request.input("holdMinutes", sql.Int, holdMinutes);
 
     const updateResult = await request.query(`
