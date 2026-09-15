@@ -1880,7 +1880,7 @@ export default function PaymentScreen() {
       if (match && match[1]) {
         const host = match[1];
         if (host.includes("railway") || host.includes("production")) {
-          return "https://conestonepos-qr082026-production.up.railway.app/customer-display";
+          return "https://pos-v-20-production.up.railway.app/customer-display";
 
         }
         return `http://${host}:8081/customer-display`;
