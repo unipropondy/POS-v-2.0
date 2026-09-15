@@ -20,7 +20,7 @@ router.get("/search", async (req, res) => {
     if (!q || q.trim() === "") {
       const result = await pool.request()
         .query(`
-          SELECT TOP 20 
+          SELECT 
             cust.Phone, 
             cust.Name, 
             ISNULL(s.CurrentCount, 0) AS VisitCount, 
@@ -43,7 +43,7 @@ router.get("/search", async (req, res) => {
     const result = await pool.request()
       .input("Query", sql.NVarChar(50), `%${q.trim()}%`)
       .query(`
-        SELECT TOP 10 
+        SELECT 
           cust.Phone, 
           cust.Name, 
           ISNULL(s.CurrentCount, 0) AS VisitCount, 
@@ -60,6 +60,7 @@ router.get("/search", async (req, res) => {
             AND GETDATE() BETWEEN c.StartDate AND c.EndDate
         ) s
         WHERE cust.Phone LIKE @Query OR cust.Name LIKE @Query
+        ORDER BY cust.LastVisitDate DESC, cust.Name ASC
       `);
     res.json(result.recordset);
   } catch (err) {

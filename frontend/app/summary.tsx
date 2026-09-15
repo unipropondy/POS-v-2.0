@@ -569,15 +569,39 @@ export default function SummaryScreen() {
   const closeActiveOrder = useActiveOrdersStore((s: any) => s.closeActiveOrder);
   const activeOrders = useActiveOrdersStore((s: any) => s.activeOrders);
   
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+
+  const fetchActiveSessions = async () => {
+    try {
+      setIsLoadingSessions(true);
+      const token = useAuthStore.getState().token;
+      const res = await fetch(`${API_URL}/api/orders/active-sessions`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const result = await res.json();
+        const sessions = result.orders || (Array.isArray(result) ? result : []);
+        setActiveSessions(sessions);
+      }
+    } catch (err) {
+      console.error("Failed to fetch active sessions:", err);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
   const selectedTablesText = useMemo(() => {
     return selectedMergeOrderIds
       .map((id) => {
-        const order = activeOrders.find((o: any) => o.orderId === id);
+        const order = activeSessions.find((o: any) => o.orderId === id);
         return order ? `Table ${order.context?.tableNo}` : "";
       })
       .filter(Boolean)
       .join(", ");
-  }, [selectedMergeOrderIds, activeOrders]);
+  }, [selectedMergeOrderIds, activeSessions]);
 
   const toggleMergeSelection = (orderId: string) => {
     setSelectedMergeOrderIds((prev) =>
@@ -597,19 +621,26 @@ export default function SummaryScreen() {
       }
 
       // Retrieve source table details for all selected order IDs
-      const sourceTables = selectedMergeOrderIds
+      const sourceOrders = selectedMergeOrderIds
         .map((id) => {
-          const order = activeOrders.find((o: any) => o.orderId === id);
-          return order ? order.context : null;
+          const order = activeSessions.find((o: any) => o.orderId === id);
+          if (!order || !order.context?.tableId) return null;
+          return {
+            tableId: order.context.tableId,
+            orderNumber: id, // id is the OrderNumber string from active-kitchen
+            tableNo: order.context.tableNo,
+            section: order.context.section,
+          };
         })
-        .filter((c): c is any => c !== null && c.tableId !== undefined);
+        .filter((s): s is NonNullable<typeof s> => s !== null);
 
-      if (sourceTables.length === 0) {
+      if (sourceOrders.length === 0) {
         showToast({ type: "error", message: "No valid source tables selected" });
         return;
       }
 
-      const sourceTableIds = sourceTables.map((t) => t.tableId);
+      const sourceTables = sourceOrders.map((s) => ({ tableId: s.tableId, tableNo: s.tableNo, section: s.section }));
+      const sourceTableIds = sourceOrders.map((s) => s.tableId);
 
       const res = await fetch(`${API_URL}/api/orders/merge`, {
         method: "POST",
@@ -617,6 +648,7 @@ export default function SummaryScreen() {
         body: JSON.stringify({
           targetTableId: context.tableId,
           sourceTableIds: sourceTableIds,
+          sourceOrders: sourceOrders, // Pass order numbers for reliable GUID lookup
           userId: user?.id,
         }),
       });
@@ -943,7 +975,7 @@ export default function SummaryScreen() {
   };
 
   const handleMergeBill = () => {
-    useActiveOrdersStore.getState().fetchActiveKitchenOrders();
+    fetchActiveSessions();
     setSelectedMergeOrderIds([]);
     setShowMergeModal(true);
     setShowBillOptions(false);
@@ -3753,13 +3785,14 @@ export default function SummaryScreen() {
 
             <FlatList
               style={{ flexShrink: 1, marginBottom: 15 }}
-              data={activeOrders.filter(
+              data={activeSessions.filter(
                 (o: any) => 
                   o.context?.orderType === "DINE_IN" && 
                   o.context?.tableId && 
                   String(o.context.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase() !== 
                   String(context?.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase()
               )}
+              extraData={[selectedMergeOrderIds, activeSessions]}
               keyExtractor={(item) => item.orderId}
               renderItem={({ item }) => {
                 const isSelected = selectedMergeOrderIds.includes(item.orderId);

@@ -19,6 +19,35 @@ const { getActiveOrganization } = require("../utils/organizationHelper");
 const { getCompanySettings } = require("../utils/settingsCache");
 const DEFAULT_GUID = "00000000-0000-0000-0000-000000000000";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PERFORMANCE: In-memory cache for INFORMATION_SCHEMA column existence checks.
+// INFORMATION_SCHEMA.COLUMNS is a slow SQL Server system view — scanning it on
+// every payment screen open was adding 100–500 ms of latency per call.
+// This cache is populated once per server process lifetime and is safe because
+// columns are never dropped in production; they are only added (self-healing).
+// If a server restart occurs the cache resets automatically and will re-check.
+// ─────────────────────────────────────────────────────────────────────────────
+const columnExistenceCache = new Map(); // key: "TABLE_NAME.COLUMN_NAME" → true | false
+
+async function columnExists(pool, tableName, columnName) {
+  const cacheKey = `${tableName}.${columnName}`;
+  if (columnExistenceCache.has(cacheKey)) {
+    return columnExistenceCache.get(cacheKey);
+  }
+  try {
+    const result = await pool.request().query(`
+      SELECT 1 AS HasCol FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_NAME = '${tableName}' AND COLUMN_NAME = '${columnName}'
+    `);
+    const exists = result.recordset.length > 0;
+    columnExistenceCache.set(cacheKey, exists);
+    return exists;
+  } catch (err) {
+    console.error(`[columnExists] Failed to check ${tableName}.${columnName}:`, err.message);
+    return false;
+  }
+}
+
 // 🔹 QR Setting Helper: Check if QR Code ordering is enabled
 async function isQRSettingEnabled() {
   try {
@@ -1144,9 +1173,8 @@ router.post("/save-cart", async (req, res) => {
         });
       }
 
-      if (!skipTableStatusSync) {
-        syncTableStatus(req, cleanId).catch(() => { });
-      }
+      // Always sync table status to update the payable amount instantly on the main grid via socket/db
+      syncTableStatus(req, cleanId).catch(() => { });
     } catch (e) {
       if (transaction._isStarted) await transaction.rollback();
       console.error("❌ SaveCart SQL Error FULL:", e);
@@ -1456,6 +1484,11 @@ router.post("/send", async (req, res) => {
         if (isQROrder) {
           io.emit("print_jobs_available", { orderId: finalOrderId, storeId: "STORE_001" });
         }
+        io.emit("active_kitchen_updated", {
+          tableId: cleanId.toLowerCase(),
+          orderId: finalOrderId,
+          reason: "order_sent",
+        });
       }
 
       // 5. Refresh totals and notify instantly
@@ -2084,10 +2117,14 @@ router.post("/update-item-status", async (req, res) => {
       const qrCheck = await pool
         .request()
         .input("id", sql.UniqueIdentifier, lineItemId).query(`
-          SELECT tm.TableId, tm.TableNumber, tm.entry_status, tm.PAYMENT_STATUS, h.OrderId
+          SELECT tm.TableId, tm.TableNumber, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, h.OrderId, h.OrderNumber
           FROM RestaurantOrderDetailCur d
           JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId
-          JOIN TableMaster tm ON RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+          JOIN TableMaster tm ON (
+            RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+            OR (TRY_CAST(h.Tableno AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(h.Tableno AS UNIQUEIDENTIFIER))
+            OR (TRY_CAST(h.Tableno AS INT) IS NOT NULL AND TRY_CAST(tm.TableNumber AS INT) = TRY_CAST(h.Tableno AS INT))
+          )
           WHERE d.OrderDetailId = @id
         `);
 
@@ -2109,7 +2146,7 @@ router.post("/update-item-status", async (req, res) => {
 
           if (pendingItems.recordset[0].count === 0) {
             console.log(
-              `[QR Auto-Clear] Table ${row.TableNumber} has all items served/voided. Auto-clearing.`,
+              `[QR Auto-Clear] Table ${row.TableNumber} has all items served/voided. Auto-clearing on all devices...`,
             );
 
             // Delete CartItems
@@ -2139,19 +2176,42 @@ router.post("/update-item-status", async (req, res) => {
                 WHERE OrderId = @orderId
               `);
 
-            // Sync status to trigger frontend refresh
-            syncTableStatus(req, row.TableId).catch(() => { });
-            req.app.get("io")?.emit("tables_updated");
-            req.app.get("io")?.emit("table_status_updated", {
-              tableId: cleanTableId.toLowerCase(),
-              status: 0,
-              totalAmount: 0,
-              entryStatus: null,
-              paymentStatus: null,
-            });
-            req.app
-              .get("io")
-              ?.emit("cart_updated", { tableId: cleanTableId.toLowerCase() });
+            // Sync status and emit definitive table_status_updated
+            const updated = await syncTableStatus(req, row.TableId).catch(() => null);
+
+            const sectionMap = {
+              1: "SECTION_1",
+              2: "SECTION_2",
+              3: "SECTION_3",
+              4: "TAKEAWAY",
+            };
+            const section = sectionMap[String(row.DiningSection)] || row.DiningSection || "SECTION_1";
+            const orderNo = row.OrderNumber || row.OrderId;
+
+            // Broadcast ALL real-time socket signals so EVERY device updates instantly
+            const io = req.app.get("io");
+            if (io) {
+              io.emit("order_closed", {
+                tableId: cleanTableId.toLowerCase(),
+                tableNo: row.TableNumber,
+                section: section,
+                orderId: orderNo,
+              });
+
+              io.emit("order_status_update", {
+                tableId: cleanTableId.toLowerCase(),
+                action: "CLOSE",
+                orderId: orderNo,
+              });
+
+              io.emit("active_kitchen_updated", {
+                tableId: cleanTableId.toLowerCase(),
+                reason: "qr_all_served_auto_clear",
+              });
+
+              io.emit("tables_updated");
+              io.emit("cart_updated", { tableId: cleanTableId.toLowerCase() });
+            }
           }
         }
       }
@@ -2190,7 +2250,8 @@ router.get("/active-kitchen", async (req, res) => {
       SELECT 
         d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, d.StatusCode, 
         d.PricePerUnit as price,
-        h.OrderNumber as orderId, dish.Name as name, h.Tableno as tableNo, 
+        h.OrderNumber as orderId, dish.Name as name, 
+        ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
         DATEDIFF(SECOND, ISNULL(d.CreatedOn, h.CreatedOn), GETDATE()) as elapsedSeconds,
         ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
@@ -2207,11 +2268,115 @@ router.get("/active-kitchen", async (req, res) => {
         SELECT *, ROW_NUMBER() OVER(PARTITION BY KitchenTypeValue ORDER BY PrinterId) as rn
         FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
       ) pm ON CAST(ckt.KitchenTypeCode AS VARCHAR(50)) = CAST(pm.KitchenTypeValue AS VARCHAR(50)) AND pm.rn = 1
-      LEFT JOIN TableMaster tm ON RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+      LEFT JOIN TableMaster tm ON (
+        RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+        OR (TRY_CAST(h.Tableno AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(h.Tableno AS UNIQUEIDENTIFIER))
+        OR (TRY_CAST(h.Tableno AS INT) IS NOT NULL AND TRY_CAST(tm.TableNumber AS INT) = TRY_CAST(h.Tableno AS INT))
+      )
       WHERE (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
-      -- 🚀 Include only active items: SENT (2), READY (3), SERVED (4), HOLD (5)
+      -- 🚀 Include active items: NEW (1), SENT (2), READY (3), SERVED (4), HOLD (5)
       -- VOIDED items (StatusCode=0) are excluded — they should never appear on KDS or printer
-      AND d.StatusCode IN (2,3,4,5)
+      AND d.StatusCode IN (1,2,3,4,5)
+      AND h.OrderNumber IS NOT NULL
+      AND h.OrderNumber NOT LIKE 'TEMP-%'
+      AND h.OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '')
+      ORDER BY d.CreatedOn ASC
+    `);
+    const orders = {};
+    result.recordset.forEach((row) => {
+      if (!orders[row.orderId]) {
+        const isTakeaway =
+          !row.tableNo ||
+          row.tableNo === "TAKEAWAY" ||
+          String(row.tableNo).trim().startsWith("TW");
+        const rawSec = String(row.DiningSection || "").trim();
+        const sectionMap = {
+          "1": "SECTION_1",
+          "2": "SECTION_2",
+          "3": "SECTION_3",
+          "4": "TAKEAWAY",
+        };
+        let normalizedSection = sectionMap[rawSec] || rawSec;
+        if (normalizedSection.toUpperCase().startsWith("SECTION")) {
+          normalizedSection = normalizedSection.toUpperCase().replace(/SECTION[-_ ]*/i, "SECTION_");
+        }
+
+        orders[row.orderId] = {
+          orderId: row.orderId,
+          context: {
+            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
+            tableId: row.TableId
+              ? String(row.TableId)
+                .replace(/^\{|\}$/g, "")
+                .trim()
+                .toLowerCase()
+              : undefined,
+            tableNo: isTakeaway ? null : String(row.tableNo).trim(),
+            section: normalizedSection,
+            takeawayNo: isTakeaway
+              ? row.tableNo === "TAKEAWAY"
+                ? row.orderId.slice(-4)
+                : String(row.tableNo).trim()
+              : null,
+          },
+          items: [],
+          createdAt: Date.now() - Math.max(0, Math.min(86400, Number(row.elapsedSeconds) || 0)) * 1000,
+        };
+      }
+      const statusMap = {
+        0: "VOIDED",
+        1: "NEW",
+        2: "SENT",
+        3: "READY",
+        4: "SERVED",
+        5: "HOLD",
+      };
+      orders[row.orderId].items.push({
+        ...row,
+        status: statusMap[row.StatusCode],
+        modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : [],
+        comboSelections: row.ComboDetailsJSON ? JSON.parse(row.ComboDetailsJSON) : [],
+      });
+    });
+    res.json({ serverTime: Date.now(), orders: Object.values(orders) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/active-sessions", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query(`
+      SELECT 
+        d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, d.StatusCode, 
+        d.PricePerUnit as price,
+        h.OrderNumber as orderId, dish.Name as name, 
+        ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
+        d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
+        DATEDIFF(SECOND, ISNULL(d.CreatedOn, h.CreatedOn), GETDATE()) as elapsedSeconds,
+        ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
+        ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
+        pm.PrinterPath as PrinterIP,
+        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status
+      FROM RestaurantOrderDetailCur d 
+      JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
+      LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+      LEFT JOIN DishGroupMaster dgm ON dish.DishGroupId = dgm.DishGroupId
+      LEFT JOIN CategoryMaster cat ON dgm.CategoryId = cat.CategoryId
+      LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
+      LEFT JOIN (
+        SELECT *, ROW_NUMBER() OVER(PARTITION BY KitchenTypeValue ORDER BY PrinterId) as rn
+        FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
+      ) pm ON CAST(ckt.KitchenTypeCode AS VARCHAR(50)) = CAST(pm.KitchenTypeValue AS VARCHAR(50)) AND pm.rn = 1
+      LEFT JOIN TableMaster tm ON (
+        RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+        OR (TRY_CAST(h.Tableno AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(h.Tableno AS UNIQUEIDENTIFIER))
+        OR (TRY_CAST(h.Tableno AS INT) IS NOT NULL AND TRY_CAST(tm.TableNumber AS INT) = TRY_CAST(h.Tableno AS INT))
+      )
+      WHERE (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+      -- 🚀 Include all non-voided items: NEW (1), SENT (2), READY (3), SERVED (4), HOLD (5)
+      AND d.StatusCode <> 0
       AND h.OrderNumber IS NOT NULL
       AND h.OrderNumber NOT LIKE 'TEMP-%'
       AND h.OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '')
@@ -2316,7 +2481,8 @@ router.post("/log-print", async (req, res) => {
 
 router.post("/merge", async (req, res) => {
   try {
-    const { targetTableId, sourceTableIds, userId } = req.body;
+    const { targetTableId, sourceTableIds, sourceOrders, userId } = req.body;
+    // sourceOrders: [{ tableId, orderNumber, tableNo, section }] – sent by frontend for reliable lookup
     const pool = await poolPromise;
     const cleanTargetId = String(targetTableId)
       .replace(/^\{|\}$/g, "")
@@ -2397,11 +2563,23 @@ router.post("/merge", async (req, res) => {
 
       const io = req.app.get("io");
 
+      // Build a lookup map: tableId (lowercase, no braces) -> orderNumber from frontend
+      const sourceOrderMap = {};
+      if (Array.isArray(sourceOrders)) {
+        sourceOrders.forEach(so => {
+          if (so && so.tableId && so.orderNumber) {
+            const cleanId = String(so.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+            sourceOrderMap[cleanId] = String(so.orderNumber).trim();
+          }
+        });
+      }
+
       for (const sourceTableId of sourceTableIds) {
         const cleanSourceId = String(sourceTableId)
           .replace(/^\{|\}$/g, "")
-          .trim();
-        if (cleanSourceId === cleanTargetId) {
+          .trim()
+          .toLowerCase();
+        if (cleanSourceId === cleanTargetId.toLowerCase()) {
           console.log(
             `[MERGE LOOP] Skipping identical target/source table: ${cleanSourceId}`,
           );
@@ -2423,28 +2601,46 @@ router.post("/merge", async (req, res) => {
           continue;
         }
         const sourceTableNo = sourceCheck.recordset[0].TableNumber;
-        const sourceOrderId = sourceCheck.recordset[0].CurrentOrderId;
+        const sourceOrderIdFromTable = sourceCheck.recordset[0].CurrentOrderId;
+
+        // 🚀 PRIMARY: Use orderNumber passed from frontend (more reliable – comes directly from active KDS)
+        // FALLBACK: Use TableMaster.CurrentOrderId if frontend didn't send it
+        const frontendOrderNumber = sourceOrderMap[cleanSourceId];
+        const sourceOrderId = frontendOrderNumber || sourceOrderIdFromTable;
+
         console.log(
-          `[MERGE LOOP] Source Table: ${sourceTableNo}, Active OrderNo: ${sourceOrderId}`,
+          `[MERGE LOOP] Source Table: ${sourceTableNo}, TableMaster OrderNo: ${sourceOrderIdFromTable}, Frontend OrderNo: ${frontendOrderNumber}, Using: ${sourceOrderId}`,
         );
         if (!sourceOrderId || sourceOrderId === "NEW") {
           console.log(`[MERGE LOOP SKIP] Source table has no active order.`);
           continue;
         }
 
-        // Fetch source order guid
+        // Fetch source order guid – try with isOrderClosed = 0 first, then without filter as fallback
         console.log(
           `[MERGE LOOP] Fetching source Order GUID for OrderNo: ${sourceOrderId}`,
         );
-        const sourceGuidRes = await transaction
+        let sourceGuidRes = await transaction
           .request()
           .input("orderNo", sql.NVarChar(50), sourceOrderId)
           .query(
             "SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo AND (isOrderClosed = 0 OR isOrderClosed IS NULL)",
           );
+        
+        // 🚀 FALLBACK: if not found with open filter, try without (stale closed order edge case)
+        if (!sourceGuidRes.recordset[0]?.OrderId) {
+          console.log(`[MERGE LOOP] Open order not found, trying without isOrderClosed filter...`);
+          sourceGuidRes = await transaction
+            .request()
+            .input("orderNo2", sql.NVarChar(50), sourceOrderId)
+            .query(
+              "SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo2 ORDER BY CreatedOn DESC",
+            );
+        }
+        
         const sourceOrderGuid = sourceGuidRes.recordset[0]?.OrderId;
         if (!sourceOrderGuid) {
-          console.log(`[MERGE LOOP ERROR] Active source order GUID not found.`);
+          console.log(`[MERGE LOOP ERROR] Active source order GUID not found for OrderNo: ${sourceOrderId}.`);
           continue;
         }
         console.log(
@@ -2631,9 +2827,28 @@ router.post("/payment-status", async (req, res) => {
       .request()
       .input("tid", sql.VarChar(50), cleanId)
       .input("status", sql.Int, paymentStatus).query(`
-      UPDATE TableMaster SET PAYMENT_STATUS = @status WHERE TableId = @tid
+      UPDATE TableMaster 
+      SET PAYMENT_STATUS = @status 
+      WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
     `);
-    res.json({ success: true });
+
+    const updated = await syncTableStatus(req, cleanId);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("qr_payment_confirmed", {
+        tableId: cleanId.toLowerCase(),
+        tableNo: updated?.tableNo,
+        orderId: updated?.CurrentOrderId,
+        paymentStatus: paymentStatus,
+      });
+      io.emit("active_kitchen_updated", {
+        tableId: cleanId.toLowerCase(),
+        reason: "payment_status_changed",
+      });
+    }
+
+    res.json({ success: true, ...updated });
   } catch (err) {
     console.error("❌ payment-status Error:", err.message);
     res.status(500).json({ error: err.message });
@@ -2702,12 +2917,9 @@ router.get("/:orderId/sc-override", async (req, res) => {
     if (!orderId) return res.status(400).json({ error: "Missing orderId" });
     const pool = await poolPromise;
 
-    // Check column exists first
-    const colCheck = await pool.request().query(`
-      SELECT 1 AS HasCol FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_NAME = 'RestaurantOrderCur' AND COLUMN_NAME = 'ServiceChargeOverride'
-    `);
-    if (!colCheck.recordset.length) {
+    // PERFORMANCE: Use cached column check — avoids slow INFORMATION_SCHEMA scan on every request
+    const hasCol = await columnExists(pool, 'RestaurantOrderCur', 'ServiceChargeOverride');
+    if (!hasCol) {
       return res.json({ serviceChargeReduced: false });
     }
 
@@ -2817,12 +3029,9 @@ router.get("/:orderId/takeaway-charge", async (req, res) => {
     if (!orderId) return res.status(400).json({ error: "Missing orderId" });
     const pool = await poolPromise;
 
-    // Check column exists first
-    const colCheck = await pool.request().query(`
-      SELECT 1 AS HasCol FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_NAME = 'RestaurantOrderCur' AND COLUMN_NAME = 'TakeawayChargeOverride'
-    `);
-    if (!colCheck.recordset.length) {
+    // PERFORMANCE: Use cached column check — avoids slow INFORMATION_SCHEMA scan on every request
+    const hasCol = await columnExists(pool, 'RestaurantOrderCur', 'TakeawayChargeOverride');
+    if (!hasCol) {
       return res.json({ takeawayCharge: 0, takeawayChargeOverride: 0 });
     }
 

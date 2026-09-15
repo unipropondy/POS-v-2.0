@@ -1,6 +1,23 @@
 import { Platform, NativeModules } from 'react-native';
 const { SunmiPrinterDetector } = NativeModules;
-import ThermalPrinter from 'react-native-thermal-printer';
+import ThermalPrinterImport from 'react-native-thermal-printer';
+
+// Safe wrapper around react-native-thermal-printer to prevent null-reference crashes
+const ThermalPrinter = {
+  printTcp: async (args: any) => {
+    if (!ThermalPrinterImport || typeof ThermalPrinterImport.printTcp !== 'function') {
+      throw new Error('ThermalPrinter module is not available on this device/platform');
+    }
+    return ThermalPrinterImport.printTcp(args);
+  },
+  printBluetooth: async (args: any) => {
+    if (!ThermalPrinterImport || typeof ThermalPrinterImport.printBluetooth !== 'function') {
+      throw new Error('ThermalPrinter module is not available on this device/platform');
+    }
+    return ThermalPrinterImport.printBluetooth(args);
+  }
+};
+
 import { API_URL } from '../constants/Config';
 import { useAuthStore } from '../stores/authStore';
 
@@ -53,7 +70,7 @@ export default class CashDrawerService {
           },
           body: JSON.stringify({
             printerType: 1, // Cashier Printer
-            content: "G3AAGRk=" // Base64 encoding of ESC p 0 25 25 (\x1B\x70\x00\x19\x19)
+            content: "EBQBAAU=" // DLE DC4 1 0 5 = real-time cash drawer open, no paper advance
           })
         });
         const resData = await response.json();

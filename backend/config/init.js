@@ -502,6 +502,14 @@ async function initDB(pool) {
       END
     `);
 
+    // Upgrade: Add start_date column for business day alignment
+    await runQuery("Upgrade CustomerCreditTransactions - Add start_date", `
+      IF COL_LENGTH('dbo.CustomerCreditTransactions', 'start_date') IS NULL
+      BEGIN
+          ALTER TABLE [dbo].[CustomerCreditTransactions] ADD [start_date] DATE NULL
+      END
+    `);
+
     await runQuery("Index - CustomerCreditTransactions MemberId", `
       IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CreditTrans_MemberId' AND object_id = OBJECT_ID('CustomerCreditTransactions'))
       BEGIN

@@ -6,24 +6,7 @@ router.use(authenticateToken);
 const { poolPromise } = require("../config/db");
 
 router.use(async (req, res, next) => {
-  try {
-    const pool = await poolPromise;
-    const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
-    if (activeDayRes.recordset.length > 0) {
-      const activeStartDate = activeDayRes.recordset[0].StartDate;
-      const formattedStartDate = activeStartDate instanceof Date 
-        ? activeStartDate.toISOString().split("T")[0] 
-        : activeStartDate;
-      
-      if (formattedStartDate) {
-        req.query.startDate = formattedStartDate;
-        req.query.endDate = formattedStartDate;
-        req.query.date = formattedStartDate;
-      }
-    }
-  } catch (err) {
-    console.error("Error in sales report active date middleware:", err);
-  }
+  // Pass through query params untouched from client
   next();
 });
 
@@ -42,16 +25,15 @@ const generateRandomBillId = () => {
 };
 
 const normalizeReportPayModeSql = (columnName = "sts.PayMode", settlementIdColumn = "sh.SettlementID") => {
-  const resolvedPayMode = `COALESCE(${columnName}, (
-    SELECT TOP 1 pm2.PayMode 
+  const resolvedPayMode = `COALESCE((
+    SELECT TOP 1 LTRIM(RTRIM(pd2.Remarks))
     FROM (
-      SELECT Paymode, RestaurantBillId FROM PaymentDetailCur
+      SELECT Remarks, RestaurantBillId FROM PaymentDetailCur WHERE Remarks IS NOT NULL AND LTRIM(RTRIM(Remarks)) <> ''
       UNION ALL
-      SELECT Paymode, RestaurantBillId FROM PaymentDetail
-    ) pd2 
-    JOIN Paymode pm2 ON pd2.Paymode = pm2.Position 
+      SELECT Remarks, RestaurantBillId FROM PaymentDetail WHERE Remarks IS NOT NULL AND LTRIM(RTRIM(Remarks)) <> ''
+    ) pd2
     WHERE pd2.RestaurantBillId = ${settlementIdColumn}
-  ))`;
+  ), ${columnName})`;
 
   const rawSql = `
     UPPER(ISNULL(
@@ -62,9 +44,9 @@ const normalizeReportPayModeSql = (columnName = "sts.PayMode", settlementIdColum
           OR CAST(pm.Position AS NVARCHAR(10)) = LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))
       ),
       CASE
+        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('YEAHPAY PAYNOW', '7') OR UPPER(${resolvedPayMode}) LIKE '%YEAHPAY%PAYNOW%' THEN 'YEAHPAY PAYNOW'
+        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('YEAHPAY CARD', '8') OR UPPER(${resolvedPayMode}) LIKE '%YEAHPAY%CARD%' THEN 'YEAHPAY CARD'
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('CAS', 'CASH', '', '1') THEN 'CASH'
-        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('YEAHPAY PAYNOW', '7') THEN 'YEAHPAY PAYNOW'
-        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('YEAHPAY CARD', '8') THEN 'YEAHPAY CARD'
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('CARD', 'VISA', 'MASTER', 'MASTERCARD', 'AMEX', 'DINERS') THEN 'CARD'
         WHEN (UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('PAYNOW', '3') OR UPPER(${resolvedPayMode}) LIKE '%PAYNOW%') AND UPPER(${resolvedPayMode}) NOT LIKE '%YEAHPAY%' THEN 'PAYNOW'
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('GRAB', '10') OR UPPER(${resolvedPayMode}) LIKE '%GRAB%' THEN 'GRAB'
@@ -107,13 +89,15 @@ const resolveBusinessDateColumn = (col) => {
   const cleanCol = String(col).trim();
   if (cleanCol.includes("LastSettlementDate")) {
     const prefix = cleanCol.includes(".") ? cleanCol.split(".")[0] + "." : "";
-    return `${prefix}start_date`;
+    return `COALESCE(${prefix}start_date, ${prefix}LastSettlementDate)`;
   }
   if (cleanCol.includes("ptd.CreatedDate") || cleanCol.includes("ptd.CreatedOn")) {
-    return `ptd.CreatedDate`;
+    const prefix = cleanCol.includes(".") ? cleanCol.split(".")[0] + "." : "";
+    return `COALESCE(${prefix}start_date, ${prefix}CreatedDate, ${prefix}CreatedOn)`;
   }
-  if (cleanCol === "InvoiceDate") {
-    return `start_date`;
+  if (cleanCol.includes("InvoiceDate")) {
+    const prefix = cleanCol.includes(".") ? cleanCol.split(".")[0] + "." : "";
+    return `COALESCE(${prefix}start_date, ${prefix}InvoiceDate)`;
   }
   return cleanCol;
 };
@@ -170,8 +154,8 @@ const normalizePayMode = (paymentMethod = "CASH") => {
   if (raw === "CASH" || raw === "CAS") return "CASH";
 
   // YeahPay terminal modes — MUST be exact; never fall through to generic CARD/PAYNOW
-  if (raw === "YEAHPAY PAYNOW") return "Yeahpay Paynow";
-  if (raw === "YEAHPAY CARD")   return "Yeahpay Card";
+  if (raw === "YEAHPAY PAYNOW" || raw.includes("YEAHPAY PAYNOW")) return "YEAHPAY PAYNOW";
+  if (raw === "YEAHPAY CARD"   || raw.includes("YEAHPAY CARD"))   return "YEAHPAY CARD";
 
   // Standard payment modes — exact matches
   if (raw === "CARD" || raw === "VISA" || raw === "MASTER" || raw === "MASTERCARD" || raw === "AMEX" || raw === "DINERS") return "CARD";
@@ -302,7 +286,11 @@ router.get("/all", async (req, res) => {
              sh.GuestName as GuestName,
              sh.Pax as Pax
            FROM SettlementHeader sh
-           LEFT JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
+           LEFT JOIN (
+             SELECT SettlementID, LTRIM(RTRIM(PayMode)) AS PayMode, AVG(SysAmount) AS SysAmount, AVG(ManualAmount) AS ManualAmount, MAX(ReceiptCount) AS ReceiptCount
+             FROM SettlementTotalSales
+             GROUP BY SettlementID, LTRIM(RTRIM(PayMode))
+           ) sts ON sh.SettlementID = sts.SettlementID
            LEFT JOIN RestaurantInvoice ri ON sh.SettlementID = ri.RestaurantBillId
            LEFT JOIN CustomerCreditTransactions cct_sale ON sh.SettlementID = cct_sale.SettlementId AND cct_sale.TransactionType = 'CREDIT_SALE'
            LEFT JOIN MemberMaster mm ON sh.MemberId = mm.MemberId
@@ -398,7 +386,11 @@ router.get("/all", async (req, res) => {
              sh.GuestName as GuestName,
              sh.Pax as Pax
            FROM SettlementHeader sh
-           LEFT JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
+           LEFT JOIN (
+             SELECT SettlementID, LTRIM(RTRIM(PayMode)) AS PayMode, AVG(SysAmount) AS SysAmount, AVG(ManualAmount) AS ManualAmount, MAX(ReceiptCount) AS ReceiptCount
+             FROM SettlementTotalSales
+             GROUP BY SettlementID, LTRIM(RTRIM(PayMode))
+           ) sts ON sh.SettlementID = sts.SettlementID
            LEFT JOIN RestaurantInvoice ri ON sh.SettlementID = ri.RestaurantBillId
            LEFT JOIN CustomerCreditTransactions cct_sale ON sh.SettlementID = cct_sale.SettlementId AND cct_sale.TransactionType = 'CREDIT_SALE'
            LEFT JOIN MemberMaster mm ON sh.MemberId = mm.MemberId
@@ -590,10 +582,14 @@ router.get("/settlement/:id", async (req, res) => {
         .query("SELECT * FROM SettlementItemDetail WHERE SettlementID = @SettlementID");
       items = itemsResult.recordset || [];
 
-      // Fetch the payments
+      // Fetch the payments (deduplicated by PaymentId to prevent double-counting across Cur and Master tables)
       const paymentsResult = await pool.request()
         .input("SettlementID", sql.UniqueIdentifier, settlementId)
-        .query("SELECT * FROM PaymentDetailCur WHERE SettlementId = @SettlementID UNION SELECT * FROM PaymentDetail WHERE SettlementId = @SettlementID");
+        .query(`
+          SELECT * FROM PaymentDetailCur WHERE RestaurantBillId = @SettlementID OR SettlementId = @SettlementID 
+          UNION 
+          SELECT * FROM PaymentDetail WHERE RestaurantBillId = @SettlementID OR SettlementId = @SettlementID
+        `);
       payments = paymentsResult.recordset || [];
     } else {
       // Check CustomerCreditTransactions for LEDGER
@@ -773,12 +769,16 @@ router.get("/detail/:id/payments", async (req, res) => {
         const fallbackResult = await pool.request()
           .input("Id", sql.UniqueIdentifier, cleanId)
           .query(`
-            SELECT 
+            SELECT DISTINCT TOP 1
               sh.SettlementID AS ReferenceId,
               sh.SysAmount AS Amount,
               sts.PayMode
             FROM SettlementHeader sh
-            LEFT JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
+            LEFT JOIN (
+              SELECT SettlementID, LTRIM(RTRIM(PayMode)) AS PayMode, AVG(SysAmount) AS SysAmount, AVG(ManualAmount) AS ManualAmount, MAX(ReceiptCount) AS ReceiptCount
+              FROM SettlementTotalSales
+              GROUP BY SettlementID, LTRIM(RTRIM(PayMode))
+            ) sts ON sh.SettlementID = sts.SettlementID
             WHERE sh.SettlementID = @Id
           `);
         if (fallbackResult.recordset.length > 0) {
@@ -850,7 +850,8 @@ router.get("/category", async (req, res) => {
     const date = req.query.date;
     const { startDate, endDate } = req.query;
     const appDateWhereSql = await getReportDateWhereSql(filter, "sh.LastSettlementDate", date, startDate, endDate);
-    const legacyDateWhereSql = await getReportDateWhereSql(filter, "InvoiceDate", date, startDate, endDate);
+    const legacyDateWhereSql = await getReportDateWhereSql(filter, "ri.InvoiceDate", date, startDate, endDate);
+    const roDateWhereSql = await getReportDateWhereSql(filter, "ro.start_date", date, startDate, endDate);
     console.log(`[REPORT API] type=category filter=${filter} date=${date || 'today'} range=${startDate || ''}..${endDate || ''}`);
 
     const result = await pool.request().query(`
@@ -895,7 +896,7 @@ router.get("/category", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
-          WHERE ${legacyDateWhereSql.replace(/start_date/g, 'ri.start_date')}
+          WHERE ${legacyDateWhereSql}
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
               WHERE sh_dup.SettlementID = ri.RestaurantBillId
@@ -914,7 +915,7 @@ router.get("/category", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
-          WHERE ${appDateWhereSql.replace(/sh\.start_date/g, 'ro.start_date')}
+          WHERE ${roDateWhereSql}
             AND ISNULL(ro.StatusCode, 0) = 3
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
@@ -951,7 +952,8 @@ router.get("/dish", async (req, res) => {
     const date = req.query.date;
     const { startDate, endDate } = req.query;
     const appDateWhereSql = await getReportDateWhereSql(filter, "sh.LastSettlementDate", date, startDate, endDate);
-    const legacyDateWhereSql = await getReportDateWhereSql(filter, "InvoiceDate", date, startDate, endDate);
+    const legacyDateWhereSql = await getReportDateWhereSql(filter, "ri.InvoiceDate", date, startDate, endDate);
+    const roDateWhereSql = await getReportDateWhereSql(filter, "ro.start_date", date, startDate, endDate);
     console.log(`[REPORT API] type=dish filter=${filter} date=${date || 'today'} range=${startDate || ''}..${endDate || ''}`);
 
     // Fetch takeaway charges configuration to avoid SQL subqueries within aggregation functions
@@ -1012,7 +1014,7 @@ router.get("/dish", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
-          WHERE ${legacyDateWhereSql.replace(/start_date/g, 'ri.start_date')}
+          WHERE ${legacyDateWhereSql}
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
               WHERE sh_dup.SettlementID = ri.RestaurantBillId
@@ -1039,7 +1041,7 @@ router.get("/dish", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
-          WHERE ${appDateWhereSql.replace(/sh\.start_date/g, 'ro.start_date')}
+          WHERE ${roDateWhereSql}
             AND ISNULL(ro.StatusCode, 0) = 3
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
@@ -1560,23 +1562,35 @@ router.post("/save", async (req, res) => {
       }
     }
 
-    // 2. Fallback check for non-split payments using orderId
+    // 2. Fast Fallback check for non-split payments using orderId
     if (orderId && !isSplitParsed) {
-      const existingCheck = await pool.request()
-        .input("OrderId", sql.NVarChar(100), orderId)
-        .query(`
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+      const reqCheck = pool.request().input("OrderId", sql.NVarChar(100), orderId);
+      let queryStr = "";
+      if (isGuid) {
+        reqCheck.input("OrderGuid", sql.UniqueIdentifier, orderId);
+        queryStr = `
           SELECT TOP 1 sh.SettlementID, sh.BillNo 
-          FROM SettlementHeader sh
-          LEFT JOIN RestaurantInvoice ri ON sh.SettlementID = ri.RestaurantBillId
-          WHERE (sh.BillNo = @OrderId 
-             OR (TRY_CAST(@OrderId AS UNIQUEIDENTIFIER) IS NOT NULL AND ri.OrderId = TRY_CAST(@OrderId AS UNIQUEIDENTIFIER))
-             OR ri.OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrder WHERE OrderNumber = @OrderId))
+          FROM SettlementHeader sh WITH (NOLOCK)
+          LEFT JOIN RestaurantInvoice ri WITH (NOLOCK) ON sh.SettlementID = ri.RestaurantBillId
+          WHERE (sh.BillNo = @OrderId OR ri.OrderId = @OrderGuid)
             AND NOT EXISTS (
-              SELECT 1 FROM RestaurantOrderCur roc 
-              WHERE (roc.OrderNumber = @OrderId OR roc.OrderId = ri.OrderId)
-                AND roc.isOrderClosed = 0
+              SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+              WHERE roc.OrderId = @OrderGuid AND roc.isOrderClosed = 0
             )
-        `);
+        `;
+      } else {
+        queryStr = `
+          SELECT TOP 1 sh.SettlementID, sh.BillNo 
+          FROM SettlementHeader sh WITH (NOLOCK)
+          WHERE sh.BillNo = @OrderId
+            AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+              WHERE roc.OrderNumber = @OrderId AND roc.isOrderClosed = 0
+            )
+        `;
+      }
+      const existingCheck = await reqCheck.query(queryStr);
       if (existingCheck.recordset.length > 0) {
         const existing = existingCheck.recordset[0];
         console.log(`[SAVE SALE] Duplicate check matched by OrderId! Settlement already exists for order ${orderId}. BillNo: ${existing.BillNo}`);
@@ -1603,7 +1617,7 @@ router.post("/save", async (req, res) => {
       }
       let billNo = ""; // Will be set to displayOrderId later
 
-      const paymodesRes = await transaction.request().query("SELECT Position, PayMode FROM [dbo].[Paymode] WHERE Active = 1");
+      const paymodesRes = await transaction.request().query("SELECT Position, PayMode, Description FROM [dbo].[Paymode] WHERE Active = 1");
       activePaymodes = paymodesRes.recordset || [];
 
       const activeOrg = await getActiveOrganization();
@@ -1956,14 +1970,14 @@ router.post("/save", async (req, res) => {
           if (dishNames.length > 0) {
             dishNames.forEach((name, i) => {
               req.input(`name_${i}`, sql.NVarChar(255), name);
-              whereClauses.push(`LTRIM(RTRIM(LOWER(d.Name))) = LTRIM(RTRIM(LOWER(@name_${i})))`);
+              whereClauses.push(`d.Name = @name_${i}`);
             });
           }
           const queryStr = `
             SELECT d.DishId, d.Name, d.DishGroupId, dg.CategoryId, cm.CategoryName, dg.DishGroupName, ISNULL(d.IsSplitDish, 0) as IsSplitDish
             FROM DishMaster d WITH (NOLOCK)
-            LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
-            LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+            LEFT JOIN DishGroupMaster dg WITH (NOLOCK) ON d.DishGroupId = dg.DishGroupId
+            LEFT JOIN CategoryMaster cm WITH (NOLOCK) ON dg.CategoryId = cm.CategoryId
             WHERE ${whereClauses.join(" OR ")}
           `;
           const metaRes = await req.query(queryStr);
@@ -2030,36 +2044,40 @@ router.post("/save", async (req, res) => {
             .input("orderNo", sql.NVarChar(100), displayOrderId)
             .query(`
               SELECT d.OrderDetailId, d.DishId, d.DishName, d.SongName, d.Quantity, d.PricePerUnit, dish.DishGroupId, dg.CategoryId, cm.CategoryName, dg.DishGroupName
-              FROM RestaurantOrderDetailCur d
-              JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId
-              LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
-              LEFT JOIN DishGroupMaster dg ON dish.DishGroupId = dg.DishGroupId
-              LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+              FROM RestaurantOrderDetailCur d WITH (NOLOCK)
+              JOIN RestaurantOrderCur h WITH (NOLOCK) ON d.OrderId = h.OrderId
+              LEFT JOIN DishMaster dish WITH (NOLOCK) ON d.DishId = dish.DishId
+              LEFT JOIN DishGroupMaster dg WITH (NOLOCK) ON dish.DishGroupId = dg.DishGroupId
+              LEFT JOIN CategoryMaster cm WITH (NOLOCK) ON dg.CategoryId = cm.CategoryId
               WHERE h.OrderNumber = @orderNo AND d.StatusCode = 0
             `);
           
-          for (const v of dbVoids.recordset) {
-            await transaction.request()
-              .input("sid", sql.UniqueIdentifier, settlementId)
-              .input("dishId", sql.UniqueIdentifier, v.DishId)
-              .input("dishName", sql.NVarChar(255), v.DishName)
-              .input("songName", sql.NVarChar(255), v.SongName || "")
-              .input("qty", sql.Decimal(18, 3), v.Quantity)
-              .input("price", sql.Decimal(18, 2), v.PricePerUnit)
-              .input("catId", sql.UniqueIdentifier, v.CategoryId)
-              .input("catName", sql.NVarChar(255), v.CategoryName)
-              .input("groupName", sql.NVarChar(255), v.DishGroupName)
-              .input("OrderDetailId", sql.UniqueIdentifier, toGuidOrNull(v.OrderDetailId))
-              .input("startDate", sql.Date, formattedStartDate)
-              .query(`
+          if (dbVoids.recordset.length > 0) {
+            const voidReq = transaction.request();
+            voidReq.input("sid", sql.UniqueIdentifier, settlementId);
+            voidReq.input("startDate", sql.Date, formattedStartDate);
+            
+            const voidQueries = dbVoids.recordset.map((v, idx) => {
+              voidReq.input(`dishId_${idx}`, sql.UniqueIdentifier, v.DishId);
+              voidReq.input(`dishName_${idx}`, sql.NVarChar(255), v.DishName);
+              voidReq.input(`songName_${idx}`, sql.NVarChar(255), v.SongName || "");
+              voidReq.input(`qty_${idx}`, sql.Decimal(18, 3), v.Quantity);
+              voidReq.input(`price_${idx}`, sql.Decimal(18, 2), v.PricePerUnit);
+              voidReq.input(`catId_${idx}`, sql.UniqueIdentifier, v.CategoryId);
+              voidReq.input(`catName_${idx}`, sql.NVarChar(255), v.CategoryName);
+              voidReq.input(`groupName_${idx}`, sql.NVarChar(255), v.DishGroupName);
+              voidReq.input(`OrderDetailId_${idx}`, sql.UniqueIdentifier, toGuidOrNull(v.OrderDetailId));
+              return `
                 INSERT INTO SettlementItemDetail (
                   SettlementID, DishId, DishName, SongName, Qty, Price, Status, OrderDateTime,
                   CategoryId, CategoryName, SubCategoryName, OrderDetailId, start_date
                 ) VALUES (
-                  @sid, @dishId, @dishName, @songName, @qty, @price, 'VOIDED', GETDATE(),
-                  @catId, @catName, @groupName, @OrderDetailId, @startDate
-                )
-              `);
+                  @sid, @dishId_${idx}, @dishName_${idx}, @songName_${idx}, @qty_${idx}, @price_${idx}, 'VOIDED', GETDATE(),
+                  @catId_${idx}, @catName_${idx}, @groupName_${idx}, @OrderDetailId_${idx}, @startDate
+                );
+              `;
+            });
+            await voidReq.query(voidQueries.join("\n"));
           }
           console.log(`[SAVE SALE] Captured ${dbVoids.recordset.length} voided items for reporting.`);
         } catch (voidErr) {
@@ -2113,9 +2131,10 @@ router.post("/save", async (req, res) => {
                 .input("OutstandingAmount", sql.Decimal(18, 2), finalCreditAmount)
                 .input("Status", sql.NVarChar(20), finalCreditAmount > 0 ? 'OPEN' : 'PAID')
                 .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
+                .input("startDate", sql.Date, formattedStartDate)
                 .query(`
-                  INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
-                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Split member credit purchase', @CreatedBy, 'MEMBER')
+                  INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType, start_date)
+                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Split member credit purchase', @CreatedBy, 'MEMBER', @startDate)
                 `);
               console.log(`[SAVE SALE DIAGNOSTIC] Balance update success (MEMBER): memberId=${memberId}, oldBalance=${oldBalance}, newBalance=${newBalance}`);
             } else if (customerType === "CREDIT") {
@@ -2133,9 +2152,10 @@ router.post("/save", async (req, res) => {
                 .input("OutstandingAmount", sql.Decimal(18, 2), totalCreditAndMember)
                 .input("Status", sql.NVarChar(20), 'OPEN')
                 .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
+                .input("startDate", sql.Date, formattedStartDate)
                 .query(`
-                  INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
-                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Split credit purchase', @CreatedBy, 'CREDIT')
+                  INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType, start_date)
+                  VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @BillAmount, @PaidAmount, @OutstandingAmount, @Status, 'Split credit purchase', @CreatedBy, 'CREDIT', @startDate)
                 `);
               console.log(`[SAVE SALE DIAGNOSTIC] Balance update success (CREDIT): memberId=${memberId}, oldBalance=${oldBalance}, newBalance=${newBalance}`);
             }
@@ -2148,9 +2168,12 @@ router.post("/save", async (req, res) => {
         console.log(`[SAVE SALE] Step 5: Inserting Payment Data (PayMode: ${normalizedPayMode})...`);
         console.log(`[TRACE] [${Date.now()}] [SETTLEMENT_SYNC] Order: ${displayOrderId} | Settlement: ${settlementId} | Amount: ${totalAmount} | Mode: ${normalizedPayMode}`);
 
-        const paymodePosition = activePaymodes.find(x => 
-          String(x.PayMode).trim().toUpperCase() === normalizedPayMode.toUpperCase()
-        )?.Position || 1;
+        const normUpper = normalizedPayMode.toUpperCase().trim();
+        const paymodePosition = activePaymodes.find(x => {
+          const pm = String(x.PayMode || "").trim().toUpperCase();
+          const desc = String(x.Description || "").trim().toUpperCase();
+          return pm === normUpper || desc === normUpper || (normUpper.includes("YEAHPAY") && (pm.includes("YEAHPAY") || desc.includes("YEAHPAY")));
+        })?.Position || 1;
 
         try {
           const payResult = await transaction.request()
@@ -2183,6 +2206,13 @@ router.post("/save", async (req, res) => {
                 @PaymentId, @RestaurantBillId, @RestaurantBillId, @RestaurantBillId, @PaymentOrderId, @BilledFor, GETDATE(), 
                 @PaymentType, @Paymode, @Amount, @ReferenceNumber, @Remarks, @BusinessUnitId, 
                 @CreatedBy, GETDATE(), @ModifiedBy, GETDATE(), 1, @startDate
+              );
+
+              -- 3. PaymentTransactionDetails (for /detail/:id/payments breakdown)
+              INSERT INTO [dbo].[PaymentTransactionDetails] (
+                PaymentTransactionId, ReferenceType, ReferenceId, PayModeId, Amount, ReferenceNo, CreatedBy, CreatedDate
+              ) VALUES (
+                NEWID(), 'BILL', @RestaurantBillId, @Paymode, @Amount, @ReferenceNumber, @CreatedBy, GETDATE()
               );
             `);
           console.log(`[SAVE SALE] PaymentDetail Sync Success. Rows affected: ${payResult.rowsAffected.join(', ')}`);
@@ -2217,9 +2247,10 @@ router.post("/save", async (req, res) => {
               .input("BillNo", sql.NVarChar(50), finalBillNo)
               .input("Amount", sql.Decimal(18, 2), creditAmount)
               .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
+              .input("startDate", sql.Date, formattedStartDate)
               .query(`
-                INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
-                VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @Amount, 0, @Amount, 'OPEN', 'Member credit purchase', @CreatedBy, 'MEMBER')
+                INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType, start_date)
+                VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @Amount, 0, @Amount, 'OPEN', 'Member credit purchase', @CreatedBy, 'MEMBER', @startDate)
               `);
             console.log(`[SAVE SALE DIAGNOSTIC] Balance update success (MEMBER): memberId=${memberId}, oldBalance=${oldBalance}, newBalance=${newBalance}`);
           } else if (customerType === "CREDIT") {
@@ -2234,9 +2265,10 @@ router.post("/save", async (req, res) => {
               .input("BillNo", sql.NVarChar(50), finalBillNo)
               .input("Amount", sql.Decimal(18, 2), creditAmount)
               .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(cashierId))
+              .input("startDate", sql.Date, formattedStartDate)
               .query(`
-                INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType)
-                VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @Amount, 0, @Amount, 'OPEN', 'Credit purchase', @CreatedBy, 'CREDIT')
+                INSERT INTO CustomerCreditTransactions (MemberId, SettlementId, BillNo, TransactionType, BillAmount, PaidAmount, OutstandingAmount, Status, Remarks, CreatedBy, CustomerType, start_date)
+                VALUES (@MemberId, @SettlementId, @BillNo, 'CREDIT_SALE', @Amount, 0, @Amount, 'OPEN', 'Credit purchase', @CreatedBy, 'CREDIT', @startDate)
               `);
             console.log(`[SAVE SALE DIAGNOSTIC] Balance update success (CREDIT): memberId=${memberId}, oldBalance=${oldBalance}, newBalance=${newBalance}`);
           }
@@ -2627,8 +2659,8 @@ router.post("/save", async (req, res) => {
             .input("Section", sql.NVarChar(100), section || null)
             .input("CreatedBy", sql.UniqueIdentifier, sanitizeGuid(cashierId))
             .query(`
-              INSERT INTO servermaster (SER_ID, SER_NAME, TableNo, OrderId, Section, CreatedBy, CreatedDate, ModifiedBy, ModifiedDate)
-              VALUES (@SER_ID, @SER_NAME, @TableNo, @OrderId, @Section, @CreatedBy, GETDATE(), @CreatedBy, GETDATE())
+              INSERT INTO servermaster (SER_ID, SER_NAME, TableNo, OrderId, Section, CreatedBy, CreatedDate)
+              VALUES (@SER_ID, @SER_NAME, @TableNo, @OrderId, @Section, @CreatedBy, GETDATE())
             `);
         } catch (serverErr) {
           console.error("⚠️ [SAVE SALE] servermaster insert failed:", serverErr.message);
@@ -2728,7 +2760,7 @@ router.post("/save", async (req, res) => {
          await rewardPool.request()
            .input("NewCredit", sql.Decimal(18, 4), newCredit)
            .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(rewardMemberId))
-           .query(`UPDATE MemberMaster SET RewardCredit = @NewCredit, ModifiedDate = GETDATE() WHERE MemberId = @MemberId`);
+           .query(`UPDATE MemberMaster SET RewardCredit = @NewCredit WHERE MemberId = @MemberId`);
  
          // 5. Log the redemption to RewardPointDetails (if applicable)
          if (deductAmount > 0) {

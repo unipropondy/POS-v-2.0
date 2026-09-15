@@ -150,10 +150,14 @@ export default function PaymentSuccess() {
       try {
         const { clearCart } = await import("../stores/cartStore");
         const { getOrderContext, clearOrderContext } = await import("../stores/orderContextStore");
+        const { useTableNavigationStore } = await import("../stores/tableNavigationStore");
+        const { useTerminalPaymentStore } = await import("../stores/terminalPaymentStore");
         const context = getOrderContext();
-        if (context && context.tableId) {
-          const { useTableNavigationStore } = await import("../stores/tableNavigationStore");
-          useTableNavigationStore.getState().clearTableLastScreen(context.tableId);
+        const targetTableId = (params.tableId as string) || (context?.tableId ? String(context.tableId) : undefined);
+        if (targetTableId) {
+          useTableNavigationStore.getState().clearTableLastScreen(targetTableId);
+          useTableNavigationStore.getState().clearSelectedMethod(targetTableId);
+          useTerminalPaymentStore.getState().clearSession(targetTableId);
         }
         clearCart();
         clearOrderContext();
@@ -162,7 +166,7 @@ export default function PaymentSuccess() {
       }
     };
     cleanup();
-  }, [params.isSplit]);
+  }, [params.isSplit, params.tableId]);
 
   const handleDone = () => {
     CustomerDisplaySync.isSuccessActive = false;

@@ -585,6 +585,7 @@ export default function SettlementScreen() {
 
   const [totalSales, setTotalSales] = useState<any>({});
   const [payments, setPayments] = useState<any[]>([]);
+  const [creditOutstanding, setCreditOutstanding] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
 
@@ -863,7 +864,14 @@ const fetchDayHistory = async () => {
       const dayLogRes = await API.get(`/settlement/day-log?date=${dateStr}`).catch(() => ({ data: null }));
 
       setTotalSales(totalRes.data || {});
-      setPayments(payRes.data || []);
+      const payData = payRes.data;
+      if (Array.isArray(payData)) {
+        setPayments(payData);
+        setCreditOutstanding([]);
+      } else {
+        setPayments(payData?.payments || []);
+        setCreditOutstanding(payData?.creditOutstanding || []);
+      }
       setTransactions(transRes.data || []);
       setSales(salesRes.data || []);
       setCashOutEntries(cashOutRes.data?.data || []);
@@ -933,9 +941,7 @@ const fetchDayHistory = async () => {
     + (parseFloat(totalSales.RoundedBy) || 0)
     + (parseFloat(totalSales.Tips) || 0);
 
-  const displayGST = netSales > 0 
-    ? parseFloat((netSales - baseCalculatedNetWithoutTax).toFixed(2))
-    : (parseFloat(totalSales.TotalTax) || 0);
+  const displayGST = parseFloat((totalSales.TotalTax || 0).toFixed(2));
 
   const displayRoundOff = parseFloat((totalSales.RoundedBy || 0).toFixed(2));
   const displayOpeningAmount = totalOpening > 0 ? totalOpening : (parseFloat(openingCash) || 0);
@@ -960,26 +966,26 @@ const fetchDayHistory = async () => {
     })
     .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
 
-  const cashBoxEntrySales = 0;
-
   const salesCash = normalCashSales;
 
-  const dbHasCashSalesInCashIn = cashInEntries.some(entry => entry.Reason === 'Cash Sale');
+  const ledgerCashIn = cashInEntries
+    .filter(ci => ci.CashInType === 'LEDGER' || ci.Reason === 'Ledger Payment' || ci.Reason === 'Credit Settlement')
+    .reduce((sum, ci) => sum + (parseFloat(ci.Amount) || 0), 0);
+
+  const manualCashIn = cashInEntries
+    .filter(ci => ci.CashInType === 'MANUAL' || (!ci.CashInType && ci.Reason !== 'Ledger Payment' && ci.Reason !== 'Credit Settlement' && ci.Reason !== 'Cash Sale'))
+    .reduce((sum, ci) => sum + (parseFloat(ci.Amount) || 0), 0);
 
   const cashInTransactionsSum = transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
   const cashOutTransactionsSum = transactions.filter(t => t.TransactionType === "OUT").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
 
-  const displayManualCashIn = dbHasCashSalesInCashIn
-    ? Math.max(0, totalCashInEntries - salesCash)
-    : totalCashInEntries;
+  const displayManualCashIn = ledgerCashIn + manualCashIn;
 
-  const displayCashInCard = dbHasCashSalesInCashIn
-    ? totalCashInEntries + cashInTransactionsSum
-    : totalCashInEntries + salesCash + cashInTransactionsSum;
+  const displayCashInCard = salesCash + ledgerCashIn + manualCashIn + cashInTransactionsSum;
 
   const displayCashOutCard = totalCashOut + cashOutTransactionsSum;
 
-  const totalCashIn = salesCash + displayOpeningAmount + displayManualCashIn + cashInTransactionsSum;
+  const totalCashIn = salesCash + displayOpeningAmount + ledgerCashIn + manualCashIn + cashInTransactionsSum;
 
   const totalCashOutSum = totalCashOut + cashOutTransactionsSum;
 
@@ -1487,22 +1493,30 @@ const fetchDayHistory = async () => {
       const businessDateStr = isRangeMode
         ? `${selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} - ${selectedEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
         : selectedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const cashInTotalSum = displayManualCashIn + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
+      const cashInTotalSum = totalCashInEntries + transactions.filter(t => t.TransactionType === "IN").reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
 
-      const aggregatedPayments: { PaymodeName: string; Amount: number }[] = [];
-      const tempAgg: Record<string, { PaymodeName: string; Amount: number }> = {};
-      payments.forEach(p => {
-        const rawName = p.PaymodeName || "Unknown";
-        const name = rawName.trim();
-        const key = name.toUpperCase();
-        const amt = parseFloat(p.Amount) || 0;
-        if (tempAgg[key]) {
-          tempAgg[key].Amount += amt;
-        } else {
-          tempAgg[key] = { PaymodeName: name, Amount: amt };
-        }
-      });
-      aggregatedPayments.push(...Object.values(tempAgg));
+      const creditIssuedToday = creditOutstanding.reduce((sum, c) => sum + (parseFloat(c.BilledAmount || c.Amount || 0) || 0), 0);
+      const creditSettledToday = payments
+        .filter(p => {
+          const name = p.PaymodeName?.toUpperCase() || "";
+          return name.includes("LEDGER") || name.includes("CREDIT SETTLEMENT") || name.includes("CREDIT COLLECTED");
+        })
+        .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0) + ledgerCashIn;
+      const creditUnpaidToday = creditOutstanding.reduce((sum, c) => sum + (parseFloat(c.Amount || 0) || 0), 0);
+
+      // Combine direct payment movements, manual cash in entries, and cash-in credit settlements so report matches UI exactly
+      const printPayments = [
+        ...cashInEntries.filter(ci => ci.CashInType === 'MANUAL' || (!ci.CashInType && ci.Reason !== 'Ledger Payment' && ci.Reason !== 'Credit Settlement' && ci.Reason !== 'Cash Sale')).map(ci => ({
+          PaymodeName: ci.Reason || 'Cash In',
+          Amount: parseFloat(ci.Amount) || 0
+        })),
+        ...cashInEntries.filter(ci => ci.CashInType === 'LEDGER' || ci.Reason === 'Ledger Payment' || ci.Reason === 'Credit Settlement').map(ci => ({
+          PaymodeName: 'Credit Settlement - Cash',
+          Amount: parseFloat(ci.Amount) || 0
+        })),
+        ...payments
+      ];
+      const printPaymentsTotal = printPayments.reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0);
 
       // 2. Format HTML aligned to 80mm width with centered print-out look
       const html = `
@@ -1620,10 +1634,10 @@ const fetchDayHistory = async () => {
               </table>
 
               <div class="divider">========================================</div>
-              <div class="section-title">PAYMENT COLLECTION</div>
+              <div class="section-title">PAYMENT MOVEMENTS</div>
               <div class="divider">========================================</div>
               <table>
-                ${aggregatedPayments.map(p => `
+                ${printPayments.map(p => `
                   <tr>
                     <td>${p.PaymodeName}</td>
                     <td class="right">${formatCurrency(p.Amount)}</td>
@@ -1633,8 +1647,26 @@ const fetchDayHistory = async () => {
                   <td colspan="2"><div class="line-divider"></div></td>
                 </tr>
                 <tr class="bold">
-                  <td>TOTAL COLLECTION</td>
-                  <td class="right">${formatCurrency(paymentsTotal + focTotal)}</td>
+                  <td colspan="2" style="padding-top: 4px;">CREDIT ACTIVITY</td>
+                </tr>
+                <tr>
+                  <td style="padding-left: 10px;">Issued Today</td>
+                  <td class="right">${formatCurrency(creditIssuedToday)}</td>
+                </tr>
+                <tr>
+                  <td style="padding-left: 10px;">Settled Today</td>
+                  <td class="right">${formatCurrency(creditSettledToday)}</td>
+                </tr>
+                <tr class="bold">
+                  <td style="padding-left: 10px;">Unpaid Today</td>
+                  <td class="right bold">${formatCurrency(creditUnpaidToday)}</td>
+                </tr>
+                <tr>
+                  <td colspan="2"><div class="line-divider"></div></td>
+                </tr>
+                <tr class="bold">
+                  <td>TOTAL MOVEMENTS</td>
+                  <td class="right">${formatCurrency(printPaymentsTotal)}</td>
                 </tr>
               </table>
 
@@ -1687,7 +1719,7 @@ const fetchDayHistory = async () => {
               </table>
 
               <div class="divider">========================================</div>
-              <div class="center bold" style="font-size: 11px; margin-top: 10px; text-transform: uppercase;">SMART-CAFE BY UNIPROSG</div>
+              <div class="center bold" style="font-size: 11px; margin-top: 10px; text-transform: uppercase;">RESTAURANT POS BY UNIPROSG</div>
               <div class="divider">========================================</div>
             </div>
           </body>
@@ -1733,13 +1765,18 @@ const fetchDayHistory = async () => {
       text += formatTwoCols48("<B>NET SALES:</B>", "<B>" + formatCurrency(netSales) + "</B>\n");
 
       text += "[C]========================================\n";
-      text += "[C]<B>PAYMENT COLLECTION</B>\n";
+      text += "[C]<B>PAYMENT MOVEMENTS</B>\n";
       text += "[C]========================================\n";
-      aggregatedPayments.forEach(p => {
+      printPayments.forEach(p => {
         text += formatTwoCols48(p.PaymodeName + ":", formatCurrency(p.Amount));
       });
       text += "[L]----------------------------------------\n";
-      text += formatTwoCols48("<B>TOTAL COLLECTION:</B>", "<B>" + formatCurrency(paymentsTotal + focTotal) + "</B>\n");
+      text += "[L]<B>CREDIT ACTIVITY</B>\n";
+      text += formatTwoCols48("  Issued Today:", formatCurrency(creditIssuedToday));
+      text += formatTwoCols48("  Settled Today:", formatCurrency(creditSettledToday));
+      text += formatTwoCols48("  <B>Unpaid Today:</B>", "<B>" + formatCurrency(creditUnpaidToday) + "</B>\n");
+      text += "[L]----------------------------------------\n";
+      text += formatTwoCols48("<B>TOTAL MOVEMENTS:</B>", "<B>" + formatCurrency(printPaymentsTotal) + "</B>\n");
 
       text += "[C]========================================\n";
       text += "[C]<B>CASH DRAWER SUMMARY</B>\n";
@@ -1760,7 +1797,7 @@ const fetchDayHistory = async () => {
         text += formatTwoCols48(varianceLabel, (variance >= 0 ? '+' : '') + formatCurrency(variance) + "\n");
       }
       text += "[C]========================================\n";
-      text += "[C]SMART-CAFE BY UNIPROSG\n";
+      text += "[C]RESTAURANT POS BY UNIPROSG\n";
       text += "[C]========================================\n\n\n\n";
 
       if (Platform.OS === 'web') {
@@ -1818,8 +1855,11 @@ const fetchDayHistory = async () => {
           const ipReachable = await checkIpReachable(cashierIp.trim());
 
           if (ipReachable) {
-            const ThermalPrinter = require("react-native-thermal-printer").default;
-            await ThermalPrinter.printTcp({
+            const ThermalPrinterModule = require("react-native-thermal-printer").default;
+            if (!ThermalPrinterModule || typeof ThermalPrinterModule.printTcp !== "function") {
+              throw new Error("ThermalPrinter module is not available on this device/platform");
+            }
+            await ThermalPrinterModule.printTcp({
               ip: cashierIp.trim(),
               port: 9100,
               payload: text,
@@ -1877,13 +1917,18 @@ const fetchDayHistory = async () => {
             await SunmiModule.printText("\n");
 
             await SunmiModule.printText("================================\n");
-            await SunmiModule.printText("       PAYMENT COLLECTION\n");
+            await SunmiModule.printText("       PAYMENT MOVEMENTS\n");
             await SunmiModule.printText("================================\n");
-            for (const p of aggregatedPayments) {
+            for (const p of printPayments) {
               await SunmiModule.printText(formatTwoCols32(p.PaymodeName + ":", formatCurrency(p.Amount)));
             }
             await SunmiModule.printText("--------------------------------\n");
-            await SunmiModule.printText(formatTwoCols32("TOTAL COLLECTION:", formatCurrency(paymentsTotal + focTotal)));
+            await SunmiModule.printText("CREDIT ACTIVITY\n");
+            await SunmiModule.printText(formatTwoCols32("  Issued Today:", formatCurrency(creditIssuedToday)));
+            await SunmiModule.printText(formatTwoCols32("  Settled Today:", formatCurrency(creditSettledToday)));
+            await SunmiModule.printText(formatTwoCols32("  Unpaid Today:", formatCurrency(creditUnpaidToday)));
+            await SunmiModule.printText("--------------------------------\n");
+            await SunmiModule.printText(formatTwoCols32("TOTAL MOVEMENTS:", formatCurrency(printPaymentsTotal)));
             await SunmiModule.printText("\n");
 
             await SunmiModule.printText("================================\n");
@@ -1899,7 +1944,7 @@ const fetchDayHistory = async () => {
             await SunmiModule.printText(formatTwoCols32("EXPECTED CASH:", formatCurrency(totalCashIn - totalCashOutSum)));
             if (SunmiModule.setFontSize) await SunmiModule.setFontSize(24);
             await SunmiModule.printText("================================\n");
-            await SunmiModule.printText("     SMART-CAFE BY UNIPROSG\n");
+            await SunmiModule.printText("    RESTAURANT POS BY UNIPROSG\n");
             await SunmiModule.printText("================================\n");
             await SunmiModule.lineWrap(3);
             await SunmiModule.cutPaper();
@@ -2345,7 +2390,7 @@ const fetchDayHistory = async () => {
                   )}
                 </View>
                 <View style={styles.tableHeader}>
-                  <Text style={[styles.tableHeaderText, { flex: 2 }]}>Paymode</Text>
+                  <Text style={[styles.tableHeaderText, { flex: 2 }]}>PAYMENT MOVEMENTS</Text>
                   <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Cash In</Text>
                   <Text style={[styles.tableHeaderText, { flex: 1, textAlign: 'right' }]}>Cash Out</Text>
                 </View>
@@ -2361,7 +2406,8 @@ const fetchDayHistory = async () => {
                       </Text>
                     </View>
                   )}
-                  {cashInEntries.filter(ci => ci.Reason !== 'Cash Sale').map((ci, i) => (
+                  {/* User-created Cash In entries (editable) */}
+                  {cashInEntries.filter(ci => ci.CashInType === 'MANUAL' || (!ci.CashInType && ci.Reason !== 'Ledger Payment' && ci.Reason !== 'Credit Settlement' && ci.Reason !== 'Cash Sale')).map((ci, i) => (
                     <TouchableOpacity
                       key={`ci-${i}`}
                       style={[styles.tableRow, { alignItems: 'center' }]}
@@ -2377,7 +2423,7 @@ const fetchDayHistory = async () => {
                     >
                       <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={styles.tableCellText}>{ci.Reason || 'Cash In'}</Text>
-                        <Ionicons name="create-outline" size={14} color={Theme.textPrimary} style={{ marginLeft: 6 }} />
+                        <Ionicons name="create-outline" size={13} color={Theme.textSecondary} style={{ marginLeft: 6, opacity: 0.8 }} />
                         {!!ci.AttachmentUrl && (
                           <TouchableOpacity 
                             onPress={(e) => {
@@ -2385,13 +2431,10 @@ const fetchDayHistory = async () => {
                               setViewerImageUrl(ci.AttachmentUrl);
                             }}
                             style={{
-                              marginLeft: 8,
-                              width: 24,
-                              height: 24,
+                              marginLeft: 6,
+                              padding: 4,
                               borderRadius: 6,
-                              borderWidth: 1.5,
-                              borderColor: Theme.success,
-                              backgroundColor: Theme.success + "15",
+                              backgroundColor: "rgba(16, 185, 129, 0.12)",
                               justifyContent: 'center',
                               alignItems: 'center'
                             }}
@@ -2407,6 +2450,38 @@ const fetchDayHistory = async () => {
                         0.00
                       </Text>
                     </TouchableOpacity>
+                  ))}
+                  {/* Auto-generated system rows: Credit Settlement — READ ONLY */}
+                  {cashInEntries.filter(ci => ci.CashInType === 'LEDGER' || ci.Reason === 'Ledger Payment' || ci.Reason === 'Credit Settlement').map((ci, i) => (
+                    <View
+                      key={`ci-sys-${i}`}
+                      style={[styles.tableRow, { alignItems: 'center', opacity: 0.88 }]}
+                    >
+                      <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <Text style={styles.tableCellText}>Credit Settlement - Cash</Text>
+                        {!!ci.AttachmentUrl && (
+                          <TouchableOpacity 
+                            onPress={() => setViewerImageUrl(ci.AttachmentUrl)}
+                            style={{
+                              marginLeft: 4,
+                              padding: 4,
+                              borderRadius: 6,
+                              backgroundColor: "rgba(16, 185, 129, 0.12)",
+                              justifyContent: 'center',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <Ionicons name="image" size={12} color={Theme.success} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: Theme.success }]}>
+                        +{formatCurrency(ci.Amount)}
+                      </Text>
+                      <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>
+                        0.00
+                      </Text>
+                    </View>
                   ))}
                   {cashOutEntries.map((co, i) => (
                     <TouchableOpacity
@@ -2424,7 +2499,7 @@ const fetchDayHistory = async () => {
                     >
                       <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
                         <Text style={styles.tableCellText}>{co.Reason || 'Cash Out'}</Text>
-                        <Ionicons name="create-outline" size={14} color={Theme.textPrimary} style={{ marginLeft: 6 }} />
+                        <Ionicons name="create-outline" size={13} color={Theme.textSecondary} style={{ marginLeft: 6, opacity: 0.8 }} />
                         {!!co.AttachmentUrl && (
                           <TouchableOpacity 
                             onPress={(e) => {
@@ -2432,13 +2507,10 @@ const fetchDayHistory = async () => {
                               setViewerImageUrl(co.AttachmentUrl);
                             }}
                             style={{
-                              marginLeft: 8,
-                              width: 24,
-                              height: 24,
+                              marginLeft: 6,
+                              padding: 4,
                               borderRadius: 6,
-                              borderWidth: 1.5,
-                              borderColor: Theme.success,
-                              backgroundColor: Theme.success + "15",
+                              backgroundColor: "rgba(16, 185, 129, 0.12)",
                               justifyContent: 'center',
                               alignItems: 'center'
                             }}
@@ -2466,34 +2538,63 @@ const fetchDayHistory = async () => {
                       </Text>
                     </View>
                   ))}
+                  {payments.map((p, i) => {
+                    const modeUpper = p.PaymodeName?.toUpperCase() || "";
+                    const isCash = modeUpper === "CASH" || modeUpper === "CASH BOX ENTRY" || modeUpper === "CASHBOX" || modeUpper === "CASH BOX";
+                    return (
+                      <View key={`pay-${i}`} style={styles.tableRow}>
+                        <Text style={[styles.tableCellText, { flex: 2 }]}>{p.PaymodeName}</Text>
+                        <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: isCash ? Theme.success : Theme.textPrimary }]}>
+                          {`+${formatCurrency(p.Amount)}`}
+                        </Text>
+                        <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>0.00</Text>
+                      </View>
+                    );
+                  })}
+                  {/* CREDIT ACTIVITY SUBSECTION */}
                   {(() => {
-                    const aggregated: Record<string, { PaymodeName: string; Amount: number }> = {};
-                    payments.forEach(p => {
-                      const rawName = p.PaymodeName || "Unknown";
-                      const name = rawName.trim();
-                      const key = name.toUpperCase();
-                      const amt = parseFloat(p.Amount) || 0;
-                      if (aggregated[key]) {
-                        aggregated[key].Amount += amt;
-                      } else {
-                        aggregated[key] = { PaymodeName: name, Amount: amt };
-                      }
-                    });
-                    return Object.values(aggregated).map((p, i) => {
-                      const modeUpper = p.PaymodeName.toUpperCase();
-                      const isCash = modeUpper === "CASH" || modeUpper === "CASHBOX" || modeUpper === "CASH BOX";
-                      return (
-                        <View key={`pay-${i}`} style={styles.tableRow}>
-                          <Text style={[styles.tableCellText, { flex: 2 }]}>{p.PaymodeName}</Text>
-                          <Text style={[styles.tableCellText, { flex: 1, textAlign: "right", color: isCash ? Theme.success : Theme.textPrimary }]}>
-                            {modeUpper === "FOC" ? formatCurrency(p.Amount) : `+${formatCurrency(p.Amount)}`}
+                    const creditIssuedToday = creditOutstanding.reduce((sum, c) => sum + (parseFloat(c.BilledAmount || c.Amount || 0) || 0), 0);
+                    const creditSettledToday = payments
+                      .filter(p => {
+                        const name = p.PaymodeName?.toUpperCase() || "";
+                        return name.includes("LEDGER") || name.includes("CREDIT SETTLEMENT") || name.includes("CREDIT COLLECTED");
+                      })
+                      .reduce((sum, p) => sum + (parseFloat(p.Amount) || 0), 0) + ledgerCashIn;
+                    const creditUnpaidToday = creditOutstanding.reduce((sum, c) => sum + (parseFloat(c.Amount || 0) || 0), 0);
+
+                    return (
+                      <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.25)', marginTop: 8, paddingTop: 8, paddingBottom: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+                          <Ionicons name="card-outline" size={13} color="#F59E0B" />
+                          <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            CREDIT ACTIVITY
                           </Text>
-                          <Text style={[styles.tableCellText, { flex: 1, textAlign: "right" }]}>0.00</Text>
                         </View>
-                      );
-                    });
+                        <View style={[styles.tableRow, { paddingVertical: 4 }]}>
+                          <Text style={[styles.tableCellText, { flex: 2, color: Theme.textSecondary }]}>Issued Today</Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', color: Theme.textPrimary, fontFamily: Fonts.bold }]}>
+                            {formatCurrency(creditIssuedToday)}
+                          </Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', color: Theme.textMuted }]}>—</Text>
+                        </View>
+                        <View style={[styles.tableRow, { paddingVertical: 4 }]}>
+                          <Text style={[styles.tableCellText, { flex: 2, color: Theme.textSecondary }]}>Settled Today</Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', color: Theme.success, fontFamily: Fonts.bold }]}>
+                            {formatCurrency(creditSettledToday)}
+                          </Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', color: Theme.textMuted }]}>—</Text>
+                        </View>
+                        <View style={[styles.tableRow, { paddingVertical: 4, borderBottomWidth: 0 }]}>
+                          <Text style={[styles.tableCellText, { flex: 2, color: '#F59E0B', fontFamily: Fonts.bold }]}>Unpaid Today</Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', color: '#F59E0B', fontFamily: Fonts.black }]}>
+                            {formatCurrency(creditUnpaidToday)}
+                          </Text>
+                          <Text style={[styles.tableCellText, { flex: 1, textAlign: 'right', color: Theme.textMuted }]}>—</Text>
+                        </View>
+                      </View>
+                    );
                   })()}
-                  {payments.length === 0 && displayOpeningAmount === 0 && transactions.length === 0 && cashOutEntries.length === 0 && cashInEntries.length === 0 && <Text style={styles.emptyText}>No sales</Text>}
+                  {payments.length === 0 && creditOutstanding.length === 0 && displayOpeningAmount === 0 && transactions.length === 0 && cashOutEntries.length === 0 && cashInEntries.length === 0 && <Text style={styles.emptyText}>No sales</Text>}
                 </View>
 
                 {/* ── TOTAL MOVEMENTS ── */}

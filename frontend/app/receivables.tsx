@@ -49,8 +49,10 @@ type CreditTransactionType = {
   TransactionId: string;
   SettlementId?: string;
   BillNo?: string;
-  TransactionType: "DEBIT" | "CREDIT" | "ADJUSTMENT";
+  TransactionType: "CREDIT_SALE" | "PAYMENT" | "DEBIT" | "CREDIT" | "ADJUSTMENT" | string;
   Amount: number;
+  BillAmount?: number;
+  PaidAmount?: number;
   PaymentMethod?: string;
   Remarks?: string;
   CreatedDate: string;
@@ -1128,7 +1130,8 @@ export default function ReceivablesScreen() {
                             {/* Table Rows */}
                             {transactions.map((tx, idx) => {
                               const formattedDate = formatToSingaporeDate(tx.CreatedDate, { day: "numeric", month: "short" }) + " " + formatToSingaporeTime(tx.CreatedDate, { hour: "2-digit", minute: "2-digit", hour12: false });
-                              const isDebit = tx.TransactionType === "DEBIT" || (tx.TransactionType === "ADJUSTMENT" && tx.Amount > 0);
+                              const typeUpper = (tx.TransactionType || "").toUpperCase();
+                              const isCharge = typeUpper === "CREDIT_SALE" || typeUpper === "DEBIT" || (typeUpper === "ADJUSTMENT" && (Number(tx.BillAmount) > 0 || Number(tx.Amount) > 0));
                               return (
                                 <View key={tx.TransactionId || idx} style={styles.ledgerRow}>
                                   <Text style={[styles.ledgerCol, { flex: 1.1, fontSize: 10 }]} numberOfLines={1} adjustsFontSizeToFit>{formattedDate}</Text>
@@ -1142,8 +1145,8 @@ export default function ReceivablesScreen() {
                                       </Text>
                                     )}
                                   </View>
-                                  <Text style={[styles.ledgerCol, { flex: 0.8, textAlign: "right", fontFamily: Fonts.bold, color: isDebit ? Theme.danger : Theme.success, fontSize: 11 }]} numberOfLines={1} adjustsFontSizeToFit>
-                                    {isDebit ? "+" : "-"}{currencySymbol}{tx.Amount.toFixed(2)}
+                                  <Text style={[styles.ledgerCol, { flex: 0.8, textAlign: "right", fontFamily: Fonts.bold, color: isCharge ? Theme.danger : Theme.success, fontSize: 11 }]} numberOfLines={1} adjustsFontSizeToFit>
+                                    {isCharge ? "+" : "-"}{currencySymbol}{Math.abs(tx.Amount).toFixed(2)}
                                   </Text>
                                   <Text style={[styles.ledgerCol, { flex: 0.9, textAlign: "right", fontFamily: Fonts.black, fontSize: 11 }]} numberOfLines={1} adjustsFontSizeToFit>
                                     {currencySymbol}{tx.runningBalance.toFixed(2)}

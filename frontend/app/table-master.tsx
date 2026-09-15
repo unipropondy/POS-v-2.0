@@ -1115,7 +1115,7 @@ export default function TableMasterScreen() {
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace("/category");
+                router.replace("/(tabs)/category");
               }
             }}
             style={styles.backButton}

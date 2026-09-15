@@ -29,6 +29,7 @@ export function usePOSReadyGate(fontsLoaded: boolean): boolean {
   const [isPOSReady, setIsPOSReady] = useState(false);
   const [socketReady, setSocketReady] = useState(socket.connected);
   const absoluteTimeoutFired = useRef(false);
+  const readyRef = useRef(false);
 
   type CompanyState = ReturnType<typeof useCompanySettingsStore.getState>;
   type PaymentState = ReturnType<typeof usePaymentSettingsStore.getState>;
@@ -36,6 +37,27 @@ export function usePOSReadyGate(fontsLoaded: boolean): boolean {
   const companyName = useCompanySettingsStore((s: CompanyState) => s.settings?.name ?? "");
   const companyLoading = useCompanySettingsStore((s: CompanyState) => s.loading);
   const paymentLoading = usePaymentSettingsStore((s: PaymentState) => s.loading);
+
+  const fontsLoadedRef = useRef(fontsLoaded);
+  const companyLoadingRef = useRef(companyLoading);
+  const paymentLoadingRef = useRef(paymentLoading);
+
+  // Sync refs with latest state/props to avoid stale closure in setTimeout
+  useEffect(() => {
+    readyRef.current = isPOSReady;
+  }, [isPOSReady]);
+
+  useEffect(() => {
+    fontsLoadedRef.current = fontsLoaded;
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    companyLoadingRef.current = companyLoading;
+  }, [companyLoading]);
+
+  useEffect(() => {
+    paymentLoadingRef.current = paymentLoading;
+  }, [paymentLoading]);
 
   // ── Socket readiness: connected or 5 s timeout ──
   useEffect(() => {
@@ -64,13 +86,12 @@ export function usePOSReadyGate(fontsLoaded: boolean): boolean {
 
   // ── Absolute 10-second fallback: open gate even if settings are slow ──
   useEffect(() => {
-    if (isPOSReady) return;
     const absoluteTimeout = setTimeout(() => {
-      if (!absoluteTimeoutFired.current) {
+      if (!readyRef.current && !absoluteTimeoutFired.current) {
         absoluteTimeoutFired.current = true;
         console.warn(
           "⏱️ [POSReadyGate] Absolute 10s timeout reached — opening gate regardless of settings state. " +
-            `(fontsLoaded=${fontsLoaded}, companyLoading=${companyLoading}, paymentLoading=${paymentLoading})`
+            `(fontsLoaded=${fontsLoadedRef.current}, companyLoading=${companyLoadingRef.current}, paymentLoading=${paymentLoadingRef.current})`
         );
         setIsPOSReady(true);
       }

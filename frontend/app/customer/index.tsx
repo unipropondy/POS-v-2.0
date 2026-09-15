@@ -14,35 +14,38 @@ import {
   Image,
   Modal,
   Dimensions,
+  Pressable,
+  ImageBackground,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { API_URL } from "../../constants/Config";
 import { useOrderContextStore } from "../../stores/orderContextStore";
 import { useCartStore } from "../../stores/cartStore";
 import { useCompanySettingsStore } from "../../stores/companySettingsStore";
+import { Theme } from "../../constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
 
-// ─── Premium Design System Tokens ──────────────────────────────────────────
+// ─── Premium Design System Tokens (Mapped to Global POS Theme) ──────────────
 const C = {
-  orangePrimary: "#FF5E1A",
-  orangeDark:    "#E04D10",
-  orangeLight:   "#FF8038",
-  orangeBg:      "#FFA366",
-  bg:            "#F1F5F9",
-  cardSurface:   "#FFFFFF",
-  inputBg:       "#F8FAFC",
-  border:        "#E2E8F0",
-  borderFocus:   "#FF5E1A",
-  textDark:      "#0F172A",        // High contrast primary slate
-  textMedium:    "#334155",        // Dark secondary charcoal
-  textMuted:     "#64748B",
-  textPlaceholder: "#94A3B8",
-  orangeTint:    "rgba(255, 94, 26, 0.07)",
-  orangeSoft:    "#FFF2EC",
-  error:         "#EF4444",
-  success:       "#10B981",
+  orangePrimary: Theme.primary,
+  orangeDark:    Theme.primaryDark,
+  orangeLight:   Theme.primary,
+  orangeBg:      Theme.primary,
+  bg:            Theme.bgMain,     // Warm Cream background
+  cardSurface:   Theme.bgCard,     // White card surfaces
+  inputBg:       Theme.bgInput,    // Warm input backgrounds
+  border:        Theme.border,     // Warm border colors
+  borderFocus:   Theme.primary,
+  textDark:      Theme.textPrimary,
+  textMedium:    Theme.textSecondary,
+  textMuted:     Theme.textMuted,
+  textPlaceholder: Theme.textMuted,
+  orangeTint:    Theme.primaryLight,
+  orangeSoft:    Theme.primaryLight,
+  error:         Theme.danger,
+  success:       Theme.success,
 };
 
 export default function CustomerWelcomeScreen() {
@@ -57,7 +60,7 @@ export default function CustomerWelcomeScreen() {
     section: string;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
+  const [activeTab, setActiveTab] = useState<"splash" | "signin" | "signup">("signin");
 
   // Sign In
   const [loginUsername, setLoginUsername] = useState("");
@@ -78,10 +81,16 @@ export default function CustomerWelcomeScreen() {
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [popupConfig, setPopupConfig] = useState<{ title: string; message: string } | null>(null);
+  const [promoImages, setPromoImages] = useState<any[]>([]);
+  const [currentPromoIndex, setCurrentPromoIndex] = useState<number>(0);
+  const [showPromoModal, setShowPromoModal] = useState<boolean>(false);
+  const [promoModalDismissed, setPromoModalDismissed] = useState<boolean>(false);
+  const [isCloseHovered, setIsCloseHovered] = useState(false);
 
   const [authLoading, setAuthLoading] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [foodIndex, setFoodIndex] = useState(0);
+  const [imageAspectRatio, setImageAspectRatio] = useState<number>(9 / 16);
 
   // Pax Selection Pop-up states
   const [tempUser, setTempUser] = useState<any>(null);
@@ -99,6 +108,108 @@ export default function CustomerWelcomeScreen() {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(25)).current;
   const tabAnim   = useRef(new Animated.Value(0)).current;
+  const closeScale = useRef(new Animated.Value(1)).current;
+  const imageScale = useRef(new Animated.Value(1)).current;
+  const imageFadeAnim = useRef(new Animated.Value(1)).current;
+  const imageTransitionScale = useRef(new Animated.Value(1)).current;
+
+  const handleCloseHover = (hovered: boolean) => {
+    Animated.timing(closeScale, {
+      toValue: hovered ? 1.15 : 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleImageHover = (hovered: boolean) => {
+    Animated.timing(imageScale, {
+      toValue: hovered ? 1.04 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const touchStartX = useRef<number | null>(null);
+
+  const goToNextPromo = () => {
+    if (promoImages.length <= 1) return;
+    Animated.parallel([
+      Animated.timing(imageFadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(imageTransitionScale, {
+        toValue: 0.94,
+        duration: 150,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      setCurrentPromoIndex((prev) => (prev + 1) % promoImages.length);
+      Animated.parallel([
+        Animated.timing(imageFadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(imageTransitionScale, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        })
+      ]).start();
+    });
+  };
+
+  const goToPrevPromo = () => {
+    if (promoImages.length <= 1) return;
+    Animated.parallel([
+      Animated.timing(imageFadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(imageTransitionScale, {
+        toValue: 0.94,
+        duration: 150,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      setCurrentPromoIndex((prev) => (prev - 1 + promoImages.length) % promoImages.length);
+      Animated.parallel([
+        Animated.timing(imageFadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(imageTransitionScale, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        })
+      ]).start();
+    });
+  };
+
+  const handleTouchStart = (e: any) => {
+    touchStartX.current = e.nativeEvent.pageX;
+  };
+
+  const handleTouchEnd = (e: any) => {
+    if (touchStartX.current === null) return;
+    const touchEndX = e.nativeEvent.pageX;
+    const distance = touchEndX - touchStartX.current;
+
+    // Minimum swipe distance threshold (50px)
+    if (Math.abs(distance) > 50) {
+      if (distance > 0) {
+        goToPrevPromo();
+      } else {
+        goToNextPromo();
+      }
+    }
+    touchStartX.current = null;
+  };
 
   const foodEmojis = ["🍕", "🍔", "🌮", "🍜", "🍰", "☕"];
 
@@ -159,7 +270,66 @@ export default function CustomerWelcomeScreen() {
       Animated.timing(fadeAnim,  { toValue: 1, duration: 450, useNativeDriver: true }),
       Animated.timing(slideAnim, { toValue: 0, duration: 450, useNativeDriver: true }),
     ]).start();
+
+    // Fetch active promo images
+    const fetchPromoImages = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/members/active-promo-image`);
+        const data = await res.json();
+        if (data.success) {
+          if (data.promoImages && data.promoImages.length > 0) {
+            // Prefetch the first image so it loads instantly
+            const firstImg = data.promoImages[0]?.promoImage;
+            if (firstImg) {
+              Image.prefetch(firstImg).catch(() => {});
+            }
+            setPromoImages(data.promoImages);
+            setShowPromoModal(true);
+          } else if (data.promoImage) {
+            if (data.promoImage) {
+              Image.prefetch(data.promoImage).catch(() => {});
+            }
+            setPromoImages([{
+              promoImage: data.promoImage,
+              promoCode: data.promoCode || "",
+              promoName: data.promoName || ""
+            }]);
+            setShowPromoModal(true);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch active promo images:", err);
+      }
+    };
+    fetchPromoImages();
   }, []);
+
+  // Slideshow rotation effect (every 2 seconds) with fade transition
+  useEffect(() => {
+    if (!showPromoModal || promoImages.length <= 1) return;
+
+    const interval = setInterval(() => {
+      goToNextPromo();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [showPromoModal, promoImages, currentPromoIndex]);
+
+  useEffect(() => {
+    if (promoImages.length > 0 && promoImages[currentPromoIndex]?.promoImage) {
+      Image.getSize(
+        promoImages[currentPromoIndex].promoImage,
+        (w, h) => {
+          if (w && h) {
+            setImageAspectRatio(w / h);
+          }
+        },
+        () => {
+          setImageAspectRatio(9 / 16);
+        }
+      );
+    }
+  }, [promoImages, currentPromoIndex]);
 
   useEffect(() => {
     if (scannedTable) return;
@@ -206,13 +376,16 @@ export default function CustomerWelcomeScreen() {
     setPopupConfig({ title, message });
   };
 
-  const switchTab = (tab: "signin" | "signup") => {
+  const switchTab = (tab: "splash" | "signin" | "signup") => {
     setActiveTab(tab);
-    Animated.timing(tabAnim, {
-      toValue: tab === "signin" ? 0 : 1,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
+    if (tab !== "splash") {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(25);
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]).start();
+    }
   };
 
   const proceedToMenu = (user: { userName: string; fullName?: string; phone?: string; email?: string; promoCode?: string; promoAmount?: number }) => {
@@ -276,6 +449,10 @@ export default function CustomerWelcomeScreen() {
   };
 
   const handleSignIn = async () => {
+    if (promoImages.length > 0 && !promoModalDismissed) {
+      setShowPromoModal(true);
+      return;
+    }
     if (!loginUsername.trim() || !loginPassword.trim()) {
       showPopup("Error", "Please enter your Email/Mobile Number and Password.");
       return;
@@ -313,6 +490,10 @@ export default function CustomerWelcomeScreen() {
   };
 
   const handleSignUp = async () => {
+    if (promoImages.length > 0 && !promoModalDismissed) {
+      setShowPromoModal(true);
+      return;
+    }
     if (!regUsername.trim() || !regPhone.trim() || !regPassword.trim()) {
       showPopup("Error", "Please fill out all required fields.");
       return;
@@ -358,6 +539,10 @@ export default function CustomerWelcomeScreen() {
   };
 
   const handleGuest = () => {
+    if (promoImages.length > 0 && !promoModalDismissed) {
+      setShowPromoModal(true);
+      return;
+    }
     setTransitioning(true);
     setTimeout(() => {
       const guestUser = { userName: "Guest", fullName: "Guest Customer" };
@@ -377,76 +562,132 @@ export default function CustomerWelcomeScreen() {
   const logoUri = getLogoUri(settings?.companyLogo);
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      {/* ── Dynamic Organic Top Header Wave ── */}
-      <View style={styles.headerWaveBackground}>
-        <Animated.View style={[styles.headerWaveCircleLarge, { transform: [{ translateY: floatAnim }] }]} />
-        <Animated.View style={[styles.headerWaveCircleSmall, { transform: [{ translateY: Animated.multiply(floatAnim, -1) }] }]} />
+    <ImageBackground 
+      source={require("../../assets/images/login_bg_pattern.jpg")} 
+      style={styles.webContainer}
+      resizeMode="cover"
+    >
+      <View style={styles.root}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         
-        {/* Floating Geo accents */}
-        <Animated.View style={[styles.floatingGeo, { top: 40, right: 36, width: 14, height: 14, borderRadius: 7, transform: [{ translateY: floatAnim }] }]} />
-        <Animated.View style={[styles.floatingGeo, { top: 95, left: 45, width: 12, height: 12, transform: [{ rotate: '45deg' }, { translateY: floatAnim }] }]} />
-        <Animated.View style={[styles.floatingGeoRing, { top: 130, right: 80, transform: [{ translateY: Animated.multiply(floatAnim, -1.2) }] }]} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} bounces={false}>
-        {/* Top Header Bar */}
-        <View style={styles.topBar}>
-          <View style={{ width: 20 }} /> {/* spacer */}
-
-          {scannedTable && (
-            <View style={styles.tablePill}>
-              <Ionicons name="location-sharp" size={13} color="#FFFFFF" />
-              <Text style={styles.tablePillText}>Table {scannedTable.tableNo}</Text>
+        {activeTab === "splash" ? (
+          <ScrollView contentContainerStyle={styles.splashScroll} showsVerticalScrollIndicator={false} bounces={false}>
+            {/* Top Header Bar */}
+            <View style={styles.topBar}>
+              <View style={{ width: 20 }} />
+              {scannedTable && (
+                <View style={styles.tablePill}>
+                  <Ionicons name="location-sharp" size={13} color="#FFFFFF" />
+                  <Text style={styles.tablePillText}>Table {scannedTable.tableNo}</Text>
+                </View>
+              )}
             </View>
-          )}
-        </View>
 
-        <Animated.View style={[styles.containerCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-
-          {/* ── Brand Logo Section ── */}
-          <View style={styles.logoSection}>
-            <Animated.View style={[styles.logoBadgeContainer, { transform: [{ scale: pulseAnim }] }]}>
-              <View style={styles.logoBadgeInner}>
-                {logoUri ? (
-                  <Image source={{ uri: logoUri }} style={styles.logoImage} />
-                ) : (
-                  <View style={styles.foodIllustration}>
-                    <Ionicons name="restaurant" size={36} color={C.orangePrimary} />
+            <View style={styles.splashContent}>
+              <View style={styles.splashTextCard}>
+                {/* Logo Section */}
+                <Animated.View style={[styles.logoBadgeContainer, { transform: [{ scale: pulseAnim }], alignSelf: "center", marginBottom: 16 }]}>
+                  <View style={styles.logoBadgeInner}>
+                    {logoUri ? (
+                      <Image source={{ uri: logoUri }} style={styles.logoImage} />
+                    ) : (
+                      <View style={styles.foodIllustration}>
+                        <Ionicons name="restaurant" size={32} color={C.orangePrimary} />
+                      </View>
+                    )}
                   </View>
-                )}
+                </Animated.View>
+
+                <Text style={[styles.splashWelcome, { textAlign: "center" }]}>Welcome to</Text>
+                <Text style={[styles.splashTitle, { textAlign: "center" }]}>{settings?.name || "Smart POS"}</Text>
+                <Text style={[styles.splashSubtitle, { textAlign: "center" }]}>Scan, Order & Enjoy your meal</Text>
               </View>
-            </Animated.View>
-            <Text style={styles.brandTitle}>{settings?.name || "Smart POS"}</Text>
-          </View>
 
-          {/* ── Tab Selector (Sign In | Sign Up) ── */}
-          <View style={styles.tabBar}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.tabBtn, activeTab === "signin" && styles.tabBtnActive]}
-              onPress={() => switchTab("signin")}
-            >
-              <Text style={[styles.tabText, activeTab === "signin" && styles.tabTextActive]}>Sign In</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.tabBtn, activeTab === "signup" && styles.tabBtnActive]}
-              onPress={() => switchTab("signup")}
-            >
-              <Text style={[styles.tabText, activeTab === "signup" && styles.tabTextActive]}>Sign Up</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.splashBtnGroupCard}>
+                <TouchableOpacity 
+                  activeOpacity={0.8} 
+                  style={styles.splashBtnSignIn} 
+                  onPress={() => switchTab("signin")}
+                >
+                  <Text style={styles.splashBtnSignInText}>Sign In</Text>
+                </TouchableOpacity>
 
-          {/* ── Subtitle ── */}
-          <View style={styles.authHeaderBox}>
-            <Text style={styles.authTitle}>
-              {activeTab === "signin" ? "Hello" : "Create Account"}
-            </Text>
-            <Text style={styles.authSubtitle}>
-              {activeTab === "signin" ? "Sign into your Account" : "Sign up to start ordering"}
-            </Text>
-          </View>
+                <TouchableOpacity 
+                  activeOpacity={0.8} 
+                  style={styles.splashBtnSignUp} 
+                  onPress={() => switchTab("signup")}
+                >
+                  <Text style={styles.splashBtnSignUpText}>Sign Up</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  activeOpacity={0.85} 
+                  style={styles.splashBtnGuest} 
+                  onPress={handleGuest}
+                >
+                  <Text style={styles.splashBtnGuestText}>Continue as Guest</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        ) : (
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} bounces={false}>
+            {/* Top Header Bar with Back Button */}
+            <View style={styles.topBar}>
+              <TouchableOpacity 
+                activeOpacity={0.7} 
+                style={styles.backBtnCircle} 
+                onPress={() => switchTab("splash")}
+              >
+                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {scannedTable && (
+                <View style={styles.tablePill}>
+                  <Ionicons name="location-sharp" size={13} color="#FFFFFF" />
+                  <Text style={styles.tablePillText}>Table {scannedTable.tableNo}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Logo and Shop Name on Top Center */}
+            <View style={styles.headerLogoContainer}>
+              <Animated.View style={[styles.logoBadgeContainer, { transform: [{ scale: pulseAnim }], marginBottom: 6 }]}>
+                <View style={styles.logoBadgeInner}>
+                  {logoUri ? (
+                    <Image source={{ uri: logoUri }} style={styles.logoImage} />
+                  ) : (
+                    <View style={styles.foodIllustration}>
+                      <Ionicons name="restaurant" size={32} color={C.orangePrimary} />
+                    </View>
+                  )}
+                </View>
+              </Animated.View>
+              <View style={styles.shopNameCapsule}>
+                <Text style={styles.headerShopNameRestaurant}>{settings?.name || "Restaurant"}</Text>
+              </View>
+              
+              {/* Slogan with orange side lines */}
+              <View style={styles.sloganContainer}>
+                <View style={styles.sloganLine} />
+                <Text style={styles.sloganText}>Good Food • Good Mood</Text>
+                <View style={styles.sloganLine} />
+              </View>
+            </View>
+
+            <Animated.View style={[styles.containerCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }], marginTop: 16 }]}>
+              
+              {/* Title Header matching the Welcome style */}
+              <Text style={styles.mockupCardTitle}>
+                {activeTab === "signin" ? (
+                  <Text>Welcome <Text style={{ color: C.orangePrimary }}>Back!</Text></Text>
+                ) : (
+                  <Text>Register <Text style={{ color: C.orangePrimary }}>Now!</Text></Text>
+                )}
+              </Text>
+              <Text style={styles.mockupCardSubtitle}>
+                {activeTab === "signin" ? "Please sign in to your account" : "Please create an account to proceed"}
+              </Text>
 
           {/* ═══════════════ SIGN IN ═══════════════ */}
           {activeTab === "signin" && (
@@ -475,9 +716,14 @@ export default function CustomerWelcomeScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity activeOpacity={0.85} style={styles.primaryPillBtn} onPress={handleSignIn} disabled={authLoading}>
-                {authLoading
-                  ? <ActivityIndicator color="#FFFFFF" size="small" />
-                  : <Text style={styles.primaryPillBtnText}>Login</Text>}
+                {authLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="person-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.primaryPillBtnText}>Login</Text>
+                  </View>
+                )}
               </TouchableOpacity>
 
               {/* Continue as Guest Button */}
@@ -588,9 +834,14 @@ export default function CustomerWelcomeScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity activeOpacity={0.85} style={styles.primaryPillBtn} onPress={handleSignUp} disabled={authLoading}>
-                {authLoading
-                  ? <ActivityIndicator color="#FFFFFF" size="small" />
-                  : <Text style={styles.primaryPillBtnText}>Register Now</Text>}
+                {authLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="person-add-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.primaryPillBtnText}>Register Now</Text>
+                  </View>
+                )}
               </TouchableOpacity>
 
               {/* Continue as Guest Button */}
@@ -618,6 +869,7 @@ export default function CustomerWelcomeScreen() {
 
         </Animated.View>
       </ScrollView>
+    )}
 
 
       {/* Popup Alert Modal */}
@@ -645,6 +897,74 @@ export default function CustomerWelcomeScreen() {
         </Modal>
       )}
 
+      {/* Promo Code Image Modal */}
+      {showPromoModal && promoImages.length > 0 && (
+        <Modal transparent visible={showPromoModal} animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.promoModalContent}>
+              <Animated.View 
+                style={{ transform: [{ scale: imageScale }], width: "100%", alignItems: "center" }}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+              >
+                <Pressable
+                  onHoverIn={() => handleImageHover(true)}
+                  onHoverOut={() => handleImageHover(false)}
+                  style={[{ width: "100%" }, Platform.select({ web: { outlineStyle: "none" } as any })]}
+                >
+                  <Animated.View style={{ opacity: imageFadeAnim, transform: [{ scale: imageTransitionScale }], width: "100%", position: "relative" }}>
+                    <Image 
+                      source={{ uri: promoImages[currentPromoIndex]?.promoImage }} 
+                      style={[styles.promoImage, { aspectRatio: imageAspectRatio }]} 
+                      resizeMode="cover"
+                    />
+
+                    {/* Close Button on Top Right (Inside the Image Wrapper) */}
+                    <Animated.View style={{ transform: [{ scale: closeScale }], position: "absolute", top: 12, right: 12, zIndex: 30 }}>
+                      <Pressable
+                        onHoverIn={() => {
+                          handleCloseHover(true);
+                          setIsCloseHovered(true);
+                        }}
+                        onHoverOut={() => {
+                          handleCloseHover(false);
+                          setIsCloseHovered(false);
+                        }}
+                        style={({ hovered }) => [
+                          styles.promoTopCloseBtn,
+                          hovered && styles.promoTopCloseBtnHover
+                        ]}
+                        onPress={() => {
+                          setShowPromoModal(false);
+                          setPromoModalDismissed(true);
+                        }}
+                      >
+                        <Ionicons name="close" size={20} color={isCloseHovered ? "#FFFFFF" : "#E2E8F0"} />
+                      </Pressable>
+                    </Animated.View>
+                  </Animated.View>
+                </Pressable>
+              </Animated.View>
+
+              {/* Pagination Dots */}
+              {promoImages.length > 1 && (
+                <View style={styles.promoPagination}>
+                  {promoImages.map((_, idx) => (
+                    <View 
+                      key={idx} 
+                      style={[
+                        styles.promoDot, 
+                        idx === currentPromoIndex && styles.promoDotActive
+                      ]} 
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* Transition Screen Overlay */}
       {transitioning && (
         <View style={styles.transitionScreen}>
@@ -662,7 +982,9 @@ export default function CustomerWelcomeScreen() {
           <Text style={styles.transitionSubtitle}>Setting up your digital menu</Text>
         </View>
       )}
-    </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
+    </ImageBackground>
   );
 }
 
@@ -700,7 +1022,7 @@ function CardField({
       <View style={[cardFieldStyles.inputWrap, isFocused && cardFieldStyles.inputWrapFocused]}>
         {icon && (
           <View style={cardFieldStyles.iconBadge}>
-            <Ionicons name={icon} size={18} color={isFocused ? C.orangePrimary : C.textMuted} />
+            <Ionicons name={icon} size={18} color={C.orangePrimary} />
           </View>
         )}
         <TextInput
@@ -727,12 +1049,12 @@ function CardField({
 
 const cardFieldStyles = StyleSheet.create({
   fieldBox: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   fieldLabel: {
     fontSize: 14,
-    fontWeight: "700",
-    color: "#334155",
+    fontWeight: "800",
+    color: C.orangePrimary,
     marginBottom: 6,
     letterSpacing: 0.2,
   },
@@ -740,37 +1062,27 @@ const cardFieldStyles = StyleSheet.create({
     height: 52,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    paddingHorizontal: 12,
+    backgroundColor: "#FFF9F6",
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: "rgba(255, 94, 26, 0.25)",
+    paddingHorizontal: 16,
   },
   inputWrapFocused: {
     borderColor: C.orangePrimary,
-    backgroundColor: "#FFF5ED",
-    shadowColor: C.orangePrimary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    backgroundColor: "#FFF5F0",
   },
   iconBadge: {
-    width: 32,
+    width: 24,
     height: 32,
-    borderRadius: 10,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "center",
     marginRight: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
   },
   input: {
     flex: 1,
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#0F172A",
     height: "100%",
   },
@@ -778,8 +1090,8 @@ const cardFieldStyles = StyleSheet.create({
     padding: 6,
   },
   countryPicker: {
-    paddingRight: 10,
-    marginRight: 8,
+    paddingRight: 8,
+    marginRight: 6,
     borderRightWidth: 1.5,
     borderRightColor: "#CBD5E1",
   },
@@ -792,9 +1104,26 @@ const cardFieldStyles = StyleSheet.create({
 
 // ─── Main StyleSheet ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  webContainer: {
+    flex: 1,
+    backgroundColor: "#F5EBE1",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    height: "100%",
+  },
   root: {
     flex: 1,
-    backgroundColor: C.bg,
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: "transparent",
+    alignSelf: "center",
+    ...Platform.select({
+      web: {
+        height: "100vh",
+        overflow: "hidden",
+      } as any,
+    }),
   },
   scroll: {
     flexGrow: 1,
@@ -877,15 +1206,17 @@ const styles = StyleSheet.create({
   tablePill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(255, 255, 255, 0.28)",
+    gap: 6,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 18,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   tablePillText: {
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#FFFFFF",
   },
 
@@ -914,22 +1245,29 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   logoBadgeContainer: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: C.orangeSoft,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: "rgba(255, 94, 26, 0.25)",
+    borderWidth: 4,
+    borderColor: C.orangePrimary,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 5,
   },
   logoBadgeInner: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
   },
   logoImage: {
     width: "100%",
@@ -952,34 +1290,29 @@ const styles = StyleSheet.create({
   // Segmented Tab Switcher
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#F1F5F9",
-    borderRadius: 16,
-    padding: 4,
+    backgroundColor: "transparent",
     marginBottom: 22,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#E2E8F0",
+    paddingBottom: 0,
   },
   tabBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 12,
     alignItems: "center",
+    borderBottomWidth: 3,
+    borderBottomColor: "transparent",
   },
   tabBtnActive: {
-    backgroundColor: C.orangePrimary,
-    shadowColor: C.orangePrimary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
+    borderBottomColor: C.orangePrimary,
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
     color: "#64748B",
   },
   tabTextActive: {
-    color: "#FFFFFF",
+    color: C.orangePrimary,
     fontWeight: "800",
   },
 
@@ -1222,6 +1555,54 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
+  promoModalContent: {
+    width: "90%",
+    maxWidth: 400,
+    backgroundColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    ...Platform.select({
+      web: { outlineStyle: "none" } as any,
+    }),
+  },
+  promoImage: {
+    width: "100%",
+    borderRadius: 24,
+    backgroundColor: "transparent",
+  },
+  promoTopCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  promoTopCloseBtnHover: {
+    backgroundColor: C.orangePrimary,
+    borderColor: "#FFFFFF",
+  },
+  promoPagination: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 16,
+  },
+  promoDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+  },
+  promoDotActive: {
+    backgroundColor: C.orangePrimary,
+    width: 22,
+  },
+
   // Transition Screen Overlay
   transitionScreen: {
     ...StyleSheet.absoluteFillObject,
@@ -1259,5 +1640,185 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 14,
     color: C.textMuted,
+  },
+
+  splashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "transparent",
+  },
+  splashScroll: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingBottom: 24,
+  },
+  splashContent: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 16,
+    marginTop: 10,
+  },
+  splashTextCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 26,
+    width: "100%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 4,
+    marginTop: 36,
+  },
+  splashWelcome: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.orangePrimary,
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  splashTitle: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: "#0F172A",
+    lineHeight: 42,
+  },
+  splashSubtitle: {
+    fontSize: 15,
+    color: "#475569",
+    marginTop: 8,
+    fontWeight: "500",
+  },
+  splashBtnGroupCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    width: "100%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 4,
+    marginTop: 20,
+    gap: 14,
+  },
+  splashBtnSignIn: {
+    height: 52,
+    backgroundColor: C.orangePrimary,
+    borderRadius: 26,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: C.orangePrimary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  splashBtnSignInText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+  },
+  splashBtnSignUp: {
+    height: 52,
+    backgroundColor: "transparent",
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: C.orangePrimary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  splashBtnSignUpText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: C.orangePrimary,
+    letterSpacing: 0.3,
+  },
+  splashBtnGuest: {
+    alignSelf: "center",
+    paddingVertical: 10,
+  },
+  splashBtnGuestText: {
+    color: "#475569",
+    fontWeight: "700",
+    fontSize: 14,
+    textDecorationLine: "underline",
+  },
+  backBtnCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  mockupCardTitle: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 8,
+  },
+  mockupCardSubtitle: {
+    fontSize: 14,
+    color: C.textMuted,
+    marginBottom: 24,
+  },
+  headerLogoContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    marginBottom: 12,
+    width: "100%",
+  },
+  headerShopNameMy: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: C.orangePrimary,
+    fontStyle: "italic",
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif", web: "Georgia, serif" }),
+    lineHeight: 28,
+    marginTop: 4,
+  },
+  shopNameCapsule: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 22,
+    paddingVertical: 7,
+    borderRadius: 22,
+    marginTop: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+    alignSelf: "center",
+  },
+  headerShopNameRestaurant: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: C.orangePrimary,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  sloganContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    gap: 8,
+  },
+  sloganLine: {
+    width: 20,
+    height: 1.5,
+    backgroundColor: C.orangePrimary,
+  },
+  sloganText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#4A3E3D",
+    letterSpacing: 0.3,
   },
 });

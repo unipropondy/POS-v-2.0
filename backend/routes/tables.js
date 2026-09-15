@@ -4,16 +4,6 @@ const sql = require("mssql");
 const { poolPromise } = require("../config/db");
 const { getHoldOvertimeMinutes } = require("../utils/settingsCache");
 
-const toGuidOrNull = (value) => {
-  if (!value) return null;
-  const s = String(value)
-    .trim()
-    .replace(/^\{|\}$/g, "");
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
-    ? s
-    : null;
-};
-
 // In-memory table locks
 const tableLocks = new Map();
 
@@ -133,21 +123,18 @@ router.post("/lock-persistent", async (req, res) => {
     const request = pool.request(); // ✅ Fixed: request was not defined
     request.input("tableId", sql.VarChar(50), cleanTableId);
     request.input("lockedByName", sql.NVarChar, lockedByName || null);
-    request.input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId));
+    request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
 
     const result = await request.query(`
-      DECLARE @UpdatedTable TABLE (
-        TableNumber NVARCHAR(50),
-        DiningSection INT,
-        ModifiedOn DATETIME
-      );
+      DECLARE @temp TABLE (TableNumber NVARCHAR(50), DiningSection VARCHAR(10), ModifiedOn VARCHAR(50));
 
       UPDATE TableMaster 
       SET Status = 5, LockedByName = @lockedByName, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL
-      OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, INSERTED.ModifiedOn INTO @UpdatedTable
+      OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
+      INTO @temp
       WHERE TableId = @tableId;
 
-      SELECT TableNumber, DiningSection, CONVERT(VARCHAR, ModifiedOn, 126) AS ModifiedOn FROM @UpdatedTable;
+      SELECT * FROM @temp;
     `);
 
     // ✅ Clear CartItems for this table when locked
@@ -190,20 +177,17 @@ router.post("/unlock-persistent", async (req, res) => {
     const cleanTableId = tableId.replace(/^\{|\}$/g, "").trim();
     const result = await pool.request()
       .input("tableId", sql.VarChar(50), cleanTableId)
-      .input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId))
+      .input("ModifiedBy", sql.UniqueIdentifier, userId || null)
       .query(`
-        DECLARE @UpdatedTable TABLE (
-          TableNumber NVARCHAR(50),
-          DiningSection INT,
-          ModifiedOn DATETIME
-        );
+        DECLARE @temp TABLE (TableNumber NVARCHAR(50), DiningSection VARCHAR(10), ModifiedOn VARCHAR(50));
 
         UPDATE TableMaster 
         SET Status = 0, entry_status = NULL, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL
-        OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, INSERTED.ModifiedOn INTO @UpdatedTable
+        OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
+        INTO @temp
         WHERE TableId = @tableId;
 
-        SELECT TableNumber, DiningSection, CONVERT(VARCHAR, ModifiedOn, 126) AS ModifiedOn FROM @UpdatedTable;
+        SELECT * FROM @temp;
       `);
 
     // ✅ Clear any items in CartItems for this table when unlocked
@@ -253,17 +237,17 @@ router.post("/save-guest", async (req, res) => {
     request.input("tableId", sql.VarChar(50), cleanTableId);
     request.input("customerName", sql.NVarChar, guestNameVal);
     request.input("pax", sql.Int, paxVal);
-    request.input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId));
+    request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
 
     // Update TableMaster
     const updateTM = await request.query(`
-      DECLARE @UpdatedTable TABLE (
-        TableNumber NVARCHAR(50),
-        DiningSection INT,
+      DECLARE @temp TABLE (
+        TableNumber NVARCHAR(50), 
+        DiningSection VARCHAR(10), 
         Status INT,
         TotalAmount DECIMAL(18, 2),
-        StartTime DATETIME,
-        ModifiedOn DATETIME,
+        StartTime VARCHAR(50),
+        ModifiedOn VARCHAR(50),
         entryStatus VARCHAR(50)
       );
 
@@ -280,20 +264,13 @@ router.post("/save-guest", async (req, res) => {
         INSERTED.DiningSection, 
         INSERTED.Status,
         INSERTED.TotalAmount,
-        INSERTED.StartTime,
-        INSERTED.ModifiedOn,
-        INSERTED.entry_status INTO @UpdatedTable
+        CONVERT(VARCHAR, INSERTED.StartTime, 126) AS StartTime,
+        CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn,
+        INSERTED.entry_status AS entryStatus
+      INTO @temp
       WHERE TableId = @tableId;
 
-      SELECT 
-        TableNumber, 
-        DiningSection, 
-        Status,
-        TotalAmount,
-        CONVERT(VARCHAR, StartTime, 126) AS StartTime,
-        CONVERT(VARCHAR, ModifiedOn, 126) AS ModifiedOn,
-        entryStatus
-      FROM @UpdatedTable;
+      SELECT * FROM @temp;
     `);
 
     if (updateTM.recordset.length === 0) {
@@ -492,20 +469,21 @@ router.put("/status", async (req, res) => {
     const request = pool.request();
     request.input("tableId", sql.VarChar(50), cleanTableId);
     request.input("status", sql.Int, Number(status));
-    request.input("ModifiedBy", sql.UniqueIdentifier, toGuidOrNull(userId));
+    request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
     request.input("holdMinutes", sql.Int, holdMinutes);
 
     const updateResult = await request.query(`
-      DECLARE @UpdatedTable TABLE (
+      DECLARE @temp TABLE (
         TotalAmount DECIMAL(18, 2),
-        StartTime DATETIME,
+        StartTime VARCHAR(50),
         TableNumber NVARCHAR(50),
-        DiningSection INT,
+        DiningSection VARCHAR(10),
         entryStatus VARCHAR(50),
-        customerName NVARCHAR(100),
+        customerName NVARCHAR(255),
         pax INT,
-        ModifiedOn DATETIME,
-        Status INT
+        ModifiedOn VARCHAR(50),
+        isOvertime INT,
+        isHoldOvertime INT
       );
 
       UPDATE TableMaster 
@@ -532,34 +510,25 @@ router.put("/status", async (req, res) => {
           ModifiedOn = GETDATE()
       OUTPUT 
         INSERTED.TotalAmount, 
-        INSERTED.StartTime,
+        CONVERT(VARCHAR, INSERTED.StartTime, 126) AS StartTime,
         INSERTED.TableNumber,
         INSERTED.DiningSection,
-        INSERTED.entry_status,
-        INSERTED.CustomerName,
-        INSERTED.Pax,
-        INSERTED.ModifiedOn,
-        INSERTED.Status INTO @UpdatedTable
-      WHERE TableId = @tableId;
-
-      SELECT 
-        TotalAmount, 
-        CONVERT(VARCHAR, StartTime, 126) AS StartTime,
-        TableNumber,
-        DiningSection,
-        entryStatus,
-        customerName,
-        pax,
-        CONVERT(VARCHAR, ModifiedOn, 126) AS ModifiedOn,
+        INSERTED.entry_status AS entryStatus,
+        INSERTED.CustomerName AS customerName,
+        INSERTED.Pax AS pax,
+        CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn,
         CASE 
-          WHEN Status IN (1, 2, 3) AND StartTime IS NOT NULL AND StartTime > '2000-01-01' AND DATEDIFF(MINUTE, StartTime, GETDATE()) >= 60 THEN 1 
+          WHEN INSERTED.Status IN (1, 2, 3) AND INSERTED.StartTime IS NOT NULL AND INSERTED.StartTime > '2000-01-01' AND DATEDIFF(MINUTE, INSERTED.StartTime, GETDATE()) >= 60 THEN 1 
           ELSE 0 
         END AS isOvertime,
         CASE 
-          WHEN Status = 3 AND ModifiedOn IS NOT NULL AND DATEDIFF(MINUTE, ModifiedOn, GETDATE()) >= @holdMinutes THEN 1 
+          WHEN INSERTED.Status = 3 AND INSERTED.ModifiedOn IS NOT NULL AND DATEDIFF(MINUTE, INSERTED.ModifiedOn, GETDATE()) >= @holdMinutes THEN 1 
           ELSE 0 
         END AS isHoldOvertime
-      FROM @UpdatedTable;
+      INTO @temp
+      WHERE TableId = @tableId;
+
+      SELECT * FROM @temp;
     `);
     
     const row = updateResult.recordset[0];

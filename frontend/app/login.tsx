@@ -138,6 +138,12 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (data.success && data.user) {
+        if (!data.user.userGroupId || String(data.user.userGroupId).trim() === "" || String(data.user.userGroupId).trim().toUpperCase() === "NULL") {
+          setError("User has no valid group assigned.");
+          shakeError();
+          setLoading(false);
+          return;
+        }
         setUser(data.user, data.token);
 
         // ✅ Handle Remember Me Persistence

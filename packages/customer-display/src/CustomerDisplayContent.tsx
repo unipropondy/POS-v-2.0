@@ -482,11 +482,19 @@ export default function CustomerDisplayContent() {
             ]}
           >
             <View style={styles.successIconWrapper}>
-              <Ionicons
-                name="checkmark-circle"
-                size={100}
-                color={Theme.success}
-              />
+              {companySettings?.companyLogo ? (
+                <Image
+                  source={{ uri: getLogoUri(companySettings.companyLogo) }}
+                  style={{ width: 100, height: 100, borderRadius: 50 }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={100}
+                  color={Theme.success}
+                />
+              )}
             </View>
             <Text style={styles.successTitle}>Payment Successful</Text>
             <Text style={styles.successOrderText}>

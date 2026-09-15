@@ -24,6 +24,7 @@ import {
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useToast } from "../components/Toast";
 import { Fonts } from "../constants/Fonts";
 import { Theme } from "../constants/theme";
@@ -50,6 +51,7 @@ import { useTableStatusStore } from "../stores/tableStatusStore";
 import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
 import { useTableNavigationStore } from "../stores/tableNavigationStore";
 import { CustomerDisplaySync } from "../utils/CustomerDisplaySync";
+import CashDrawerService from "../services/CashDrawerService";
 
 // --- ROTATING SYNC ICON COMPONENT ---
 const RotatingSyncIcon = ({ size = 16, color = "#3b82f6" }: { size?: number; color?: string }) => {
@@ -268,8 +270,23 @@ export default function PaymentScreen() {
 
   // --- YEAPAY TERMINAL ZUSTAND STORE SUBSCRIPTION & RECOVERY ---
   const terminalSession = useTerminalPaymentStore(
-    (s) => context?.tableId ? s.sessions[context.tableId] : undefined
+    (s) => context?.tableId ? s.sessions[String(context.tableId)] : undefined
   );
+  const finalizationLockRef = React.useRef<Record<string, boolean>>({});
+  const executeFinalPaymentRef = React.useRef<any>(null);
+
+  // Reset local payment status banner when context changes or screen gains focus (unless actively processing)
+  useEffect(() => {
+    if (isFocused) {
+      const activeTblId = context?.tableId ? String(context.tableId) : undefined;
+      const activeSession = activeTblId ? useTerminalPaymentStore.getState().sessions[activeTblId] : undefined;
+      if (!activeSession || activeSession.status !== "processing") {
+        setPaymentStatus("idle");
+        setPaymentMessage("");
+        setProcessing(false);
+      }
+    }
+  }, [isFocused, context?.tableId]);
 
   useEffect(() => {
     // Reconstruct ongoingPayments cache if we refreshed/reloaded so the request flows correctly
@@ -296,16 +313,14 @@ export default function PaymentScreen() {
       }
 
       if (terminalSession.status === "success") {
-        showToast({
-          type: 'success',
-          message: '✅ Payment Successful',
-          subtitle: `${currencySymbol}${terminalSession.total.toFixed(2)} paid via ${terminalSession.method}`
-        });
-        if (context?.tableId) {
-          useTerminalPaymentStore.getState().clearSession(context.tableId);
+        const lockKey = (context?.tableId || displayOrderId || "MAIN_PAYMENT_LOCK").toString();
+        if (!finalizationLockRef.current[lockKey]) {
+          handleTerminalPaymentSuccess(
+            terminalSession.method || method,
+            terminalSession.total || total,
+            terminalSession.message
+          );
         }
-        delete ongoingPayments[cacheKey];
-        executeFinalPayment();
       } else if (terminalSession.status === "cancelled") {
         Alert.alert(
           '❌ Transaction Cancelled',
@@ -313,6 +328,13 @@ export default function PaymentScreen() {
           [{ text: 'OK' }]
         );
         delete ongoingPayments[cacheKey];
+        if (context?.tableId) {
+          const tblIdStr = String(context.tableId);
+          useTerminalPaymentStore.getState().clearSession(tblIdStr);
+        }
+        setProcessing(false);
+        setPaymentStatus("cancelled");
+        setPaymentMessage(terminalSession.message || '❌ Transaction cancelled on terminal');
       } else if (terminalSession.status === "failed") {
         Alert.alert(
           '❌ Payment Failed',
@@ -320,6 +342,13 @@ export default function PaymentScreen() {
           [{ text: 'OK' }]
         );
         delete ongoingPayments[cacheKey];
+        if (context?.tableId) {
+          const tblIdStr = String(context.tableId);
+          useTerminalPaymentStore.getState().clearSession(tblIdStr);
+        }
+        setProcessing(false);
+        setPaymentStatus("failed");
+        setPaymentMessage(terminalSession.message || '❌ Payment failed');
       }
     } else {
       if (paymentStatus !== "idle") {
@@ -329,6 +358,47 @@ export default function PaymentScreen() {
       }
     }
   }, [terminalSession, cacheKey]);
+
+  const settingsStore = useCompanySettingsStore((state: { settings: CompanySettings }) => state.settings);
+  const currencySymbol = settingsStore.currencySymbol || "$";
+  const gstRate = (settingsStore.gstPercentage || 0) / 100;
+  const scRate = (settingsStore.serviceChargePercentage || 0) / 100;
+
+  const handleTerminalPaymentSuccess = React.useCallback((methodName: string, totalAmt: number, msg?: string) => {
+    const lockKey = (context?.tableId || displayOrderId || "MAIN_PAYMENT_LOCK").toString();
+    if (finalizationLockRef.current[lockKey]) {
+      console.log(`[YeahPay] Already finalizing payment for ${lockKey}, skipping duplicate call.`);
+      return;
+    }
+    finalizationLockRef.current[lockKey] = true;
+
+    showToast({
+      type: 'success',
+      message: '✅ Payment Successful',
+      subtitle: `${currencySymbol}${totalAmt.toFixed(2)} paid via ${methodName}`
+    });
+
+    if (context?.tableId) {
+      const tblIdStr = String(context.tableId);
+      useTerminalPaymentStore.getState().clearSession(tblIdStr);
+      useTableNavigationStore.getState().clearTableLastScreen(tblIdStr);
+      useTableNavigationStore.getState().clearSelectedMethod(tblIdStr);
+    }
+    if (cacheKey) {
+      delete ongoingPayments[cacheKey];
+    }
+
+    const execFn = executeFinalPaymentRef.current || executeFinalPayment;
+    execFn(undefined, undefined, undefined, true).catch((err: any) => {
+      console.error("❌ executeFinalPayment error:", err);
+      delete finalizationLockRef.current[lockKey];
+    });
+  }, [cacheKey, context?.tableId, displayOrderId, currencySymbol]);
+
+  useEffect(() => {
+    executeFinalPaymentRef.current = executeFinalPayment;
+  });
+
 
   useEffect(() => {
     if (isFocused) {
@@ -535,10 +605,6 @@ export default function PaymentScreen() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [isUPIVisible, setIsUPIVisible] = useState(false);
   const [isPayNowVisible, setIsPayNowVisible] = useState(false);
-  const settingsStore = useCompanySettingsStore((state: { settings: CompanySettings }) => state.settings);
-  const currencySymbol = settingsStore.currencySymbol || "$";
-  const gstRate = (settingsStore.gstPercentage || 0) / 100;
-  const scRate = (settingsStore.serviceChargePercentage || 0) / 100;
   const [roundOff, setRoundOff] = useState(0);
   const [roundType, setRoundType] = useState<
     "whole" | "five" | "ten" | "custom" | null
@@ -555,46 +621,51 @@ export default function PaymentScreen() {
   const [takeawayChargeAmt, setTakeawayChargeAmt] = useState(0);
 
   useEffect(() => {
-    console.log("🔍 [Payment] SC & Takeaway override useEffect triggered. displayOrderId:", displayOrderId, "isFocused:", isFocused);
-    if (displayOrderId && isFocused) {
-      const token = useAuthStore.getState().token;
-      const url = `${API_URL}/api/orders/${displayOrderId}/sc-override`;
-      console.log("📡 [Payment] Fetching SC override from:", url);
-      fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-        .then((r) => r.json())
-        .then((d) => {
-          console.log("✅ [Payment] SC override response:", d);
-          if (d?.serviceChargeReduced) {
-            setScReduced(true);
-            useServiceChargeOverrideStore.getState().setOverride(displayOrderId, true);
-          } else {
-            setScReduced(false);
-            useServiceChargeOverrideStore.getState().setOverride(displayOrderId, false);
-          }
-        })
-        .catch((e) => {
-          console.warn("❌ [Payment] Failed to fetch KDS/SC override status:", e);
-        });
+    if (!displayOrderId || !isFocused) return;
 
+    const token = useAuthStore.getState().token;
+
+    if (__DEV__) {
+      console.log("🔍 [Payment] SC & Takeaway override fetch triggered. displayOrderId:", displayOrderId);
+    }
+
+    // PERFORMANCE: Run both override fetches in parallel — previously sequential
+    Promise.all([
+      fetch(`${API_URL}/api/orders/${displayOrderId}/sc-override`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).then((r) => r.json()),
       fetch(`${API_URL}/api/orders/${displayOrderId}/takeaway-charge`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).then((r) => r.json()),
+    ])
+      .then(([scData, twData]) => {
+        if (__DEV__) {
+          console.log("✅ [Payment] SC override response:", scData);
+          console.log("✅ [Payment] Takeaway charge response:", twData);
+        }
+
+        // SC override
+        if (scData?.serviceChargeReduced) {
+          setScReduced(true);
+          useServiceChargeOverrideStore.getState().setOverride(displayOrderId, true);
+        } else {
+          setScReduced(false);
+          useServiceChargeOverrideStore.getState().setOverride(displayOrderId, false);
+        }
+
+        // Takeaway charge override
+        if (twData?.takeawayChargeOverride === 1) {
+          setTakeawayChargeApplied(false);
+        } else {
+          setTakeawayChargeApplied(true);
+        }
+        setTakeawayChargeAmt(twData?.takeawayCharge || 0);
       })
-        .then((r) => r.json())
-        .then((d) => {
-          console.log("✅ [Payment] Takeaway charge response:", d);
-          if (d?.takeawayChargeOverride === 1) {
-            setTakeawayChargeApplied(false);
-          } else {
-            setTakeawayChargeApplied(true);
-          }
-          setTakeawayChargeAmt(d?.takeawayCharge || 0);
-        })
-        .catch((e) => {
-          console.warn("❌ [Payment] Failed to fetch takeaway-charge status:", e);
-        });
-    }
+      .catch((e) => {
+        if (__DEV__) {
+          console.warn("❌ [Payment] Failed to fetch SC/takeaway override status:", e);
+        }
+      });
   }, [displayOrderId, isFocused]);
 
   const [pendingPayments, setPendingPayments] = useState<any[] | null>(null);
@@ -647,14 +718,18 @@ export default function PaymentScreen() {
   const [loyaltyDiscountItems, setLoyaltyDiscountItems] = useState<any[]>([]);
   const [loyaltyDiscountAmount, setLoyaltyDiscountAmount] = useState(0);
 
+  // ── Loyalty dish rewards: debounced to avoid hammering the API on rapid
+  // cart socket updates. The 400 ms window lets back-to-back changes settle
+  // before issuing a new request. Business logic is unchanged.
   useEffect(() => {
-    const fetchDishLoyaltyRewards = async () => {
-      const phone = loyaltyPhone ? loyaltyPhone.trim() : "";
-      if (!phone || finalItemsRaw.length === 0 || isLedgerCollection) {
-        setLoyaltyDiscountItems([]);
-        setLoyaltyDiscountAmount(0);
-        return;
-      }
+    const phone = loyaltyPhone ? loyaltyPhone.trim() : "";
+    if (!phone || finalItemsRaw.length === 0 || isLedgerCollection) {
+      setLoyaltyDiscountItems([]);
+      setLoyaltyDiscountAmount(0);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
       try {
         const token = useAuthStore.getState().token;
         const mappedItems = finalItemsRaw.map((i: any) => ({
@@ -695,9 +770,9 @@ export default function PaymentScreen() {
         setLoyaltyDiscountItems([]);
         setLoyaltyDiscountAmount(0);
       }
-    };
+    }, 400); // debounce: wait 400 ms for cart changes to settle
 
-    fetchDishLoyaltyRewards();
+    return () => clearTimeout(timer);
   }, [loyaltyPhone, finalItemsRaw, isLedgerCollection]);
 
   const finalItems = useMemo(() => {
@@ -707,36 +782,38 @@ export default function PaymentScreen() {
   useEffect(() => {
     const init = async () => {
       const store = usePaymentSettingsStore.getState();
-      if (!store.hasLoadedMethods) {
-        setLoadingMethods(true);
-        try {
-          await Promise.all([
+      const settingsPromise = store.hasLoadedMethods
+        ? Promise.resolve()
+        : Promise.all([
             store.fetchSettings(),
             store.fetchPaymentMethods()
-          ]);
-        } catch (err) {
-          if (__DEV__) {
-            console.error("Failed to fetch settings/methods on payment screen mount:", err);
-          }
-        }
-      }
+          ]).catch((err) => {
+            if (__DEV__) console.error("Failed to fetch settings/methods on payment screen mount:", err);
+          });
+
+      // PERFORMANCE: Run table/order ID fetch in parallel with payment settings fetch
+      const tablePromise = context?.tableId
+        ? (async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/tables/${context.tableId}`);
+              const data = await res.json();
+              const oid = data.table?.currentOrderId || data.table?.CurrentOrderId;
+              if (data.success && oid) {
+                useCartStore.getState().setTableOrderId(context.tableId!, oid);
+              }
+              // Fetch the cart items from the database to ensure they are loaded on direct routing
+              if (cart.length === 0) {
+                await useCartStore.getState().fetchCartFromDB(context.tableId!);
+              }
+            } catch (err) {
+              console.error("Failed to sync official Order ID and Cart:", err);
+            }
+          })()
+        : Promise.resolve();
+
+      // Wait for both to finish before applying payment methods from cache
+      await Promise.all([settingsPromise, tablePromise]);
       applyPaymentMethodsFromCache();
-      if (context?.tableId) {
-        try {
-          const res = await fetch(`${API_URL}/api/tables/${context.tableId}`);
-          const data = await res.json();
-          const oid = data.table?.currentOrderId || data.table?.CurrentOrderId;
-          if (data.success && oid) {
-            useCartStore.getState().setTableOrderId(context.tableId, oid);
-          }
-          // Fetch the cart items from the database to ensure they are loaded on direct routing
-          if (cart.length === 0) {
-            await useCartStore.getState().fetchCartFromDB(context.tableId);
-          }
-        } catch (err) {
-          console.error("Failed to sync official Order ID and Cart:", err);
-        }
-      }
     };
     init();
   }, []);
@@ -1185,7 +1262,10 @@ export default function PaymentScreen() {
   const confirmPayment = async () => {
     if (processing) return;
 
-    const selectedMethod = paymentMethods.find(m => m.payMode === method);
+    const selectedMethod = paymentMethods.find(m => 
+      m.payMode.trim().toUpperCase() === method.trim().toUpperCase() ||
+      pmNormalize(m.payMode) === pmNormalize(method)
+    );
     // Use exact normalized mode names — ONLY "Yeahpay Paynow" and "Yeahpay Card"
     // should trigger the YeahPay terminal and require Device SN.
     const _methodNorm      = pmNormalize(method);
@@ -1199,8 +1279,8 @@ export default function PaymentScreen() {
       setPaymentMessage("Processing payment...");
       setProcessing(true);
 
-      const deviceSn = selectedMethod?.deviceSn || '';
-      const salt = selectedMethod?.deviceSalt || '';
+      const deviceSn = (selectedMethod?.deviceSn || (selectedMethod as any)?.DeviceSN || '').trim();
+      const salt = (selectedMethod?.deviceSalt || (selectedMethod as any)?.DeviceSalt || '').trim();
 
       console.log('🔄 [MainPayment] Calling YeahPay terminal for:', method);
       console.log('   Amount:', total);
@@ -1235,7 +1315,6 @@ export default function PaymentScreen() {
           const result = await response.json();
           console.log('✅ [MainPayment] Terminal response:', result);
           const responseCode = result.code;
-
           let status: "success" | "cancelled" | "failed" = "failed";
           let message = "";
 
@@ -1259,11 +1338,27 @@ export default function PaymentScreen() {
           }
 
           if (context?.tableId) {
-            if (status === "success") {
-              useTerminalPaymentStore.getState().updateSession(context.tableId, { status: "success", message });
-            } else {
-              useTerminalPaymentStore.getState().updateSession(context.tableId, { status, message });
+            useTerminalPaymentStore.getState().updateSession(context.tableId, { status, message });
+          }
+
+          if (status === "success") {
+            handleTerminalPaymentSuccess(method, total, message);
+          } else if (status === "cancelled") {
+            setPaymentMessage(message);
+            Alert.alert('❌ Transaction Cancelled', 'Payment was cancelled on the terminal. Please try again.');
+            if (context?.tableId) {
+              useTerminalPaymentStore.getState().clearSession(String(context.tableId));
             }
+            delete ongoingPayments[cacheKey];
+          } else {
+            setProcessing(false);
+            setPaymentStatus("failed");
+            setPaymentMessage(message);
+            Alert.alert('❌ Payment Failed', message || 'Failed to connect to terminal');
+            if (context?.tableId) {
+              useTerminalPaymentStore.getState().clearSession(String(context.tableId));
+            }
+            delete ongoingPayments[cacheKey];
           }
           return result;
         } catch (error: any) {
@@ -1279,6 +1374,11 @@ export default function PaymentScreen() {
           if (context?.tableId) {
             useTerminalPaymentStore.getState().updateSession(context.tableId, { status: "failed", message });
           }
+          setProcessing(false);
+          setPaymentStatus("failed");
+          setPaymentMessage(message);
+          Alert.alert('❌ Payment Failed', message);
+          delete ongoingPayments[cacheKey];
           return { success: false, code: -1, msg: error.message };
         }
       })();
@@ -1416,8 +1516,10 @@ export default function PaymentScreen() {
     }>,
     memberOverride?: any,
     focAmount?: number,
+    bypassProcessingCheck?: boolean,
   ) => {
-    if (processing) return;
+    executeFinalPaymentRef.current = executeFinalPayment;
+    if (processing && !bypassProcessingCheck) return;
     setProcessing(true);
     if (isLedgerCollection) {
       const selectedMode = paymentMethods.find((m) => m.payMode === method);
@@ -1568,11 +1670,15 @@ export default function PaymentScreen() {
               referenceNo: ""
             });
           }
+          // YeahPay: terminal was already called directly, mark as pre-processed
+          const _mNorm = method.trim().toUpperCase();
+          const _isYeahPayFinal = _mNorm === "YEAHPAY PAYNOW" || _mNorm === "YEAHPAY CARD";
           finalPayments.push({
             payModeId,
             payMode: method,
             amount: total,
-            referenceNo: ""
+            referenceNo: "",
+            isTerminalAlreadyProcessed: _isYeahPayFinal,
           });
           finalTotalAmount = total + totalFocAmount;
         }
@@ -1647,7 +1753,7 @@ export default function PaymentScreen() {
         body: JSON.stringify(saleData),
       });
       const result = await response.json();
-      if (result.success) {
+      if (result.success || response.status === 409) {
         // Navigate first — let the success screen mount fully before mutating store state
         router.push({
           pathname: "/payment_success" as any,
@@ -1680,6 +1786,7 @@ export default function PaymentScreen() {
             rewardPointsEarned: String(result.rewardPointsEarned || 0),
             memberRewardBalance: String(result.memberRewardBalance || 0),
             mobileNo: loyaltyPhone || "",
+            tableId: context?.tableId ? String(context.tableId) : "",
           },
         });
         const ctxSnapshot = context;
@@ -1687,51 +1794,70 @@ export default function PaymentScreen() {
         const orderIdSnapshot = displayOrderId;
         const isOrderClosedFromResponse = !!result.isOrderClosed;
         
-        if (ctxSnapshot) {
-          if (splitSnapshot) {
-            const { splitPartsCount, setSplitPartsCount, setActiveSplitItems } =
-              useCartStore.getState();
+        setTimeout(() => {
+          if (ctxSnapshot) {
+            if (splitSnapshot) {
+              const { splitPartsCount, setSplitPartsCount, setActiveSplitItems } =
+                useCartStore.getState();
 
-            if (isOrderClosedFromResponse || splitPartsCount === 1) {
-              // All items paid/closed, do full table cleanup
-              setSplitPartsCount(null);
-              setActiveSplitItems(null);
+              if (isOrderClosedFromResponse || splitPartsCount === 1) {
+                // All items paid/closed, do full table cleanup
+                setSplitPartsCount(null);
+                setActiveSplitItems(null);
 
+                if (ctxSnapshot.orderType === "DINE_IN") {
+                  clearTable(ctxSnapshot.section!, ctxSnapshot.tableNo!);
+                }
+
+                if (ctxSnapshot.tableId) {
+                  const tblIdStr = String(ctxSnapshot.tableId);
+                  useCartStore.getState().clearTableSession(tblIdStr);
+                  useTableNavigationStore.getState().clearTableLastScreen(tblIdStr);
+                  useTableNavigationStore.getState().clearSelectedMethod(tblIdStr);
+                  useTerminalPaymentStore.getState().clearSession(tblIdStr);
+                  delete ongoingPayments[tblIdStr];
+                  closeActiveOrder(orderIdSnapshot || "");
+                }
+
+                useOrderContextStore.getState().clearOrderContext();
+              } else {
+                // Still has items or parts left: decrement parts count if split by parts
+                if (splitPartsCount && splitPartsCount > 1) {
+                  setSplitPartsCount(splitPartsCount - 1);
+                }
+                setActiveSplitItems(null);
+              }
+            } else {
+              // Normal payment cleanup
               if (ctxSnapshot.orderType === "DINE_IN") {
                 clearTable(ctxSnapshot.section!, ctxSnapshot.tableNo!);
               }
 
               if (ctxSnapshot.tableId) {
-                useCartStore.getState().clearTableSession(ctxSnapshot.tableId);
+                const tblIdStr = String(ctxSnapshot.tableId);
+                useCartStore.getState().clearTableSession(tblIdStr);
+                useTableNavigationStore.getState().clearTableLastScreen(tblIdStr);
+                useTableNavigationStore.getState().clearSelectedMethod(tblIdStr);
+                useTerminalPaymentStore.getState().clearSession(tblIdStr);
+                delete ongoingPayments[tblIdStr];
                 closeActiveOrder(orderIdSnapshot || "");
               }
 
               useOrderContextStore.getState().clearOrderContext();
-            } else {
-              // Still has items or parts left: decrement parts count if split by parts
-              if (splitPartsCount && splitPartsCount > 1) {
-                setSplitPartsCount(splitPartsCount - 1);
-              }
-              setActiveSplitItems(null);
             }
-          } else {
-            // Normal payment cleanup
-            if (ctxSnapshot.orderType === "DINE_IN") {
-              clearTable(ctxSnapshot.section!, ctxSnapshot.tableNo!);
-            }
-
-            if (ctxSnapshot.tableId) {
-              useCartStore.getState().clearTableSession(ctxSnapshot.tableId);
-              closeActiveOrder(orderIdSnapshot || "");
-            }
-
-            useOrderContextStore.getState().clearOrderContext();
           }
-        }
+          setPaymentStatus("idle");
+          setPaymentMessage("");
+          setProcessing(false);
+        }, 50);
       } else {
+        const lockKey = (context?.tableId || displayOrderId || "MAIN_PAYMENT_LOCK").toString();
+        delete finalizationLockRef.current[lockKey];
         showToast({ type: "error", message: "Failed", subtitle: result.error });
       }
     } catch (e: any) {
+      const lockKey = (context?.tableId || displayOrderId || "MAIN_PAYMENT_LOCK").toString();
+      delete finalizationLockRef.current[lockKey];
       console.error("❌ [Sales Checkout Network Failure Details]:", {
         endpoint: `${API_URL}/api/sales/save`,
         message: e?.message || e,
@@ -1754,7 +1880,7 @@ export default function PaymentScreen() {
       if (match && match[1]) {
         const host = match[1];
         if (host.includes("railway") || host.includes("production")) {
-          return "https://pos-v-20-production.up.railway.app/customer-display";
+          return "https://conestonepos-qr082026-production.up.railway.app/customer-display";
 
         }
         return `http://${host}:8081/customer-display`;
@@ -4432,13 +4558,34 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
   cashSection: { marginTop: 5 },
-  sectionHeader: { marginBottom: 8 },
+  sectionHeader: {
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   sectionTitle: {
     fontSize: 12,
     fontFamily: Fonts.black,
     color: Theme.textPrimary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  openDrawerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    borderWidth: 1,
+    borderColor: "#ffedd5",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 5,
+  },
+  openDrawerBtnText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: "#ea580c",
   },
   cashInputBox: {
     flexDirection: "row",

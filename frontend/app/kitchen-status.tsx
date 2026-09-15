@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
   },
   tableNumber: {
     fontSize: 16,
-    fontFamily: Fonts.black,
+    fontWeight: "900",
     color: Theme.textPrimary,
   },
   orderId: {
