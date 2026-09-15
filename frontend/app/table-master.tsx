@@ -21,6 +21,7 @@ import { socket } from "@/constants/socket";
 import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
 import { Theme } from "@/constants/theme";
+import { FloorPlanTable } from "@/components/FloorPlanTable";
 
 type TableItem = {
   id: string;
@@ -611,127 +612,30 @@ const DraggableTable = ({
         }),
       }}
     >
-      {/* Chairs — professional top-view chair shape */}
-      {chairPositions.map((pos, idx) => {
-        const chairFill  = isSelected ? "#fff0e8" : "#7cb474";
-        const backFill   = isSelected ? "#FF5E1A" : "#4e6b47";
-        const bdrColor   = isSelected ? "#FF5E1A" : "#3a5234";
-        const legColor   = isSelected ? "#FF5E1A" : "#2d3d28";
-
-        const backH   = Math.round(chairSize * 0.34);
-        const seatPad = Math.round(chairSize * 0.12);
-        const legS    = Math.max(3, Math.round(chairSize * 0.2));
-        const br      = Math.round(chairSize * 0.25);
-
-        return (
-          <View
-            key={`chair-${idx}`}
-            style={{
-              position: "absolute",
-              left: pos.x,
-              top: pos.y,
-              width: chairSize,
-              height: chairSize,
-              transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
-            }}
-          >
-            {/* Backrest — curved top band */}
-            <View style={{
-              position: "absolute",
-              top: 0, left: 2, right: 2,
-              height: backH,
-              backgroundColor: backFill,
-              borderTopLeftRadius: br,
-              borderTopRightRadius: br,
-              borderBottomLeftRadius: 2,
-              borderBottomRightRadius: 2,
-              borderWidth: 1.2,
-              borderColor: bdrColor,
-            }} />
-            {/* Seat cushion */}
-            <View style={{
-              position: "absolute",
-              top: Math.round(chairSize * 0.26),
-              left: 0, right: 0,
-              bottom: Math.round(chairSize * 0.2),
-              backgroundColor: chairFill,
-              borderRadius: Math.round(chairSize * 0.18),
-              borderWidth: 1.2,
-              borderColor: bdrColor,
-              ...Platform.select({
-                ios: { shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 2, shadowOffset: {width:0, height:1} },
-                android: { elevation: 1 },
-                web: { boxShadow: '0 1px 2px rgba(0,0,0,0.15)' } as any,
-              }),
-            }} />
-            {/* Front left leg */}
-            <View style={{
-              position: "absolute",
-              bottom: 0, left: seatPad,
-              width: legS, height: legS,
-              borderRadius: 2,
-              backgroundColor: legColor,
-              opacity: 0.8,
-            }} />
-            {/* Front right leg */}
-            <View style={{
-              position: "absolute",
-              bottom: 0, right: seatPad,
-              width: legS, height: legS,
-              borderRadius: 2,
-              backgroundColor: legColor,
-              opacity: 0.8,
-            }} />
-          </View>
-        );
-      })}
-
-      <View
-        style={{
-          position: "absolute",
-          left: tx,
-          top: ty,
-          width: tableW,
-          height: tableH,
-          borderRadius,
-          borderColor: isSelected ? "#FF5E1A" : "#99652f",
-          borderWidth: isSelected ? 3.5 : 2,
-          overflow: "hidden",
-          backgroundColor: "#b77d3d",
-        }}
-      >
-        <LinearGradient
-          colors={["#d9a866", "#c99452", "#b77d3d"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          locations={[0, 0.45, 1.0]}
-          style={{
-            flex: 1,
-            width: "100%",
-            height: "100%",
-            padding: 2,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <View style={{
-            flex: 1,
-            width: "100%",
-            height: "100%",
-            borderRadius: Math.max(0, borderRadius - 2),
-            justifyContent: "center",
-            alignItems: "center",
-          }}>
-            {/* Table Number & Capacity */}
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#334155" }}>
-              {table.label}
-            </Text>
-            <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748b", marginTop: 1 }}>
-              {table.Seats} Pax
-            </Text>
-          </View>
-        </LinearGradient>
-      </View>
+      {/* ── Shared FloorPlanTable: table body + chairs ── */}
+      <FloorPlanTable
+        tableW={tableW}
+        tableH={tableH}
+        borderRadius={borderRadius}
+        seatsCount={seatsCount}
+        status={0}
+        activeColor={isSelected ? "#FF5E1A" : "#9E8570"}
+        activeBg={"#F2EDE4"}
+        labelColor={isSelected ? "#FF5E1A" : "#3D2B1A"}
+        textColor={isSelected ? "#CC4A10" : "#6B5242"}
+        label={table.label}
+        uiText={""}
+        paxCount={seatsCount}
+        timeText={""}
+        billAmount={-1}
+        chairSize={chairSize}
+        chairPositions={chairPositions}
+        tx={tx}
+        ty={ty}
+        smallFont={8}
+        numberFont={13}
+        itemSize={Math.max(tableW, tableH)}
+      />
     </View>
   );
 };
@@ -1322,7 +1226,7 @@ export default function TableMasterScreen() {
                       theme={backgroundTheme}
                       style={[styles.floorWorkspaceCanvas, { width: availableWidth, height: canvasHeight * (availableWidth / 780) }]}
                     >
-                      {/* Subtle floor plan blueprint grids */}
+                      {/* Subtle floor plan blueprint grids (edit mode only) */}
                       {(() => {
                         let gridLineColor = "rgba(232, 224, 213, 0.4)";
                         if (backgroundTheme === "dark") gridLineColor = "rgba(255, 255, 255, 0.04)";

@@ -35,6 +35,7 @@ import {
 } from "react-native-safe-area-context";
 import { useToast } from "../../components/Toast";
 import WindowControls from "../../components/WindowControls";
+import { FloorPlanTable } from "@/components/FloorPlanTable";
 import {
   formatToSingaporeTime,
   getSingaporeDateString,
@@ -906,7 +907,7 @@ const TableItemComponent = React.memo(
                       <Ionicons name="time-outline" size={smallFont - 1} color={textColor} /> {timeText}
                     </Text>
                   ) : null}
-                  {billAmount > 0 && (
+                  {billAmount >= 0 && (
                     <Text style={[styles.billText, { fontSize: smallFont + 1, color: textColor, fontWeight: "800" }]}>
                       ${billAmount.toFixed(2)}
                     </Text>
@@ -960,277 +961,32 @@ const TableItemComponent = React.memo(
         ]}
         onPress={() => onPress(item, tableData)}
       >
-        {/* Render Chairs — professional top-view chair shape */}
-        {chairPositions.map((pos, idx) => {
-          const transform = pos.rotate ? [{ rotate: pos.rotate }] : undefined;
-
-          // Status-aware chair colors
-          let backrestColor: string;
-          let seatColor: string;
-          let borderColor: string;
-          let legColor: string;
-          if (status === 0) {
-            backrestColor = "#4e6b47"; seatColor = "#7cb474"; borderColor = "#3a5234"; legColor = "#2d3d28";
-          } else {
-            backrestColor = activeColor; seatColor = activeBg; borderColor = activeColor; legColor = activeColor;
-          }
-
-          const backH   = Math.round(chairSize * 0.34);
-          const seatPad = Math.round(chairSize * 0.12);
-          const legS    = Math.max(3, Math.round(chairSize * 0.2));
-          const br      = Math.round(chairSize * 0.25);
-
-          return (
-            <View
-              key={`chair-${idx}`}
-              style={{
-                position: "absolute",
-                left: pos.x,
-                top: pos.y,
-                width: chairSize,
-                height: chairSize,
-                transform,
-              }}
-            >
-              {/* ── Backrest ── curved top band */}
-              <View style={{
-                position: "absolute",
-                top: 0, left: 2, right: 2,
-                height: backH,
-                backgroundColor: backrestColor,
-                borderTopLeftRadius: br,
-                borderTopRightRadius: br,
-                borderBottomLeftRadius: 2,
-                borderBottomRightRadius: 2,
-                borderWidth: 1.2,
-                borderColor: borderColor,
-              }} />
-
-              {/* ── Seat cushion ── */}
-              <View style={{
-                position: "absolute",
-                top: Math.round(chairSize * 0.26),
-                left: 0, right: 0,
-                bottom: Math.round(chairSize * 0.2),
-                backgroundColor: seatColor,
-                borderRadius: Math.round(chairSize * 0.18),
-                borderWidth: 1.2,
-                borderColor: borderColor,
-                ...Platform.select({
-                  ios: { shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 2, shadowOffset: {width:0, height:1} },
-                  android: { elevation: 1 },
-                  web: { boxShadow: '0 1px 2px rgba(0,0,0,0.15)' } as any,
-                }),
-              }} />
-
-              {/* ── Front left leg ── */}
-              <View style={{
-                position: "absolute",
-                bottom: 0,
-                left: seatPad,
-                width: legS,
-                height: legS,
-                borderRadius: 2,
-                backgroundColor: legColor,
-                opacity: 0.8,
-              }} />
-              {/* ── Front right leg ── */}
-              <View style={{
-                position: "absolute",
-                bottom: 0,
-                right: seatPad,
-                width: legS,
-                height: legS,
-                borderRadius: 2,
-                backgroundColor: legColor,
-                opacity: 0.8,
-              }} />
-            </View>
-          );
-        })}
-
-        {/* Clock/Timer Overlay Badge — top-right corner */}
-        {status > 0 && status !== 5 && (
-          <View style={{
-            position: "absolute",
-            top: ty + 3,
-            right: -(tx) + 3,
-            width: 16,
-            height: 16,
-            borderRadius: 8,
-            backgroundColor: "#FFFFFF",
-            borderWidth: 1.5,
-            borderColor: activeColor,
-            justifyContent: "center",
-            alignItems: "center",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.15,
-            shadowRadius: 2,
-            elevation: 4,
-            zIndex: 99,
-          }}>
-            <Ionicons name="time" size={10} color={activeColor} />
-          </View>
-        )}
-
-        {/* Render Table Body */}
-        <View
-          style={{
-            position: "absolute",
-            left: tx,
-            top: ty,
-            width: tableW,
-            height: tableH,
-            borderRadius,
-            borderColor: status === 0 ? "#99652f" : activeColor,
-            borderWidth: status === 0 ? 2 : 2.5,
-            overflow: "hidden",
-            backgroundColor: status === 0 ? "#b77d3d" : "transparent",
-            ...Platform.select({
-              ios: { shadowColor: "#000000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.14, shadowRadius: 4 },
-              android: { elevation: 3 },
-              web: { boxShadow: status === 0 ? `0 3px 8px rgba(0,0,0,0.18)` : `0 3px 8px ${activeColor}44` } as any,
-            }),
-          }}
-        >
-          {status === 0 ? (
-            /* ── Empty table: warm wood gradient ── */
-            <LinearGradient
-              colors={["#e8b96a", "#d19a50", "#b77d3d"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              locations={[0, 0.45, 1.0]}
-              style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-            >
-              {/* Inner wood grain line */}
-              <View style={{
-                position: "absolute",
-                inset: 0,
-                margin: 4,
-                borderRadius: Math.max(0, borderRadius - 4),
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.18)",
-              }} />
-              <Text style={{
-                fontFamily: Fonts.black,
-                fontWeight: "900",
-                fontSize: Math.max(13, numberFont * (tableW / itemSize) * 0.9),
-                color: "#3d2000",
-                textShadowColor: "rgba(255,220,150,0.6)",
-                textShadowOffset: { width: 0, height: 1 },
-                textShadowRadius: 2,
-              }}>
-                {item.label}
-              </Text>
-              <Text style={{
-                fontFamily: Fonts.medium,
-                fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.75),
-                color: "rgba(61,32,0,0.6)",
-                marginTop: 1,
-              }}>
-                {seatsCount} Pax
-              </Text>
-            </LinearGradient>
-          ) : (
-            /* ── Occupied table: status gradient ── */
-            <LinearGradient
-              colors={gradientColors}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 4 }}
-            >
-              {/* Table number */}
-              <Text style={{
-                fontFamily: Fonts.black,
-                fontWeight: "900",
-                fontSize: Math.max(13, numberFont * (tableW / itemSize) * 0.9),
-                color: labelColor,
-                lineHeight: Math.max(14, numberFont * (tableW / itemSize) * 0.9) + 2,
-              }}>
-                {item.label}
-              </Text>
-
-              {/* Status badge */}
-              <View style={{
-                marginTop: 2,
-                paddingHorizontal: 5,
-                paddingVertical: 1.5,
-                borderRadius: 4,
-                backgroundColor: activeColor,
-                maxWidth: tableW - 10,
-              }}>
-                <Text style={{
-                  fontFamily: Fonts.bold,
-                  fontSize: Math.max(6, smallFont * (tableW / itemSize) * 0.78),
-                  color: "#ffffff",
-                  letterSpacing: 0.4,
-                }} numberOfLines={1}>
-                  {ui.text}
-                </Text>
-              </View>
-
-              {/* Customer name */}
-              {tableData?.customerName ? (
-                <Text style={{
-                  fontFamily: Fonts.medium,
-                  fontSize: Math.max(6, (smallFont - 1) * (tableW / itemSize) * 0.75),
-                  color: labelColor,
-                  marginTop: 1.5,
-                  opacity: 0.85,
-                }} numberOfLines={1}>
-                  {tableData.customerName}
-                </Text>
-              ) : null}
-
-              {/* Time + Amount row */}
-              {status !== 5 && (timeText || billAmount > 0) ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
-                  {timeText ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-                      <Ionicons name="time-outline" size={Math.max(7, (smallFont - 2) * (tableW / itemSize) * 0.8)} color={textColor} />
-                      <Text style={{
-                        fontFamily: Fonts.medium,
-                        fontSize: Math.max(6, (smallFont - 2) * (tableW / itemSize) * 0.8),
-                        color: textColor,
-                      }}>
-                        {timeText}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {billAmount > 0 ? (
-                    <Text style={{
-                      fontFamily: Fonts.bold,
-                      fontWeight: "800",
-                      fontSize: Math.max(7, smallFont * (tableW / itemSize) * 0.85),
-                      color: textColor,
-                    }}>
-                      ${billAmount.toFixed(2)}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {/* Reserved lock */}
-              {status === 5 && (
-                <View style={{ alignItems: "center", marginTop: 2 }}>
-                  <Ionicons name="lock-closed" size={Math.max(10, tableW * 0.14)} color={activeColor} />
-                  {tableData?.lockedByName ? (
-                    <Text style={{
-                      fontFamily: Fonts.medium,
-                      fontSize: Math.max(6, (smallFont - 2) * (tableW / itemSize)),
-                      color: labelColor,
-                      opacity: 0.85,
-                      marginTop: 1,
-                    }} numberOfLines={1}>
-                      {tableData.lockedByName}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-            </LinearGradient>
-          )}
-        </View>
+        {/* ── Shared FloorPlanTable: table body + chairs ── */}
+        <FloorPlanTable
+          tableW={tableW}
+          tableH={tableH}
+          borderRadius={borderRadius}
+          seatsCount={seatsCount}
+          status={status}
+          activeColor={activeColor}
+          activeBg={activeBg}
+          labelColor={labelColor}
+          textColor={textColor}
+          label={item.label}
+          uiText={ui.text}
+          paxCount={seatsCount}
+          timeText={timeText}
+          billAmount={billAmount}
+          customerName={tableData?.customerName}
+          lockedByName={tableData?.lockedByName}
+          chairSize={chairSize}
+          chairPositions={chairPositions}
+          tx={tx}
+          ty={ty}
+          smallFont={smallFont}
+          numberFont={numberFont}
+          itemSize={itemSize}
+        />
 
         {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
         {status === 3 && !!tableData?.isHoldOvertime && (
@@ -4891,40 +4647,6 @@ export default function Category() {
                   }}
                   isCategory={true}
                 >
-                  {/* Subtle floor grid lines to align layout */}
-                  {(() => {
-                    let gridLineColor = "rgba(232, 224, 213, 0.4)";
-                    if (backgroundTheme === "dark") gridLineColor = "rgba(255, 255, 255, 0.04)";
-                    if (backgroundTheme === "emerald") gridLineColor = "rgba(255, 255, 255, 0.05)";
-                    if (backgroundTheme === "grey") gridLineColor = "rgba(0, 0, 0, 0.06)";
-                    if (backgroundTheme === "wood") gridLineColor = "rgba(255, 255, 255, 0.07)";
-                    if (backgroundTheme === "light") gridLineColor = "rgba(0, 0, 0, 0.04)";
-
-                    return (
-                      <View style={{
-                        position: "absolute",
-                        top: 0, left: 0, right: 0, bottom: 0,
-                      }} pointerEvents="none">
-                        {Array.from({ length: 25 }).map((_, i) => (
-                          <View key={`grid-h-${i}`} style={{
-                            position: "absolute",
-                            left: 0, right: 0, height: 1,
-                            backgroundColor: gridLineColor,
-                            top: (i + 1) * 30 * (availableWidth / 780)
-                          }} />
-                        ))}
-                        {Array.from({ length: 32 }).map((_, i) => (
-                          <View key={`grid-v-${i}`} style={{
-                            position: "absolute",
-                            top: 0, bottom: 0, width: 1,
-                            backgroundColor: gridLineColor,
-                            left: (i + 1) * 30 * (availableWidth / 780)
-                          }} />
-                        ))}
-                      </View>
-                    );
-                  })()}
-
                   {/* Render each Table component placed absolute */}
                   {(() => {
                     const layoutScale = availableWidth / 780;
