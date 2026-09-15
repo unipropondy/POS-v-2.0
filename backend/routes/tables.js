@@ -126,10 +126,15 @@ router.post("/lock-persistent", async (req, res) => {
     request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
 
     const result = await request.query(`
+      DECLARE @temp TABLE (TableNumber NVARCHAR(50), DiningSection VARCHAR(10), ModifiedOn VARCHAR(50));
+
       UPDATE TableMaster 
       SET Status = 5, LockedByName = @lockedByName, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL
       OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
-      WHERE TableId = @tableId
+      INTO @temp
+      WHERE TableId = @tableId;
+
+      SELECT * FROM @temp;
     `);
 
     // ✅ Clear CartItems for this table when locked
@@ -174,10 +179,15 @@ router.post("/unlock-persistent", async (req, res) => {
       .input("tableId", sql.VarChar(50), cleanTableId)
       .input("ModifiedBy", sql.UniqueIdentifier, userId || null)
       .query(`
+        DECLARE @temp TABLE (TableNumber NVARCHAR(50), DiningSection VARCHAR(10), ModifiedOn VARCHAR(50));
+
         UPDATE TableMaster 
         SET Status = 0, entry_status = NULL, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL
         OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
-        WHERE TableId = @tableId
+        INTO @temp
+        WHERE TableId = @tableId;
+
+        SELECT * FROM @temp;
       `);
 
     // ✅ Clear any items in CartItems for this table when unlocked
@@ -231,6 +241,16 @@ router.post("/save-guest", async (req, res) => {
 
     // Update TableMaster
     const updateTM = await request.query(`
+      DECLARE @temp TABLE (
+        TableNumber NVARCHAR(50), 
+        DiningSection VARCHAR(10), 
+        Status INT,
+        TotalAmount DECIMAL(18, 2),
+        StartTime VARCHAR(50),
+        ModifiedOn VARCHAR(50),
+        entryStatus VARCHAR(50)
+      );
+
       UPDATE TableMaster
       SET CustomerName = @customerName,
           Pax = @pax,
@@ -247,7 +267,10 @@ router.post("/save-guest", async (req, res) => {
         CONVERT(VARCHAR, INSERTED.StartTime, 126) AS StartTime,
         CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn,
         INSERTED.entry_status AS entryStatus
-      WHERE TableId = @tableId
+      INTO @temp
+      WHERE TableId = @tableId;
+
+      SELECT * FROM @temp;
     `);
 
     if (updateTM.recordset.length === 0) {
@@ -450,6 +473,19 @@ router.put("/status", async (req, res) => {
     request.input("holdMinutes", sql.Int, holdMinutes);
 
     const updateResult = await request.query(`
+      DECLARE @temp TABLE (
+        TotalAmount DECIMAL(18, 2),
+        StartTime VARCHAR(50),
+        TableNumber NVARCHAR(50),
+        DiningSection VARCHAR(10),
+        entryStatus VARCHAR(50),
+        customerName NVARCHAR(255),
+        pax INT,
+        ModifiedOn VARCHAR(50),
+        isOvertime INT,
+        isHoldOvertime INT
+      );
+
       UPDATE TableMaster 
       SET Status = @status,
           ModifiedBy = @ModifiedBy,
@@ -489,7 +525,10 @@ router.put("/status", async (req, res) => {
           WHEN INSERTED.Status = 3 AND INSERTED.ModifiedOn IS NOT NULL AND DATEDIFF(MINUTE, INSERTED.ModifiedOn, GETDATE()) >= @holdMinutes THEN 1 
           ELSE 0 
         END AS isHoldOvertime
-      WHERE TableId = @tableId
+      INTO @temp
+      WHERE TableId = @tableId;
+
+      SELECT * FROM @temp;
     `);
     
     const row = updateResult.recordset[0];

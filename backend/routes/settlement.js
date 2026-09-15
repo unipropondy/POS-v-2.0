@@ -67,32 +67,124 @@ router.get("/payment/:terminal/:userId", async (req, res) => {
       dateFilter = `start_date BETWEEN CAST('${fDate}' AS DATE) AND CAST('${tDate}' AS DATE)`;
     }
 
-    const result = await request.query(`
-         SELECT
-    ISNULL(Remarks, '') AS PaymodeName,
-    ISNULL(SUM(Amount), 0) AS Amount,
-    COUNT(*) AS PayCount,
-    CAST(PaymentCollectedOn AS DATE) AS PaymentCollectedOn,
-    isSettlement,
-    isDayend,
-    Remarks,
-    TerminalCode
-FROM PaymentDetailCur
-WHERE ${dateFilter}
-  AND (RestaurantBillId IS NULL OR RestaurantBillId NOT IN (
-      SELECT RestaurantBillId 
-      FROM RestaurantInvoiceCur 
-      WHERE StatusCode = 4 AND RestaurantBillId IS NOT NULL
-  ))
-GROUP BY 
-    Remarks,
-    CAST(PaymentCollectedOn AS DATE),
-    isSettlement,
-    isDayend,
-    TerminalCode    
-      `);
+    // Fetch active bill payments — EXCLUDE CREDIT paymode (deferred/unpaid, not cash received)
+    const billsResult = await request.query(`
+      SELECT
+        LTRIM(RTRIM(ISNULL(Remarks, ''))) AS PaymodeName,
+        ISNULL(SUM(Amount), 0) AS Amount,
+        COUNT(*) AS PayCount
+      FROM PaymentDetailCur
+      WHERE ${dateFilter}
+        AND UPPER(LTRIM(RTRIM(ISNULL(Remarks, '')))) NOT IN ('CREDIT', 'MEMBER')
+        AND (RestaurantBillId IS NULL OR RestaurantBillId NOT IN (
+            SELECT RestaurantBillId 
+            FROM RestaurantInvoiceCur 
+            WHERE StatusCode = 4 AND RestaurantBillId IS NOT NULL
+        ))
+      GROUP BY LTRIM(RTRIM(ISNULL(Remarks, '')))
+    `);
 
-    res.json(result.recordset || []);
+    // Fetch credit outstanding & issued amounts separately for Credit Activity tracking
+    const creditOutstandingResult = await request.query(`
+      SELECT
+        ISNULL(CustomerType, 'CREDIT') AS PaymodeName,
+        ISNULL(SUM(OutstandingAmount), 0) AS Amount,
+        ISNULL(SUM(BillAmount), 0) AS BilledAmount,
+        ISNULL(SUM(PaidAmount), 0) AS PaidAmount,
+        COUNT(*) AS PayCount
+      FROM CustomerCreditTransactions
+      WHERE TransactionType = 'CREDIT_SALE'
+        AND ${dateFilter.replace(/start_date/g, 'COALESCE(start_date, CAST(CreatedDate AS DATE))')}
+      GROUP BY ISNULL(CustomerType, 'CREDIT')
+    `);
+
+    // Fetch non-cash ledger collections (e.g. PAYNOW, NETS, CARD paid on receivables screen)
+    const ledgerResult = await request.query(`
+      SELECT
+        pm.PayMode AS PaymodeName,
+        ISNULL(SUM(ptd.Amount), 0) AS Amount,
+        COUNT(*) AS PayCount
+      FROM PaymentTransactionDetails ptd
+      INNER JOIN Paymode pm ON ptd.PayModeId = pm.Position
+      WHERE ptd.ReferenceType = 'MEMBER'
+        AND UPPER(pm.PayMode) NOT LIKE '%CASH%'
+        AND ${dateFilter.replace(/start_date/g, 'CAST(ptd.CreatedDate AS DATE)')}
+      GROUP BY pm.PayMode
+    `);
+
+    const normalizePayMode = (paymentMethod = "CASH") => {
+      const raw = String(paymentMethod || "CASH").toUpperCase().trim();
+      if (raw === "Q-R" || raw === "Q.R.") return "QR";
+      if (raw === "PAY_NOW") return "PAYNOW";
+      if (raw === "U-P-I") return "UPI";
+      if (raw === "G-PAY") return "GPAY";
+      if (raw === "P-H-O-N-E") return "PHONE";
+      if (raw === "P-A-Y-T-M") return "PAYTM";
+      if (raw === "CASH" || raw === "CAS" || raw === "1") return "CASH";
+      if (raw.includes("CARD") || raw.includes("VISA") || raw.includes("MASTER") || raw.includes("AMEX") || raw.includes("DINERS")) return "CARD";
+      if (raw.includes("PAYNOW") || raw.includes("GRAB") || raw.includes("FOODPANDA") || raw === "3" || raw.includes("PAY NOW")) return "PAYNOW";
+      if (raw.includes("UPI") || raw === "4" || raw.includes("GPAY") || raw.includes("PHONE") || raw.includes("PAYTM")) return "UPI";
+      if (raw.includes("NETS") || raw === "2") return "NETS";
+      if (raw.includes("MEMBER") || raw === "5") return "MEMBER";
+      if (raw.includes("CREDIT") || raw === "6") return "CREDIT";
+      return raw;
+    };
+
+    // Aggregate cash/non-cash movements (excludes CREDIT deferred payments)
+    const aggregated = {};
+    
+    // 1. Process direct checkout payments
+    (billsResult.recordset || []).forEach(row => {
+      const normName = normalizePayMode(row.PaymodeName);
+      if (!aggregated[normName]) {
+        aggregated[normName] = {
+          PaymodeName: normName,
+          Amount: 0,
+          PayCount: 0
+        };
+      }
+      aggregated[normName].Amount += parseFloat(row.Amount) || 0;
+      aggregated[normName].PayCount += parseInt(row.PayCount, 10) || 0;
+    });
+
+    // 2. Process non-cash ledger payments separately (prefixed so they don't merge)
+    (ledgerResult.recordset || []).forEach(row => {
+      const normName = normalizePayMode(row.PaymodeName);
+      const ledgerName = `Credit Settlement - ${normName}`;
+      if (!aggregated[ledgerName]) {
+        aggregated[ledgerName] = {
+          PaymodeName: ledgerName,
+          Amount: 0,
+          PayCount: 0
+        };
+      }
+      aggregated[ledgerName].Amount += parseFloat(row.Amount) || 0;
+      aggregated[ledgerName].PayCount += parseInt(row.PayCount, 10) || 0;
+    });
+
+    // Aggregate credit outstanding (deferred bills — shown separately on screen, NOT in total movements)
+    const creditAggregated = {};
+    (creditOutstandingResult.recordset || []).forEach(row => {
+      const normName = normalizePayMode(row.PaymodeName);
+      if (!creditAggregated[normName]) {
+        creditAggregated[normName] = { 
+          PaymodeName: normName, 
+          Amount: 0, 
+          BilledAmount: 0,
+          PaidAmount: 0,
+          PayCount: 0 
+        };
+      }
+      creditAggregated[normName].Amount += parseFloat(row.Amount) || 0;
+      creditAggregated[normName].BilledAmount += parseFloat(row.BilledAmount) || 0;
+      creditAggregated[normName].PaidAmount += parseFloat(row.PaidAmount) || 0;
+      creditAggregated[normName].PayCount += parseInt(row.PayCount, 10) || 0;
+    });
+
+    res.json({
+      payments: Object.values(aggregated),
+      creditOutstanding: Object.values(creditAggregated)
+    });
 
   } catch (err) {
     console.error("❌ PAYMENT ERROR:", err);

@@ -488,7 +488,7 @@ router.post("/login", async (req, res) => {
     }
 
     // ✅ VALIDATE USER GROUP (STRICT CHECK)
-    if (!user.UserGroupid || !user.RoleCode) {
+    if (!user.UserGroupid || String(user.UserGroupid).trim() === "" || String(user.UserGroupid).trim().toUpperCase() === "NULL" || !user.RoleCode) {
       console.log(`[AUTH] Login failed: No valid group assigned to user "${user.UserName}".`);
       return res.status(403).json({ success: false, message: "User has no valid group assigned." });
     }

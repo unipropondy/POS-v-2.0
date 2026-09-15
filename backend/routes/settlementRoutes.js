@@ -284,10 +284,10 @@ router.get('/opening-cash', authenticateToken, async (req, res) => {
   try {
     let { outletId, date } = req.query;
 
-    // ✅ FIX: Convert to integer
+    // ✅ FIX: Safely parse integer or fallback to 1 for string IDs like 'SR'
     outletId = parseInt(outletId);
     if (isNaN(outletId)) {
-      return res.status(400).json({ error: 'Invalid outletId' });
+      outletId = 1;
     }
 
     const pool = getPool();
@@ -326,10 +326,10 @@ router.post('/opening-cash', authenticateToken, async (req, res) => {
   try {
     let { outletId, settlementDate, notes, coins, total, cashierName } = req.body;
 
-    // ✅ FIX: Convert to integer
+    // ✅ FIX: Safely parse integer or fallback to 1 for string IDs like 'SR'
     outletId = parseInt(outletId);
     if (isNaN(outletId)) {
-      return res.status(400).json({ error: 'Invalid outletId' });
+      outletId = 1;
     }
 
     const openingCashJSON = JSON.stringify({ notes, coins });
@@ -742,12 +742,39 @@ router.get('/cash-in/:terminal', authenticateToken, async (req, res) => {
     }
 
     let query = `
-      SELECT CashInId, CashInNo, CashInDate, Amount, Reason, Remarks, PaymentMode, ReferenceNo, TerminalCode, CreatedBy, CreatedOn, start_date, AttachmentUrl 
-      FROM CashInEntry 
-      WHERE ${dateFilter}
+      SELECT 
+        ci.CashInId, 
+        ci.CashInNo, 
+        ci.CashInDate, 
+        ci.Amount, 
+        ci.Reason, 
+        ci.Remarks, 
+        ci.PaymentMode, 
+        ci.ReferenceNo, 
+        ci.TerminalCode, 
+        ci.CreatedBy, 
+        ci.CreatedOn, 
+        ci.start_date, 
+        ci.AttachmentUrl,
+        CASE 
+          WHEN ci.Reason = 'Ledger Payment' OR ci.Reason = 'Credit Settlement' THEN 'LEDGER'
+          WHEN ci.Reason = 'Cash Sale' THEN 'SALE'
+          WHEN ci.Remarks LIKE 'Auto Cash In from BILL%' THEN 'SALE'
+          WHEN ci.Remarks LIKE 'Auto Cash In from MEMBER%' THEN 'LEDGER'
+          WHEN sh.SettlementID IS NOT NULL THEN 'SALE'
+          WHEN cct.SettlementId IS NOT NULL THEN 'LEDGER'
+          WHEN ptd.PaymentTransactionId IS NOT NULL THEN 'LEDGER'
+          WHEN ci.Reason = 'Cash In' AND (ci.Remarks LIKE '%MEMBER%' OR ci.Remarks LIKE '%CREDIT%') THEN 'LEDGER'
+          ELSE 'MANUAL'
+        END AS CashInType
+      FROM CashInEntry ci
+      LEFT JOIN SettlementHeader sh ON ci.ReferenceNo = CAST(sh.SettlementID AS VARCHAR(50))
+      LEFT JOIN CustomerCreditTransactions cct ON ci.ReferenceNo = CAST(cct.SettlementId AS VARCHAR(50))
+      LEFT JOIN PaymentTransactionDetails ptd ON ci.ReferenceNo = CAST(ptd.PaymentTransactionId AS VARCHAR(50))
+      WHERE ${dateFilter.replace(/start_date/g, 'ci.start_date').replace(/CashInDate/g, 'ci.CashInDate')}
     `;
 
-    query += ` ORDER BY CreatedOn DESC`;
+    query += ` ORDER BY ci.CreatedOn DESC`;
 
     const result = await request.query(query);
     res.json({ success: true, data: result.recordset });

@@ -110,6 +110,52 @@ router.post("/deduct-promo", async (req, res) => {
   }
 });
 
+let promoImageCache = null;
+let promoImageCacheTime = 0;
+const CACHE_TTL = 60000; // 60 seconds
+
+router.get("/active-promo-image", async (req, res) => {
+  try {
+    const now = Date.now();
+    if (promoImageCache && (now - promoImageCacheTime < CACHE_TTL)) {
+      return res.json(promoImageCache);
+    }
+
+    const pool = await poolPromise;
+    const result = await pool.request().query(`
+      SELECT PromoImage, PromoCode, PromoName
+      FROM PromoCodeMaster
+      WHERE IsActive = 1 AND PromoImage IS NOT NULL
+    `);
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ success: false, message: "No active promo images found" });
+    }
+
+    const promoImages = result.recordset.map(row => {
+      const base64Image = Buffer.from(row.PromoImage).toString("base64");
+      return {
+        promoCode: row.PromoCode,
+        promoName: row.PromoName,
+        promoImage: `data:image/jpeg;base64,${base64Image}`
+      };
+    });
+
+    const responseData = {
+      success: true,
+      promoImages
+    };
+
+    promoImageCache = responseData;
+    promoImageCacheTime = now;
+
+    return res.json(responseData);
+  } catch (err) {
+    console.error("[GET ACTIVE PROMO IMAGE ERROR]", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── PRIVATE SECURE ENDPOINTS (Token Required) ─────────────────────────────
 router.use(authenticateToken);
 const { runInTransaction } = require("../utils/transactionHelper");

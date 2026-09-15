@@ -1547,10 +1547,6 @@ export const useCartStore = create<CartState>()(
                   const dbStatus = dbItem.status || "NEW";
                   const localStatus = localItem.status || "NEW";
                   if (dbStatus !== localStatus) {
-                    // If local is NEW and server has it as SENT, they are the same item just sent.
-                    if (localStatus === "NEW" && dbStatus === "SENT") {
-                      return true;
-                    }
                     return false;
                   }
                   

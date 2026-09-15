@@ -428,7 +428,7 @@ const getStatusUI = (status: number, diningSection?: number) => {
       }
       return { text: "DINING", color: "#22c55e", lightBg: "#F0FDF4" };
     case 2:
-      return { text: "CHECKOUT", color: "#fd7e14", lightBg: "#FFF7ED" };
+      return { text: "CHECKOUT", color: "#F59E0B", lightBg: "#FFFBEB" };
     case 3:
       return { text: "HOLD", color: "#3b82f6", lightBg: "#F0F9FF" };
     case 4:
@@ -543,7 +543,7 @@ const TableItemComponent = React.memo(
 
     // 🌹 QR PAID: entryStatus='q' + paymentStatus=1 → Rose card + "Paid" label
     const rawEntryStatus =
-      tableData?.entryStatus !== undefined
+      (tableData?.entryStatus !== undefined && tableData?.entryStatus !== null)
         ? tableData.entryStatus
         : item.entryStatus;
     const rawPaymentStatus =
@@ -645,7 +645,7 @@ const TableItemComponent = React.memo(
             activeBg = "#FFFFFF";
             break;
           case 2: // Checkout
-            activeColor = "#F97316";
+            activeColor = "#F59E0B";
             activeBg = "#FFFFFF";
             break;
           case 3: // Hold
@@ -772,9 +772,9 @@ const TableItemComponent = React.memo(
           gradientColors = ["#F0FDF4", "#DCFCE7"];
           tableBorderColor = "#22c55e";
           break;
-        case 2: // Checkout (Subtle Orange)
-          gradientColors = ["#FFF7ED", "#FFEDD5"];
-          tableBorderColor = "#fd7e14";
+        case 2: // Checkout (Subtle Yellow/Amber)
+          gradientColors = ["#FFFBEB", "#FEF3C7"];
+          tableBorderColor = "#F59E0B";
           break;
         case 3: // Hold (Subtle Blue)
           gradientColors = ["#F0F9FF", "#E0F2FE"];
@@ -856,17 +856,42 @@ const TableItemComponent = React.memo(
               justifyContent: "center",
               alignItems: "center",
               borderRadius: 12,
+              position: "relative",
             },
           ]}
           onPress={() => onPress(item, tableData)}
         >
+          {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
+          {status === 3 && !!tableData?.isHoldOvertime && (
+            <View style={styles.holdOvertimeBadge}>
+              <MaterialCommunityIcons
+                name="alpha-h-circle"
+                size={Math.max(14, itemSize * 0.18)}
+                color={Theme.primary}
+              />
+            </View>
+          )}
+
+          {/* 🚀 QR ORDER INDICATOR (QR badge) */}
+          {((tableData?.entryStatus !== undefined && tableData?.entryStatus !== null)
+            ? tableData.entryStatus
+            : item.entryStatus) === "q" &&
+            status !== 0 && (
+              <View style={styles.qrBadge}>
+                <Ionicons
+                  name="qr-code"
+                  size={Math.max(14, itemSize * 0.18)}
+                  color={ui.color}
+                />
+              </View>
+            )}
+
           <Text
             style={[
               styles.tableNumber,
               { 
                 fontSize: numberFont, 
-                color: labelColor, 
-                fontFamily: Fonts.black,
+                color: "#000000", 
                 fontWeight: "900"
               },
             ]}
@@ -988,30 +1013,7 @@ const TableItemComponent = React.memo(
           itemSize={itemSize}
         />
 
-        {/* 🚀 HOLD OVERTIME INDICATOR (H) */}
-        {status === 3 && !!tableData?.isHoldOvertime && (
-          <View style={styles.holdOvertimeBadge}>
-            <MaterialCommunityIcons
-              name="alpha-h-circle"
-              size={Math.max(14, itemSize * 0.18)}
-              color={Theme.primary}
-            />
-          </View>
-        )}
 
-        {/* 🚀 QR ORDER INDICATOR (QR badge) */}
-        {(tableData?.entryStatus !== undefined
-          ? tableData.entryStatus
-          : item.entryStatus) === "q" &&
-          status !== 0 && (
-            <View style={styles.qrBadge}>
-              <Ionicons
-                name="qr-code"
-                size={Math.max(14, itemSize * 0.18)}
-                color={ui.color}
-              />
-            </View>
-          )}
           {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
           {terminalStatus && terminalStatus !== "idle" && (
             <TouchableOpacity
@@ -2125,11 +2127,24 @@ export default function Category() {
 
         // Check if there is a saved screen for this table
         const { useTableNavigationStore } = require("../../stores/tableNavigationStore");
-        const lastScreen = useTableNavigationStore.getState().tableScreens[item.id];
-        if (lastScreen === "summary") {
+        const tableIdStr = item.id ? String(item.id) : "";
+        const lastScreen = tableIdStr ? useTableNavigationStore.getState().tableScreens[tableIdStr] : null;
+
+        const tableCartItems = contextId ? useCartStore.getState().carts[contextId] || [] : [];
+        const terminalSession = tableIdStr ? useTerminalPaymentStore.getState().sessions[tableIdStr] : undefined;
+
+        if (lastScreen === "payment") {
+          if (tableCartItems.length > 0 || (terminalSession && terminalSession.status === "processing")) {
+            router.push("/payment");
+          } else {
+            if (tableIdStr) {
+              useTableNavigationStore.getState().clearTableLastScreen(tableIdStr);
+              useTableNavigationStore.getState().clearSelectedMethod(tableIdStr);
+            }
+            router.push("/menu/thai_kitchen");
+          }
+        } else if (lastScreen === "summary") {
           router.push("/summary");
-        } else if (lastScreen === "payment") {
-          router.push("/payment");
         } else {
           router.push("/menu/thai_kitchen");
         }
@@ -2249,12 +2264,29 @@ export default function Category() {
 
     // Check if there is a saved screen for this table
     const { useTableNavigationStore } = require("../../stores/tableNavigationStore");
-    const lastScreen = newContext.tableId ? useTableNavigationStore.getState().tableScreens[newContext.tableId] : null;
-    if (lastScreen === "summary") {
+    const tableIdStr = newContext.tableId ? String(newContext.tableId) : "";
+    const lastScreen = tableIdStr ? useTableNavigationStore.getState().tableScreens[tableIdStr] : null;
+
+    const tableCartItems = contextId ? useCartStore.getState().carts[contextId] || [] : [];
+    const terminalSession = tableIdStr ? useTerminalPaymentStore.getState().sessions[tableIdStr] : undefined;
+
+    if (lastScreen === "payment") {
+      if (status !== 0 && (tableCartItems.length > 0 || (terminalSession && terminalSession.status === "processing"))) {
+        router.push("/payment");
+      } else {
+        if (tableIdStr) {
+          useTableNavigationStore.getState().clearTableLastScreen(tableIdStr);
+          useTableNavigationStore.getState().clearSelectedMethod(tableIdStr);
+        }
+        router.push("/menu/thai_kitchen");
+      }
+    } else if (lastScreen === "summary" && status !== 0) {
       router.push("/summary");
-    } else if (lastScreen === "payment") {
-      router.push("/payment");
     } else {
+      if (tableIdStr && status === 0) {
+        useTableNavigationStore.getState().clearTableLastScreen(tableIdStr);
+        useTableNavigationStore.getState().clearSelectedMethod(tableIdStr);
+      }
       router.push("/menu/thai_kitchen");
     }
   };
@@ -3998,13 +4030,13 @@ export default function Category() {
                     <View
                       style={[
                         styles.menuIconContainer,
-                        { backgroundColor: Theme.primary + "10" },
+                        { backgroundColor: "#16a34a15" },
                       ]}
                     >
                       <MaterialCommunityIcons
-                        name="card-outline"
+                        name="medal-outline"
                         size={18}
-                        color={Theme.primary}
+                        color="#16a34a"
                       />
                     </View>
                     <Text style={styles.subMenuItemText}>Loyalty</Text>
@@ -5862,7 +5894,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   tableNumber: {
-    fontFamily: Fonts.black,
+    fontWeight: "900",
     color: Theme.textPrimary,
     marginTop: 4,
     marginBottom: 2,
@@ -6081,7 +6113,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 8,
     right: 8,
-    backgroundColor: "#fd7e14",
+    backgroundColor: "#F59E0B",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,

@@ -299,6 +299,13 @@ router.post("/pay", async (req, res) => {
     const referenceNo = (payments && payments.length > 0) ? (payments[0].referenceNo || paymentSessionId || '') : (paymentSessionId || '');
     const mainRemarks = `${req.body.remarks || `Credit payment collection (${payModeName})`} [Session: ${paymentSessionId || ''}]`;
 
+    // Fetch active business start_date
+    let startDate = null;
+    const activeDayRes = await transaction.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
+    if (activeDayRes.recordset.length > 0) {
+      startDate = activeDayRes.recordset[0].StartDate;
+    }
+
     // Write the primary PAYMENT transaction record
     const payTxResult = await transaction.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
@@ -307,10 +314,11 @@ router.post("/pay", async (req, res) => {
       .input("ReferenceNo", sql.NVarChar(100), referenceNo)
       .input("Remarks", sql.NVarChar(500), mainRemarks.substring(0, 500))
       .input("CreatedBy", sql.UniqueIdentifier, toGuidOrNull(userId))
+      .input("StartDate", sql.Date, startDate)
       .query(`
-        INSERT INTO CustomerCreditTransactions (MemberId, TransactionType, BillAmount, PaidAmount, OutstandingAmount, PaymentMethod, ReferenceNo, Status, Remarks, CreatedBy)
+        INSERT INTO CustomerCreditTransactions (MemberId, TransactionType, BillAmount, PaidAmount, OutstandingAmount, PaymentMethod, ReferenceNo, Status, Remarks, CreatedBy, start_date)
         OUTPUT INSERTED.TransactionId
-        VALUES (@MemberId, 'PAYMENT', 0, @Amount, -@Amount, @PaymentMethod, @ReferenceNo, 'CLOSED', @Remarks, @CreatedBy)
+        VALUES (@MemberId, 'PAYMENT', 0, @Amount, -@Amount, @PaymentMethod, @ReferenceNo, 'CLOSED', @Remarks, @CreatedBy, @StartDate)
       `);
     
     paymentTransactionId = payTxResult.recordset[0].TransactionId;
@@ -486,11 +494,29 @@ router.get("/statement/:memberId", async (req, res) => {
     
     let runningBalance = 0;
     const transactions = result.recordset.map(t => {
-      const netEffect = parseFloat(t.BillAmount || 0) - parseFloat(t.PaidAmount || 0);
-      runningBalance += netEffect;
+      let movement = 0;
+      const type = (t.TransactionType || '').toUpperCase();
+      if (type === 'CREDIT_SALE' || type === 'DEBIT') {
+        movement = parseFloat(t.BillAmount || t.Amount || 0);
+      } else if (type === 'PAYMENT' || type === 'CREDIT') {
+        movement = -parseFloat(t.PaidAmount || t.Amount || 0);
+      } else if (type === 'ADJUSTMENT') {
+        if (parseFloat(t.BillAmount || 0) > 0) {
+          movement = parseFloat(t.BillAmount || 0);
+        } else if (parseFloat(t.PaidAmount || 0) > 0) {
+          movement = -parseFloat(t.PaidAmount || 0);
+        } else {
+          movement = parseFloat(t.Amount || 0);
+        }
+      } else {
+        movement = parseFloat(t.BillAmount || 0) - parseFloat(t.PaidAmount || 0);
+      }
+
+      runningBalance += movement;
+
       return {
         ...t,
-        Amount: parseFloat(t.Amount || 0),
+        Amount: Math.abs(parseFloat(t.Amount || 0)),
         runningBalance: parseFloat(runningBalance.toFixed(2))
       };
     });

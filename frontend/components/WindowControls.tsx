@@ -37,10 +37,11 @@ export default function WindowControls({ buttonStyle, iconSize = 20, showText = 
       const { useTableNavigationStore } = require("../stores/tableNavigationStore");
       const context = getOrderContext();
       if (context && context.tableId) {
+        const tblIdStr = String(context.tableId);
         if (pathname.includes("summary")) {
-          useTableNavigationStore.getState().setTableLastScreen(context.tableId, "summary");
+          useTableNavigationStore.getState().setTableLastScreen(tblIdStr, "summary");
         } else if (pathname.includes("payment")) {
-          useTableNavigationStore.getState().setTableLastScreen(context.tableId, "payment");
+          useTableNavigationStore.getState().setTableLastScreen(tblIdStr, "payment");
         }
       }
     } catch (err) {

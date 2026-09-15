@@ -25,6 +25,7 @@ import {
   useWindowDimensions,
   View,
   Alert,
+  Switch,
 } from "react-native";
 import { PieChart } from "react-native-gifted-charts";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -158,12 +159,15 @@ export default function SalesReport() {
   const logout = useAuthStore((state) => state.logout);
   const isSalesReportUser = user?.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F";
   const { width: SCREEN_W } = useWindowDimensions();
+  const [breakdownRowWidth, setBreakdownRowWidth] = useState(0);
   const [sales, setSales] = useState<any[]>([]);
   const [dbPaymentModes, setDbPaymentModes] = useState<any[]>([
     { payMode: "CASH", description: "CASH" },
     { payMode: "CARD", description: "CARD" },
     { payMode: "NETS", description: "NETS" },
     { payMode: "PAYNOW", description: "PAY NOW" },
+    { payMode: "YEAHPAY PAYNOW", description: "YEAHPAY PAYNOW" },
+    { payMode: "YEAHPAY CARD", description: "YEAHPAY CARD" },
     { payMode: "GRAB", description: "GRAB" },
     { payMode: "FOODPANDA", description: "FOODPANDA" },
     { payMode: "MEMBER", description: "MEMBER" },
@@ -187,6 +191,8 @@ export default function SalesReport() {
     "CARD",
     "NETS",
     "PAYNOW",
+    "YEAHPAY PAYNOW",
+    "YEAHPAY CARD",
     "GRAB",
     "FOODPANDA",
     "VOID",
@@ -227,6 +233,7 @@ export default function SalesReport() {
   
   // Split payment mode in Change Payment Modal
   const [isSplitMode, setIsSplitMode] = useState(false);
+  const [selectedGridMode, setSelectedGridMode] = useState<string>("");
   const [changePaymentSplits, setChangePaymentSplits] = useState<{ payMode: string; amount: string }[]>([]);
 
   // Member selection states for payment change
@@ -267,6 +274,7 @@ export default function SalesReport() {
   // Supervisor Password Verification State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [passwordAction, setPasswordAction] = useState<{
     onSuccess: () => void;
     title: string;
@@ -276,6 +284,7 @@ export default function SalesReport() {
 
   const promptPassword = (title: string, description: string, role: string, onSuccess: () => void) => {
     setPasswordValue("");
+    setPasswordError("");
     setPasswordAction({ onSuccess, title, description, role });
     setShowPasswordModal(true);
   };
@@ -467,7 +476,12 @@ export default function SalesReport() {
         console.error("Failed to fetch active business day in fetchData:", err);
       }
 
-      await Promise.all([fetchSales(), fetchSummary(), fetchPaymentMethods()]);
+      await Promise.all([
+        fetchSales(), 
+        fetchSummary(), 
+        fetchPaymentMethods(),
+        detailReportType ? fetchDetailReport(detailReportType, selectedFilter) : Promise.resolve()
+      ]);
     } catch (error) {
       console.error("Error:", error);
     } finally {
@@ -618,7 +632,7 @@ export default function SalesReport() {
     if (detailReportType) {
       fetchDetailReport(detailReportType, selectedFilter);
     }
-  }, [selectedFilter, detailReportType, fetchDetailReport]);
+  }, [selectedFilter, selectedDate, detailReportType, fetchDetailReport]);
 
   const fetchSales = async () => {
     try {
@@ -1328,21 +1342,23 @@ export default function SalesReport() {
     return "#" + "00000".substring(0, 6 - c.length) + c;
   };
 
-  const PAYMODE_ICONS: Record<string, string> = {
-    CASH: "💵",
-    CARD: "💳",
-    NETS: "🔳",
-    PAYNOW: "📱",
-    GRAB: "💚",
-    FOODPANDA: "🐼",
-    UPI: "📱",
-    MEMBER: "👤",
-    CREDIT: "🏷️",
-  };
-
-  const getPayModeIconChar = (mode: string) => {
+  // Distinct Ionicons per payment mode
+  const getPayModeIoniconName = (mode: string): any => {
     const m = mode.toUpperCase().trim();
-    return PAYMODE_ICONS[m] || "💳";
+    if (m === 'CASH' || m === 'CAS') return 'cash-outline';
+    if (m === 'CARD' || m === 'YEAHPAYCARD') return 'card-outline';
+    if (m === 'NETS') return 'layers-outline';
+    if (m.includes('PAYNOW') || m.includes('PAY NOW') || m === 'UPI' || m === 'GPAY') return 'qr-code-outline';
+    if (m === 'GRAB') return 'car-outline';
+    if (m.includes('PANDA') || m.includes('FOODPANDA')) return 'bicycle-outline';
+    if (m === 'MEMBER') return 'person-circle-outline';
+    if (m === 'CREDIT') return 'pricetag-outline';
+    if (m === 'ONLINE' || m.includes('ONLINE')) return 'globe-outline';
+    if (m === 'CATERING' || m.includes('CATERING')) return 'restaurant-outline';
+    if (m === 'FOC') return 'gift-outline';
+    if (m.includes('BILLING') || m.includes('OLD')) return 'document-text-outline';
+    if (m.includes('YEAH')) return 'scan-outline';
+    return 'wallet-outline';
   };
 
   const paymentBreakdownMetrics = useMemo<Record<string, number>>(() => {
@@ -1625,29 +1641,36 @@ export default function SalesReport() {
 
   const handleConfirmChangePayment = async (newPayMode: string, splits?: any[], memberId?: string, creditCustomerId?: string) => {
     if (!selectedOrder) return;
-    try {
-      setShowChangePaymentModal(false);
-      setShowMemberModal(false);
-      setLoadingDetails(true);
-      const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payMode: newPayMode, splits, memberId, creditCustomerId }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast({ type: "success", message: "Payment mode updated successfully" });
-        await refreshOrder(selectedOrder.SettlementID);
-        fetchSales();
-      } else {
-        showToast({ type: "error", message: data.error || "Failed to update payment mode" });
+    promptPassword(
+      "Admin Password Required",
+      "Enter Admin password to save payment mode change:",
+      "ADMIN",
+      async () => {
+        try {
+          setShowChangePaymentModal(false);
+          setShowMemberModal(false);
+          setLoadingDetails(true);
+          const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payMode: newPayMode, splits, memberId, creditCustomerId }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast({ type: "success", message: "Payment mode updated successfully" });
+            await refreshOrder(selectedOrder.SettlementID);
+            fetchSales();
+          } else {
+            showToast({ type: "error", message: data.error || "Failed to update payment mode" });
+          }
+        } catch (err: any) {
+          console.error(err);
+          showToast({ type: "error", message: err.message || "An error occurred" });
+        } finally {
+          setLoadingDetails(false);
+        }
       }
-    } catch (err: any) {
-      console.error(err);
-      showToast({ type: "error", message: err.message || "An error occurred" });
-    } finally {
-      setLoadingDetails(false);
-    }
+    );
   };
 
   const toggleVoidItemSelection = (id: string) => {
@@ -2191,7 +2214,7 @@ export default function SalesReport() {
                           styles.qtyCell,
                         ]}
                       >
-                        {Number(row.Sold || 0).toFixed(0)}
+                        {Number(row.Sold || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </Text>
                       <Text
                         style={[
@@ -2201,7 +2224,7 @@ export default function SalesReport() {
                           { color: "#dc2626" },
                         ]}
                       >
-                        {Number(row.Voided || 0).toFixed(0)}
+                        {Number(row.Voided || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </Text>
                       <Text
                         style={[
@@ -2301,7 +2324,7 @@ export default function SalesReport() {
                             { fontFamily: Fonts.black, fontSize: 13, color: Theme.textPrimary },
                           ]}
                         >
-                          {catQty}
+                          {Number(catQty || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         </Text>
                         <Text
                           style={[
@@ -2311,7 +2334,7 @@ export default function SalesReport() {
                             { fontFamily: Fonts.black, fontSize: 13, color: "#dc2626" },
                           ]}
                         >
-                          {catVoid}
+                          {Number(catVoid || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         </Text>
                         <Text
                           style={[
@@ -2383,7 +2406,7 @@ export default function SalesReport() {
                                 styles.qtyCell,
                               ]}
                             >
-                              {Number(row.Sold || 0).toFixed(0)}
+                              {Number(row.Sold || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </Text>
                             <Text
                               style={[
@@ -2393,7 +2416,7 @@ export default function SalesReport() {
                                 { color: "#dc2626" },
                               ]}
                             >
-                              {Number(row.Voided || 0).toFixed(0)}
+                              {Number(row.Voided || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </Text>
                             <Text
                               style={[
@@ -2956,33 +2979,32 @@ export default function SalesReport() {
             </TouchableOpacity>
           )}
         </View>
-        <View style={[
-          styles.breakdownRow,
-          {
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-            width: "100%",
-            rowGap: SCREEN_W < 480 ? 8 : 10,
-            columnGap: SCREEN_W < 480 ? 8 : 10
-          }
-        ]}>
+        <View
+          style={[
+            styles.breakdownRow,
+            {
+              flexWrap: "wrap",
+              justifyContent: "flex-start",
+              width: "100%",
+              rowGap: SCREEN_W < 480 ? 8 : 10,
+              columnGap: SCREEN_W < 480 ? 8 : 10,
+            }
+          ]}
+          onLayout={(e) => setBreakdownRowWidth(e.nativeEvent.layout.width)}
+        >
           {displayedBreakdownModes.map((item, idx) => {
             const key = item.payMode.toUpperCase().trim();
             const label = item.description || item.payMode;
             const val = paymentBreakdownMetrics[key] || 0;
             const outstanding = key === "CREDIT" ? paymentBreakdownMetrics["CREDIT_OUTSTANDING"] : undefined;
-            const icon = getPayModeIconChar(key);
             const color = getPayModeColor(key);
+            const iconName = getPayModeIoniconName(key);
 
-            const numColumns = SCREEN_W > 768 ? Math.max(6, displayedBreakdownModes.length) : (SCREEN_W > 480 ? 3 : 2);
-            const layoutStyle = (SCREEN_W > 768
-              ? { flex: 1, minWidth: 0 }
-              : {
-                  width: SCREEN_W > 480 ? "31.5%" : "48%",
-                  minWidth: 0,
-                  paddingHorizontal: 4,
-                  paddingVertical: SCREEN_W < 480 ? 8 : 12
-                }) as any;
+            // 7 per row on web, 4 on tablet, 3 on mobile — use real measured width
+            const numCols = SCREEN_W > 768 ? 7 : SCREEN_W > 480 ? 4 : 3;
+            const gap = SCREEN_W < 480 ? 8 : 10;
+            const containerW = breakdownRowWidth > 0 ? breakdownRowWidth : Math.max(SCREEN_W - 80, 300);
+            const itemW = Math.floor((containerW - (numCols - 1) * gap) / numCols);
 
             const isSomeFilterApplied = activePaymentModes.length < (displayedBreakdownModes.length + 1);
             const isThisActive = activePaymentModes.includes(key);
@@ -2996,28 +3018,34 @@ export default function SalesReport() {
                 onPress={() => handleBreakdownPress(item.payMode)}
                 style={[
                   styles.breakdownItem,
-                  layoutStyle,
+                  { width: itemW },
                   {
-                    borderColor: hexToRgba(color, 0.25),
-                    borderWidth: 1,
+                    borderColor: hexToRgba(color, 0.22),
+                    borderWidth: 1.5,
                     backgroundColor: "#ffffff",
                   },
                   isActive && {
                     borderColor: color,
                     borderWidth: 2,
-                    backgroundColor: hexToRgba(color, 0.04),
+                    backgroundColor: hexToRgba(color, 0.05),
                     ...Theme.shadowSm,
                   },
                   isInactive && {
-                    opacity: 0.4,
+                    opacity: 0.35,
                     borderColor: Theme.border,
                   }
                 ]}
               >
-                <Text style={[styles.breakdownIcon, SCREEN_W < 480 && { fontSize: 20 }]}>{icon}</Text>
-                <Text style={[styles.breakdownLabel, SCREEN_W < 480 && { fontSize: 8 }]}>{label}</Text>
+                {/* Icon circle */}
+                <View style={[
+                  styles.breakdownIconCircle,
+                  { backgroundColor: hexToRgba(color, 0.12) }
+                ]}>
+                  <Ionicons name={iconName} size={SCREEN_W < 480 ? 18 : 20} color={color} />
+                </View>
+                <Text style={[styles.breakdownLabel, SCREEN_W < 480 && { fontSize: 8 }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
                 <Text
-                  style={[styles.breakdownValue, { color: color }, SCREEN_W < 480 && { fontSize: 10.5 }]}
+                  style={[styles.breakdownValue, { color }, SCREEN_W < 480 && { fontSize: 11 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                 >
@@ -4086,6 +4114,19 @@ export default function SalesReport() {
                 <TouchableOpacity
                   onPress={() => {
                     setShowSettingsMenu(false);
+                    const currentMode = (selectedOrder?.PayMode || '').toUpperCase().trim();
+                    setSelectedGridMode(currentMode);
+                    const isSplit = currentMode === "SPLIT";
+                    setIsSplitMode(isSplit);
+                    if (isSplit) {
+                      const splitsMapped = orderPayments.map(p => ({
+                        payMode: (p.Paymode || p.PayMode || 'CASH').toUpperCase().trim(),
+                        amount: Number(p.Amount || 0).toFixed(2)
+                      }));
+                      setChangePaymentSplits(splitsMapped.length > 0 ? splitsMapped : [{ payMode: "CASH", amount: finalBillAmount.toFixed(2) }]);
+                    } else {
+                      setChangePaymentSplits([{ payMode: "CASH", amount: finalBillAmount.toFixed(2) }]);
+                    }
                     setShowChangePaymentModal(true);
                   }}
                   style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.border + "40", gap: 12 }}
@@ -4123,84 +4164,165 @@ export default function SalesReport() {
           <Modal visible={showChangePaymentModal} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-              <View style={[styles.modalContent, { width: 350, padding: 20, maxHeight: '80%' }]}>
+              <View style={{
+                backgroundColor: "#ffffff",
+                borderRadius: 16,
+                padding: 20,
+                width: 360,
+                maxHeight: "85%",
+                borderWidth: 1,
+                borderColor: Theme.border + "40",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 10,
+                elevation: 10,
+              }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
-                    {isSplitMode ? "Configure Split Payment" : "Select Payment Mode"}
+                    Change Payment Mode
                   </Text>
                   <TouchableOpacity onPress={() => setShowChangePaymentModal(false)}>
                     <Ionicons name="close" size={20} color={Theme.textPrimary} />
                   </TouchableOpacity>
                 </View>
+
+                {/* Enable Split Payment Row */}
+                <View style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  backgroundColor: Theme.border + "15",
+                  borderRadius: 12,
+                  padding: 16,
+                  marginBottom: 16,
+                }}>
+                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                    Enable Split Payment
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const nextVal = !isSplitMode;
+                      setIsSplitMode(nextVal);
+                      if (nextVal && changePaymentSplits.length === 0) {
+                        setChangePaymentSplits([
+                          { payMode: "CASH", amount: finalBillAmount.toFixed(2) }
+                        ]);
+                      }
+                    }}
+                    style={{
+                      width: 48,
+                      height: 26,
+                      borderRadius: 13,
+                      backgroundColor: isSplitMode ? Theme.primary : "#e5e7eb",
+                      padding: 2,
+                      justifyContent: "center"
+                    }}
+                  >
+                    <View style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: "#ffffff",
+                      alignSelf: isSplitMode ? "flex-end" : "flex-start",
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.2,
+                      shadowRadius: 1.5,
+                      elevation: 2
+                    }} />
+                  </TouchableOpacity>
+                </View>
                 
                 {!isSplitMode ? (
                   <>
-                    <ScrollView style={{ maxHeight: 250 }}>
-                      {(() => {
-                        const activeModes = dbPaymentModes
-                          .map((m: any) => (m.payMode || m.PayMode || '').toUpperCase().trim())
-                          .filter((mode: string) => mode.length > 0);
-                        const displayModes = activeModes.length > 0 ? activeModes : ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
-                        const uniqueModes = Array.from(new Set(displayModes));
+                    <Text style={{
+                      fontSize: 11,
+                      fontFamily: Fonts.black,
+                      color: Theme.textSecondary,
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                      marginBottom: 12,
+                      marginTop: 8
+                    }}>
+                      SELECT PAYMENT METHOD
+                    </Text>
 
-                        return uniqueModes.map((mode) => (
-                          <TouchableOpacity
-                            key={mode}
-                            onPress={() => {
-                              if (mode === "MEMBER" || mode === "CREDIT") {
-                                setIsMemberSearch(mode === "MEMBER");
-                                setCurrentSelectionStep(mode === "MEMBER" ? "MEMBER" : "CREDIT");
-                                setPendingPayMode(mode);
-                                setPendingSplits(null);
-                                setMemberQuery("");
-                                setSelectedMemberForPay(null);
-                                setSelectedCreditForPay(null);
-                                setActiveModalSelection(null);
-                                setMembersList([]);
-                                setShowMemberModal(true);
-                              } else {
-                                handleConfirmChangePayment(mode);
-                              }
-                            }}
-                            style={{
-                              paddingVertical: 12,
-                              paddingHorizontal: 16,
-                              borderRadius: 8,
-                              backgroundColor: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary + "15" : "transparent",
-                              marginBottom: 6,
-                              flexDirection: "row",
-                              justifyContent: "space-between",
-                              alignItems: "center"
-                            }}
-                          >
-                            <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: (selectedOrder?.PayMode || '').toUpperCase() === mode ? Theme.primary : Theme.textPrimary }}>
-                              {mode}
-                            </Text>
-                            {(selectedOrder?.PayMode || '').toUpperCase() === mode && (
-                              <Ionicons name="checkmark" size={18} color={Theme.primary} />
-                            )}
-                          </TouchableOpacity>
-                        ));
-                      })()}
+                    <ScrollView style={{ maxHeight: 280, marginBottom: 15 }}>
+                      <View style={{
+                        flexDirection: "row",
+                        flexWrap: "wrap",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        paddingBottom: 5
+                      }}>
+                        {(() => {
+                          const activeModes = dbPaymentModes
+                            .map((m: any) => (m.payMode || m.PayMode || '').toUpperCase().trim())
+                            .filter((mode: string) => mode.length > 0);
+                          const displayModes = activeModes.length > 0 ? activeModes : ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
+                          const uniqueModes = Array.from(new Set(displayModes));
+
+                          return uniqueModes.map((mode) => {
+                            const isSelected = selectedGridMode === mode;
+                            return (
+                              <TouchableOpacity
+                                key={mode}
+                                onPress={() => setSelectedGridMode(mode)}
+                                style={{
+                                  width: "48%",
+                                  height: 52,
+                                  borderRadius: 10,
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? Theme.primary : Theme.border + "60",
+                                  backgroundColor: isSelected ? Theme.primary + "15" : "transparent",
+                                  justifyContent: "center",
+                                  alignItems: "center"
+                                }}
+                              >
+                                <Text style={{
+                                  fontSize: 14,
+                                  fontFamily: Fonts.black,
+                                  color: isSelected ? Theme.primary : Theme.textPrimary
+                                }}>
+                                  {mode}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          });
+                        })()}
+                      </View>
                     </ScrollView>
 
                     <TouchableOpacity
                       onPress={() => {
-                        setIsSplitMode(true);
-                        setChangePaymentSplits([
-                          { payMode: "CASH", amount: String(finalBillAmount) }
-                        ]);
+                        if (!selectedGridMode) return;
+                        if (selectedGridMode === "MEMBER" || selectedGridMode === "CREDIT") {
+                          setIsMemberSearch(selectedGridMode === "MEMBER");
+                          setCurrentSelectionStep(selectedGridMode === "MEMBER" ? "MEMBER" : "CREDIT");
+                          setPendingPayMode(selectedGridMode);
+                          setPendingSplits(null);
+                          setMemberQuery("");
+                          setSelectedMemberForPay(null);
+                          setSelectedCreditForPay(null);
+                          setActiveModalSelection(null);
+                          setMembersList([]);
+                          setShowMemberModal(true);
+                        } else {
+                          handleConfirmChangePayment(selectedGridMode);
+                        }
                       }}
                       style={{
-                        backgroundColor: Theme.primary,
-                        borderRadius: 10,
-                        paddingVertical: 12,
+                        backgroundColor: selectedGridMode ? Theme.primary : Theme.textMuted,
+                        borderRadius: 12,
+                        paddingVertical: 14,
                         alignItems: "center",
-                        marginTop: 15
+                        opacity: selectedGridMode ? 1 : 0.6
                       }}
+                      disabled={!selectedGridMode}
                     >
-                      <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>
-                        SPLIT PAYMENT (CASH + NETS, etc.)
+                      <Text style={{ color: "#ffffff", fontSize: 14, fontFamily: Fonts.black }}>
+                        SAVE PAYMENT MODE
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -4268,7 +4390,7 @@ export default function SalesReport() {
                                 fontSize: 14,
                                 color: Theme.textPrimary,
                                 fontFamily: Fonts.bold,
-                                backgroundColor: "#fff"
+                                backgroundColor: "#ffffff"
                               }}
                             />
 
@@ -4290,7 +4412,7 @@ export default function SalesReport() {
                           gap: 6,
                           paddingVertical: 10,
                           borderWidth: 1.5,
-                          borderColor: Theme.primary + "30",
+                          borderColor: Theme.primary + "50",
                           borderRadius: 8,
                           borderStyle: "dashed",
                           marginTop: 5
@@ -4320,52 +4442,44 @@ export default function SalesReport() {
                       </View>
                     </View>
 
-                    <View style={{ flexDirection: "row", gap: 10 }}>
-                      <TouchableOpacity
-                        onPress={() => setIsSplitMode(false)}
-                        style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
-                      >
-                        <Text style={styles.premiumSecondaryBtnText}>BACK</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        disabled={Math.abs(remainingSplitsBalance) >= 0.02}
-                        onPress={() => {
-                          const hasMemberSplit = changePaymentSplits.some(s => s.payMode === "MEMBER");
-                          const hasCreditSplit = changePaymentSplits.some(s => s.payMode === "CREDIT");
+                    <TouchableOpacity
+                      disabled={Math.abs(remainingSplitsBalance) >= 0.02}
+                      onPress={() => {
+                        const hasMemberSplit = changePaymentSplits.some(s => s.payMode === "MEMBER");
+                        const hasCreditSplit = changePaymentSplits.some(s => s.payMode === "CREDIT");
 
-                          setPendingPayMode("SPLIT");
-                          setPendingSplits(changePaymentSplits);
-                          setSelectedMemberForPay(null);
-                          setSelectedCreditForPay(null);
-                          setActiveModalSelection(null);
-                          setMemberQuery("");
-                          setMembersList([]);
+                        setPendingPayMode("SPLIT");
+                        setPendingSplits(changePaymentSplits);
+                        setSelectedMemberForPay(null);
+                        setSelectedCreditForPay(null);
+                        setActiveModalSelection(null);
+                        setMemberQuery("");
+                        setMembersList([]);
 
-                          if (hasMemberSplit) {
-                            setCurrentSelectionStep("MEMBER");
-                            setIsMemberSearch(true);
-                            setShowMemberModal(true);
-                          } else if (hasCreditSplit) {
-                            setCurrentSelectionStep("CREDIT");
-                            setIsMemberSearch(false);
-                            setShowMemberModal(true);
-                          } else {
-                            handleConfirmChangePayment("SPLIT", changePaymentSplits);
-                          }
-                        }}
-                        style={{
-                          flex: 1.5,
-                          backgroundColor: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.success : Theme.textMuted,
-                          borderRadius: 10,
-                          justifyContent: "center",
-                          alignItems: "center",
-                          paddingVertical: 10,
-                          opacity: Math.abs(remainingSplitsBalance) < 0.02 ? 1 : 0.6
-                        }}
-                      >
-                        <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>CONFIRM SPLIT</Text>
-                      </TouchableOpacity>
-                    </View>
+                        if (hasMemberSplit) {
+                          setCurrentSelectionStep("MEMBER");
+                          setIsMemberSearch(true);
+                          setShowMemberModal(true);
+                        } else if (hasCreditSplit) {
+                          setCurrentSelectionStep("CREDIT");
+                          setIsMemberSearch(false);
+                          setShowMemberModal(true);
+                        } else {
+                          handleConfirmChangePayment("SPLIT", changePaymentSplits);
+                        }
+                      }}
+                      style={{
+                        backgroundColor: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.primary : Theme.textMuted,
+                        borderRadius: 12,
+                        paddingVertical: 14,
+                        alignItems: "center",
+                        opacity: Math.abs(remainingSplitsBalance) < 0.02 ? 1 : 0.6
+                      }}
+                    >
+                      <Text style={{ color: "#ffffff", fontSize: 14, fontFamily: Fonts.black }}>
+                        SAVE PAYMENT MODE
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -4770,21 +4884,30 @@ export default function SalesReport() {
                   secureTextEntry
                   autoFocus
                   value={passwordValue}
-                  onChangeText={setPasswordValue}
+                  onChangeText={(val) => {
+                    setPasswordValue(val);
+                    if (passwordError) setPasswordError("");
+                  }}
                   style={{
                     borderWidth: 1,
-                    borderColor: Theme.border + "50",
+                    borderColor: passwordError ? "#EF4444" : Theme.border + "50",
                     borderRadius: 8,
                     padding: 10,
                     fontSize: 14,
                     color: Theme.textPrimary,
                     fontFamily: Fonts.bold,
                     backgroundColor: Theme.border + "10",
-                    marginBottom: 20,
+                    marginBottom: passwordError ? 6 : 20,
                     textAlign: "center",
                     minHeight: 40
                   }}
                 />
+
+                {!!passwordError && (
+                  <Text style={{ color: "#EF4444", fontSize: 12, fontFamily: Fonts.bold, textAlign: "center", marginBottom: 15 }}>
+                    {passwordError}
+                  </Text>
+                )}
 
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <TouchableOpacity
@@ -4804,6 +4927,7 @@ export default function SalesReport() {
                     }}
                     onPress={async () => {
                       try {
+                        setPasswordError("");
                         const verifyRes = await fetch(`${API_URL}/api/auth/verify`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
@@ -4811,6 +4935,7 @@ export default function SalesReport() {
                         });
                         const verifyData = await verifyRes.json();
                         if (!verifyData.success) {
+                          setPasswordError("Incorrect password. Please try again.");
                           showToast({ type: "error", message: "The password you entered is incorrect." });
                           return;
                         }
@@ -4820,6 +4945,7 @@ export default function SalesReport() {
                         }
                       } catch (err) {
                         console.error("Password verification error:", err);
+                        setPasswordError("Failed to verify password.");
                         showToast({ type: "error", message: "Failed to verify password" });
                       }
                     }}
@@ -5675,30 +5801,37 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   breakdownItem: {
-    minWidth: 95,
     alignItems: "center",
     gap: 6,
-    paddingVertical: 16,
-    paddingHorizontal: 10,
-    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: 14,
     backgroundColor: "#ffffff",
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Theme.border,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 5,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     elevation: 2,
   },
-  breakdownIcon: { fontSize: 26 },
+  breakdownIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 2,
+  },
   breakdownLabel: {
-    color: Theme.textMuted,
+    color: Theme.textSecondary,
     fontFamily: Fonts.bold,
     fontSize: 9,
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     textTransform: "uppercase",
+    textAlign: "center",
   },
-  breakdownValue: { fontFamily: Fonts.black, fontSize: 12 },
+  breakdownValue: { fontFamily: Fonts.black, fontSize: 13, textAlign: "center" },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

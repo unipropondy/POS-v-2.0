@@ -125,15 +125,15 @@ export const usePaymentSettingsStore = create<PaymentSettingsState>()(
           const mapped: CachedPaymentMethod[] = data.map((d) => ({
             payMode: (d.payMode || '').trim(),
             description: (d.description || d.payMode || '').trim(),
-            position: d.Position || 0,
+            position: d.Position || d.position || 0,
             active: d.active,
             commission: parseFloat(d.commission) || 0,
             serviceCharge: parseFloat(d.serviceCharge) || 0,
             isEntertainment: d.isEntertainment === 1 || d.isEntertainment === true,
             isVoucher: d.isVoucher === 1 || d.isVoucher === true,
-            yeahPayEnabled: d.YeahPayEnabled === 1 || d.YeahPayEnabled === true,
-            deviceSn: d.DeviceSN || null,
-            deviceSalt: d.DeviceSalt || null,
+            yeahPayEnabled: d.YeahPayEnabled === 1 || d.YeahPayEnabled === true || d.yeahPayEnabled === 1 || d.yeahPayEnabled === true,
+            deviceSn: (d.DeviceSN || d.deviceSn || '').trim() || null,
+            deviceSalt: (d.DeviceSalt || d.deviceSalt || '').trim() || null,
           }));
           set({ paymentMethods: mapped, hasLoadedMethods: true });
         } catch (error) {

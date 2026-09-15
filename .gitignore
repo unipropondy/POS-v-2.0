@@ -8,6 +8,7 @@ node_modules/
 # =========================
 .expo/
 .expo-shared/
+dist/
 frontend/dist/
 web-build/
 expo-env.d.ts

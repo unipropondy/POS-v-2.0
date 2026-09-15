@@ -10,7 +10,8 @@ const FIXED_APP_ID = process.env.APP_ID || 'bin38m42efz4ta6f';
 const yeahpayService = new YeahPayService();
 
 function broadcastTerminalStatus(io, tableId, amount, isCard, result, isSplit, splitRowId) {
-    if (!io || !tableId) return;
+    if (!io) return;
+    const targetTableId = tableId || "COUNTER";
     
     let status = "failed";
     let message = "";
@@ -30,11 +31,11 @@ function broadcastTerminalStatus(io, tableId, amount, isCard, result, isSplit, s
         message = `❌ ${result.msg || result.error || 'Payment declined'}`;
     }
 
-    console.log(`🔌 [Server] Broadcasting terminal sync for Table ${tableId} → Status: ${status}`);
+    console.log(`🔌 [Server] Broadcasting terminal sync for Table ${targetTableId} → Status: ${status}`);
     io.emit("terminal_payment_sync", {
-        tableId,
+        tableId: targetTableId,
         session: {
-            tableId,
+            tableId: targetTableId,
             status,
             message,
             method: isCard ? 'YEAHPAY CARD' : 'YEAHPAY PAYNOW',

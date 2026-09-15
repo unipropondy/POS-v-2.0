@@ -600,9 +600,12 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       )
     );
 
-    const selectedMethod = paymentMethods.find(m => m.payMode === row.payMode);
-    const deviceSn = selectedMethod?.deviceSn || '';
-    const salt = selectedMethod?.deviceSalt || '';
+    const selectedMethod = paymentMethods.find(m => 
+      m.payMode.trim().toUpperCase() === row.payMode.trim().toUpperCase() ||
+      normalizeMode(m.payMode) === normalizeMode(row.payMode)
+    );
+    const deviceSn = (selectedMethod?.deviceSn || (selectedMethod as any)?.DeviceSN || '').trim();
+    const salt = (selectedMethod?.deviceSalt || (selectedMethod as any)?.DeviceSalt || '').trim();
 
     console.log('🔄 [SplitPayment] Calling YeahPay terminal for:', row.payMode);
     console.log('   Amount:', amt);

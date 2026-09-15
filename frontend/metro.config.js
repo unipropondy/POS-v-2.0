@@ -38,4 +38,9 @@ config.resolver.unstable_enablePackageExports = false;
 
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 
+config.resolver.blockList = [
+  ...(config.resolver.blockList || []),
+  new RegExp(path.resolve(__dirname, 'dist').replace(/[/\\]/g, '[/\\\\]') + '.*'),
+];
+
 module.exports = config;

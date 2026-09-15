@@ -9,4 +9,5 @@ node_modules/
 dist/
 android/
 ios/
-*.log
+*.log
+.env*

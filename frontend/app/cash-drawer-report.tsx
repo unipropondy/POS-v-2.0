@@ -35,8 +35,9 @@ export default function CashDrawerReportScreen() {
     return from;
   });
   const [toDate] = useState<Date>(() => {
-    const { to } = getSingaporeTimeTodayRange();
-    return to;
+    const d = new Date();
+    d.setHours(23, 59, 59, 999);
+    return d;
   });
 
   // Filter selections
@@ -67,7 +68,7 @@ export default function CashDrawerReportScreen() {
     try {
       // Offset dates to local ISO format for API compatibility
       const pad = (n: number) => n.toString().padStart(2, '0');
-      const formatLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+      const formatLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
       
       const fromStr = formatLocal(fromDate);
       const toStr = formatLocal(toDate);
@@ -93,7 +94,7 @@ export default function CashDrawerReportScreen() {
   const successRate = totalTriggers > 0 ? Math.round((successCount / totalTriggers) * 100) : 100;
   
   const cashInTotal = logs
-    .filter(l => l.ActionType === 'CASH_IN' && l.IsSuccess)
+    .filter(l => (l.ActionType === 'CASH_IN' || l.ActionType === 'SALE' || l.ActionType === 'OPENING_FLOAT') && l.IsSuccess)
     .reduce((sum, l) => sum + (parseFloat(l.Amount) || 0), 0);
 
   const cashOutTotal = logs
@@ -127,6 +128,7 @@ export default function CashDrawerReportScreen() {
       case 'CASH_IN': return '#2563EB';
       case 'CASH_OUT': return '#DC2626';
       case 'OPENING_FLOAT': return '#F59E0B';
+      case 'DRAWER_CHECK': return '#EA580C';
       default: return '#6B7280';
     }
   };
@@ -137,7 +139,10 @@ export default function CashDrawerReportScreen() {
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/cash-drawer' as any))}
+          style={styles.backButton}
+        >
           <Ionicons name="chevron-back" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>📊 Drawer Activity Audit</Text>
@@ -149,17 +154,17 @@ export default function CashDrawerReportScreen() {
       {/* Summary KPI Cards */}
       <View style={styles.kpiContainer}>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Total Actions</Text>
+          <Text style={styles.kpiLabel}>TOTAL ACTIONS</Text>
           <Text style={styles.kpiValue}>{totalTriggers}</Text>
           <Text style={styles.kpiSub}>Success Rate: {successRate}%</Text>
         </View>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Cash Inflow</Text>
+          <Text style={styles.kpiLabel}>CASH INFLOW</Text>
           <Text style={[styles.kpiValue, { color: '#16A34A' }]}>{formatCurrency(cashInTotal)}</Text>
           <Text style={styles.kpiSub}>Shift Additions</Text>
         </View>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Cash Outflow</Text>
+          <Text style={styles.kpiLabel}>CASH OUTFLOW</Text>
           <Text style={[styles.kpiValue, { color: '#DC2626' }]}>{formatCurrency(cashOutTotal)}</Text>
           <Text style={styles.kpiSub}>Manual Payouts</Text>
         </View>
@@ -170,7 +175,7 @@ export default function CashDrawerReportScreen() {
         <View style={styles.dropdownWrapper}>
           <Text style={styles.filterLabel}>Action Type</Text>
           <View style={styles.filterRow}>
-            {['ALL', 'SALE', 'CASH_IN', 'CASH_OUT', 'OPENING_FLOAT'].map((t) => (
+            {['ALL', 'SALE', 'CASH_IN', 'CASH_OUT', 'OPENING_FLOAT', 'DRAWER_CHECK'].map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.filterChip, actionFilter === t && styles.filterChipActive]}

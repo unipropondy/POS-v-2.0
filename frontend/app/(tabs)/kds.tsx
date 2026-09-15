@@ -348,7 +348,15 @@ export default function KDSScreen() {
     fetchKdsPrinter();
      
     const interval = setInterval(() => setTime(Date.now()), 1000);
-    return () => clearInterval(interval);
+    // 🔄 Periodic refresh to ensure KDS never falls out of sync
+    const pollInterval = setInterval(() => {
+      useActiveOrdersStore.getState().fetchActiveKitchenOrders();
+    }, 10000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(pollInterval);
+    };
   }, []);
 
   useEffect(() => {
@@ -366,8 +374,11 @@ export default function KDSScreen() {
 
     activeOrders.forEach((order) => {
       const { context } = order;
+      const secStr = String(context.section || "").trim().toUpperCase().replace(/[- ]+/g, "_");
+      const normSec = secStr.startsWith("SECTION") ? secStr.replace(/SECTION[-_ ]*/i, "SECTION_") : (secStr === "1" ? "SECTION_1" : secStr);
+      const tblStr = String(context.tableNo || "").trim();
       const groupKey = context.orderType === "DINE_IN" 
-        ? `TABLE_${context.section}_${context.tableNo}`
+        ? `TABLE_${normSec}_${tblStr}`
         : `TAKEAWAY_${context.takeawayNo}`;
 
       if (!tableGroups[groupKey]) {
@@ -383,10 +394,10 @@ export default function KDSScreen() {
       // Add items that are not SERVED or are recently READY
       order.items.forEach((i: any) => {
         let shouldShow = false;
-        // 🚀 SHOW ONLY SENT (Exclude NEW / drafts and VOIDED/cancelled items)
-        if (i.status === "SENT") shouldShow = true;
-        if (i.status === "READY" && i.readyAt) {
-          shouldShow = (time - i.readyAt < 60000); // Stay for 60 seconds (extended)
+        // 🚀 SHOW SENT, NEW, HOLD or recently READY items (excluding VOIDED/SERVED)
+        if (i.status === "SENT" || i.status === "NEW" || i.status === "HOLD") shouldShow = true;
+        if (i.status === "READY") {
+          shouldShow = !i.readyAt || (time - i.readyAt < 60000); // Stay for 60 seconds
         }
 
         if (shouldShow) {

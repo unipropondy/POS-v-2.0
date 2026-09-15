@@ -99,16 +99,9 @@ router.get('/pending', authenticateBridge, async (req, res) => {
     let jobs = result.recordset || [];
 
     if (jobs.length > 0) {
-      // Decode Base64 cash drawer trigger to binary string
-      jobs = jobs.map(job => {
-        if (job.Content === 'G3AAGRk=') {
-          return {
-            ...job,
-            Content: '\x1B\x70\x00\x19\x19'
-          };
-        }
-        return job;
-      });
+      // NOTE: Do NOT decode the base64 cash drawer command here.
+      // Keeping Content as 'G3AAGRk=' (base64) ensures printer.ts routes it
+      // through the binary path — no line feeds or paper cut appended.
 
       // Mark them as PROCESSING
       const jobIds = jobs.map(j => `'${j.JobId}'`).join(',');

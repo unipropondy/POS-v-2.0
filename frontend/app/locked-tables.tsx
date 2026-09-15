@@ -39,7 +39,7 @@ const getStatusUI = (status: number) => {
   const s = Number(status);
   switch (s) {
     case 1: return { text: "DINING", color: "#22c55e", lightBg: "#F0FDF4" };
-    case 2: return { text: "CHECKOUT", color: "#fd7e14", lightBg: "#FFF7ED" };
+    case 2: return { text: "CHECKOUT", color: "#F59E0B", lightBg: "#FFFBEB" };
     case 3: return { text: "HOLD", color: "#3b82f6", lightBg: "#F0F9FF" };
     case 4: return { text: "OVERTIME", color: "#8b5cf6", lightBg: "#F5F3FF" };
     case 5: return { text: "RESERVED", color: "#ef4444", lightBg: "#FEF2F2" };
@@ -640,7 +640,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center", marginBottom: 14, borderWidth: 1, borderColor: Theme.border,
   },
   lockedIcon: { backgroundColor: Theme.danger + "10", borderColor: Theme.danger + "20" },
-  tableNumber: { color: Theme.textPrimary, fontFamily: Fonts.black, letterSpacing: 0.8 },
+  tableNumber: { color: "#000000", fontWeight: "900", letterSpacing: 0.8 },
   tableStatus: { color: Theme.textMuted, fontFamily: Fonts.bold, marginTop: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   lockedStatus: { color: Theme.danger },
   activeCard: { backgroundColor: Theme.success + "05", borderColor: Theme.success + "30" },

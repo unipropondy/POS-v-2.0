@@ -4,7 +4,24 @@ import { format } from "date-fns";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert, Platform } from "react-native";
-import ThermalPrinter from "react-native-thermal-printer";
+import ThermalPrinterImport from "react-native-thermal-printer";
+
+// Safe wrapper around react-native-thermal-printer to prevent null-reference crashes
+const ThermalPrinter = {
+  printTcp: async (args: any) => {
+    if (!ThermalPrinterImport || typeof ThermalPrinterImport.printTcp !== "function") {
+      throw new Error("ThermalPrinter module is not available on this device/platform");
+    }
+    return ThermalPrinterImport.printTcp(args);
+  },
+  printBluetooth: async (args: any) => {
+    if (!ThermalPrinterImport || typeof ThermalPrinterImport.printBluetooth !== "function") {
+      throw new Error("ThermalPrinter module is not available on this device/platform");
+    }
+    return ThermalPrinterImport.printBluetooth(args);
+  }
+};
+
 import { API_URL } from "../constants/Config";
 import { formatToSingaporeDate, formatToSingaporeTime, formatToSingaporeDateTime, parseDatabaseDate } from "../utils/timezoneHelper";
 import BillPDFGenerator from "./BillPDFGenerator";
@@ -629,11 +646,6 @@ class UniversalPrinter {
     type: "NEW" | "ADDITIONAL" | "REPRINT" | "KDS_PRINT" = "NEW",
     printerIpOverride?: string,
   ): Promise<boolean> {
-    if (type !== "KDS_PRINT" && (!printerIpOverride || String(printerIpOverride).trim() === "")) {
-      console.log(`ðŸ–¨ï¸ [UniversalPrinter] Skipping KOT print for "${orderData.kitchenName || 'Unknown Kitchen'}" - IP is empty/disabled.`);
-      return true;
-    }
-
     if (Platform.OS === "web") {
       try {
         const isOnline = await this.isBridgeOnline();
@@ -2106,95 +2118,98 @@ class UniversalPrinter {
   ): Promise<boolean> {
     try {
       // 1. Duplicate-print guard (QR socket path only; cashier path passes skipDuplicateGuard=true)
-      // Pass the raw items (pre-expansion) so the fingerprint reflects what the backend sent.
       if (!isReprint && !skipDuplicateGuard && this.isDuplicatePrint(orderId, items)) {
         return false;
       }
 
-      // 2. Check enableKOT setting (same setting the cashier flow checks)
+      // 2. Check enableKOT & enableKDSPrint settings
       const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
       const { enableKOT, enableKDSPrint, enableComboPrint } = useGeneralSettingsStore.getState().settings;
-      if (!isReprint && !enableKOT) {
-        if (__DEV__) console.log("ðŸ–¨ï¸ [UniversalPrinter] KOT printing is disabled in General Settings.");
+
+      const shouldPrintKOT = enableKOT !== false;
+      const shouldPrintKDS = enableKDSPrint !== false;
+
+      if (!shouldPrintKOT && !shouldPrintKDS) {
+        if (__DEV__) console.log("🖨️ [UniversalPrinter] Both KOT and KDS printing are disabled in General Settings.");
         return false;
       }
 
-      // 3. Expand combo sub-items that belong to a different kitchen
-      const expandedItems: any[] = [];
-      items.forEach((item: any) => {
-        expandedItems.push(item);
-        if (!enableComboPrint && item.comboSelections && item.comboSelections.length > 0) {
-          item.comboSelections.forEach((g: any) => {
-            if (Array.isArray(g.items)) {
-              g.items.forEach((opt: any) => {
-                const optKitchenCode =
-                  opt.KitchenTypeCode || opt.kitchenCode || opt.kitchenTypeCode;
-                const parentKitchenCode =
-                  item.KitchenTypeCode || item.kitchenCode || item.kitchenTypeCode || "0";
-                if (optKitchenCode && optKitchenCode !== parentKitchenCode) {
-                  expandedItems.push({
-                    ...opt,
-                    id: opt.dishId,
-                    qty: item.quantity || item.qty || 1,
-                    price: 0,
-                    name: `${opt.name} (Combo: ${item.name})`,
-                    KitchenTypeCode: optKitchenCode,
-                    KitchenTypeName: opt.KitchenTypeName || opt.kitchenTypeName,
-                    PrinterIP: opt.PrinterIP || opt.printerIp,
-                  });
-                }
-              });
-            }
-          });
-        }
-      });
-
-      // 4. Group by KitchenTypeCode → one KOT per kitchen
-      const kitchenGroups: Record<string, any[]> = {};
-      expandedItems.forEach((item: any) => {
-        const kCode = item.KitchenTypeCode || "0";
-        if (!kitchenGroups[kCode]) kitchenGroups[kCode] = [];
-        kitchenGroups[kCode].push(item);
-      });
-
-      // 5. Print one KOT per kitchen group
       const tableNo =
         orderContext.orderType === "DINE_IN"
           ? orderContext.tableNo
           : `TW-${orderContext.takeawayNo}`;
 
-      for (const [kCode, groupItems] of Object.entries(kitchenGroups)) {
-        const printerIp = groupItems[0].PrinterIP;
-        if (!printerIp || String(printerIp).trim() === "") {
-          console.log(`🖨️ [UniversalPrinter] Skipping routing KOT for kitchen "${groupItems[0].KitchenTypeName || kCode}" - IP is empty/disabled.`);
-          continue;
+      // 3 & 4 & 5. Print one KOT per kitchen group if KOT printing is enabled
+      if (shouldPrintKOT) {
+        // Expand combo sub-items that belong to a different kitchen
+        const expandedItems: any[] = [];
+        items.forEach((item: any) => {
+          expandedItems.push(item);
+          if (!enableComboPrint && item.comboSelections && item.comboSelections.length > 0) {
+            item.comboSelections.forEach((g: any) => {
+              if (Array.isArray(g.items)) {
+                g.items.forEach((opt: any) => {
+                  const optKitchenCode =
+                    opt.KitchenTypeCode || opt.kitchenCode || opt.kitchenTypeCode;
+                  const parentKitchenCode =
+                    item.KitchenTypeCode || item.kitchenCode || item.kitchenTypeCode || "0";
+                  if (optKitchenCode && optKitchenCode !== parentKitchenCode) {
+                    expandedItems.push({
+                      ...opt,
+                      id: opt.dishId,
+                      qty: item.quantity || item.qty || 1,
+                      price: 0,
+                      name: `${opt.name} (Combo: ${item.name})`,
+                      KitchenTypeCode: optKitchenCode,
+                      KitchenTypeName: opt.KitchenTypeName || opt.kitchenTypeName,
+                      PrinterIP: opt.PrinterIP || opt.printerIp,
+                    });
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        // Group by KitchenTypeCode → one KOT per kitchen
+        const kitchenGroups: Record<string, any[]> = {};
+        expandedItems.forEach((item: any) => {
+          const kCode = item.KitchenTypeCode || "0";
+          if (!kitchenGroups[kCode]) kitchenGroups[kCode] = [];
+          kitchenGroups[kCode].push(item);
+        });
+
+        for (const [kCode, groupItems] of Object.entries(kitchenGroups)) {
+          const printerIp = groupItems[0].PrinterIP || groupItems[0].printerIp;
+          const kotData = {
+            orderId,
+            orderNo: orderId,
+            tableNo,
+            waiterName,
+            items: groupItems,
+            kitchenCode: kCode,
+            kitchenName:
+              groupItems[0].KitchenTypeName || (kCode === "0" ? "KITCHEN" : kCode),
+            disableComboPrint: !!enableComboPrint,
+          };
+          try {
+            console.log(`🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
+            await this.printKOT(
+              kotData,
+              "SYSTEM",
+              isReprint ? "REPRINT" : (isAdditional ? "ADDITIONAL" : "NEW"),
+              printerIp
+            );
+          } catch (grpErr: any) {
+            console.error(`❌ [UniversalPrinter] KOT print failed for kitchen group ${kCode} (${kotData.kitchenName}):`, grpErr.message);
+          }
         }
-        const kotData = {
-          orderId,
-          orderNo: orderId,
-          tableNo,
-          waiterName,
-          items: groupItems,
-          kitchenName:
-            groupItems[0].KitchenTypeName || (kCode === "0" ? "KITCHEN" : kCode),
-          // Pass Disable Combo Print flag so both HTML and thermal renderers honour it
-          disableComboPrint: !!enableComboPrint,
-        };
-        try {
-          console.log(`🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
-          await this.printKOT(
-            kotData,
-            "SYSTEM",
-            isReprint ? "REPRINT" : (isAdditional ? "ADDITIONAL" : "NEW"),
-            printerIp
-          );
-        } catch (grpErr: any) {
-          console.error(`âŒ [UniversalPrinter] KOT print failed for kitchen group ${kCode} (${kotData.kitchenName}):`, grpErr.message);
-        }
+      } else {
+        if (__DEV__) console.log("🖨️ [UniversalPrinter] KOT printing is disabled in General Settings.");
       }
 
       // 6. KDS backup copy (respects enableKDSPrint setting)
-      if (isReprint || enableKDSPrint !== false) {
+      if (shouldPrintKDS) {
         try {
           const kdsData = {
             orderId,
