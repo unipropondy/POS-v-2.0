@@ -695,12 +695,12 @@ class UniversalPrinter {
             const res = await fetch(`${API_URL}/api/settings/kitchen-printers`);
             const printers = await res.json();
             const kdsPrinter = printers.find((p: any) => p.PrinterType === 4);
-            targetIp = kdsPrinter?.PrinterIP || "";
+            targetIp = kdsPrinter?.PrinterPath || kdsPrinter?.PrinterIP || "";
           } catch (err) {
             console.warn("Failed to fetch KDS printer IP:", err);
           }
         }
-        if (!targetIp) {
+        if (!targetIp && type !== "KDS_PRINT") {
           targetIp = company.printerIp || "";
         }
       }

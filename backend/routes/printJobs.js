@@ -266,8 +266,8 @@ router.post('/', authenticateBridge, async (req, res) => {
       }
     }
 
-    // Ultimate fallback to Cashier Printer (Type 1)
-    if (!printerIp || printerIp.trim() === '') {
+    // Ultimate fallback to Cashier Printer (Type 1) for non-KDS jobs
+    if ((!printerIp || printerIp.trim() === '') && pType !== 4) {
       const cashierRes = await pool.request()
         .query(`
           SELECT TOP 1 ISNULL(NULLIF(PrinterIP, ''), NULLIF(PrinterPath, '')) as PrinterIP, PrinterName 

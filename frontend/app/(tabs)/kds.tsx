@@ -337,8 +337,9 @@ export default function KDSScreen() {
         const printers = await res.json();
         if (Array.isArray(printers)) {
           const kds = printers.find((p: any) => p.PrinterType === 4);
-          if (kds?.PrinterPath) {
-            setKdsPrinterIp(kds.PrinterPath.trim());
+          const ip = kds?.PrinterPath || kds?.PrinterIP;
+          if (ip) {
+            setKdsPrinterIp(ip.trim());
           }
         }
       } catch (e) {
