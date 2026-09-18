@@ -324,6 +324,8 @@ const canMergeCartItems = (left: CartItem, right: CartItem) => {
     if (left.isCombo !== right.isCombo) return false;
     if (JSON.stringify(left.comboSelections) !== JSON.stringify(right.comboSelections)) return false;
   }
+  if ((left.discountAmount || 0) !== (right.discountAmount || 0)) return false;
+  if ((left.discountType || "") !== (right.discountType || "")) return false;
   return (
     (left.status || "NEW") === "NEW" &&
     (right.status || "NEW") === "NEW" &&
@@ -558,6 +560,8 @@ export const useCartStore = create<CartState>()(
                 p.songName !== normalizedIncoming.songName ||
                 p.status !== "NEW" || 
                 p.isTakeaway !== normalizedIncoming.isTakeaway || 
+                (p.discountAmount || 0) !== (normalizedIncoming.discountAmount || 0) ||
+                (p.discountType || "") !== (normalizedIncoming.discountType || "") ||
                 (p.note || "") !== (normalizedIncoming.note || "") ||
                 (p.spicy || "") !== (normalizedIncoming.spicy || "") ||
                 (p.salt || "") !== (normalizedIncoming.salt || "") ||

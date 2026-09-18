@@ -1473,13 +1473,22 @@ class UniversalPrinter {
     discountInfo?: DiscountInfo,
   ): Promise<boolean> {
     try {
-      // âœ… FIX: Match the logic in PaymentSuccess by ensuring we have a valid ID
+      // ✅ FIX: Match the logic in PaymentSuccess by ensuring we have a valid ID
       const targetUserId = outletId || "1";
       const company = await BillPDFGenerator.loadSettings(targetUserId);
+
+      const effectiveDiscountInfo = discountInfo || saleData.discount || (saleData.discountAmount > 0 ? {
+        applied: true,
+        type: saleData.discountType || 'percentage',
+        value: saleData.discountValue || 0,
+        amount: saleData.discountAmount
+      } : undefined);
 
       // Set checkout flag for the template
       const enhancedSaleData = {
         ...saleData,
+        discount: effectiveDiscountInfo,
+        discountAmount: saleData.discountAmount ?? effectiveDiscountInfo?.amount,
         isCheckout: true,
         // Ensure branding is present for the template
         shopName: company.name,
@@ -1494,10 +1503,10 @@ class UniversalPrinter {
         enhancedSaleData,
         targetUserId,
         undefined,
-        discountInfo,
+        effectiveDiscountInfo,
       );
     } catch (error: any) {
-      console.error("âŒ Checkout Print Error:", error);
+      console.error("❌ Checkout Print Error:", error);
       return false;
     }
   }
@@ -1510,18 +1519,19 @@ class UniversalPrinter {
     discountInfo?: DiscountInfo,
   ): Promise<boolean> {
     try {
-      // âœ… STEP 1: Try Sunmi direct print (NO preview)
+      // ✅ STEP 1: Try Sunmi direct print (NO preview)
       const sunmiReady = await SunmiPrinterService.init();
       if (sunmiReady) {
         const company = await BillPDFGenerator.loadSettings(userId);
 
-        // âœ… Pass discount to saleData for Sunmi printer
+        // ✅ Pass discount to saleData for Sunmi printer
         const enhancedSaleData = { ...saleData };
-        if (discountInfo?.applied && discountInfo.amount > 0) {
-          enhancedSaleData.discountAmount = discountInfo.amount;
-          enhancedSaleData.discountType = discountInfo.type;
-          enhancedSaleData.discountValue = discountInfo.value;
-          enhancedSaleData.originalTotal = saleData.total + discountInfo.amount;
+        const effectiveDisc = discountInfo || saleData.discount;
+        if (effectiveDisc?.applied !== false || saleData.discountAmount > 0) {
+          enhancedSaleData.discount = effectiveDisc;
+          if (effectiveDisc?.amount) enhancedSaleData.discountAmount = effectiveDisc.amount;
+          if (effectiveDisc?.type) enhancedSaleData.discountType = effectiveDisc.type;
+          if (effectiveDisc?.value != null) enhancedSaleData.discountValue = effectiveDisc.value;
         }
 
         const printed = await SunmiPrinterService.printReceipt(
@@ -1529,7 +1539,7 @@ class UniversalPrinter {
           company,
         );
         if (printed) {
-          console.log("âœ… Printed with Sunmi printer - NO PREVIEW");
+          console.log("✅ Printed with Sunmi printer - NO PREVIEW");
           return true;
         }
       }
@@ -1808,7 +1818,7 @@ class UniversalPrinter {
             applied: true,
             type: saleData.discount.type || "percentage",
             value: saleData.discount.value || 0,
-            amount: saleData.discount.amount || 0,
+            amount: saleData.discount.amount || saleData.discountAmount || 0,
           }
         : saleData.discountAmount && saleData.discountAmount > 0
           ? {
@@ -1821,7 +1831,17 @@ class UniversalPrinter {
 
     const focPayment = (saleData.payments || []).find((p: any) => String(p.payMode || p.payModeName || p.Remarks || '').trim().toUpperCase() === 'FOC');
     const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
-    const orderDiscount = finalDiscountInfo?.amount || 0;
+    
+    let orderDiscount = finalDiscountInfo?.amount || saleData.discountAmount || 0;
+    if (orderDiscount === 0 && finalDiscountInfo && finalDiscountInfo.applied !== false && finalDiscountInfo.value > 0) {
+      const subtotalPostItemDisc = Math.max(0, grossTotal - totalItemDiscount);
+      if (finalDiscountInfo.type === "percentage") {
+        orderDiscount = (subtotalPostItemDisc * finalDiscountInfo.value) / 100;
+      } else {
+        orderDiscount = Math.min(finalDiscountInfo.value, subtotalPostItemDisc);
+      }
+    }
+
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
     // FOC is a payment method, not a pre-tax discount — exclude from subtotal calculation
     const hasAnyDiscount = totalItemDiscount > 0 || normalDiscount > 0;

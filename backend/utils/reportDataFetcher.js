@@ -42,6 +42,7 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
       sh.CashierId, 
       sh.BillNo, 
       sh.SER_NAME,
+      COALESCE(sh.entry_status, ro_cur.entry_status) AS entryStatus,
       sts.PayMode as RawPayMode,
       ISNULL(sts.SysAmount, sh.SysAmount) as SysAmount,
       sh.SubTotal as SubTotal,
@@ -57,6 +58,7 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
       sh.RoundedBy as RoundedBy,
       ISNULL(cct_sale.OutstandingAmount, 0) AS OutstandingAmount
     FROM SettlementHeader sh
+    LEFT JOIN RestaurantOrderCur ro_cur ON sh.BillNo = ro_cur.OrderNumber
     LEFT JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
     LEFT JOIN CustomerCreditTransactions cct_sale ON sh.SettlementID = cct_sale.SettlementId AND cct_sale.TransactionType = 'CREDIT_SALE'
     WHERE ${shWhere}
@@ -222,6 +224,7 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
   const orderTypesTotal = dineInCount + takeawayCount;
   const dineInPct = orderTypesTotal > 0 ? (dineInCount / orderTypesTotal) * 100 : 0;
   const takeawayPct = orderTypesTotal > 0 ? (takeawayCount / orderTypesTotal) * 100 : 0;
+  const qrPct = totalTransactions > 0 ? (qrOrderCount / totalTransactions) * 100 : 0;
 
   // 3. Fetch category report (AppReport + ProfessionalReport union)
   const categoryQuery = `
@@ -559,8 +562,10 @@ async function fetchFullReportData(startDateStr, endDateStr, pool) {
     orderTypes: {
       dineInCount,
       takeawayCount,
+      qrOrderCount,
       dineInPct,
-      takeawayPct
+      takeawayPct,
+      qrPct
     },
 
     // Trend

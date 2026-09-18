@@ -1273,6 +1273,9 @@ export default function SalesReport() {
         if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
           processedBills.add(s.SettlementID);
           acc.TotalTransactions += 1;
+          if (s.entryStatus === "q" || s.entry_status === "q" || s.isQROrder) {
+            acc.QROrderCount += 1;
+          }
           acc.TotalItems += (s.ReceiptCount || 0);
           acc.TotalVoids += s.VoidQty || 0;
           acc.TotalVoidAmount += Math.round(((s.VoidAmount || 0) + Number.EPSILON) * 100) / 100;
@@ -1287,6 +1290,7 @@ export default function SalesReport() {
       {
         TotalSales: 0,
         TotalTransactions: 0,
+        QROrderCount: 0,
         TotalItems: 0,
         Cash: 0,
         Card: 0,
@@ -1875,13 +1879,34 @@ export default function SalesReport() {
     icon: any,
     color: string,
     fullWidth?: boolean,
+    subtitle?: string,
   ) => (
-    <View style={[styles.metricTile, { borderLeftColor: color }, fullWidth && { width: '100%' }]}>
-      <View style={styles.tileHeader}>
-        <Ionicons name={icon} size={14} color={Theme.textMuted} />
-        <Text style={styles.tileLabel}>{label}</Text>
+    <View
+      style={[
+        styles.metricTile,
+        {
+          borderLeftColor: color,
+          width: fullWidth ? "100%" : SCREEN_W >= 600 ? "31.8%" : "48%",
+        },
+      ]}
+    >
+      <View style={[styles.tileIconContainer, { backgroundColor: color + "15" }]}>
+        <Ionicons name={icon} size={26} color={color} />
       </View>
-      <Text style={[styles.tileValue, { color }]}>{value}</Text>
+
+      <View style={styles.tileContent}>
+        <Text style={styles.tileLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={[styles.tileValue, { color }]} numberOfLines={1}>
+          {value}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.tileSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 
@@ -2603,92 +2628,77 @@ export default function SalesReport() {
 
       {/* Metrics Grid */}
       <View style={styles.metricsGrid}>
-        {renderMetricTile(
-          "Total Sales",
-          formatCurrency(filteredMetrics.TotalSales),
-          "card-outline",
-          Theme.success,
-        )}
-        {renderMetricTile(
-          "Total Collections",
-          // Exclude credit *sales* and FOC sales from TotalSales — they are deferred/exempt revenue.
-          // Add credit/member *payment* collections separately.
-          formatCurrency(
-            (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
-            filteredMetrics.MemberPaymentsCollected +
-            filteredMetrics.CreditPaymentsCollected
-          ),
-          "wallet-outline",
-          "#22c55e",
-        )}
-        {renderMetricTile(
-          "FOC Sales",
-          formatCurrency(filteredMetrics.FocSales),
-          "gift-outline",
-          "#2563eb",
-        )}
-        {renderMetricTile(
-          "Service Charge",
-          formatCurrency(filteredMetrics.ServiceCharge),
-          "calculator-outline",
-          Theme.primary,
-        )}
-        {renderMetricTile(
-          "GST",
-          formatCurrency(filteredMetrics.TotalTax),
-          "receipt-outline",
-          Theme.warning,
-        )}
-        {renderMetricTile(
-          "Takeaway Charge",
-          formatCurrency(filteredMetrics.TakeawayCharge),
-          "basket-outline",
-          "#ec4899",
-        )}
-        {renderMetricTile(
-          "Discount Sales",
-          formatCurrency(filteredMetrics.TotalDiscount),
-          "pricetag-outline",
-          "#f97316",
-        )}
-        {renderMetricTile(
-          "Credit Collections",
-          formatCurrency(filteredMetrics.CreditPaymentsCollected),
-          "cash-outline",
-          Theme.warning,
-        )}
-        {renderMetricTile(
-          "Member Collections",
-          // filteredMetrics.Member = member POS sales (prepaid wallet deductions)
-          // filteredMetrics.MemberPaymentsCollected = LEDGER credit-account payment collections
-          // Both represent cash received via member accounts
-          formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected),
-          "cash-outline",
-          Theme.primary,
-        )}
-        {renderMetricTile(
-          "Total Orders",
-          filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount,
-          "receipt-outline",
-          Theme.warning,
-        )}
-        {renderMetricTile(
-          "Items Sold",
-          filteredMetrics.TotalItems,
-          "fast-food-outline",
-          "#ec4899",
-        )}
-        {renderMetricTile(
-          "Total Voids",
-          `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`,
-          "trash-outline",
-          "#ef4444",
-        )}
-        {renderMetricTile(
-          "Cancelled Orders",
-          `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`,
-          "close-circle-outline",
-          Theme.danger,
+        {SCREEN_W >= 600 ? (
+          <>
+            {/* Row 1 */}
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Total Sales", formatCurrency(filteredMetrics.TotalSales), "card-outline", Theme.success)}
+              {renderMetricTile(
+                "Total Collections",
+                formatCurrency(
+                  (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
+                  filteredMetrics.MemberPaymentsCollected +
+                  filteredMetrics.CreditPaymentsCollected
+                ),
+                "wallet-outline",
+                "#22c55e",
+              )}
+              {renderMetricTile("FOC Sales", formatCurrency(filteredMetrics.FocSales), "gift-outline", "#2563eb")}
+            </View>
+
+            {/* Row 2 */}
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Service Charge", formatCurrency(filteredMetrics.ServiceCharge), "calculator-outline", Theme.primary)}
+              {renderMetricTile("GST", formatCurrency(filteredMetrics.TotalTax), "receipt-outline", Theme.warning)}
+              {renderMetricTile("Takeaway Charge", formatCurrency(filteredMetrics.TakeawayCharge), "basket-outline", "#ec4899")}
+            </View>
+
+            {/* Row 3 */}
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
+              {renderMetricTile("Credit Collections", formatCurrency(filteredMetrics.CreditPaymentsCollected), "cash-outline", Theme.warning)}
+              {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
+            </View>
+
+            {/* Row 4 */}
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Total Orders", filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount, "receipt-outline", Theme.warning)}
+              {renderMetricTile("QR Orders Count", filteredMetrics.QROrderCount, "qr-code-outline", "#8b5cf6")}
+              {renderMetricTile("Items Sold", filteredMetrics.TotalItems, "fast-food-outline", "#ec4899")}
+            </View>
+
+            {/* Row 5 (Centered 2 cards) */}
+            <View style={[styles.metricsRow, styles.metricsRowCentered]}>
+              {renderMetricTile("Total Voids", `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`, "trash-outline", "#ef4444")}
+              {renderMetricTile("Cancelled Orders", `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`, "close-circle-outline", Theme.danger)}
+            </View>
+          </>
+        ) : (
+          <>
+            {renderMetricTile("Total Sales", formatCurrency(filteredMetrics.TotalSales), "card-outline", Theme.success)}
+            {renderMetricTile(
+              "Total Collections",
+              formatCurrency(
+                (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
+                filteredMetrics.MemberPaymentsCollected +
+                filteredMetrics.CreditPaymentsCollected
+              ),
+              "wallet-outline",
+              "#22c55e",
+            )}
+            {renderMetricTile("FOC Sales", formatCurrency(filteredMetrics.FocSales), "gift-outline", "#2563eb")}
+            {renderMetricTile("Service Charge", formatCurrency(filteredMetrics.ServiceCharge), "calculator-outline", Theme.primary)}
+            {renderMetricTile("GST", formatCurrency(filteredMetrics.TotalTax), "receipt-outline", Theme.warning)}
+            {renderMetricTile("Takeaway Charge", formatCurrency(filteredMetrics.TakeawayCharge), "basket-outline", "#ec4899")}
+            {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
+            {renderMetricTile("Credit Collections", formatCurrency(filteredMetrics.CreditPaymentsCollected), "cash-outline", Theme.warning)}
+            {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
+            {renderMetricTile("Total Orders", filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount, "receipt-outline", Theme.warning)}
+            {renderMetricTile("QR Orders Count", filteredMetrics.QROrderCount, "qr-code-outline", "#8b5cf6")}
+            {renderMetricTile("Items Sold", filteredMetrics.TotalItems, "fast-food-outline", "#ec4899")}
+            {renderMetricTile("Total Voids", `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`, "trash-outline", "#ef4444")}
+            {renderMetricTile("Cancelled Orders", `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`, "close-circle-outline", Theme.danger)}
+          </>
         )}
       </View>
 
@@ -2858,11 +2868,12 @@ export default function SalesReport() {
                   s.OrderType === "TAKEAWAY" ||
                   s.Section === "TAKEAWAY" ||
                   (!s.OrderType && s.TableNo && String(s.TableNo).startsWith("TW-"));
+                const isQR = (s: any) => s.entryStatus === "q" || s.entry_status === "q" || s.isQROrder;
                 const takeaway = activeSales.filter(isTakeaway).length;
                 const dineIn = activeSales.filter(
                   (s) => !isTakeaway(s),
                 ).length;
-                const total = dineIn + takeaway;
+                const totalOrderTypes = dineIn + takeaway;
                 return (
                   <>
                     <View style={styles.statRow}>
@@ -2873,7 +2884,7 @@ export default function SalesReport() {
                       <Text
                         style={[styles.statValue, { color: Theme.primary }]}
                       >
-                        {total > 0 ? ((dineIn / total) * 100).toFixed(0) : 0}%
+                        {totalOrderTypes > 0 ? ((dineIn / totalOrderTypes) * 100).toFixed(0) : 0}% ({dineIn})
                       </Text>
                     </View>
                     <View style={styles.statRow}>
@@ -2884,7 +2895,7 @@ export default function SalesReport() {
                       <Text
                         style={[styles.statValue, { color: Theme.warning }]}
                       >
-                        {total > 0 ? ((takeaway / total) * 100).toFixed(0) : 0}%
+                        {totalOrderTypes > 0 ? ((takeaway / totalOrderTypes) * 100).toFixed(0) : 0}% ({takeaway})
                       </Text>
                     </View>
                   </>
@@ -2921,6 +2932,12 @@ export default function SalesReport() {
                 <Text style={styles.metricLabel}>Conversion</Text>
                 <Text style={styles.metricValueSmall}>
                   {filteredMetrics.TotalTransactions}
+                </Text>
+              </View>
+              <View style={styles.metricRow}>
+                <Text style={styles.metricLabel}>QR Orders</Text>
+                <Text style={styles.metricValueSmall}>
+                  {filteredMetrics.QROrderCount}
                 </Text>
               </View>
               <View style={styles.metricRow}>
@@ -5485,33 +5502,60 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     gap: 12,
   },
+  metricsRow: {
+    flexDirection: "row",
+    width: "100%",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  metricsRowCentered: {
+    justifyContent: "center",
+    gap: 16,
+  },
   metricTile: {
-    width: "48%",
     padding: 16,
     borderRadius: 20,
-    borderLeftWidth: 4,
+    borderLeftWidth: 5,
     backgroundColor: Theme.bgCard,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  tileHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 10,
+    gap: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  tileIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tileContent: {
+    flex: 1,
+    justifyContent: "center",
   },
   tileLabel: {
     color: Theme.textSecondary,
     fontFamily: Fonts.black,
-    fontSize: 13,
+    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
-    flex: 1,
+    letterSpacing: 0.5,
+    marginBottom: 4,
   },
-  tileValue: { fontFamily: Fonts.black, fontSize: 20 },
+  tileValue: {
+    fontFamily: Fonts.black,
+    fontSize: 22,
+    letterSpacing: -0.3,
+  },
+  tileSubtitle: {
+    color: Theme.textMuted,
+    fontFamily: Fonts.medium,
+    fontSize: 10,
+    marginTop: 2,
+  },
   reportSwitchRow: {
     flexDirection: "row",
     flexWrap: "wrap",

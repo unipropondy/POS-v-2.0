@@ -1020,11 +1020,19 @@ export default function SummaryScreen() {
     if (!cart.length) return;
     
     try {
+      const fullDiscountInfo = discountInfo?.applied ? {
+        ...discountInfo,
+        amount: discountInfo.amount || discountAmount,
+      } : undefined;
+
       const saleData = {
         items: cart,
         total: grandTotal,
         subtotal: subtotal,
-        discount: discountInfo,
+        discount: fullDiscountInfo,
+        discountAmount: discountAmount,
+        discountType: discountInfo?.type,
+        discountValue: discountInfo?.value,
         orderId: displayOrderId,
         tableNo: context?.tableNo,
         waiterName: context?.serverName,
@@ -1039,7 +1047,7 @@ export default function SummaryScreen() {
       await UniversalPrinter.printCheckoutBill(
         saleData,
         user?.userId || "SYSTEM",
-        discountInfo,
+        fullDiscountInfo,
       );
 
       showToast({
@@ -1889,6 +1897,21 @@ export default function SummaryScreen() {
                         })().toFixed(2)}
                       </Text>
                     )}
+                    {!item.isFoc && item.status !== "VOIDED" && (() => {
+                      const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
+                      const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
+                      const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
+                      if (discAmt <= 0) return null;
+                      const isFixed = item.discountType === 'fixed' || (item.discountType == null && item.discountAmount > 0 && !item.discount);
+                      const savedAmt = isFixed
+                        ? Math.min(discAmt, discountBasis) * item.qty
+                        : (discountBasis * (discAmt / 100)) * item.qty;
+                      return (
+                        <Text style={[styles.sub, { color: Theme.danger, fontFamily: Fonts.bold, marginTop: 2 }]}>
+                          Item Discount ({isFixed ? `${currencySymbol}${discAmt.toFixed(2)}` : `${discAmt}%`}): -{currencySymbol}{savedAmt.toFixed(2)}
+                        </Text>
+                      );
+                    })()}
                   </View>
 
                   <View style={[styles.priceBlock, { alignItems: 'flex-end', justifyContent: 'center' }]}>
@@ -2186,36 +2209,74 @@ export default function SummaryScreen() {
                   </Text>
                 </View>
 
-                {(discountAmount + totalItemDiscount) > 0 && (
-                  <>
-                    <View
+                {totalItemDiscount > 0 && (
+                  <View
+                    style={[
+                      styles.summaryRow,
+                      ((isLandscape && !isTablet) ||
+                        (isPhone && !isLandscape)) && { marginBottom: 6 },
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.summaryRow,
-                        ((isLandscape && !isTablet) ||
-                          (isPhone && !isLandscape)) && { marginBottom: 6 },
+                        styles.summaryLabel,
+                        { color: Theme.danger },
+                        isPhone && !isLandscape && { fontSize: 13 },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.summaryLabel,
-                          { color: Theme.danger },
-                          isPhone && !isLandscape && { fontSize: 13 },
-                        ]}
-                      >
-                        {discountInfo?.label || (discountInfo?.applied ? "Discount" : "Discount")}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.summaryValue,
-                          { color: Theme.danger },
-                          isPhone && !isLandscape && { fontSize: 13 },
-                        ]}
-                      >
-                        -{currencySymbol}
-                        {(discountAmount + totalItemDiscount).toFixed(2)}
-                      </Text>
-                    </View>
+                      Item Discounts
+                    </Text>
+                    <Text
+                      style={[
+                        styles.summaryValue,
+                        { color: Theme.danger },
+                        isPhone && !isLandscape && { fontSize: 13 },
+                      ]}
+                    >
+                      -{currencySymbol}
+                      {totalItemDiscount.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
 
+                {discountAmount > 0 && (
+                  <View
+                    style={[
+                      styles.summaryRow,
+                      ((isLandscape && !isTablet) ||
+                        (isPhone && !isLandscape)) && { marginBottom: 6 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.summaryLabel,
+                        { color: Theme.danger },
+                        isPhone && !isLandscape && { fontSize: 13 },
+                      ]}
+                    >
+                      {discountInfo?.type === "percentage"
+                        ? `Whole Bill Discount (${discountInfo.value}%)`
+                        : discountInfo?.type === "fixed"
+                        ? `Whole Bill Discount (-${currencySymbol}${discountInfo.value})`
+                        : discountInfo?.label
+                        ? `Whole Bill Discount (${discountInfo.label})`
+                        : "Whole Bill Discount"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.summaryValue,
+                        { color: Theme.danger },
+                        isPhone && !isLandscape && { fontSize: 13 },
+                      ]}
+                    >
+                      -{currencySymbol}
+                      {discountAmount.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+
+                {(discountAmount > 0 || totalItemDiscount > 0) && (
+                  <>
                     <View
                       style={[
                         styles.dashedDivider,

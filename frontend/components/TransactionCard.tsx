@@ -142,7 +142,7 @@ const TransactionCard = React.memo(
                         : "💳"
                     } Member Account Settlement`
                 )
-              : `${item.OrderType === "TAKEAWAY" ? "🛍️ Takeaway" : `🪑 Table ${item.TableNo || "N/A"}`} • ${
+              : `${item.OrderType === "TAKEAWAY" ? "🛍️ Takeaway" : `🪑 Table ${item.TableNo || "N/A"}`}${(item.entryStatus === "q" || item.entry_status === "q" || item.isQROrder) ? " • 📱 QR" : ""} • ${
                   isSplitMode
                     ? (item.PayMode || "Split").trim()
                     : modeUpper === "CASH"

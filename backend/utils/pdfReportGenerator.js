@@ -640,6 +640,7 @@ const generateSalesReportPdf = async (reportData) => {
     ['Average Ticket Value',   fmt(keyMetrics.avgCheck || 0), T.orange],
     ['Average Items per Bill', (Number(keyMetrics.avgItems)||0).toFixed(1), T.slate700],
     ['Average Dish Price',     fmt(keyMetrics.perItem || 0), T.slate700],
+    ['QR Order Count',         fmt(orderTypes.qrOrderCount || 0, false), T.purple],
     ['Dine-In Share',          `${(Number(orderTypes.dineInPct)||0).toFixed(0)}%`, T.blue],
     ['Takeaway Share',         `${(Number(orderTypes.takeawayPct)||0).toFixed(0)}%`, T.purple],
     ['Credit Outstanding',     fmt(reconciliation.creditOutstanding||0), T.red],

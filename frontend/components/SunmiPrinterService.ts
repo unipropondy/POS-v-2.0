@@ -489,7 +489,34 @@ class SunmiPrinterService {
         totalItemDiscount += itemDiscount;
       });
 
-      const orderDiscount = parseFloat(String(saleData.discountAmount || 0)) || 0;
+      const finalDiscountInfo =
+        saleData.discount ||
+        (saleData.discount
+          ? {
+              applied: true,
+              type: saleData.discount.type || "percentage",
+              value: saleData.discount.value || 0,
+              amount: saleData.discount.amount || saleData.discountAmount || 0,
+            }
+          : saleData.discountAmount && saleData.discountAmount > 0
+            ? {
+                applied: true,
+                type: saleData.discountType || "percentage",
+                value: saleData.discountValue || 0,
+                amount: saleData.discountAmount,
+              }
+            : null);
+
+      let orderDiscount = finalDiscountInfo?.amount || parseFloat(String(saleData.discountAmount || 0)) || 0;
+      if (orderDiscount === 0 && finalDiscountInfo && finalDiscountInfo.applied !== false && finalDiscountInfo.value > 0) {
+        const subtotalPostItemDisc = Math.max(0, grossTotal - totalItemDiscount);
+        if (finalDiscountInfo.type === "percentage") {
+          orderDiscount = (subtotalPostItemDisc * finalDiscountInfo.value) / 100;
+        } else {
+          orderDiscount = Math.min(finalDiscountInfo.value, subtotalPostItemDisc);
+        }
+      }
+
       const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;
       let currentSubtotal = grossTotal;
 
@@ -501,7 +528,9 @@ class SunmiPrinterService {
       }
 
       if (orderDiscount > 0) {
-        const discLabel = saleData.discountType === "percentage" ? `Discount (${saleData.discountValue}%):` : "Discount:";
+        const discType = finalDiscountInfo?.type || saleData.discountType || "percentage";
+        const discVal = finalDiscountInfo?.value ?? saleData.discountValue;
+        const discLabel = discType === "percentage" ? `Discount (${discVal}%):` : "Discount:";
         await SunmiModule.printText(formatter.twoCols(discLabel, `-${symbol}${orderDiscount.toFixed(2)}`));
         currentSubtotal -= orderDiscount;
       }

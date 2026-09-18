@@ -284,7 +284,7 @@ private static escapeHtml(str: string): string {
             applied: true,
             type: saleData.discount.type || 'percentage',
             value: saleData.discount.value || 0,
-            amount: saleData.discount.amount || 0
+            amount: saleData.discount.amount || saleData.discountAmount || 0
         };
         console.log('📋 Using discount from saleData:', finalDiscountInfo);
     }
@@ -334,6 +334,15 @@ private static escapeHtml(str: string): string {
       grossTotal += baseTotal;
       totalItemDiscount += itemDiscount;
     });
+
+    if (finalDiscountInfo && (!finalDiscountInfo.amount || finalDiscountInfo.amount === 0) && finalDiscountInfo.value > 0) {
+      const subtotalPostItemDisc = Math.max(0, grossTotal - totalItemDiscount);
+      if (finalDiscountInfo.type === "percentage") {
+        finalDiscountInfo.amount = (subtotalPostItemDisc * finalDiscountInfo.value) / 100;
+      } else {
+        finalDiscountInfo.amount = Math.min(finalDiscountInfo.value, subtotalPostItemDisc);
+      }
+    }
 
     const focPayment = (saleData.payments || []).find((p: any) => String(p.payMode || p.payModeName || p.Remarks || '').trim().toUpperCase() === 'FOC');
     const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
