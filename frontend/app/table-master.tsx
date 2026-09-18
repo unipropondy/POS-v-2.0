@@ -21,6 +21,7 @@ import { socket } from "@/constants/socket";
 import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
 import { Theme } from "@/constants/theme";
+import { FloorPlanTable } from "@/components/FloorPlanTable";
 
 type TableItem = {
   id: string;
@@ -370,12 +371,23 @@ const CanvasBackground = ({ theme, children, style, isCategory = false }: { them
   );
 };
 
+// ─────────────────────────────────────────
+// Grid snap helper
+// ─────────────────────────────────────────
+const GRID_SIZE = 30; // px on the 780-wide base canvas
+const snapToGrid = (value: number, scale: number) => {
+  const g = GRID_SIZE * scale;
+  return Math.round(value / g) * g;
+};
+
+// ─────────────────────────────────────────
 // --- DRAGGABLE TABLE ITEM COMPONENT ---
 const DraggableTable = ({
   table,
   initialX,
   initialY,
   onDragEnd,
+  onDragMove,
   onPress,
   isSelected,
   canvasHeight = 650,
@@ -386,6 +398,7 @@ const DraggableTable = ({
   initialX: number;
   initialY: number;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string | null, x: number, y: number, w: number, h: number) => void;
   onPress: () => void;
   isSelected: boolean;
   canvasHeight?: number;
@@ -420,17 +433,23 @@ const DraggableTable = ({
         onPanResponderMove: (evt, gestureState) => {
           const limitX = 780 * layoutScale;
           const limitY = canvasHeight * layoutScale;
-          const newX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
-          const newY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
-          setPosX(newX);
-          setPosY(newY);
+          const rawX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
+          const rawY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
+          const snappedX = snapToGrid(rawX, layoutScale);
+          const snappedY = snapToGrid(rawY, layoutScale);
+          setPosX(snappedX);
+          setPosY(snappedY);
+          onDragMove?.(table.id, snappedX, snappedY, tableW, tableH);
         },
         onPanResponderRelease: (evt, gestureState) => {
           const limitX = 780 * layoutScale;
           const limitY = canvasHeight * layoutScale;
-          const newX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
-          const newY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
-          onDragEnd(table.id, newX, newY);
+          const rawX = Math.max(10, Math.min(limitX - tableW, initialX + gestureState.dx));
+          const rawY = Math.max(10, Math.min(limitY - tableH, initialY + gestureState.dy));
+          const snappedX = snapToGrid(rawX, layoutScale);
+          const snappedY = snapToGrid(rawY, layoutScale);
+          onDragMove?.(null, 0, 0, 0, 0); // clear guide
+          onDragEnd(table.id, snappedX, snappedY);
         },
       }),
     [initialX, initialY, canvasHeight, layoutScale, tableW, tableH]
@@ -459,12 +478,12 @@ const DraggableTable = ({
   const cx = tableW / 2;
   const cy = tableH / 2;
 
-  let chairSize = Math.max(8, 90 * 0.09 * layoutScale);
+  let chairSize = Math.max(16, 90 * 0.13 * layoutScale);
   if (seatsCount > 10) {
-    chairSize = Math.max(5, chairSize * (10 / seatsCount) * 1.5);
+    chairSize = Math.max(10, chairSize * (10 / seatsCount) * 1.4);
   }
-  
-  const offset = 4;
+
+  const offset = 5;
   const activeColor = isSelected ? "#FF5E1A" : (backgroundTheme === "light" ? "#22C55E" : "#D1C7BD");
   const activeBg = isSelected ? "#FFF4EC" : (backgroundTheme === "light" ? "#FFFFFF" : "#FAF8F5");
 
@@ -506,29 +525,29 @@ const DraggableTable = ({
       for (let i = 0; i < topCount; i++) {
         chairPositions.push({ 
           x: tx + (i + 0.5) * (tableW / topCount) - chairSize / 2, 
-          y: ty - chairSize - offset, 
-          backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 } 
+          y: ty - chairSize - offset,
+          // no rotate — backrest at top faces away from table
         });
       }
       for (let i = 0; i < bottomCount; i++) {
         chairPositions.push({ 
           x: tx + (i + 0.5) * (tableW / bottomCount) - chairSize / 2, 
-          y: ty + tableH + offset, 
-          backrestStyle: { bottom: 0, left: 0, right: 0, height: 2.2, borderBottomLeftRadius: 1.5, borderBottomRightRadius: 1.5 } 
+          y: ty + tableH + offset,
+          rotate: '180deg',
         });
       }
       for (let i = 0; i < leftCount; i++) {
         chairPositions.push({ 
           x: tx - chairSize - offset, 
-          y: ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2, 
-          backrestStyle: { left: 0, top: 0, bottom: 0, width: 2.2, borderTopLeftRadius: 1.5, borderBottomLeftRadius: 1.5 } 
+          y: ty + (i + 0.5) * (tableH / leftCount) - chairSize / 2,
+          rotate: '-90deg',
         });
       }
       for (let i = 0; i < rightCount; i++) {
         chairPositions.push({ 
           x: tx + tableW + offset, 
-          y: ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2, 
-          backrestStyle: { right: 0, top: 0, bottom: 0, width: 2.2, borderTopRightRadius: 1.5, borderBottomRightRadius: 1.5 } 
+          y: ty + (i + 0.5) * (tableH / rightCount) - chairSize / 2,
+          rotate: '90deg',
         });
       }
     }
@@ -593,109 +612,30 @@ const DraggableTable = ({
         }),
       }}
     >
-      {/* Chairs */}
-      {chairPositions.map((pos, idx) => (
-        <View
-          key={`chair-${idx}`}
-          style={{
-            position: "absolute",
-            left: pos.x,
-            top: pos.y,
-            width: chairSize,
-            height: chairSize * 1.25,
-            transform: pos.rotate ? [{ rotate: pos.rotate }] : undefined,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          {/* Chair back */}
-          <LinearGradient
-            colors={["#637b60", "#526c4f", "#465d43"]}
-            locations={[0, 0.60, 1.0]}
-            style={{
-              position: "absolute",
-              left: 1,
-              right: 1,
-              top: 0,
-              height: "45%",
-              borderWidth: 1,
-              borderColor: "#9a6a38",
-              borderTopLeftRadius: chairSize / 4,
-              borderTopRightRadius: chairSize / 4,
-            }}
-          />
-          {/* Chair seat */}
-          <View
-            style={{
-              position: "absolute",
-              left: 2.2,
-              right: 2.2,
-              top: "35%",
-              bottom: 0,
-              backgroundColor: "#536d50",
-              borderWidth: 1,
-              borderColor: "#9a6a38",
-              borderBottomLeftRadius: chairSize / 5,
-              borderBottomRightRadius: chairSize / 5,
-              borderTopLeftRadius: chairSize / 8,
-              borderTopRightRadius: chairSize / 8,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ fontFamily: Fonts.bold, fontSize: chairSize * 0.35, color: "#fffeb0" }}>
-              {idx + 1}
-            </Text>
-          </View>
-        </View>
-      ))}
-
-      <View
-        style={{
-          position: "absolute",
-          left: tx,
-          top: ty,
-          width: tableW,
-          height: tableH,
-          borderRadius,
-          borderColor: isSelected ? "#FF5E1A" : "#99652f",
-          borderWidth: isSelected ? 3.5 : 2,
-          overflow: "hidden",
-          backgroundColor: "#b77d3d",
-        }}
-      >
-        <LinearGradient
-          colors={["#d9a866", "#c99452", "#b77d3d"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          locations={[0, 0.45, 1.0]}
-          style={{
-            flex: 1,
-            width: "100%",
-            height: "100%",
-            padding: 2,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <View style={{
-            flex: 1,
-            width: "100%",
-            height: "100%",
-            borderRadius: Math.max(0, borderRadius - 2),
-            justifyContent: "center",
-            alignItems: "center",
-          }}>
-            {/* Table Number & Capacity */}
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSelected ? "#FF5E1A" : "#334155" }}>
-              {table.label}
-            </Text>
-            <Text style={{ fontFamily: Fonts.medium, fontSize: 8, color: "#64748b", marginTop: 1 }}>
-              {table.Seats} Pax
-            </Text>
-          </View>
-        </LinearGradient>
-      </View>
+      {/* ── Shared FloorPlanTable: table body + chairs ── */}
+      <FloorPlanTable
+        tableW={tableW}
+        tableH={tableH}
+        borderRadius={borderRadius}
+        seatsCount={seatsCount}
+        status={0}
+        activeColor={isSelected ? "#FF5E1A" : "#9E8570"}
+        activeBg={"#F2EDE4"}
+        labelColor={isSelected ? "#FF5E1A" : "#3D2B1A"}
+        textColor={isSelected ? "#CC4A10" : "#6B5242"}
+        label={table.label}
+        uiText={""}
+        paxCount={seatsCount}
+        timeText={""}
+        billAmount={-1}
+        chairSize={chairSize}
+        chairPositions={chairPositions}
+        tx={tx}
+        ty={ty}
+        smallFont={8}
+        numberFont={13}
+        itemSize={Math.max(tableW, tableH)}
+      />
     </View>
   );
 };
@@ -729,6 +669,18 @@ export default function TableMasterScreen() {
   const [creating, setCreating] = useState(false);
 
   const [availableWidth, setAvailableWidth] = useState(780);
+
+  // Snap guide state — set while a table is being dragged
+  const [snapGuide, setSnapGuide] = useState<{
+    id: string; x: number; y: number; w: number; h: number;
+  } | null>(null);
+
+  const handleDragMove = (
+    id: string | null, x: number, y: number, w: number, h: number
+  ) => {
+    if (id === null) { setSnapGuide(null); return; }
+    setSnapGuide({ id, x, y, w, h });
+  };
 
   // Custom alert & confirmation modal states
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
@@ -1235,6 +1187,32 @@ export default function TableMasterScreen() {
                       <Ionicons name="refresh-outline" size={14} color="#6B6B6B" style={{ marginRight: 4 }} />
                       <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: "#6B6B6B" }}>Reset to Grid</Text>
                     </TouchableOpacity>
+                    {/* Grid Snap indicator */}
+                    <View style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      backgroundColor: snapGuide ? "rgba(255,94,26,0.12)" : "#F5F0E8",
+                      paddingHorizontal: 9,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: snapGuide ? "#FF5E1A" : "#E8E0D5",
+                      gap: 4,
+                    }}>
+                      <Ionicons
+                        name="magnet-outline"
+                        size={13}
+                        color={snapGuide ? "#FF5E1A" : "#94A3B8"}
+                      />
+                      <Text style={{
+                        fontFamily: Fonts.bold,
+                        fontSize: 10,
+                        color: snapGuide ? "#FF5E1A" : "#94A3B8",
+                        letterSpacing: 0.5,
+                      }}>
+                        {snapGuide ? "SNAPPING" : "SNAP ON"}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -1248,7 +1226,7 @@ export default function TableMasterScreen() {
                       theme={backgroundTheme}
                       style={[styles.floorWorkspaceCanvas, { width: availableWidth, height: canvasHeight * (availableWidth / 780) }]}
                     >
-                      {/* Subtle floor plan blueprint grids */}
+                      {/* Subtle floor plan blueprint grids (edit mode only) */}
                       {(() => {
                         let gridLineColor = "rgba(232, 224, 213, 0.4)";
                         if (backgroundTheme === "dark") gridLineColor = "rgba(255, 255, 255, 0.04)";
@@ -1285,6 +1263,7 @@ export default function TableMasterScreen() {
                               initialX={defaultX}
                               initialY={defaultY}
                               onDragEnd={handleDragEnd}
+                              onDragMove={handleDragMove}
                               onPress={() => selectAndLoadTable(t)}
                               isSelected={selectedTable?.id === t.id}
                               canvasHeight={canvasHeight}
@@ -1293,6 +1272,94 @@ export default function TableMasterScreen() {
                             />
                           );
                         });
+                      })()}
+
+                      {/* ── Snap Alignment Guides ── */}
+                      {snapGuide && (() => {
+                        const cx = snapGuide.x + snapGuide.w / 2;
+                        const cy = snapGuide.y + snapGuide.h / 2;
+                        const guideColor = "rgba(255,94,26,0.65)";
+                        const canW = availableWidth;
+                        const canH = canvasHeight * (availableWidth / 780);
+                        return (
+                          <View
+                            style={{ position: "absolute", inset: 0 }}
+                            pointerEvents="none"
+                          >
+                            {/* Horizontal guide line */}
+                            <View style={{
+                              position: "absolute",
+                              left: 0, right: 0,
+                              top: cy - 0.75,
+                              height: 1.5,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Vertical guide line */}
+                            <View style={{
+                              position: "absolute",
+                              top: 0, bottom: 0,
+                              left: cx - 0.75,
+                              width: 1.5,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Center dot */}
+                            <View style={{
+                              position: "absolute",
+                              left: cx - 5,
+                              top: cy - 5,
+                              width: 10, height: 10,
+                              borderRadius: 5,
+                              backgroundColor: "#FF5E1A",
+                              borderWidth: 2,
+                              borderColor: "#fff",
+                              shadowColor: "#FF5E1A",
+                              shadowOpacity: 0.6,
+                              shadowRadius: 4,
+                              shadowOffset: { width: 0, height: 0 },
+                              elevation: 6,
+                            }} />
+                            {/* Edge tick — top */}
+                            <View style={{
+                              position: "absolute",
+                              left: cx - 3,
+                              top: snapGuide.y - 6,
+                              width: 6, height: 6,
+                              borderRadius: 3,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Edge tick — bottom */}
+                            <View style={{
+                              position: "absolute",
+                              left: cx - 3,
+                              top: snapGuide.y + snapGuide.h,
+                              width: 6, height: 6,
+                              borderRadius: 3,
+                              backgroundColor: guideColor,
+                            }} />
+                            {/* Coordinate pill */}
+                            <View style={{
+                              position: "absolute",
+                              left: Math.min(cx + 8, canW - 80),
+                              top: Math.max(cy - 26, 4),
+                              backgroundColor: "rgba(255,94,26,0.9)",
+                              paddingHorizontal: 8,
+                              paddingVertical: 3,
+                              borderRadius: 6,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4,
+                            }}>
+                              <Text style={{
+                                fontFamily: Fonts.bold,
+                                fontSize: 10,
+                                color: "#fff",
+                                letterSpacing: 0.3,
+                              }}>
+                                {`X:${Math.round(snapGuide.x / (availableWidth / 780))}  Y:${Math.round(snapGuide.y / (availableWidth / 780))}`}
+                              </Text>
+                            </View>
+                          </View>
+                        );
                       })()}
                     </CanvasBackground>
                   </ScrollView>

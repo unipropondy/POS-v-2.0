@@ -1,4 +1,3 @@
-import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BridgeConfig } from './types';
@@ -10,10 +9,21 @@ const execDir = path.dirname(process.execPath);
 const execConfigPath = path.join(execDir, CONFIG_FILENAME);
 const localConfigPath = path.join(process.cwd(), CONFIG_FILENAME);
 
+function getElectronApp(): any {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const electron = require('electron');
+    return electron?.app || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 let appPath = '';
 try {
-  if (app) {
-    appPath = app.getAppPath();
+  const electronApp = getElectronApp();
+  if (electronApp) {
+    appPath = electronApp.getAppPath();
   }
 } catch (e) {
   // app might not be initialized or available in dev/testing contexts
@@ -41,8 +51,9 @@ function isWritable(filePath: string): boolean {
 // Fallback user config path (similar to logger logs directory)
 let userConfigPath = '';
 try {
-  if (app) {
-    userConfigPath = path.join(app.getPath('userData'), CONFIG_FILENAME);
+  const electronApp = getElectronApp();
+  if (electronApp) {
+    userConfigPath = path.join(electronApp.getPath('userData'), CONFIG_FILENAME);
   }
 } catch (e) {}
 if (!userConfigPath) {
@@ -90,7 +101,7 @@ const defaultConfig: BridgeConfig = {
   backends: [
     {
       name: 'RN POS',
-      url: 'https://conestonepos-qr082026-production.up.railway.app',
+      url: 'https://pos-v-20-production.up.railway.app',
       enabled: true
     },
     {
@@ -114,7 +125,7 @@ function loadConfig(): BridgeConfig {
 
     // Backward compatibility conversion:
     if (!parsed.backends || !Array.isArray(parsed.backends)) {
-      const url = parsed.apiUrl || parsed.backendUrl || 'https://conestonepos-qr082026-production.up.railway.app';
+      const url = parsed.apiUrl || parsed.backendUrl || 'https://pos-v-20-production.up.railway.app';
       parsed.backends = [
         {
           name: 'Default',

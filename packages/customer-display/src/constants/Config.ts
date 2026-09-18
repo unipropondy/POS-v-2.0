@@ -29,7 +29,7 @@ export let API_URL: string =
   (globalThis as any).process?.env?.EXPO_PUBLIC_API_URL ??
   (isDev
     ? `http://${getLocalBackendIP()}:3000`
-    : 'https://conestonepos-qr082026-production.up.railway.app');
+    : 'https://pos-v-20-production.up.railway.app');
 
 export const setApiUrl = (url: string) => {
   API_URL = url;
