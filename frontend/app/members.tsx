@@ -937,7 +937,7 @@ export default function MembersScreen() {
             <View style={styles.formSheet}>
               <View style={styles.sheetHeader}>
                 <View>
-                  <Text style={styles.sheetTitle}>Monthly Usage Report</Text>
+                  <Text style={styles.sheetTitle}>Order History & Details</Text>
                   <Text style={{ fontFamily: Fonts.bold, color: Theme.textSecondary, fontSize: 13, marginTop: 4 }}>
                     {usageMember?.Name} • {usageMember?.Phone}
                   </Text>

@@ -16,3 +16,5 @@
 ✉️ [Mail] Welcome email sent successfully to test12345@gmail.com at 2026-08-21T05:52:58.192Z
 ✉️ [Mail] sendWelcomeEmail called at 2026-08-21T06:07:21.422Z → email="unipropondy.uni@gmail.com", name="Pondy"
 ✉️ [Mail] Welcome email sent successfully to unipropondy.uni@gmail.com at 2026-08-21T06:07:24.340Z
+✉️ [Mail] sendWelcomeEmail called at 2026-09-21T09:21:24.778Z → email="loki@gmail.com", name="loki"
+✉️ [Mail] Welcome email sent successfully to loki@gmail.com at 2026-09-21T09:21:28.281Z
