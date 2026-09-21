@@ -1880,35 +1880,82 @@ export default function SalesReport() {
     color: string,
     fullWidth?: boolean,
     subtitle?: string,
-  ) => (
-    <View
-      style={[
-        styles.metricTile,
-        {
-          borderLeftColor: color,
-          width: fullWidth ? "100%" : SCREEN_W >= 600 ? "31.8%" : "48%",
-        },
-      ]}
-    >
-      <View style={[styles.tileIconContainer, { backgroundColor: color + "15" }]}>
-        <Ionicons name={icon} size={26} color={color} />
-      </View>
+  ) => {
+    const isMobile = SCREEN_W < 600;
+    const isTablet = SCREEN_W >= 600 && SCREEN_W < 1024;
 
-      <View style={styles.tileContent}>
-        <Text style={styles.tileLabel} numberOfLines={1}>
-          {label}
-        </Text>
-        <Text style={[styles.tileValue, { color }]} numberOfLines={1}>
-          {value}
-        </Text>
-        {subtitle ? (
-          <Text style={styles.tileSubtitle} numberOfLines={1}>
-            {subtitle}
+    const tilePaddingH = isMobile ? 10 : isTablet ? 12 : 16;
+    const tilePaddingV = isMobile ? 10 : isTablet ? 12 : 16;
+    const iconBoxSize = isMobile ? 36 : isTablet ? 42 : 48;
+    const iconSize = isMobile ? 18 : isTablet ? 22 : 24;
+    const tileGap = isMobile ? 8 : isTablet ? 10 : 12;
+    const labelFontSize = isMobile ? 10 : isTablet ? 11 : 12;
+    const valueFontSize = isMobile ? 16 : isTablet ? 18 : 22;
+
+    return (
+      <View
+        style={[
+          styles.metricTile,
+          {
+            borderLeftColor: color,
+            borderLeftWidth: isMobile ? 4 : 5,
+            paddingHorizontal: tilePaddingH,
+            paddingVertical: tilePaddingV,
+            gap: tileGap,
+            width: fullWidth
+              ? "100%"
+              : SCREEN_W >= 600
+              ? "31.5%"
+              : undefined,
+            flex: fullWidth ? undefined : SCREEN_W >= 600 ? undefined : 1,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.tileIconContainer,
+            {
+              backgroundColor: color + "15",
+              width: iconBoxSize,
+              height: iconBoxSize,
+              borderRadius: isMobile ? 10 : 14,
+            },
+          ]}
+        >
+          <Ionicons name={icon} size={iconSize} color={color} />
+        </View>
+
+        <View style={styles.tileContent}>
+          <Text
+            style={[styles.tileLabel, { fontSize: labelFontSize }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+          >
+            {label}
           </Text>
-        ) : null}
+          <Text
+            style={[styles.tileValue, { color, fontSize: valueFontSize }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.55}
+          >
+            {value}
+          </Text>
+          {subtitle ? (
+            <Text
+              style={[styles.tileSubtitle, { fontSize: isMobile ? 9 : 10 }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderDetailReport = () => {
     if (!detailReportType) {
@@ -2675,29 +2722,49 @@ export default function SalesReport() {
           </>
         ) : (
           <>
-            {renderMetricTile("Total Sales", formatCurrency(filteredMetrics.TotalSales), "card-outline", Theme.success)}
-            {renderMetricTile(
-              "Total Collections",
-              formatCurrency(
-                (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
-                filteredMetrics.MemberPaymentsCollected +
-                filteredMetrics.CreditPaymentsCollected
-              ),
-              "wallet-outline",
-              "#22c55e",
-            )}
-            {renderMetricTile("FOC Sales", formatCurrency(filteredMetrics.FocSales), "gift-outline", "#2563eb")}
-            {renderMetricTile("Service Charge", formatCurrency(filteredMetrics.ServiceCharge), "calculator-outline", Theme.primary)}
-            {renderMetricTile("GST", formatCurrency(filteredMetrics.TotalTax), "receipt-outline", Theme.warning)}
-            {renderMetricTile("Takeaway Charge", formatCurrency(filteredMetrics.TakeawayCharge), "basket-outline", "#ec4899")}
-            {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
-            {renderMetricTile("Credit Collections", formatCurrency(filteredMetrics.CreditPaymentsCollected), "cash-outline", Theme.warning)}
-            {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
-            {renderMetricTile("Total Orders", filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount, "receipt-outline", Theme.warning)}
-            {renderMetricTile("QR Orders Count", filteredMetrics.QROrderCount, "qr-code-outline", "#8b5cf6")}
-            {renderMetricTile("Items Sold", filteredMetrics.TotalItems, "fast-food-outline", "#ec4899")}
-            {renderMetricTile("Total Voids", `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`, "trash-outline", "#ef4444")}
-            {renderMetricTile("Cancelled Orders", `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`, "close-circle-outline", Theme.danger)}
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Total Sales", formatCurrency(filteredMetrics.TotalSales), "card-outline", Theme.success)}
+              {renderMetricTile(
+                "Total Collections",
+                formatCurrency(
+                  (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
+                  filteredMetrics.MemberPaymentsCollected +
+                  filteredMetrics.CreditPaymentsCollected
+                ),
+                "wallet-outline",
+                "#22c55e",
+              )}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile("FOC Sales", formatCurrency(filteredMetrics.FocSales), "gift-outline", "#2563eb")}
+              {renderMetricTile("Service Charge", formatCurrency(filteredMetrics.ServiceCharge), "calculator-outline", Theme.primary)}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile("GST", formatCurrency(filteredMetrics.TotalTax), "receipt-outline", Theme.warning)}
+              {renderMetricTile("Takeaway Charge", formatCurrency(filteredMetrics.TakeawayCharge), "basket-outline", "#ec4899")}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
+              {renderMetricTile("Credit Collections", formatCurrency(filteredMetrics.CreditPaymentsCollected), "cash-outline", Theme.warning)}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
+              {renderMetricTile("Total Orders", filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount, "receipt-outline", Theme.warning)}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile("QR Orders Count", filteredMetrics.QROrderCount, "qr-code-outline", "#8b5cf6")}
+              {renderMetricTile("Items Sold", filteredMetrics.TotalItems, "fast-food-outline", "#ec4899")}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile("Total Voids", `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`, "trash-outline", "#ef4444")}
+              {renderMetricTile("Cancelled Orders", `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`, "close-circle-outline", Theme.danger)}
+            </View>
           </>
         )}
       </View>
@@ -3003,8 +3070,8 @@ export default function SalesReport() {
               flexWrap: "wrap",
               justifyContent: "flex-start",
               width: "100%",
-              rowGap: SCREEN_W < 480 ? 8 : 10,
-              columnGap: SCREEN_W < 480 ? 8 : 10,
+              rowGap: SCREEN_W < 480 ? 10 : 12,
+              columnGap: SCREEN_W < 480 ? 10 : 12,
             }
           ]}
           onLayout={(e) => setBreakdownRowWidth(e.nativeEvent.layout.width)}
@@ -3017,10 +3084,10 @@ export default function SalesReport() {
             const color = getPayModeColor(key);
             const iconName = getPayModeIoniconName(key);
 
-            // 7 per row on web, 4 on tablet, 3 on mobile — use real measured width
-            const numCols = SCREEN_W > 768 ? 7 : SCREEN_W > 480 ? 4 : 3;
-            const gap = SCREEN_W < 480 ? 8 : 10;
-            const containerW = breakdownRowWidth > 0 ? breakdownRowWidth : Math.max(SCREEN_W - 80, 300);
+            // Responsive column grid: 2 cols on mobile (<480), 4 on tablet (480-900), 7 on laptop/desktop (>=900)
+            const numCols = SCREEN_W >= 900 ? 7 : SCREEN_W >= 480 ? 4 : 2;
+            const gap = SCREEN_W < 480 ? 10 : 12;
+            const containerW = breakdownRowWidth > 0 ? breakdownRowWidth : Math.max(SCREEN_W - 56, 280);
             const itemW = Math.floor((containerW - (numCols - 1) * gap) / numCols);
 
             const isSomeFilterApplied = activePaymentModes.length < (displayedBreakdownModes.length + 1);
@@ -3035,7 +3102,11 @@ export default function SalesReport() {
                 onPress={() => handleBreakdownPress(item.payMode)}
                 style={[
                   styles.breakdownItem,
-                  { width: itemW },
+                  {
+                    width: itemW,
+                    paddingVertical: SCREEN_W < 480 ? 12 : 14,
+                    paddingHorizontal: SCREEN_W < 480 ? 8 : 10,
+                  },
                   {
                     borderColor: hexToRgba(color, 0.22),
                     borderWidth: 1.5,
@@ -3056,23 +3127,37 @@ export default function SalesReport() {
                 {/* Icon circle */}
                 <View style={[
                   styles.breakdownIconCircle,
-                  { backgroundColor: hexToRgba(color, 0.12) }
+                  {
+                    backgroundColor: hexToRgba(color, 0.12),
+                    width: SCREEN_W < 480 ? 36 : 40,
+                    height: SCREEN_W < 480 ? 36 : 40,
+                    borderRadius: SCREEN_W < 480 ? 18 : 20,
+                  }
                 ]}>
                   <Ionicons name={iconName} size={SCREEN_W < 480 ? 18 : 20} color={color} />
                 </View>
-                <Text style={[styles.breakdownLabel, SCREEN_W < 480 && { fontSize: 8 }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
                 <Text
-                  style={[styles.breakdownValue, { color }, SCREEN_W < 480 && { fontSize: 11 }]}
+                  style={[styles.breakdownLabel, { fontSize: SCREEN_W < 480 ? 10 : 11 }]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {label}
+                </Text>
+                <Text
+                  style={[styles.breakdownValue, { color, fontSize: SCREEN_W < 480 ? 14 : 16 }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
                 >
                   {formatCurrency(val)}
                 </Text>
                 {outstanding !== undefined && (
                   <Text
-                    style={{ fontSize: SCREEN_W < 480 ? 8 : 9, fontFamily: Fonts.bold, color: Theme.textMuted, marginTop: 1 }}
+                    style={{ fontSize: SCREEN_W < 480 ? 9 : 10, fontFamily: Fonts.bold, color: Theme.textMuted, marginTop: 1 }}
                     numberOfLines={1}
                     adjustsFontSizeToFit
+                    minimumFontScale={0.75}
                   >
                     Pending: {formatCurrency(outstanding)}
                   </Text>
@@ -5564,13 +5649,13 @@ const styles = StyleSheet.create({
   },
   reportSwitchBtn: {
     flex: 1,
-    minWidth: 220,
+    minWidth: 140,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: Theme.bgCard,
     borderWidth: 1,
