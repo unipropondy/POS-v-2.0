@@ -2559,6 +2559,7 @@ export default function Category() {
 
   const renderLicenseView = (isFloating: boolean) => {
     if (!companyInfo) return null;
+    if (user?.role === "WAITER" || (typeof isWaiter === "function" && isWaiter())) return null;
 
     const fromDate = (user?.licenseFromDate || companyInfo.LicenseFromDate)
       ? (user?.licenseFromDate || companyInfo.LicenseFromDate).split("T")[0]
