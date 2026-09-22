@@ -3,7 +3,7 @@ const router = express.Router();
 const sql = require("mssql");
 const { poolPromise } = require("../config/db");
 const { getCompanySettings, invalidateCache } = require("../utils/settingsCache");
-
+const { logSettingsDiff } = require("../utils/auditLogger");
 
 // 🔹 GET Settings
 router.get("/:id", async (req, res) => {
@@ -35,6 +35,16 @@ router.post("/:id", async (req, res) => {
   try {
     const s = req.body;
     const pool = await poolPromise;
+
+    // Fetch previous settings snapshot for audit comparison
+    const oldSettings = (await getCompanySettings()) || {};
+
+    const userInfo = {
+      userName: s.userName || s.modifiedBy || s.user?.userName || s.user?.fullName || "",
+      userId: s.userId || s.user?.userId || s.user?.id || "",
+      role: s.userRole || s.user?.roleName || s.user?.role || ""
+    };
+
 
     try {
       await pool.request()
@@ -142,6 +152,14 @@ router.post("/:id", async (req, res) => {
     }
 
     invalidateCache();
+
+    // Log settings audit changes asynchronously
+    try {
+      await logSettingsDiff(pool, oldSettings, s, userInfo);
+    } catch (auditErr) {
+      console.warn("⚠️ Audit log error ignored:", auditErr.message);
+    }
+
     res.json({ success: true, message: "Settings saved successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });

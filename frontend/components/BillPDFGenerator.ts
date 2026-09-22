@@ -210,7 +210,10 @@ static async loadSettings(userId?: string | number): Promise<CompanySettings> {
             ShowCompanyLogo: settings.showCompanyLogo ? 1 : 0,  // ✅ Simplified
             ShowHalalLogo: settings.showHalalLogo ? 1 : 0,      // ✅ Simplified
             ServiceChargePercentage: settings.serviceChargePercentage || 0,
-            TakeawayCharges: settings.takeawayCharges || 0
+            TakeawayCharges: settings.takeawayCharges || 0,
+            userName: (settings as any).userName,
+            userId: (settings as any).userId,
+            userRole: (settings as any).userRole
         };
         
         // ✅ Add timestamp to prevent caching

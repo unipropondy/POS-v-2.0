@@ -3,7 +3,9 @@ const router = express.Router();
 const sql = require("mssql");
 const { poolPromise } = require("../config/db");
 const { getAppSettings, getCompanySettings, invalidateCache } = require("../utils/settingsCache");
+const { logSettingsDiff, initSettingsAuditTable } = require("../utils/auditLogger");
 const { syncKitchensToPrintMaster } = require("../config/init");
+
 
 // 🔹 GET Settings
 router.get("/", async (req, res) => {
@@ -166,6 +168,15 @@ router.post("/update", async (req, res) => {
     const { upiId, shopName, qrCodeUrl, enableKOT, enableKDS, enableCheckoutBill, enableCheckoutFlow, enableDirectProcessToPay, customerSideDisplay, enableGuestDetailsPopup, enableCashDrawer, SVCIdentification, enableKDSPrint, enableCombo, showLoyalty, showRewardPoints, showPromoCode, enableOnlinePayment, enableQROrderAutoPrint, enableComboPrint, enableRequestService, enableCookingInstructions, enableDirectPaymentToProcess, enableSkipSummaryScreen, enableReceiptPrint, enableVoiceSuccess, enableNotificationSound } = req.body;
     const pool = await poolPromise;
 
+    // Snapshot existing app settings before update
+    const oldAppSettings = (await getAppSettings()) || {};
+
+    const userInfo = {
+      userName: req.body.userName || req.body.modifiedBy || req.body.user?.userName || req.body.user?.fullName || "",
+      userId: req.body.userId || req.body.user?.userId || req.body.user?.id || "",
+      role: req.body.userRole || req.body.user?.roleName || req.body.user?.role || ""
+    };
+
     // Use an UPSERT logic (Update if exists, Insert if not)
     await pool.request()
       .input("UPI", sql.NVarChar, upiId || null)
@@ -243,11 +254,80 @@ router.post("/update", async (req, res) => {
     }
 
     invalidateCache();
+
+    // Map req.body keys to DB column names for audit logging comparison (fall back to oldAppSettings if undefined)
+    const newSettingsMapped = {
+      UPI_ID: upiId !== undefined ? upiId : oldAppSettings.UPI_ID,
+      ShopName: shopName !== undefined ? shopName : oldAppSettings.ShopName,
+      PayNow_QR_Url: qrCodeUrl !== undefined ? qrCodeUrl : oldAppSettings.PayNow_QR_Url,
+      EnableKOT: enableKOT !== undefined ? (enableKOT ? 1 : 0) : (oldAppSettings.EnableKOT ? 1 : 0),
+      EnableKDS: enableKDS !== undefined ? (enableKDS ? 1 : 0) : (oldAppSettings.EnableKDS ? 1 : 0),
+      EnableCheckoutBill: enableCheckoutBill !== undefined ? (enableCheckoutBill ? 1 : 0) : (oldAppSettings.EnableCheckoutBill ? 1 : 0),
+      EnableCheckoutFlow: enableCheckoutFlow !== undefined ? (enableCheckoutFlow ? 1 : 0) : (oldAppSettings.EnableCheckoutFlow ? 1 : 0),
+      EnableDirectProcessToPay: enableDirectProcessToPay !== undefined ? (enableDirectProcessToPay ? 1 : 0) : (oldAppSettings.EnableDirectProcessToPay ? 1 : 0),
+      CustomerSideDisplay: customerSideDisplay !== undefined ? (customerSideDisplay ? 1 : 0) : (oldAppSettings.CustomerSideDisplay ? 1 : 0),
+      EnableGuestDetailsPopup: enableGuestDetailsPopup !== undefined ? (enableGuestDetailsPopup ? 1 : 0) : (oldAppSettings.EnableGuestDetailsPopup ? 1 : 0),
+      EnableCashDrawer: enableCashDrawer !== undefined ? (enableCashDrawer ? 1 : 0) : (oldAppSettings.EnableCashDrawer ? 1 : 0),
+      EnableKDSPrint: enableKDSPrint !== undefined ? (enableKDSPrint ? 1 : 0) : (oldAppSettings.EnableKDSPrint ? 1 : 0),
+      SVCIdentification: SVCIdentification !== undefined ? (SVCIdentification ? 1 : 0) : (oldAppSettings.SVCIdentification ? 1 : 0),
+      EnableCombo: enableCombo !== undefined ? (enableCombo ? 1 : 0) : (oldAppSettings.EnableCombo ? 1 : 0),
+      ShowLoyalty: showLoyalty !== undefined ? (showLoyalty ? 1 : 0) : (oldAppSettings.ShowLoyalty ? 1 : 0),
+      ShowRewardPoints: showRewardPoints !== undefined ? (showRewardPoints ? 1 : 0) : (oldAppSettings.ShowRewardPoints ? 1 : 0),
+      ShowPromoCode: showPromoCode !== undefined ? (showPromoCode ? 1 : 0) : (oldAppSettings.ShowPromoCode ? 1 : 0),
+      EnableOnlinePayment: enableOnlinePayment !== undefined ? (enableOnlinePayment ? 1 : 0) : (oldAppSettings.EnableOnlinePayment ? 1 : 0),
+      EnableQROrderAutoPrint: enableQROrderAutoPrint !== undefined ? (enableQROrderAutoPrint ? 1 : 0) : (oldAppSettings.EnableQROrderAutoPrint ? 1 : 0),
+      EnableComboPrint: enableComboPrint !== undefined ? (enableComboPrint ? 1 : 0) : (oldAppSettings.EnableComboPrint ? 1 : 0),
+      EnableRequestService: enableRequestService !== undefined ? (enableRequestService ? 1 : 0) : (oldAppSettings.EnableRequestService ? 1 : 0),
+      EnableCookingInstructions: enableCookingInstructions !== undefined ? (enableCookingInstructions ? 1 : 0) : (oldAppSettings.EnableCookingInstructions ? 1 : 0),
+      EnableDirectPaymentToProcess: enableDirectPaymentToProcess !== undefined ? (enableDirectPaymentToProcess ? 1 : 0) : (oldAppSettings.EnableDirectPaymentToProcess ? 1 : 0),
+      EnableSkipSummaryScreen: enableSkipSummaryScreen !== undefined ? (enableSkipSummaryScreen ? 1 : 0) : (oldAppSettings.EnableSkipSummaryScreen ? 1 : 0),
+      EnableReceiptPrint: enableReceiptPrint !== undefined ? (enableReceiptPrint ? 1 : 0) : (oldAppSettings.EnableReceiptPrint ? 1 : 0),
+      EnableVoiceSuccess: enableVoiceSuccess !== undefined ? (enableVoiceSuccess ? 1 : 0) : (oldAppSettings.EnableVoiceSuccess ? 1 : 0),
+      EnableNotificationSound: enableNotificationSound !== undefined ? (enableNotificationSound ? 1 : 0) : (oldAppSettings.EnableNotificationSound ? 1 : 0)
+    };
+
+    try {
+      await logSettingsDiff(pool, oldAppSettings, newSettingsMapped, userInfo);
+    } catch (auditErr) {
+      console.warn("⚠️ AppSettings audit logging warning:", auditErr.message);
+    }
+
     res.json({ success: true, message: "Settings updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// 🔹 GET Audit Logs
+router.get("/audit-logs", async (req, res) => {
+  try {
+    const { category, search, limit = 100 } = req.query;
+    const pool = await poolPromise;
+    await initSettingsAuditTable(pool);
+
+    let query = "SELECT TOP (@Limit) AuditId, Category, FieldName, FieldLabel, OldValue, NewValue, ModifiedBy, UserId, UserRole, CONVERT(VARCHAR, CreatedAt, 126) + '+08:00' AS CreatedAt FROM dbo.SettingsAuditLog WHERE OldValue <> NewValue AND OldValue IS NOT NULL AND NewValue IS NOT NULL AND OldValue <> '' AND NewValue <> '' AND ModifiedBy IS NOT NULL AND ModifiedBy <> '' AND ModifiedBy <> 'Admin' AND ModifiedBy <> 'ADMIN'";
+
+    const request = pool.request().input("Limit", sql.Int, parseInt(String(limit)) || 100);
+
+    if (category && category !== "ALL") {
+      query += " AND Category = @Category";
+      request.input("Category", sql.NVarChar, category);
+    }
+
+    if (search && String(search).trim()) {
+      query += " AND (FieldLabel LIKE @Search OR ModifiedBy LIKE @Search OR OldValue LIKE @Search OR NewValue LIKE @Search)";
+      request.input("Search", sql.NVarChar, `%${String(search).trim()}%`);
+    }
+
+    query += " ORDER BY CreatedAt DESC";
+
+    const result = await request.query(query);
+    res.json({ success: true, logs: result.recordset || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 

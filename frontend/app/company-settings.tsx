@@ -25,12 +25,15 @@ import { useToast } from '../components/Toast';
 import { API_URL } from '@/constants/Config';
 import { useCompanySettingsStore } from '../stores/companySettingsStore';
 import { useAuthStore } from '../stores/authStore';
+import AuditLogModal from '../components/AuditLogModal';
 
 export default function CompanySettingsScreen() {
   const { settings, loading, fetchSettings, updateSettings } = useCompanySettingsStore();
   const { user } = useAuthStore();
   const [userId, setUserId] = useState('1');
   const [saving, setSaving] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+
   const [kitchenPrinters, setKitchenPrinters] = useState<any[]>([]);
   const [cashierIp, setCashierIp] = useState('');
   const [takeawayIp, setTakeawayIp] = useState('');
@@ -212,7 +215,13 @@ export default function CompanySettingsScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const success = await BillPDFGenerator.saveSettings(settings, "1");
+      const savePayload = {
+        ...settings,
+        userName: user?.userName || user?.fullName || '',
+        userId: user?.userId || '',
+        userRole: user?.roleName || user?.role || ''
+      };
+      const success = await BillPDFGenerator.saveSettings(savePayload, "1");
       
       // Build payload for all printers in PrintMaster
       const printersPayload = [
@@ -412,18 +421,32 @@ export default function CompanySettingsScreen() {
           <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Shop Settings</Text>
-        <TouchableOpacity 
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]} 
-          onPress={handleSave}
-          disabled={saving}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.saveButtonText}>Save</Text>
-          )}
-        </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity 
+            style={[styles.saveButton, { backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#CBD5E1', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 38, paddingHorizontal: 16 }]} 
+            onPress={() => setShowAuditModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="receipt-outline" size={16} color={Theme.textPrimary} />
+            <Text style={[styles.saveButtonText, { color: Theme.textPrimary }]}>Audit Log</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.saveButton, { height: 38, justifyContent: 'center', paddingHorizontal: 22 }, saving && styles.saveButtonDisabled]} 
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.8}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
+
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -867,6 +890,12 @@ export default function CompanySettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Settings Change Audit Log Modal */}
+      <AuditLogModal
+        visible={showAuditModal}
+        onClose={() => setShowAuditModal(false)}
+      />
     </SafeAreaView>
   );
 }

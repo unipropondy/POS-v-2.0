@@ -138,6 +138,9 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
           SVCIdentification: currentData.SVCIdentification !== undefined ? currentData.SVCIdentification : 1,
           enableKDSPrint: currentData.EnableKDSPrint !== undefined ? currentData.EnableKDSPrint : 1,
           enableCombo: currentData.EnableCombo !== undefined ? currentData.EnableCombo : 1,
+          userName: user?.userName || user?.fullName || "",
+          userId: user?.userId || "",
+          userRole: user?.roleName || user?.role || "",
         }),
       });
 

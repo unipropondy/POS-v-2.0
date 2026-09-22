@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "../constants/Config";
+import { useAuthStore } from "./authStore";
 
 export interface GeneralSettings {
   enableKOT: boolean;
@@ -34,7 +35,7 @@ interface GeneralSettingsState {
   settings: GeneralSettings;
   loading: boolean;
   fetchSettings: () => Promise<void>;
-  updateSettings: (newSettings: Partial<GeneralSettings>) => Promise<boolean>;
+  updateSettings: (newSettings: Partial<GeneralSettings>, userInfo?: { userName?: string; userId?: string; userRole?: string }) => Promise<boolean>;
 }
 
 export const useGeneralSettingsStore = create<GeneralSettingsState>()(
@@ -112,7 +113,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
         }
       },
 
-      updateSettings: async (newSettings) => {
+      updateSettings: async (newSettings, userInfo?: { userName?: string; userId?: string; userRole?: string }) => {
         const previousSettings = get().settings;
         const updatedSettings = { ...previousSettings, ...newSettings };
         
@@ -152,6 +153,9 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
             enableReceiptPrint: updatedSettings.enableReceiptPrint,
             enableVoiceSuccess: updatedSettings.enableVoiceSuccess,
             enableNotificationSound: updatedSettings.enableNotificationSound,
+            userName: userInfo?.userName || useAuthStore.getState().user?.userName || useAuthStore.getState().user?.fullName || "",
+            userId: userInfo?.userId || useAuthStore.getState().user?.userId || "",
+            userRole: userInfo?.userRole || useAuthStore.getState().user?.roleName || useAuthStore.getState().user?.role || ""
           };
 
           const res = await fetch(`${API_URL}/api/settings/update`, {

@@ -348,6 +348,27 @@ async function initDB(pool) {
     await runQuery("CompanySettings - SVCIdentification", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CompanySettings]') AND name = 'SVCIdentification') ALTER TABLE [dbo].[CompanySettings] ADD SVCIdentification BIT NOT NULL DEFAULT 1");
     await runQuery("CompanySettings - TakeawayCharges", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CompanySettings]') AND name = 'TakeawayCharges') ALTER TABLE [dbo].[CompanySettings] ADD TakeawayCharges DECIMAL(18, 2) DEFAULT 0");
     await runQuery("CompanySettings - LastBridgeHeartbeat", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CompanySettings]') AND name = 'LastBridgeHeartbeat') ALTER TABLE [dbo].[CompanySettings] ADD LastBridgeHeartbeat DATETIME");
+
+    // 11.1 SettingsAuditLog Table Schema
+    await runQuery("Create SettingsAuditLog", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettingsAuditLog]') AND type in (N'U'))
+      BEGIN
+        CREATE TABLE [dbo].[SettingsAuditLog] (
+          [AuditId] UNIQUEIDENTIFIER DEFAULT NEWID() PRIMARY KEY,
+          [Category] NVARCHAR(50) NOT NULL,
+          [FieldName] NVARCHAR(100) NOT NULL,
+          [FieldLabel] NVARCHAR(100) NOT NULL,
+          [OldValue] NVARCHAR(MAX) NULL,
+          [NewValue] NVARCHAR(MAX) NULL,
+          [ModifiedBy] NVARCHAR(100) NOT NULL,
+          [UserId] NVARCHAR(50) NULL,
+          [UserRole] NVARCHAR(50) NULL,
+          [CreatedAt] DATETIME DEFAULT DATEADD(MINUTE, 480, GETUTCDATE())
+        );
+        CREATE INDEX IX_SettingsAuditLog_CreatedAt ON [dbo].[SettingsAuditLog](CreatedAt DESC);
+        CREATE INDEX IX_SettingsAuditLog_Category ON [dbo].[SettingsAuditLog](Category);
+      END
+    `);
     await runQuery("AppSettings - EnableCheckoutFlow", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[AppSettings]') AND name = 'EnableCheckoutFlow') ALTER TABLE [dbo].[AppSettings] ADD EnableCheckoutFlow BIT NOT NULL DEFAULT 1");
     await runQuery("AppSettings - EnableDirectProcessToPay", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[AppSettings]') AND name = 'EnableDirectProcessToPay') ALTER TABLE [dbo].[AppSettings] ADD EnableDirectProcessToPay BIT NOT NULL DEFAULT 0");
     await runQuery("AppSettings - EnableDirectPaymentToProcess", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[AppSettings]') AND name = 'EnableDirectPaymentToProcess') ALTER TABLE [dbo].[AppSettings] ADD EnableDirectPaymentToProcess BIT NOT NULL DEFAULT 0");

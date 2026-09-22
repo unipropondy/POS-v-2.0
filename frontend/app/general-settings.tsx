@@ -1,29 +1,28 @@
-import React, { useState, useEffect, useRef } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  useWindowDimensions,
-  Platform,
-  Animated,
-  Easing,
-  ScrollView,
-  TextInput,
-  Alert,
-  Modal,
+    ActivityIndicator,
+    Animated,
+    Easing,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { Theme } from "../constants/theme";
-import { Fonts } from "../constants/Fonts";
-import { useGeneralSettingsStore } from "../stores/generalSettingsStore";
 import { useToast } from "../components/Toast";
 import { API_URL } from "../constants/Config";
+import { Fonts } from "../constants/Fonts";
+import { Theme } from "../constants/theme";
 import { useAuthStore } from "../stores/authStore";
-import { BlurView } from "expo-blur";
+import { useGeneralSettingsStore } from "../stores/generalSettingsStore";
+import AuditLogModal from "../components/AuditLogModal";
 
 // ── SLEEK COMPACT ANIMATED SWITCH COMPONENT ──
 interface CustomSwitchProps {
@@ -32,7 +31,11 @@ interface CustomSwitchProps {
   disabled?: boolean;
 }
 
-const CustomSwitch = ({ value, onValueChange, disabled = false }: CustomSwitchProps) => {
+const CustomSwitch = ({
+  value,
+  onValueChange,
+  disabled = false,
+}: CustomSwitchProps) => {
   const animatedValue = useRef(new Animated.Value(value ? 1 : 0)).current;
 
   useEffect(() => {
@@ -68,10 +71,7 @@ const CustomSwitch = ({ value, onValueChange, disabled = false }: CustomSwitchPr
         ]}
       >
         <Animated.View
-          style={[
-            styles.switchThumb,
-            { transform: [{ translateX }] },
-          ]}
+          style={[styles.switchThumb, { transform: [{ translateX }] }]}
         />
       </Animated.View>
     </TouchableOpacity>
@@ -85,38 +85,107 @@ export default function GeneralSettingsScreen() {
   const { showToast } = useToast();
   const { user } = useAuthStore();
 
-  const { settings, loading, fetchSettings, updateSettings } = useGeneralSettingsStore();
+  const { settings, loading, fetchSettings, updateSettings } =
+    useGeneralSettingsStore();
 
   // Local setting states
   const [enableKOT, setEnableKOT] = useState(settings.enableKOT);
   const [enableKDS, setEnableKDS] = useState(settings.enableKDS);
-  const [enableCheckoutBill, setEnableCheckoutBill] = useState(settings.enableCheckoutBill);
-  const [enableCheckoutFlow, setEnableCheckoutFlow] = useState(settings.enableCheckoutFlow);
-  const [enableDirectProcessToPay, setEnableDirectProcessToPay] = useState(settings.enableDirectProcessToPay);
-  const [customerSideDisplay, setCustomerSideDisplay] = useState(settings.customerSideDisplay);
-  const [enableGuestDetailsPopup, setEnableGuestDetailsPopup] = useState(settings.enableGuestDetailsPopup);
-  const [enableCashDrawer, setEnableCashDrawer] = useState(settings.enableCashDrawer !== undefined ? settings.enableCashDrawer : true);
-  const [SVCIdentification, setSVCIdentification] = useState(settings.SVCIdentification !== undefined ? settings.SVCIdentification : true);
-  const [enableKDSPrint, setEnableKDSPrint] = useState(settings.enableKDSPrint !== undefined ? settings.enableKDSPrint : true);
-  const [enableCombo, setEnableCombo] = useState(settings.enableCombo !== undefined ? settings.enableCombo : true);
-  const [showLoyalty, setShowLoyalty] = useState(settings.showLoyalty !== undefined ? settings.showLoyalty : true);
-  const [showRewardPoints, setShowRewardPoints] = useState(settings.showRewardPoints !== undefined ? settings.showRewardPoints : true);
-  const [showPromoCode, setShowPromoCode] = useState(settings.showPromoCode !== undefined ? settings.showPromoCode : true);
-  const [enableOnlinePayment, setEnableOnlinePayment] = useState(settings.enableOnlinePayment !== undefined ? settings.enableOnlinePayment : true);
-  const [enableQROrderAutoPrint, setEnableQROrderAutoPrint] = useState(settings.enableQROrderAutoPrint !== undefined ? settings.enableQROrderAutoPrint : true);
-  const [enableComboPrint, setEnableComboPrint] = useState(settings.enableComboPrint !== undefined ? settings.enableComboPrint : false);
-  const [enableRequestService, setEnableRequestService] = useState(settings.enableRequestService !== undefined ? settings.enableRequestService : true);
-  const [enableCookingInstructions, setEnableCookingInstructions] = useState(settings.enableCookingInstructions !== undefined ? settings.enableCookingInstructions : true);
-  const [enableDirectPaymentToProcess, setEnableDirectPaymentToProcess] = useState(settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false);
-  const [enableSkipSummaryScreen, setEnableSkipSummaryScreen] = useState(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
-  const [enableReceiptPrint, setEnableReceiptPrint] = useState(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
-  const [enableVoiceSuccess, setEnableVoiceSuccess] = useState(settings.enableVoiceSuccess !== undefined ? settings.enableVoiceSuccess : true);
-  const [enableNotificationSound, setEnableNotificationSound] = useState(settings.enableNotificationSound !== undefined ? settings.enableNotificationSound : true);
+  const [enableCheckoutBill, setEnableCheckoutBill] = useState(
+    settings.enableCheckoutBill,
+  );
+  const [enableCheckoutFlow, setEnableCheckoutFlow] = useState(
+    settings.enableCheckoutFlow,
+  );
+  const [enableDirectProcessToPay, setEnableDirectProcessToPay] = useState(
+    settings.enableDirectProcessToPay,
+  );
+  const [customerSideDisplay, setCustomerSideDisplay] = useState(
+    settings.customerSideDisplay,
+  );
+  const [enableGuestDetailsPopup, setEnableGuestDetailsPopup] = useState(
+    settings.enableGuestDetailsPopup,
+  );
+  const [enableCashDrawer, setEnableCashDrawer] = useState(
+    settings.enableCashDrawer !== undefined ? settings.enableCashDrawer : true,
+  );
+  const [SVCIdentification, setSVCIdentification] = useState(
+    settings.SVCIdentification !== undefined
+      ? settings.SVCIdentification
+      : true,
+  );
+  const [enableKDSPrint, setEnableKDSPrint] = useState(
+    settings.enableKDSPrint !== undefined ? settings.enableKDSPrint : true,
+  );
+  const [enableCombo, setEnableCombo] = useState(
+    settings.enableCombo !== undefined ? settings.enableCombo : true,
+  );
+  const [showLoyalty, setShowLoyalty] = useState(
+    settings.showLoyalty !== undefined ? settings.showLoyalty : true,
+  );
+  const [showRewardPoints, setShowRewardPoints] = useState(
+    settings.showRewardPoints !== undefined ? settings.showRewardPoints : true,
+  );
+  const [showPromoCode, setShowPromoCode] = useState(
+    settings.showPromoCode !== undefined ? settings.showPromoCode : true,
+  );
+  const [enableOnlinePayment, setEnableOnlinePayment] = useState(
+    settings.enableOnlinePayment !== undefined
+      ? settings.enableOnlinePayment
+      : true,
+  );
+  const [enableQROrderAutoPrint, setEnableQROrderAutoPrint] = useState(
+    settings.enableQROrderAutoPrint !== undefined
+      ? settings.enableQROrderAutoPrint
+      : true,
+  );
+  const [enableComboPrint, setEnableComboPrint] = useState(
+    settings.enableComboPrint !== undefined ? settings.enableComboPrint : false,
+  );
+  const [enableRequestService, setEnableRequestService] = useState(
+    settings.enableRequestService !== undefined
+      ? settings.enableRequestService
+      : true,
+  );
+  const [enableCookingInstructions, setEnableCookingInstructions] = useState(
+    settings.enableCookingInstructions !== undefined
+      ? settings.enableCookingInstructions
+      : true,
+  );
+  const [enableDirectPaymentToProcess, setEnableDirectPaymentToProcess] =
+    useState(
+      settings.enableDirectPaymentToProcess !== undefined
+        ? settings.enableDirectPaymentToProcess
+        : false,
+    );
+  const [enableSkipSummaryScreen, setEnableSkipSummaryScreen] = useState(
+    settings.enableSkipSummaryScreen !== undefined
+      ? settings.enableSkipSummaryScreen
+      : false,
+  );
+  const [enableReceiptPrint, setEnableReceiptPrint] = useState(
+    settings.enableReceiptPrint !== undefined
+      ? settings.enableReceiptPrint
+      : true,
+  );
+  const [enableVoiceSuccess, setEnableVoiceSuccess] = useState(
+    settings.enableVoiceSuccess !== undefined
+      ? settings.enableVoiceSuccess
+      : true,
+  );
+  const [enableNotificationSound, setEnableNotificationSound] = useState(
+    settings.enableNotificationSound !== undefined
+      ? settings.enableNotificationSound
+      : true,
+  );
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [verifyingPassword, setVerifyingPassword] = useState(false);
-  const [pendingCashDrawerValue, setPendingCashDrawerValue] = useState<boolean | null>(null);
+  const [pendingCashDrawerValue, setPendingCashDrawerValue] = useState<
+    boolean | null
+  >(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -128,22 +197,75 @@ export default function GeneralSettingsScreen() {
     setEnableKDS(settings.enableKDS);
     setEnableCheckoutBill(settings.enableCheckoutBill);
     setCustomerSideDisplay(settings.customerSideDisplay);
-    setEnableGuestDetailsPopup(settings.enableGuestDetailsPopup !== undefined ? settings.enableGuestDetailsPopup : true);
-    setEnableCashDrawer(settings.enableCashDrawer !== undefined ? settings.enableCashDrawer : true);
-    setSVCIdentification(settings.SVCIdentification !== undefined ? settings.SVCIdentification : true);
-    setEnableKDSPrint(settings.enableKDSPrint !== undefined ? settings.enableKDSPrint : true);
-    setEnableCombo(settings.enableCombo !== undefined ? settings.enableCombo : true);
-    setShowLoyalty(settings.showLoyalty !== undefined ? settings.showLoyalty : true);
-    setShowRewardPoints(settings.showRewardPoints !== undefined ? settings.showRewardPoints : true);
-    setShowPromoCode(settings.showPromoCode !== undefined ? settings.showPromoCode : true);
-    setEnableOnlinePayment(settings.enableOnlinePayment !== undefined ? settings.enableOnlinePayment : true);
-    setEnableQROrderAutoPrint(settings.enableQROrderAutoPrint !== undefined ? settings.enableQROrderAutoPrint : true);
-    setEnableComboPrint(settings.enableComboPrint !== undefined ? settings.enableComboPrint : false);
-    setEnableRequestService(settings.enableRequestService !== undefined ? settings.enableRequestService : true);
-    setEnableCookingInstructions(settings.enableCookingInstructions !== undefined ? settings.enableCookingInstructions : true);
-    let initialCheckoutFlow = settings.enableCheckoutFlow !== undefined ? settings.enableCheckoutFlow : true;
-    let initialDirectProcess = settings.enableDirectProcessToPay !== undefined ? settings.enableDirectProcessToPay : false;
-    let initialDirectPayment = settings.enableDirectPaymentToProcess !== undefined ? settings.enableDirectPaymentToProcess : false;
+    setEnableGuestDetailsPopup(
+      settings.enableGuestDetailsPopup !== undefined
+        ? settings.enableGuestDetailsPopup
+        : true,
+    );
+    setEnableCashDrawer(
+      settings.enableCashDrawer !== undefined
+        ? settings.enableCashDrawer
+        : true,
+    );
+    setSVCIdentification(
+      settings.SVCIdentification !== undefined
+        ? settings.SVCIdentification
+        : true,
+    );
+    setEnableKDSPrint(
+      settings.enableKDSPrint !== undefined ? settings.enableKDSPrint : true,
+    );
+    setEnableCombo(
+      settings.enableCombo !== undefined ? settings.enableCombo : true,
+    );
+    setShowLoyalty(
+      settings.showLoyalty !== undefined ? settings.showLoyalty : true,
+    );
+    setShowRewardPoints(
+      settings.showRewardPoints !== undefined
+        ? settings.showRewardPoints
+        : true,
+    );
+    setShowPromoCode(
+      settings.showPromoCode !== undefined ? settings.showPromoCode : true,
+    );
+    setEnableOnlinePayment(
+      settings.enableOnlinePayment !== undefined
+        ? settings.enableOnlinePayment
+        : true,
+    );
+    setEnableQROrderAutoPrint(
+      settings.enableQROrderAutoPrint !== undefined
+        ? settings.enableQROrderAutoPrint
+        : true,
+    );
+    setEnableComboPrint(
+      settings.enableComboPrint !== undefined
+        ? settings.enableComboPrint
+        : false,
+    );
+    setEnableRequestService(
+      settings.enableRequestService !== undefined
+        ? settings.enableRequestService
+        : true,
+    );
+    setEnableCookingInstructions(
+      settings.enableCookingInstructions !== undefined
+        ? settings.enableCookingInstructions
+        : true,
+    );
+    let initialCheckoutFlow =
+      settings.enableCheckoutFlow !== undefined
+        ? settings.enableCheckoutFlow
+        : true;
+    let initialDirectProcess =
+      settings.enableDirectProcessToPay !== undefined
+        ? settings.enableDirectProcessToPay
+        : false;
+    let initialDirectPayment =
+      settings.enableDirectPaymentToProcess !== undefined
+        ? settings.enableDirectPaymentToProcess
+        : false;
 
     // Enforce mutual exclusivity on load: if more than one is true, resolve conflict
     if (initialCheckoutFlow) {
@@ -165,13 +287,31 @@ export default function GeneralSettingsScreen() {
     setEnableCheckoutFlow(initialCheckoutFlow);
     setEnableDirectProcessToPay(initialDirectProcess);
     setEnableDirectPaymentToProcess(initialDirectPayment);
-    setEnableSkipSummaryScreen(settings.enableSkipSummaryScreen !== undefined ? settings.enableSkipSummaryScreen : false);
-    setEnableReceiptPrint(settings.enableReceiptPrint !== undefined ? settings.enableReceiptPrint : true);
-    setEnableVoiceSuccess(settings.enableVoiceSuccess !== undefined ? settings.enableVoiceSuccess : true);
-    setEnableNotificationSound(settings.enableNotificationSound !== undefined ? settings.enableNotificationSound : true);
+    setEnableSkipSummaryScreen(
+      settings.enableSkipSummaryScreen !== undefined
+        ? settings.enableSkipSummaryScreen
+        : false,
+    );
+    setEnableReceiptPrint(
+      settings.enableReceiptPrint !== undefined
+        ? settings.enableReceiptPrint
+        : true,
+    );
+    setEnableVoiceSuccess(
+      settings.enableVoiceSuccess !== undefined
+        ? settings.enableVoiceSuccess
+        : true,
+    );
+    setEnableNotificationSound(
+      settings.enableNotificationSound !== undefined
+        ? settings.enableNotificationSound
+        : true,
+    );
   }, [settings]);
 
-  const [passwordAction, setPasswordAction] = useState<"CASHDRAWER" | "SAVE" | null>(null);
+  const [passwordAction, setPasswordAction] = useState<
+    "CASHDRAWER" | "SAVE" | null
+  >(null);
   const [passwordError, setPasswordError] = useState("");
 
   const handleToggleCheckoutFlow = (val: boolean) => {
@@ -208,39 +348,49 @@ export default function GeneralSettingsScreen() {
 
   const executeSave = async () => {
     setSaving(true);
-    const success = await updateSettings({
-      enableKOT,
-      enableKDS,
-      enableCheckoutBill,
-      enableCheckoutFlow,
-      enableDirectProcessToPay,
-      customerSideDisplay,
-      enableGuestDetailsPopup,
-      enableCashDrawer,
-      SVCIdentification,
-      enableKDSPrint,
-      enableCombo,
-      showLoyalty,
-      showRewardPoints,
-      showPromoCode,
-      enableOnlinePayment,
-      enableQROrderAutoPrint,
-      enableComboPrint,
-      enableRequestService,
-      enableCookingInstructions,
-      enableDirectPaymentToProcess,
-      enableSkipSummaryScreen,
-      enableReceiptPrint,
-      enableVoiceSuccess,
-      enableNotificationSound,
-    });
+    const success = await updateSettings(
+      {
+        enableKOT,
+        enableKDS,
+        enableCheckoutBill,
+        enableCheckoutFlow,
+        enableDirectProcessToPay,
+        customerSideDisplay,
+        enableGuestDetailsPopup,
+        enableCashDrawer,
+        SVCIdentification,
+        enableKDSPrint,
+        enableCombo,
+        showLoyalty,
+        showRewardPoints,
+        showPromoCode,
+        enableOnlinePayment,
+        enableQROrderAutoPrint,
+        enableComboPrint,
+        enableRequestService,
+        enableCookingInstructions,
+        enableDirectPaymentToProcess,
+        enableSkipSummaryScreen,
+        enableReceiptPrint,
+        enableVoiceSuccess,
+        enableNotificationSound,
+      },
+      {
+        userName: user?.userName || user?.fullName || "",
+        userId: user?.userId || "",
+        userRole: user?.roleName || user?.role || "",
+      },
+    );
     setSaving(false);
 
     if (success) {
       showToast({ type: "success", message: "Settings saved successfully." });
       router.back();
     } else {
-      showToast({ type: "error", message: "Failed to save settings. Please try again." });
+      showToast({
+        type: "error",
+        message: "Failed to save settings. Please try again.",
+      });
     }
   };
 
@@ -260,7 +410,10 @@ export default function GeneralSettingsScreen() {
       const verifyData = await verifyRes.json();
       if (verifyData.success) {
         setShowPasswordModal(false);
-        if (passwordAction === "CASHDRAWER" && pendingCashDrawerValue !== null) {
+        if (
+          passwordAction === "CASHDRAWER" &&
+          pendingCashDrawerValue !== null
+        ) {
           setEnableCashDrawer(pendingCashDrawerValue);
           showToast({ type: "success", message: "Access Unlocked" });
         } else if (passwordAction === "SAVE") {
@@ -316,7 +469,7 @@ export default function GeneralSettingsScreen() {
           value: enableCookingInstructions,
           onToggle: setEnableCookingInstructions,
         },
-      ]
+      ],
     },
     {
       title: "Kitchen & Order Routing",
@@ -350,7 +503,7 @@ export default function GeneralSettingsScreen() {
           value: enableComboPrint,
           onToggle: setEnableComboPrint,
         },
-      ]
+      ],
     },
     {
       title: "Billing & Cash Control",
@@ -405,7 +558,7 @@ export default function GeneralSettingsScreen() {
           value: enableReceiptPrint,
           onToggle: setEnableReceiptPrint,
         },
-      ]
+      ],
     },
     {
       title: "App Features & Display",
@@ -460,7 +613,7 @@ export default function GeneralSettingsScreen() {
           value: showPromoCode,
           onToggle: setShowPromoCode,
         },
-      ]
+      ],
     },
     {
       title: "Audio & Voice Alerts",
@@ -480,23 +633,23 @@ export default function GeneralSettingsScreen() {
           value: enableNotificationSound,
           onToggle: setEnableNotificationSound,
         },
-      ]
-    }
+      ],
+    },
   ];
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => {
             if (router.canGoBack()) {
               router.back();
             } else {
               router.replace("/menu/settlement" as any);
             }
-          }} 
-          style={styles.backBtn} 
+          }}
+          style={styles.backBtn}
           activeOpacity={0.7}
         >
           <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
@@ -518,7 +671,11 @@ export default function GeneralSettingsScreen() {
         {sections.map((section, sIdx) => (
           <View key={sIdx} style={styles.sectionContainer}>
             <View style={styles.sectionHeader}>
-              <Ionicons name={section.icon as any} size={20} color={Theme.primary} />
+              <Ionicons
+                name={section.icon as any}
+                size={20}
+                color={Theme.primary}
+              />
               <Text style={styles.sectionTitleText}>{section.title}</Text>
             </View>
             <View style={styles.gridContainer}>
@@ -533,14 +690,32 @@ export default function GeneralSettingsScreen() {
                 >
                   <View style={styles.cardLeft}>
                     <View style={styles.cardHeaderRow}>
-                      <View style={[styles.iconWrapper, item.value ? styles.iconWrapperActive : styles.iconWrapperInactive]}>
-                        <Ionicons name={item.icon as any} size={18} color={item.value ? Theme.primary : Theme.textSecondary} />
+                      <View
+                        style={[
+                          styles.iconWrapper,
+                          item.value
+                            ? styles.iconWrapperActive
+                            : styles.iconWrapperInactive,
+                        ]}
+                      >
+                        <Ionicons
+                          name={item.icon as any}
+                          size={18}
+                          color={
+                            item.value ? Theme.primary : Theme.textSecondary
+                          }
+                        />
                       </View>
-                      <Text style={styles.settingTitle} numberOfLines={1}>{item.title}</Text>
+                      <Text style={styles.settingTitle} numberOfLines={1}>
+                        {item.title}
+                      </Text>
                     </View>
                     <Text style={styles.settingDesc}>{item.desc}</Text>
                   </View>
-                  <CustomSwitch value={item.value} onValueChange={item.onToggle} />
+                  <CustomSwitch
+                    value={item.value}
+                    onValueChange={item.onToggle}
+                  />
                 </View>
               ))}
             </View>
@@ -587,23 +762,71 @@ export default function GeneralSettingsScreen() {
         onRequestClose={() => setShowPasswordModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={[styles.modalContent, { width: 360, padding: 24, borderRadius: 20 }]}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: Theme.primary + "15", justifyContent: "center", alignItems: "center" }}>
-                  <Ionicons name="lock-closed" size={18} color={Theme.primary} />
+          <BlurView
+            intensity={25}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+          />
+          <View
+            style={[
+              styles.modalContent,
+              { width: 360, padding: 24, borderRadius: 20 },
+            ]}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: Theme.primary + "15",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Ionicons
+                    name="lock-closed"
+                    size={18}
+                    color={Theme.primary}
+                  />
                 </View>
-                <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontFamily: Fonts.black,
+                    color: Theme.textPrimary,
+                  }}
+                >
                   Admin Verification
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowPasswordModal(false)} style={{ padding: 4 }}>
+              <TouchableOpacity
+                onPress={() => setShowPasswordModal(false)}
+                style={{ padding: 4 }}
+              >
                 <Ionicons name="close" size={20} color={Theme.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <Text style={{ fontSize: 13, fontFamily: Fonts.medium, color: Theme.textSecondary, marginBottom: 18, lineHeight: 18 }}>
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: Fonts.medium,
+                color: Theme.textSecondary,
+                marginBottom: 18,
+                lineHeight: 18,
+              }}
+            >
               {passwordAction === "SAVE"
                 ? "Please enter admin password to save General Settings changes."
                 : "Please enter admin password to unlock Cash Drawer settings."}
@@ -621,7 +844,7 @@ export default function GeneralSettingsScreen() {
                 fontFamily: Fonts.bold,
                 backgroundColor: "#FAF7F2",
                 marginBottom: passwordError ? 6 : 20,
-                textAlign: "center"
+                textAlign: "center",
               }}
               secureTextEntry
               placeholder="••••••••"
@@ -636,7 +859,15 @@ export default function GeneralSettingsScreen() {
             />
 
             {!!passwordError && (
-              <Text style={{ color: "#EF4444", fontSize: 12, fontFamily: Fonts.bold, textAlign: "center", marginBottom: 16 }}>
+              <Text
+                style={{
+                  color: "#EF4444",
+                  fontSize: 12,
+                  fontFamily: Fonts.bold,
+                  textAlign: "center",
+                  marginBottom: 16,
+                }}
+              >
                 {passwordError}
               </Text>
             )}
@@ -652,10 +883,18 @@ export default function GeneralSettingsScreen() {
                   borderColor: Theme.border + "80",
                   backgroundColor: "#fff",
                   alignItems: "center",
-                  justifyContent: "center"
+                  justifyContent: "center",
                 }}
               >
-                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Cancel</Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: Fonts.bold,
+                    color: Theme.textSecondary,
+                  }}
+                >
+                  Cancel
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -670,7 +909,7 @@ export default function GeneralSettingsScreen() {
                   shadowOffset: { width: 0, height: 3 },
                   shadowOpacity: 0.3,
                   shadowRadius: 6,
-                  elevation: 3
+                  elevation: 3,
                 }}
                 onPress={handlePasswordVerify}
                 disabled={verifyingPassword}
@@ -679,13 +918,27 @@ export default function GeneralSettingsScreen() {
                 {verifyingPassword ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>Confirm</Text>
+                  <Text
+                    style={{
+                      color: "#fff",
+                      fontSize: 13,
+                      fontFamily: Fonts.black,
+                    }}
+                  >
+                    Confirm
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      <AuditLogModal
+        visible={showAuditModal}
+        onClose={() => setShowAuditModal(false)}
+        defaultCategory="GENERAL_SETTINGS"
+      />
     </SafeAreaView>
   );
 }
@@ -715,6 +968,20 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 24,
     padding: 8,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    zIndex: 10,
+  },
+  auditBtn: {
+    position: "absolute",
+    right: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,

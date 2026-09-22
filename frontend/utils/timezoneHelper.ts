@@ -102,29 +102,30 @@ export function parseDatabaseDate(dateInput: Date | string | number): Date {
     return new Date(isoStr);
   }
 
-  // Strip Z and any existing timezone offset to get local time representation
-  let cleanStr = str.replace(/Z$/i, '');
-  cleanStr = cleanStr.replace(/[+-]\d{2}:\d{2}$/, '');
+  // If string has explicit timezone offset (+08:00, -05:00, Z), parse directly as JS Date
+  if (/[Z+-]\d{2}:?\d{2}$/i.test(str) || str.endsWith('Z')) {
+    const directParsed = new Date(str);
+    if (!isNaN(directParsed.getTime())) {
+      return directParsed;
+    }
+  }
 
-  // Replace space with T to make it standard
+  // For bare local date strings (e.g. "2026-09-22 15:26:00"), normalize space to 'T' and append SGT (+08:00)
+  let cleanStr = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
+
   if (!cleanStr.includes('T') && cleanStr.includes(' ') && !/^[a-zA-Z]{3}/.test(cleanStr)) {
     cleanStr = cleanStr.replace(' ', 'T');
   }
 
-  // If it's a valid date starting with YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) {
     if (!cleanStr.includes('T')) {
       cleanStr += 'T00:00:00';
     }
-    // Append Singapore Timezone (SGT, UTC+8)
     cleanStr += '+08:00';
   }
 
   const parsed = new Date(cleanStr);
-  if (isNaN(parsed.getTime())) {
-    return new Date(dateInput);
-  }
-  return parsed;
+  return isNaN(parsed.getTime()) ? new Date(dateInput) : parsed;
 }
 
 
