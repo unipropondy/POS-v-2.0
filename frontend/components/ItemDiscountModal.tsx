@@ -151,13 +151,13 @@ export default function ItemDiscountModal({
               style={[styles.segmentBtn, discountType === "fixed" && styles.segmentActive]} 
               onPress={() => { setDiscountType("fixed"); setInputValue(""); }}
             >
-              <Text style={[styles.segmentText, discountType === "fixed" && styles.segmentTextActive]}>Fixed Amount ($)</Text>
+              <Text style={[styles.segmentText, discountType === "fixed" && styles.segmentTextActive]}>Fixed Amount ({useCartStore.getState().getCart ? (require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$") : "$"})</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.sectionLabel}>Custom Value</Text>
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputPrefix}>{discountType === "fixed" ? "$" : "%"}</Text>
+            <Text style={styles.inputPrefix}>{discountType === "fixed" ? (require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$") : "%"}</Text>
             <TextInput 
               style={styles.input} 
               placeholder="0.00" 
@@ -172,7 +172,7 @@ export default function ItemDiscountModal({
           {previewDiscount > 0 && (
             <View style={styles.previewContainer}>
               <Text style={styles.previewLabel}>Total Est. Discount:</Text>
-              <Text style={styles.previewValue}>-${previewDiscount.toFixed(2)}</Text>
+              <Text style={styles.previewValue}>-{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}{previewDiscount.toFixed(2)}</Text>
             </View>
           )}
 

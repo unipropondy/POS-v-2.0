@@ -14,6 +14,7 @@ import { Fonts } from "../constants/Fonts";
 import { Theme } from "../constants/theme";
 import { useAuthStore } from "../stores/authStore";
 import { addToCartGlobal } from "../stores/cartStore";
+import { useCompanySettingsStore } from "../stores/companySettingsStore";
 
 interface ComboOption {
   mappingId: string;
@@ -556,14 +557,14 @@ export default function ComboCustomizer({
                             >
                               {option.name}
                             </Text>
-                            {(option.surcharge > 0 || option.dishPrice > 0) && (
+                             {(option.surcharge > 0 || option.dishPrice > 0) && (
                               <Text
                                 style={[
                                   styles.optionSurcharge,
                                   isSelected && styles.optionTextSelected,
                                 ]}
                               >
-                                +$
+                                +{useCompanySettingsStore.getState().settings.currencySymbol || "$"}
                                 {(
                                   option.surcharge + (option.dishPrice || 0)
                                 ).toFixed(2)}
@@ -586,6 +587,7 @@ export default function ComboCustomizer({
                 );
               }}
               ListFooterComponent={(() => {
+                const currencySymbol = useCompanySettingsStore.getState().settings.currencySymbol || "$";
                 let currentTotal = config?.basePrice || 0;
                 config?.groups?.forEach((group) => {
                   const selectedIds = selections[group.comboGroupId] || [];
@@ -688,7 +690,7 @@ export default function ComboCustomizer({
                                       </Text>
                                       {m.Price > 0 && (
                                         <Text style={[styles.modifierCardPrice, isSelected && styles.modifierCardTextSelected]}>
-                                          +${Number(m.Price).toFixed(2)}
+                                          +{currencySymbol}{Number(m.Price).toFixed(2)}
                                         </Text>
                                       )}
                                       {isSelected && (
@@ -728,7 +730,7 @@ export default function ComboCustomizer({
                       onPress={handleAddToCart}
                     >
                       <Text style={styles.confirmButtonText}>
-                        Add Combo to Cart - ${currentTotal.toFixed(2)}
+                        Add Combo to Cart - {currencySymbol}{currentTotal.toFixed(2)}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity

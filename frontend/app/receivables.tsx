@@ -21,7 +21,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useIsFocused } from "@react-navigation/native";
+import { usePathname } from "expo-router";
 import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
 import { Theme } from "@/constants/theme";
@@ -106,7 +106,8 @@ type BillSettlementType = {
 export default function ReceivablesScreen() {
   const router = useRouter();
   const { user, token } = useAuthStore();
-  const isFocused = useIsFocused();
+  const pathname = usePathname();
+  const isFocused = pathname === "/receivables";
   const settingsStore = useCompanySettingsStore((state: any) => state.settings);
   const currencySymbol = settingsStore?.currencySymbol || "$";
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();

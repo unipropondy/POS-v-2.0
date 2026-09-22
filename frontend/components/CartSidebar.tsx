@@ -560,6 +560,7 @@ const CartItemRow = React.memo(
     const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
     const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true) && useGeneralSettingsStore.getState().settings.SVCIdentification !== false;
 
+    const currencySymbol = useCompanySettingsStore.getState().settings.currencySymbol || "$";
     const badge = getStatusBadgeInfo(item, isVoided, isSent);
 
     return (
@@ -711,7 +712,7 @@ const CartItemRow = React.memo(
                     style={styles.modifierTextSmall}
                   >
                     • {m.ModifierName}
-                    {m.Price > 0 ? ` (+$${m.Price.toFixed(2)})` : ""}
+                    {m.Price > 0 ? ` (+${currencySymbol}${m.Price.toFixed(2)})` : ""}
                   </Text>
                 ))}
               {item.isCombo && item.comboSelections && Array.isArray(item.comboSelections) &&
@@ -724,9 +725,10 @@ const CartItemRow = React.memo(
                       </Text>
                       {(group.items || []).map((opt: any, oIdx: number) => {
                         const effectiveAdd = (parseFloat(opt.surcharge || 0) + parseFloat(opt.dishPrice || 0));
+                        const sym = useCompanySettingsStore.getState().settings.currencySymbol || "$";
                         return (
                           <Text key={`o-${oIdx}`} style={[styles.modifierTextSmall, { paddingLeft: 6 }]}>
-                            ↳ {opt.name}{effectiveAdd > 0 ? ` (+$${effectiveAdd.toFixed(2)})` : ""}
+                            ↳ {opt.name}{effectiveAdd > 0 ? ` (+${sym}${effectiveAdd.toFixed(2)})` : ""}
                           </Text>
                         );
                       })}
@@ -872,7 +874,7 @@ const CartItemRow = React.memo(
                         },
                       ]}
                     >
-                      ${((item.price || 0) * item.qty).toFixed(2)}
+                      {currencySymbol}{((item.price || 0) * item.qty).toFixed(2)}
                     </Text>
                     <View
                       style={[
@@ -893,7 +895,7 @@ const CartItemRow = React.memo(
                           const isFixed = item.discountType === 'fixed' || (item.discountType == null && item.discountAmount > 0 && !item.discount);
                           if (isFixed) {
                             const effectiveDisc = Math.min(rawDiscAmt, discountBasis);
-                            return `-$${effectiveDisc.toFixed(2)}`;
+                            return `-${currencySymbol}${effectiveDisc.toFixed(2)}`;
                           } else {
                             return `-${rawDiscAmt}%`;
                           }
@@ -910,7 +912,7 @@ const CartItemRow = React.memo(
                     isPhone && { fontSize: 14, minWidth: 0 },
                   ]}
                 >
-                  ${(() => {
+                  {currencySymbol}{(() => {
                     const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
                     const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
                     const discAmt = Number(item.discountAmount ?? item.discount ?? 0);

@@ -303,7 +303,7 @@ export const FloorPlanTable = React.memo(({
                     color: textColor,
                   }}
                 >
-                  {"$" + billAmount.toFixed(2)}
+                  {(require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$") + billAmount.toFixed(2)}
                 </Text>
               ) : null}
             </View>

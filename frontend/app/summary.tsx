@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { useIsFocused } from "@react-navigation/native";
+import { usePathname } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -96,7 +96,8 @@ export default function SummaryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { showToast } = useToast();
-  const isFocused = useIsFocused();
+  const pathname = usePathname();
+  const isFocused = pathname === "/summary";
 
   const context = useOrderContextStore((state) => state.currentOrder);
   const activeOrder = context ? findActiveOrder(context) : undefined;

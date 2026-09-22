@@ -188,7 +188,7 @@ export default function DiscountModal({
               <Text style={[styles.segmentText, discountType === "percentage" && styles.segmentTextActive]}>Percentage (%)</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.segmentBtn, discountType === "fixed" && styles.segmentActive]} onPress={() => { setDiscountType("fixed"); setInputValue(""); }}>
-              <Text style={[styles.segmentText, discountType === "fixed" && styles.segmentTextActive]}>Fixed Amount ($)</Text>
+              <Text style={[styles.segmentText, discountType === "fixed" && styles.segmentTextActive]}>Fixed Amount ({require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"})</Text>
             </TouchableOpacity>
           </View>
 
@@ -216,20 +216,20 @@ export default function DiscountModal({
             ) : (
               <>
                 <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("5"); setPreviewDiscount(Math.min(currentTotal, 5)); }}>
-                  <Text style={styles.discountCardLabel}>$5</Text>
-                  <Text style={styles.discountCardSmall}>$5 Off</Text>
+                  <Text style={styles.discountCardLabel}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}5</Text>
+                  <Text style={styles.discountCardSmall}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}5 Off</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("10"); setPreviewDiscount(Math.min(currentTotal, 10)); }}>
-                  <Text style={styles.discountCardLabel}>$10</Text>
-                  <Text style={styles.discountCardSmall}>$10 Off</Text>
+                  <Text style={styles.discountCardLabel}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}10</Text>
+                  <Text style={styles.discountCardSmall}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}10 Off</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("25"); setPreviewDiscount(Math.min(currentTotal, 25)); }}>
-                  <Text style={styles.discountCardLabel}>$25</Text>
-                  <Text style={styles.discountCardSmall}>$25 Off</Text>
+                  <Text style={styles.discountCardLabel}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}25</Text>
+                  <Text style={styles.discountCardSmall}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}25 Off</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.discountCard} onPress={() => { setInputValue("50"); setPreviewDiscount(Math.min(currentTotal, 50)); }}>
-                  <Text style={styles.discountCardLabel}>$50</Text>
-                  <Text style={styles.discountCardSmall}>$50 Off</Text>
+                  <Text style={styles.discountCardLabel}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}50</Text>
+                  <Text style={styles.discountCardSmall}>{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}50 Off</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -239,14 +239,14 @@ export default function DiscountModal({
 
           <Text style={styles.sectionLabel}>Custom Value</Text>
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputPrefix}>{discountType === "fixed" ? "$" : "%"}</Text>
+            <Text style={styles.inputPrefix}>{discountType === "fixed" ? (require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$") : "%"}</Text>
             <TextInput style={styles.input} placeholder="0.00" placeholderTextColor={Theme.textMuted} keyboardType="decimal-pad" value={inputValue} onChangeText={handleInputChange} maxLength={8} />
           </View>
 
           {previewDiscount > 0 && (
             <View style={styles.previewContainer}>
               <Text style={styles.previewLabel}>Total Discount:</Text>
-              <Text style={styles.previewValue}>-${previewDiscount.toFixed(2)}</Text>
+              <Text style={styles.previewValue}>-{require("../stores/companySettingsStore").useCompanySettingsStore.getState().settings.currencySymbol || "$"}{previewDiscount.toFixed(2)}</Text>
             </View>
           )}
 

@@ -57,6 +57,7 @@ import {
 import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 import { getHeldOrders } from "@/stores/heldOrdersStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useCompanySettingsStore } from "@/stores/companySettingsStore";
 import { clearOrderContext, OrderContext, setOrderContext } from "@/stores/orderContextStore";
 import { usePaymentSettingsStore } from "@/stores/paymentSettingsStore";
 import { Image } from "expo-image";
@@ -934,7 +935,7 @@ const TableItemComponent = React.memo(
                   ) : null}
                   {billAmount >= 0 && (
                     <Text style={[styles.billText, { fontSize: smallFont + 1, color: textColor, fontWeight: "800" }]}>
-                      ${billAmount.toFixed(2)}
+                      {(useCompanySettingsStore.getState().settings.currencySymbol || "$")}{billAmount.toFixed(2)}
                     </Text>
                   )}
                 </View>

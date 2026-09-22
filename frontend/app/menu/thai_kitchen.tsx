@@ -45,6 +45,7 @@ import { useGeneralSettingsStore } from "../../stores/generalSettingsStore";
 import { useMenuStore } from "../../stores/menuStore";
 import { useOrderContextStore } from "../../stores/orderContextStore";
 import { usePaymentSettingsStore } from "../../stores/paymentSettingsStore";
+import { useCompanySettingsStore } from "../../stores/companySettingsStore";
 
 const EMPTY_ARRAY: any[] = [];
 
@@ -224,7 +225,10 @@ const DishCard = React.memo(
             isPhone ? { fontSize: 12 } : isTablet ? { fontSize: 14 } : null,
           ]}
         >
-          {(Number(dish.IsOpenItem) === 1 || dish.IsOpenItem === true || dish.IsOpenItem === 'true' || dish.IsOpenItem === '1') ? "Open Price" : `$${(dish.Price || 0).toFixed(2)}`}
+          {(() => {
+            const currencySymbol = useCompanySettingsStore.getState().settings.currencySymbol || "$";
+            return (Number(dish.IsOpenItem) === 1 || dish.IsOpenItem === true || dish.IsOpenItem === 'true' || dish.IsOpenItem === '1') ? "Open Price" : `${currencySymbol}${(dish.Price || 0).toFixed(2)}`;
+          })()}
         </Text>
         {isSoldOut ? (
           <View style={{ backgroundColor: "#EF444422", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, marginTop: 2, borderWidth: 1, borderColor: "#EF444444", alignSelf: "center" }}>

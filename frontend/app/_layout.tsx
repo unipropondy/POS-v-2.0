@@ -2,7 +2,8 @@ import "../shims/displayMock";
 import "react-native-get-random-values";
 import "react-native-reanimated";
 
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+// Theme components are integrated directly into Expo Router 
+
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -542,45 +543,43 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <ToastProvider>
-          {/* 🔔 Staff Toaster alerts for Table Service requests */}
-          <SocketToastListener />
-          {/* 📱 Web PWA Installation / Android APK Download Prompt */}
-          <InstallAppModal />
-          {/* 🖥️ Customer Display: auto-projects onto Sunmi D3 secondary screen */}
-          <CustomerDisplayManager isPOSReady={isPOSReady} />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="login" options={{ gestureEnabled: false }} />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="menu" />
-            <Stack.Screen name="sales-report" />
-            <Stack.Screen name="ai-chat" />
-            <Stack.Screen name="day-end" />
-            <Stack.Screen name="company-settings" />
-            <Stack.Screen name="waiters" />
-            <Stack.Screen name="members" />
-            <Stack.Screen name="receivables" />
-            <Stack.Screen name="waiter-history" />
-            <Stack.Screen name="locked-tables" />
-            <Stack.Screen name="kitchen-status" />
-            <Stack.Screen name="heldOrders" />
-            <Stack.Screen name="summary" />
-            <Stack.Screen name="payment" />
-            <Stack.Screen name="payment_success" />
-            <Stack.Screen name="cart" />
-            <Stack.Screen name="cash-drawer" />
-            <Stack.Screen name="cash-drawer-report" />
-            <Stack.Screen name="StaffAttendance" />
-            <Stack.Screen name="loyalty" />
-            <Stack.Screen name="loyaltyConfig" />
-            <Stack.Screen name="terminal-settings" />
-            <Stack.Screen name="customer-display" />
-            <Stack.Screen name="table-master" />
-          </Stack>
-          <StatusBar style="light" />
-        </ToastProvider>
-      </ThemeProvider>
+      <ToastProvider>
+        {/* 🔔 Staff Toaster alerts for Table Service requests */}
+        <SocketToastListener />
+        {/* 📱 Web PWA Installation / Android APK Download Prompt */}
+        <InstallAppModal />
+        {/* 🖥️ Customer Display: auto-projects onto Sunmi D3 secondary screen */}
+        <CustomerDisplayManager isPOSReady={isPOSReady} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="login" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="menu" />
+          <Stack.Screen name="sales-report" />
+          <Stack.Screen name="ai-chat" />
+          <Stack.Screen name="day-end" />
+          <Stack.Screen name="company-settings" />
+          <Stack.Screen name="waiters" />
+          <Stack.Screen name="members" />
+          <Stack.Screen name="receivables" />
+          <Stack.Screen name="waiter-history" />
+          <Stack.Screen name="locked-tables" />
+          <Stack.Screen name="kitchen-status" />
+          <Stack.Screen name="heldOrders" />
+          <Stack.Screen name="summary" />
+          <Stack.Screen name="payment" />
+          <Stack.Screen name="payment_success" />
+          <Stack.Screen name="cart" />
+          <Stack.Screen name="cash-drawer" />
+          <Stack.Screen name="cash-drawer-report" />
+          <Stack.Screen name="StaffAttendance" />
+          <Stack.Screen name="loyalty" />
+          <Stack.Screen name="loyaltyConfig" />
+          <Stack.Screen name="terminal-settings" />
+          <Stack.Screen name="customer-display" />
+          <Stack.Screen name="table-master" />
+        </Stack>
+        <StatusBar style="light" />
+      </ToastProvider>
     </SafeAreaProvider>
   );
 }
