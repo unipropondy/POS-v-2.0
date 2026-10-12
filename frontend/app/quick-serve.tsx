@@ -99,6 +99,10 @@ export default function QuickServePOSScreen() {
   const showLoyalty = useGeneralSettingsStore((s: any) => s.settings?.showLoyalty !== false);
   const showRewardPoints = useGeneralSettingsStore((s: any) => s.settings?.showRewardPoints !== false);
   const showPromoCode = useGeneralSettingsStore((s: any) => s.settings?.showPromoCode !== false);
+  const enableKOT = useGeneralSettingsStore((s: any) => s.settings?.enableKOT !== false);
+  const enableKDS = useGeneralSettingsStore((s: any) => s.settings?.enableKDS !== false);
+  const enableReceiptPrint = useGeneralSettingsStore((s: any) => s.settings?.enableReceiptPrint !== false);
+  const enableCheckoutBill = useGeneralSettingsStore((s: any) => s.settings?.enableCheckoutBill !== false);
   const fetchGeneralSettings = useGeneralSettingsStore((s: any) => s.fetchSettings);
 
   useEffect(() => {
@@ -253,8 +257,8 @@ export default function QuickServePOSScreen() {
   const [allDishGroups, setAllDishGroups] = useState<any[]>([]);
   const [dishes, setDishes] = useState<any[]>([]);
 
-  // Left Panel View Toggle: "category" | "dishgroup" (Default: "dishgroup")
-  const [leftPanelView, setLeftPanelView] = useState<"category" | "dishgroup">("dishgroup");
+  // Left Panel View Toggle: "category" | "dishgroup" | "favorites" (Default: "favorites")
+  const [leftPanelView, setLeftPanelView] = useState<"category" | "dishgroup" | "favorites">("favorites");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [selectedDishGroupId, setSelectedDishGroupId] = useState<string | number | null>(null);
@@ -322,6 +326,29 @@ export default function QuickServePOSScreen() {
   const [tempDiscount, setTempDiscount] = useState<string>("");
   const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
   const [storeSettingsVisible, setStoreSettingsVisible] = useState<boolean>(false);
+
+  // Member & Credit Customer Modal State
+  const [selectedMember, setSelectedMember] = useState<any | null>(null);
+  const [showMemberModal, setShowMemberModal] = useState<boolean>(false);
+  const [memberModalType, setMemberModalType] = useState<"MEMBER" | "CREDIT">("MEMBER");
+  const [memberQuery, setMemberQuery] = useState<string>("");
+  const [membersList, setMembersList] = useState<any[]>([]);
+  const [searchingMembers, setSearchingMembers] = useState<boolean>(false);
+
+  // Quick Add Customer State
+  const [isQuickAddMode, setIsQuickAddMode] = useState<boolean>(false);
+  const [newName, setNewName] = useState<string>("");
+  const [newPhone, setNewPhone] = useState<string>("");
+  const [newEmail, setNewEmail] = useState<string>("");
+  const [newAddress, setNewAddress] = useState<string>("");
+  const [newCreditLimit, setNewCreditLimit] = useState<string>("1000");
+  const [newIsActive, setNewIsActive] = useState<boolean>(true);
+  const [addingCustomer, setAddingCustomer] = useState<boolean>(false);
+
+  // YeahPay Terminal Modal State
+  const [terminalModalVisible, setTerminalModalVisible] = useState<boolean>(false);
+  const [terminalStatus, setTerminalStatus] = useState<"idle" | "processing" | "success" | "cancelled" | "failed">("idle");
+  const [terminalMessage, setTerminalMessage] = useState<string>("");
 
   // Discount, Promo, Reward, Loyalty Modals State
   const [showDiscountTypeModal, setShowDiscountTypeModal] = useState<boolean>(false);
@@ -450,6 +477,12 @@ export default function QuickServePOSScreen() {
 
   const getPaymodeIconAndColor = (paymodeName: string) => {
     const name = (paymodeName || "").toUpperCase();
+    if (name.includes("YEAHPAY") && (name.includes("PAYNOW") || name.includes("QR"))) {
+      return { icon: "qr-code-outline", color: "#059669", bg: "#ECFDF5" };
+    }
+    if (name.includes("YEAHPAY")) {
+      return { icon: "card-outline", color: "#059669", bg: "#ECFDF5" };
+    }
     if (name.includes("CASH") || name.includes("CAS")) {
       return { icon: "cash-outline", color: "#10B981", bg: "#ECFDF5" };
     }
@@ -471,7 +504,111 @@ export default function QuickServePOSScreen() {
     if (name.includes("CREDIT")) {
       return { icon: "wallet-outline", color: "#4F46E5", bg: "#EEF2FF" };
     }
+    if (name.includes("FOC")) {
+      return { icon: "gift-outline", color: "#E11D48", bg: "#FFE4E6" };
+    }
     return { icon: "wallet-outline", color: "#475569", bg: "#F1F5F9" };
+  };
+
+  const searchMemberAccounts = async (q: string, type: "MEMBER" | "CREDIT") => {
+    setSearchingMembers(true);
+    const isCredit = type === "CREDIT";
+    const endpoint = isCredit
+      ? `${API_URL}/api/credit-customers/search?query=${encodeURIComponent(q || "")}`
+      : `${API_URL}/api/members/search?query=${encodeURIComponent(q || "")}`;
+    try {
+      const token = useAuthStore.getState().token;
+      const res = await fetch(endpoint, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.value) ? data.value : []);
+      setMembersList(list);
+    } catch (err) {
+      console.error("Search members error:", err);
+      setMembersList([]);
+    } finally {
+      setSearchingMembers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showMemberModal) {
+      const timer = setTimeout(() => {
+        searchMemberAccounts(memberQuery, memberModalType);
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [memberQuery, showMemberModal, memberModalType]);
+
+  const handleQuickAddCustomer = async () => {
+    if (!newName.trim() || !newPhone.trim()) {
+      toast.showToast({ message: "Name and Phone are required", type: "warning" });
+      return;
+    }
+    setAddingCustomer(true);
+    const isCredit = memberModalType === "CREDIT";
+    const endpoint = isCredit
+      ? `${API_URL}/api/credit-customers/add`
+      : `${API_URL}/api/members/add`;
+    try {
+      const token = useAuthStore.getState().token;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          name: newName.trim(),
+          phone: newPhone.trim(),
+          email: newEmail.trim() || null,
+          address: newAddress.trim() || null,
+          creditLimit: parseFloat(newCreditLimit) || 1000,
+          currentBalance: 0,
+          balance: 0,
+          isActive: newIsActive ? 1 : 0,
+          userId: user?.userId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.member) {
+        setSelectedMember(data.member);
+        setShowMemberModal(false);
+        setIsQuickAddMode(false);
+        setNewName("");
+        setNewPhone("");
+        toast.showToast({
+          message: isCredit ? "Credit customer added & selected!" : "Member added & selected!",
+          type: "success",
+        });
+      } else {
+        toast.showToast({
+          message: data.error || "Could not add customer",
+          type: "error",
+        });
+      }
+    } catch (err) {
+      toast.showToast({ message: "Could not connect to server", type: "error" });
+    } finally {
+      setAddingCustomer(false);
+    }
+  };
+
+  const handleSelectPaymode = (modeKey: string) => {
+    setSelectedPaymentMethod(modeKey);
+    const upper = modeKey.toUpperCase().trim();
+    if (upper === "MEMBER") {
+      setMemberModalType("MEMBER");
+      if (!selectedMember) {
+        setShowMemberModal(true);
+      }
+    } else if (upper === "CREDIT") {
+      setMemberModalType("CREDIT");
+      if (!selectedMember) {
+        setShowMemberModal(true);
+      }
+    }
   };
 
   // Load Menu Data
@@ -612,7 +749,53 @@ export default function QuickServePOSScreen() {
     setDishGroupScrollOffset(nextOffset);
   };
 
+  // Deduplicated Favorite Dishes (isFavourite = 1, unique by DishId)
+  const favoriteDishes = useMemo(() => {
+    const seenIds = new Set<string>();
+    const list: any[] = [];
+
+    dishes.forEach((d: any) => {
+      const isFav =
+        d.isFavourite === 1 ||
+        d.isFavourite === true ||
+        d.isFavourite === "1" ||
+        d.IsFavourite === 1 ||
+        d.IsFavourite === true ||
+        d.IsFavourite === "1";
+
+      if (isFav) {
+        const idKey = String(d.DishId || "").toLowerCase().trim();
+        if (idKey && !seenIds.has(idKey)) {
+          seenIds.add(idKey);
+          list.push(d);
+        }
+      }
+    });
+
+    let result = list;
+
+    if (vegFilter === "veg") {
+      result = result.filter((d) => d.IsVeg);
+    } else if (vegFilter === "non-veg") {
+      result = result.filter((d) => !d.IsVeg);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((d) => {
+        const name = (d.Name || "").toLowerCase();
+        const code = (d.DishCode || "").toLowerCase();
+        return name.includes(q) || code.includes(q);
+      });
+    }
+
+    return result;
+  }, [dishes, searchQuery, vegFilter]);
+
   const filteredDishes = useMemo(() => {
+    if (leftPanelView === "favorites") {
+      return favoriteDishes;
+    }
     if (leftPanelView === "category") {
       if (selectedCategoryId === null && searchQuery.trim() === "") {
         return [];
@@ -674,7 +857,7 @@ export default function QuickServePOSScreen() {
 
       return true;
     });
-  }, [dishes, leftPanelView, selectedCategoryId, selectedGroupId, selectedDishGroupId, searchQuery, dishGroups, vegFilter, categories]);
+  }, [dishes, leftPanelView, selectedCategoryId, selectedGroupId, selectedDishGroupId, searchQuery, dishGroups, vegFilter, categories, favoriteDishes]);
 
   const sortedDishes = useMemo(() => {
     const list = [...filteredDishes];
@@ -1089,6 +1272,114 @@ export default function QuickServePOSScreen() {
       return;
     }
 
+    const normMethod = (selectedPaymentMethod || "CASH").toUpperCase().trim();
+
+    // 1. Validation for MEMBER and CREDIT Accounts
+    if (normMethod === "MEMBER" || normMethod === "CREDIT") {
+      if (!selectedMember) {
+        setMemberModalType(normMethod === "CREDIT" ? "CREDIT" : "MEMBER");
+        setShowMemberModal(true);
+        toast.showToast({
+          message: `Please select a ${normMethod === "CREDIT" ? "credit customer" : "member"} first`,
+          type: "warning",
+        });
+        return;
+      }
+
+      if (normMethod === "CREDIT") {
+        const avail =
+          selectedMember.AvailableCredit !== undefined
+            ? Number(selectedMember.AvailableCredit)
+            : Number(selectedMember.CreditLimit || 0) - Number(selectedMember.CurrentBalance || 0);
+        if (finalTotal > avail) {
+          toast.showToast({
+            message: `Credit limit exceeded! (Available: $${avail.toFixed(2)})`,
+            type: "error",
+          });
+          return;
+        }
+      }
+    }
+
+    // 2. Terminal Payment Flow for YeahPay
+    if (normMethod.includes("YEAHPAY")) {
+      const pmObj = activePaymodes.find(
+        (p) => String(p.payMode || p.description || "").toUpperCase().trim() === normMethod
+      );
+      const deviceSn = (pmObj?.DeviceSN || pmObj?.deviceSn || "").trim();
+      const salt = (pmObj?.DeviceSalt || pmObj?.deviceSalt || "").trim();
+
+      if (!deviceSn) {
+        toast.showToast({
+          message: "DeviceSN not configured for YeahPay terminal",
+          type: "error",
+        });
+        return;
+      }
+
+      setTerminalModalVisible(true);
+      setTerminalStatus("processing");
+      setTerminalMessage(`Processing payment on terminal (${deviceSn})...\nWaiting for customer response...`);
+
+      const isCard = normMethod.includes("CARD");
+      const endpoint = isCard ? "/api/yeahpay/card-payment" : "/api/yeahpay/paynow-payment";
+      const activeTableId = selectedTable ? String(selectedTable.id || selectedTable.TableId || "") : "";
+
+      try {
+        const token = useAuthStore.getState().token;
+        const response = await fetch(`${API_URL}${endpoint}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            amount: finalTotal,
+            deviceSn,
+            salt: salt || "",
+            tableId: activeTableId,
+          }),
+        });
+
+        const result = await response.json();
+        const responseCode = result.code;
+
+        if (result.success || responseCode === 0) {
+          setTerminalStatus("success");
+          setTerminalMessage(`Paid successfully via ${selectedPaymentMethod}!`);
+          setTimeout(() => {
+            setTerminalModalVisible(false);
+            executePaymentFinalize();
+          }, 350);
+          return;
+        } else if (responseCode === -1027) {
+          setTerminalStatus("cancelled");
+          setTerminalMessage("Transaction cancelled on terminal");
+          toast.showToast({ message: "Transaction cancelled on terminal", type: "warning" });
+          setTimeout(() => setTerminalModalVisible(false), 1200);
+          return;
+        } else {
+          setTerminalStatus("failed");
+          const errMsg = result.msg || result.error || "Payment declined on terminal";
+          setTerminalMessage(errMsg);
+          toast.showToast({ message: errMsg, type: "error" });
+          setTimeout(() => setTerminalModalVisible(false), 1500);
+          return;
+        }
+      } catch (termErr: any) {
+        setTerminalStatus("failed");
+        setTerminalMessage(termErr.message || "Failed to communicate with terminal");
+        toast.showToast({ message: "Failed to communicate with terminal", type: "error" });
+        setTimeout(() => setTerminalModalVisible(false), 1500);
+        return;
+      }
+    }
+
+    // 3. Normal / Direct Checkout Finalization (Cash, Nets, PayNow, FOC, Member, Credit, etc.)
+    await executePaymentFinalize();
+  };
+
+  const executePaymentFinalize = async () => {
     setIsProcessingPayment(true);
     try {
       const activeTableId = selectedTable ? String(selectedTable.id || selectedTable.TableId || "") : "";
@@ -1112,6 +1403,9 @@ export default function QuickServePOSScreen() {
         cashierName: cashierIdent,
         waiterName: cashierIdent,
         isQuickServe: true,
+        memberId: selectedMember?.MemberId || null,
+        customerName: selectedMember?.Name || null,
+        mobileNo: selectedMember?.Phone || null,
         items: cartItems.map((item: any) => ({
           id: String(item.id || item.DishId),
           DishId: String(item.id || item.DishId),
@@ -1146,7 +1440,23 @@ export default function QuickServePOSScreen() {
 
       const generatedBillNo = resJson.billNo || resJson.orderId || quickServeToken;
 
-      // 🚀 AUTO-PRINT & ROUTE TO KOT, KDS & RECEIPT BILL
+      // ⚡ LIGHTNING FAST COMPLETION:
+      // Instantly release UI, clear cart & show toast! (Cashier never waits!)
+      setIsProcessingPayment(false);
+      clearCart();
+      generatePosOrderId();
+      setDiscountPercent(0);
+      setCustomAmount("");
+      setSelectedMember(null);
+
+      toast.showToast({
+        message: `🎉 Payment Successful! (${generatedBillNo})`,
+        subtitle: `Bill Total: $${finalTotal.toFixed(2)} (${selectedPaymentMethod}) — ${formattedTableName}`,
+        type: "success",
+        duration: 3000,
+      });
+
+      // Prepare order context & receipt data for background printing
       const orderContextObj = {
         orderType: isTakeawayOrder ? "TAKEAWAY" : "DINE_IN",
         tableNo: formattedTableName,
@@ -1155,90 +1465,93 @@ export default function QuickServePOSScreen() {
         isQuickServe: true,
       };
 
-      // 1. Send Order Alert to KDS via Socket
-      try {
-        if (socket) {
-          socket.emit("new_order", {
-            orderId: generatedBillNo,
-            context: orderContextObj,
-            items: cartItems.map((i: any) => ({ ...i, status: "SENT" })),
-            createdAt: Date.now(),
-          });
+      const receiptPrintData = {
+        ...saleData,
+        orderId: generatedBillNo,
+        billNo: generatedBillNo,
+        items: cartItems,
+        total: finalTotal,
+        subtotal: subtotal,
+        discountAmount: discountAmount,
+        serviceCharge: serviceChargeAmount,
+        taxAmount: gstAmount,
+        tableNo: formattedTableName,
+        waiterName: cashierIdent,
+        date: new Date(),
+        isCheckout: true,
+        isQuickServe: true,
+      };
+
+      // 🚀 ASYNCHRONOUS FIRE-AND-FORGET PRINTING & TABLE REFRESH
+      (async () => {
+        // 1. KDS Alert via Socket
+        if (enableKDS && socket) {
+          try {
+            socket.emit("new_order", {
+              orderId: generatedBillNo,
+              context: orderContextObj,
+              items: cartItems.map((i: any) => ({ ...i, status: "SENT" })),
+              createdAt: Date.now(),
+            });
+          } catch (sErr) {
+            console.error("[QuickServe] Socket KDS emit error:", sErr);
+          }
         }
-      } catch (sErr) {
-        console.error("[QuickServe] Socket KDS emit error:", sErr);
-      }
 
-      // 2. Automatically Route & Print KOT Ticket(s) to Kitchen Printers
-      try {
-        await UniversalPrinter.routeAndPrintOrderKOT(
-          generatedBillNo,
-          orderContextObj,
-          cartItems,
-          false,
-          cashierIdent,
-          true
-        );
-      } catch (kotErr) {
-        console.error("[QuickServe] Automatic KOT Print Error:", kotErr);
-      }
-
-      // 3. Automatically Print Payment Receipt Bill
-      try {
-        const receiptPrintData = {
-          ...saleData,
-          orderId: generatedBillNo,
-          billNo: generatedBillNo,
-          items: cartItems,
-          total: finalTotal,
-          subtotal: subtotal,
-          discountAmount: discountAmount,
-          serviceCharge: serviceChargeAmount,
-          taxAmount: gstAmount,
-          tableNo: formattedTableName,
-          waiterName: cashierIdent,
-          date: new Date(),
-          isCheckout: true,
-          isQuickServe: true,
-        };
-
-        await UniversalPrinter.printCheckoutBill(
-          receiptPrintData,
-          user?.userId || "SYSTEM"
-        );
-      } catch (billErr) {
-        console.error("[QuickServe] Automatic Receipt Print Error:", billErr);
-      }
-
-      toast.showToast({
-        message: `🎉 Payment Successful! (${generatedBillNo})`,
-        subtitle: `Bill Total: $${finalTotal.toFixed(2)} (${selectedPaymentMethod}) — ${formattedTableName}`,
-        type: "success",
-        duration: 3500,
-      });
-
-      await clearCart();
-      await generatePosOrderId();
-      setDiscountPercent(0);
-      setCustomAmount("");
-
-      // Auto-advance to the NEXT free table in Table Master for the next order
-      const updatedTables = await fetch(`${API_URL}/api/tables/all`).then((r) => r.json()).catch(() => []);
-      if (Array.isArray(updatedTables) && updatedTables.length > 0) {
-        setAllMasterTables(updatedTables);
-        const freeTables = updatedTables.filter(
-          (t: any) => t.Status === 0 || t.Status === null || t.Status === undefined || String(t.Status) === "0"
-        );
-        if (freeTables.length > 0) {
-          const nextFree = freeTables.find((t: any) => String(t.id || t.TableId) !== activeTableId) || freeTables[0];
-          await selectQuickServeTable(nextFree, true);
+        // 2. KOT Printing
+        if (enableKOT) {
+          try {
+            await UniversalPrinter.routeAndPrintOrderKOT(
+              generatedBillNo,
+              orderContextObj,
+              cartItems,
+              false,
+              cashierIdent,
+              true
+            );
+          } catch (kotErr) {
+            console.error("[QuickServe] Automatic KOT Print Error:", kotErr);
+          }
         }
-      }
-    } catch (err) {
+
+        // 3. Receipt Bill Printing
+        if (enableReceiptPrint && enableCheckoutBill) {
+          try {
+            await UniversalPrinter.printCheckoutBill(
+              receiptPrintData,
+              user?.userId || "SYSTEM"
+            );
+          } catch (billErr) {
+            console.error("[QuickServe] Automatic Receipt Print Error:", billErr);
+          }
+        }
+
+        // 4. Background Table Auto-Advance
+        try {
+          const updatedTables = await fetch(`${API_URL}/api/tables/all`).then((r) => r.json());
+          if (Array.isArray(updatedTables) && updatedTables.length > 0) {
+            setAllMasterTables(updatedTables);
+            const freeTables = updatedTables.filter(
+              (t: any) => t.Status === 0 || t.Status === null || t.Status === undefined || String(t.Status) === "0"
+            );
+            if (freeTables.length > 0) {
+              const nextFree = freeTables.find((t: any) => String(t.id || t.TableId) !== activeTableId) || freeTables[0];
+              selectQuickServeTable(nextFree, true);
+            }
+          }
+        } catch (tErr) {
+          console.error("[QuickServe] Table refresh error:", tErr);
+        }
+      })().catch(console.error);
+
+    } catch (err: any) {
       console.error("Payment error:", err);
-      toast.showToast({ message: "Payment failed. Please try again.", type: "error" });
-    } finally {
       setIsProcessingPayment(false);
+      toast.showToast({
+        message: "Payment Failed",
+        subtitle: err.message || "Failed to process sale transaction",
+        type: "error",
+      });
     }
   };
 
@@ -1684,19 +1997,31 @@ export default function QuickServePOSScreen() {
                           const modeKey = String(pm.payMode || pm.description || pm.key || "").toUpperCase();
                           const modeLabel = pm.description || pm.payMode || pm.label || modeKey;
                           const isSelected = selectedPaymentMethod === modeKey;
+                          const isYeahPay = pm.YeahPayEnabled === true || pm.yeahPayEnabled === true || modeKey.includes("YEAHPAY");
                           const { icon, color, bg } = getPaymodeIconAndColor(modeKey);
 
                           return (
                             <TouchableOpacity
                               key={pm.Position || modeKey || pIdx}
-                              style={[styles.payMethodGridItem, isSelected && styles.payMethodBtnActive]}
-                              onPress={() => setSelectedPaymentMethod(modeKey)}
+                              style={[
+                                styles.payMethodGridItem,
+                                isSelected && styles.payMethodBtnActive,
+                                !isSelected && isYeahPay && styles.payMethodYeahPay,
+                              ]}
+                              onPress={() => handleSelectPaymode(modeKey)}
                               activeOpacity={0.8}
                             >
-                              <View style={[styles.payMethodIconBg, { backgroundColor: bg }]}>
-                                <Ionicons name={icon as any} size={15} color={color} />
+                              <View style={[styles.payMethodIconBg, { backgroundColor: isSelected ? "#FFEDD5" : (!isSelected && isYeahPay ? "#DCFCE7" : bg) }]}>
+                                <Ionicons name={icon as any} size={15} color={isSelected ? "#FF5A16" : (!isSelected && isYeahPay ? "#059669" : color)} />
                               </View>
-                              <Text style={[styles.payMethodLabel, isSelected && styles.payMethodLabelActive]} numberOfLines={1}>
+                              <Text
+                                style={[
+                                  styles.payMethodLabel,
+                                  isSelected && styles.payMethodLabelActive,
+                                  !isSelected && isYeahPay && styles.payMethodLabelYeahPay,
+                                ]}
+                                numberOfLines={2}
+                              >
                                 {modeLabel}
                               </Text>
                             </TouchableOpacity>
@@ -1727,6 +2052,70 @@ export default function QuickServePOSScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
+
+                {/* SELECTED MEMBER / CREDIT CUSTOMER BADGE OR PROMPT */}
+                {(selectedPaymentMethod.toUpperCase().trim() === "MEMBER" || selectedPaymentMethod.toUpperCase().trim() === "CREDIT") && (
+                  <View style={styles.memberPaymodePromptWrap}>
+                    {selectedMember ? (
+                      <View style={styles.selectedMemberBadge}>
+                        <View style={styles.selectedMemberBadgeLeft}>
+                          <View style={styles.selectedMemberIconBox}>
+                            <Ionicons
+                              name={selectedPaymentMethod.toUpperCase().trim() === "CREDIT" ? "wallet" : "ribbon"}
+                              size={14}
+                              color="#FFFFFF"
+                            />
+                          </View>
+                          <View style={{ flex: 1, marginRight: 6 }}>
+                            <Text style={styles.selectedMemberNameText} numberOfLines={1}>
+                              {selectedMember.Name}
+                            </Text>
+                            <Text style={styles.selectedMemberPhoneText} numberOfLines={1}>
+                              {selectedMember.Phone} • Avail: ${Number(
+                                selectedMember.AvailableCredit !== undefined
+                                  ? selectedMember.AvailableCredit
+                                  : (selectedMember.CreditLimit || 0) - (selectedMember.CurrentBalance || 0)
+                              ).toFixed(2)}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <TouchableOpacity
+                            style={styles.memberChangeBtn}
+                            onPress={() => {
+                              setMemberModalType(selectedPaymentMethod.toUpperCase().trim() === "CREDIT" ? "CREDIT" : "MEMBER");
+                              setShowMemberModal(true);
+                            }}
+                          >
+                            <Text style={styles.memberChangeBtnText}>Change</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.memberRemoveBtn}
+                            onPress={() => setSelectedMember(null)}
+                          >
+                            <Ionicons name="close" size={14} color="#64748B" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.memberSelectPromptBtn}
+                        onPress={() => {
+                          setMemberModalType(selectedPaymentMethod.toUpperCase().trim() === "CREDIT" ? "CREDIT" : "MEMBER");
+                          setShowMemberModal(true);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="person-add" size={13} color="#FF5A16" />
+                        <Text style={styles.memberSelectPromptText}>
+                          {selectedPaymentMethod.toUpperCase().trim() === "CREDIT"
+                            ? "Select Credit Customer Account *"
+                            : "Select Member Account *"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
               </View>
 
               {/* COMPLETE PAYMENT BUTTON IN BOTTOM */}
@@ -1751,26 +2140,38 @@ export default function QuickServePOSScreen() {
             </View>
           </View>
 
-          {/* ================= COLUMN 2: CENTER → Category / Dish Groups ================= */}
+          {/* ================= COLUMN 2: CENTER → Category / Dish Groups / Favorites ================= */}
           <View style={styles.centerGroupsColumn}>
-            {/* CATEGORY / DISH GROUP HEADER WITH CHANGE BUTTON ON RIGHT */}
+            {/* CATEGORY / DISH GROUP HEADER */}
             <View style={styles.groupsHeader}>
-              <Text style={styles.groupsHeaderTitle}>
-                {leftPanelView === "category" ? "Category" : "Dish Groups"}
-              </Text>
-
-              <TouchableOpacity
-                style={styles.toggleViewIconBtn}
-                onPress={toggleLeftPanelView}
-                activeOpacity={0.7}
-                accessibilityLabel={leftPanelView === "category" ? "Switch to Dish Group View" : "Switch to Category View"}
-              >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Ionicons
-                  name="swap-horizontal"
+                  name={
+                    leftPanelView === "category"
+                      ? "grid-outline"
+                      : "restaurant-outline"
+                  }
                   size={16}
                   color="#FF5A16"
                 />
-              </TouchableOpacity>
+                <Text style={styles.groupsHeaderTitle}>
+                  {leftPanelView === "category"
+                    ? "Category"
+                    : "Dish Groups"}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                {/* CYCLE VIEWS BUTTON */}
+                <TouchableOpacity
+                  style={styles.toggleViewIconBtn}
+                  onPress={toggleLeftPanelView}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Switch View"
+                >
+                  <Ionicons name="swap-horizontal" size={16} color="#FF5A16" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {leftPanelView === "category" ? (
@@ -1828,65 +2229,121 @@ export default function QuickServePOSScreen() {
                 })}
               </ScrollView>
             ) : (
-              /* DISH GROUPS VERTICAL LIST WITH UP/DOWN SCROLL BUTTONS */
-              <View style={styles.dishGroupPanelBody}>
-                <ScrollView
-                  ref={dishGroupScrollRef}
-                  style={styles.dishGroupScroll}
-                  contentContainerStyle={styles.dishGroupScrollContent}
-                  showsVerticalScrollIndicator={false}
-                  nestedScrollEnabled
-                  onScroll={(e) => setDishGroupScrollOffset(e.nativeEvent.contentOffset.y)}
-                  scrollEventThrottle={16}
-                  onContentSizeChange={(_w, h) => setDishGroupContentHeight(h)}
-                  onLayout={(e) => setDishGroupContainerHeight(e.nativeEvent.layout.height)}
-                >
-                  <View style={styles.dishGroupGrid}>
-                    {allDishGroups.map((group) => {
-                      const isGroupActive = String(selectedDishGroupId) === String(group.DishGroupId);
-                      const groupName = group.DishGroupName;
-                      const count = getDishGroupCount(group);
-
-                      return (
-                        <TouchableOpacity
-                          key={group.DishGroupId}
+              <>
+                {/* SINGLE FAVORITES BUTTON ROW */}
+                <View style={styles.favoritesButtonRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.favoritesBigBtn,
+                      leftPanelView === "favorites" && styles.favoritesBigBtnActive,
+                    ]}
+                    onPress={() => {
+                      setLeftPanelView((prev) => (prev === "favorites" ? "dishgroup" : "favorites"));
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View
+                      style={[
+                        styles.favoritesIconCircle,
+                        leftPanelView === "favorites" && styles.favoritesIconCircleActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name="heart"
+                        size={15}
+                        color={leftPanelView === "favorites" ? "#FFFFFF" : "#E11D48"}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.favoritesBigBtnText,
+                        leftPanelView === "favorites" && styles.favoritesBigBtnTextActive,
+                      ]}
+                    >
+                      Favorites
+                    </Text>
+                    {favoriteDishes.length > 0 && (
+                      <View
+                        style={[
+                          styles.favoritesCountBadge,
+                          leftPanelView === "favorites" && styles.favoritesCountBadgeActive,
+                        ]}
+                      >
+                        <Text
                           style={[
-                            styles.dishGroupCard2Col,
-                            isGroupActive && styles.dishGroupCard2ColActive,
+                            styles.favoritesCountBadgeText,
+                            leftPanelView === "favorites" && styles.favoritesCountBadgeTextActive,
                           ]}
-                          onPress={() => setSelectedDishGroupId(group.DishGroupId)}
-                          activeOpacity={0.85}
                         >
-                          <Text
-                            style={[
-                              styles.dishGroupName2Col,
-                              isGroupActive && styles.dishGroupName2ColActive,
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {groupName}
-                          </Text>
+                          {favoriteDishes.length}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
 
-                          <View
+                {/* DISH GROUPS VERTICAL LIST WITH UP/DOWN SCROLL BUTTONS */}
+                <View style={styles.dishGroupPanelBody}>
+                  <ScrollView
+                    ref={dishGroupScrollRef}
+                    style={styles.dishGroupScroll}
+                    contentContainerStyle={styles.dishGroupScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                    onScroll={(e) => setDishGroupScrollOffset(e.nativeEvent.contentOffset.y)}
+                    scrollEventThrottle={16}
+                    onContentSizeChange={(_w, h) => setDishGroupContentHeight(h)}
+                    onLayout={(e) => setDishGroupContainerHeight(e.nativeEvent.layout.height)}
+                  >
+                    <View style={styles.dishGroupGrid}>
+                      {allDishGroups.map((group) => {
+                        const isGroupActive = leftPanelView === "dishgroup" && String(selectedDishGroupId) === String(group.DishGroupId);
+                        const groupName = group.DishGroupName;
+                        const count = getDishGroupCount(group);
+
+                        return (
+                          <TouchableOpacity
+                            key={group.DishGroupId}
                             style={[
-                              styles.dishGroupBadge2Col,
-                              isGroupActive && styles.dishGroupBadge2ColActive,
+                              styles.dishGroupCard2Col,
+                              isGroupActive && styles.dishGroupCard2ColActive,
                             ]}
+                            onPress={() => {
+                              setLeftPanelView("dishgroup");
+                              setSelectedDishGroupId(group.DishGroupId);
+                            }}
+                            activeOpacity={0.85}
                           >
                             <Text
                               style={[
-                                styles.dishGroupBadgeText2Col,
-                                isGroupActive && styles.dishGroupBadgeText2ColActive,
+                                styles.dishGroupName2Col,
+                                isGroupActive && styles.dishGroupName2ColActive,
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {groupName}
+                            </Text>
+
+                            <View
+                              style={[
+                                styles.dishGroupBadge2Col,
+                                isGroupActive && styles.dishGroupBadge2ColActive,
                               ]}
                             >
-                              {count}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
+                              <Text
+                                style={[
+                                  styles.dishGroupBadgeText2Col,
+                                  isGroupActive && styles.dishGroupBadgeText2ColActive,
+                                ]}
+                              >
+                                {count}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
 
                 {/* SINGLE UNIFIED UP/DOWN SCROLL BUTTON PILL ON THE RIGHT */}
                 <View style={styles.dishGroupScrollPillContainer}>
@@ -1913,17 +2370,25 @@ export default function QuickServePOSScreen() {
                   </View>
                 </View>
               </View>
-            )}
-          </View>
+            </>
+          )}
+        </View>
 
           {/* ================= COLUMN 3: RIGHT SIDE → DISHES ================= */}
           <View style={styles.rightDishesColumn}>
             {/* DISHES PANEL HEADER & FILTERS */}
             <View style={styles.dishesHeaderRow}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons name="restaurant" size={20} color="#FF5A16" style={{ marginRight: 6 }} />
+                <Ionicons
+                  name={leftPanelView === "favorites" ? "heart" : "restaurant"}
+                  size={20}
+                  color={leftPanelView === "favorites" ? "#E11D48" : "#FF5A16"}
+                  style={{ marginRight: 6 }}
+                />
                 <Text style={styles.dishesHeaderTitle}>
-                  {leftPanelView === "category"
+                  {leftPanelView === "favorites"
+                    ? "Favorite Dishes"
+                    : leftPanelView === "category"
                     ? (selectedCategoryId !== null
                         ? `${categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.KitchenTypeName || categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.CategoryName || ""} Dishes`
                         : "Dishes")
@@ -1931,6 +2396,13 @@ export default function QuickServePOSScreen() {
                         ? `${allDishGroups.find((g) => String(g.DishGroupId) === String(selectedDishGroupId))?.DishGroupName || "Dish Group"} Dishes`
                         : "Dishes")}
                 </Text>
+                {leftPanelView === "favorites" && (
+                  <View style={[styles.categoryBadge, { backgroundColor: "#FFF1F2", borderWidth: 1, borderColor: "#FECDD3", marginLeft: 6 }]}>
+                    <Text style={[styles.categoryBadgeText, { color: "#BE123C" }]}>
+                      {favoriteDishes.length}
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* VIEW TOGGLES */}
@@ -1981,13 +2453,12 @@ export default function QuickServePOSScreen() {
               </View>
             )}
 
-            {/* DISHES 3-COLUMN RESPONSIVE GRID */}
             {loading ? (
               <View style={styles.loadingState}>
                 <ActivityIndicator size="large" color="#FF5A16" />
                 <Text style={styles.loadingStateText}>Loading Menu Dishes...</Text>
               </View>
-            ) : (leftPanelView === "category" ? selectedCategoryId === null : selectedDishGroupId === null) && searchQuery.trim() === "" ? (
+            ) : leftPanelView !== "favorites" && (leftPanelView === "category" ? selectedCategoryId === null : selectedDishGroupId === null) && searchQuery.trim() === "" ? (
               <View style={styles.emptyDishesState}>
                 <Ionicons name="restaurant-outline" size={54} color="#CBD5E1" />
                 <Text style={styles.emptyDishesTitle}>
@@ -2001,10 +2472,18 @@ export default function QuickServePOSScreen() {
               </View>
             ) : sortedDishes.length === 0 ? (
               <View style={styles.emptyDishesState}>
-                <Ionicons name="fast-food-outline" size={54} color="#CBD5E1" />
-                <Text style={styles.emptyDishesTitle}>No dishes found</Text>
+                <Ionicons
+                  name={leftPanelView === "favorites" ? "heart-outline" : "fast-food-outline"}
+                  size={54}
+                  color={leftPanelView === "favorites" ? "#FECDD3" : "#CBD5E1"}
+                />
+                <Text style={styles.emptyDishesTitle}>
+                  {leftPanelView === "favorites" ? "No favorite dishes found" : "No dishes found"}
+                </Text>
                 <Text style={styles.emptyDishesSub}>
-                  {leftPanelView === "category" ? "Try changing your filter or category" : "Try changing your filter or dish group"}
+                  {leftPanelView === "favorites"
+                    ? (searchQuery.trim() ? "No favorite dishes match your search query" : "Dishes with isFavourite = 1 in DishMaster will appear here")
+                    : (leftPanelView === "category" ? "Try changing your filter or category" : "Try changing your filter or dish group")}
                 </Text>
               </View>
             ) : (
@@ -2049,7 +2528,7 @@ export default function QuickServePOSScreen() {
                             </View>
 
                             <View style={styles.dishCardBody}>
-                              <Text style={styles.dishCardName} numberOfLines={2}>
+                              <Text style={styles.dishCardName} numberOfLines={1}>
                                 {dish.Name}
                               </Text>
 
@@ -2062,7 +2541,7 @@ export default function QuickServePOSScreen() {
                                   disabled={isSoldOut}
                                   activeOpacity={0.8}
                                 >
-                                  <Ionicons name="add" size={10} color="#FFFFFF" />
+                                  <Ionicons name="add" size={12} color="#FFFFFF" />
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -2095,9 +2574,6 @@ export default function QuickServePOSScreen() {
                             <Text style={styles.dishListName} numberOfLines={1}>
                               {dish.Name}
                             </Text>
-                            {dish.DishCode ? (
-                              <Text style={styles.dishListCode}>Code: {dish.DishCode}</Text>
-                            ) : null}
                           </View>
 
                           <Text style={styles.dishListPrice}>${price.toFixed(2)}</Text>
@@ -2876,6 +3352,307 @@ export default function QuickServePOSScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* MEMBER & CREDIT CUSTOMER SELECTION / QUICK ADD MODAL */}
+      <Modal
+        visible={showMemberModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMemberModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMemberModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[styles.memberModalCard, { width: "92%", maxWidth: 460, maxHeight: "85%" }]}
+          >
+            {/* Header */}
+            <View style={styles.memberModalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={[styles.memberModalHeaderIcon, { backgroundColor: memberModalType === "CREDIT" ? "#EEF2FF" : "#FEF3C7" }]}>
+                  <Ionicons
+                    name={memberModalType === "CREDIT" ? "wallet" : "ribbon"}
+                    size={20}
+                    color={memberModalType === "CREDIT" ? "#4F46E5" : "#D97706"}
+                  />
+                </View>
+                <View>
+                  <Text style={styles.memberModalTitle}>
+                    {isQuickAddMode
+                      ? memberModalType === "CREDIT"
+                        ? "Quick Add Credit Customer"
+                        : "Quick Add Member"
+                      : memberModalType === "CREDIT"
+                      ? "Select Credit Customer"
+                      : "Select Member"}
+                  </Text>
+                  <Text style={styles.memberModalSubtitle}>
+                    {memberModalType === "CREDIT"
+                      ? "Charge order balance to customer credit ledger"
+                      : "Select or add membership account"}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setShowMemberModal(false)} style={styles.memberModalCloseBtn}>
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {isQuickAddMode ? (
+              /* QUICK ADD FORM */
+              <ScrollView showsVerticalScrollIndicator={false} style={{ marginVertical: 10 }}>
+                <View style={styles.quickAddFormField}>
+                  <Text style={styles.quickAddLabel}>Customer Name *</Text>
+                  <TextInput
+                    style={styles.quickAddInput}
+                    placeholder="Enter full name"
+                    placeholderTextColor="#94A3B8"
+                    value={newName}
+                    onChangeText={setNewName}
+                  />
+                </View>
+
+                <View style={styles.quickAddFormField}>
+                  <Text style={styles.quickAddLabel}>Phone Number *</Text>
+                  <TextInput
+                    style={styles.quickAddInput}
+                    placeholder="e.g. +65 91234567"
+                    placeholderTextColor="#94A3B8"
+                    value={newPhone}
+                    onChangeText={setNewPhone}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.quickAddFormField}>
+                  <Text style={styles.quickAddLabel}>Email Address (Optional)</Text>
+                  <TextInput
+                    style={styles.quickAddInput}
+                    placeholder="Enter email address"
+                    placeholderTextColor="#94A3B8"
+                    value={newEmail}
+                    onChangeText={setNewEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.quickAddFormField}>
+                  <Text style={styles.quickAddLabel}>Address (Optional)</Text>
+                  <TextInput
+                    style={styles.quickAddInput}
+                    placeholder="Enter delivery/billing address"
+                    placeholderTextColor="#94A3B8"
+                    value={newAddress}
+                    onChangeText={setNewAddress}
+                  />
+                </View>
+
+                <View style={styles.quickAddFormField}>
+                  <Text style={styles.quickAddLabel}>Credit Limit ($)</Text>
+                  <TextInput
+                    style={styles.quickAddInput}
+                    placeholder="1000"
+                    placeholderTextColor="#94A3B8"
+                    value={newCreditLimit}
+                    onChangeText={setNewCreditLimit}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+                  <TouchableOpacity
+                    style={[styles.modalCancelBtn, { flex: 1 }]}
+                    onPress={() => setIsQuickAddMode(false)}
+                  >
+                    <Text style={styles.modalCancelText}>Back to Search</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalSaveBtn, { flex: 1 }, (!newName.trim() || !newPhone.trim() || addingCustomer) && { opacity: 0.6 }]}
+                    onPress={handleQuickAddCustomer}
+                    disabled={!newName.trim() || !newPhone.trim() || addingCustomer}
+                  >
+                    {addingCustomer ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.modalSaveText}>Save & Select</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            ) : (
+              /* SEARCH & SELECT MODE */
+              <View style={{ flex: 1, minHeight: 280 }}>
+                {/* Search Bar + Quick Add Button */}
+                <View style={{ flexDirection: "row", gap: 8, marginVertical: 10 }}>
+                  <View style={styles.memberSearchBar}>
+                    <Ionicons name="search" size={18} color="#64748B" style={{ marginRight: 6 }} />
+                    <TextInput
+                      style={styles.memberSearchInput}
+                      placeholder="Search by Name or Phone..."
+                      placeholderTextColor="#94A3B8"
+                      value={memberQuery}
+                      onChangeText={setMemberQuery}
+                      autoFocus
+                    />
+                    {searchingMembers && <ActivityIndicator size="small" color="#FF5A16" />}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.quickAddToggleBtn}
+                    onPress={() => {
+                      setIsQuickAddMode(true);
+                      if (memberQuery && isNaN(Number(memberQuery))) {
+                        setNewName(memberQuery);
+                      } else if (memberQuery) {
+                        setNewPhone(memberQuery);
+                      }
+                    }}
+                  >
+                    <Ionicons name="person-add" size={15} color="#FFFFFF" />
+                    <Text style={styles.quickAddToggleBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Customer / Members List */}
+                <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                  {membersList.length === 0 ? (
+                    <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 36 }}>
+                      <Ionicons
+                        name={memberModalType === "CREDIT" ? "wallet-outline" : "ribbon-outline"}
+                        size={40}
+                        color="#CBD5E1"
+                        style={{ marginBottom: 8 }}
+                      />
+                      <Text style={{ fontFamily: Fonts.medium, fontSize: 14, color: "#64748B" }}>
+                        {memberQuery ? "No matching accounts found" : "Type above to search or click Add"}
+                      </Text>
+                    </View>
+                  ) : (
+                    membersList.map((item: any, idx: number) => {
+                      const isSelected = selectedMember?.MemberId === item.MemberId;
+                      const availCredit =
+                        item.AvailableCredit !== undefined
+                          ? Number(item.AvailableCredit)
+                          : Number(item.CreditLimit || 0) - Number(item.CurrentBalance || 0);
+
+                      return (
+                        <TouchableOpacity
+                          key={item.MemberId || idx}
+                          style={[
+                            styles.memberListItemCard,
+                            isSelected && styles.memberListItemCardSelected,
+                            !item.IsActive && { opacity: 0.5 },
+                          ]}
+                          onPress={() => {
+                            setSelectedMember(item);
+                            setShowMemberModal(false);
+                            toast.showToast({
+                              message: `Selected ${memberModalType === "CREDIT" ? "Credit Customer" : "Member"}: ${item.Name}`,
+                              type: "success",
+                            });
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={styles.memberListItemName}>{item.Name}</Text>
+                              {item.IsActive === false && (
+                                <Text style={styles.inactivePillText}>(Inactive)</Text>
+                              )}
+                            </View>
+                            <Text style={styles.memberListItemPhone}>Phone: {item.Phone}</Text>
+                          </View>
+                          <View style={{ alignItems: "flex-end" }}>
+                            <Text style={styles.memberListItemAvailLabel}>Avail Credit</Text>
+                            <Text style={[styles.memberListItemAvailVal, availCredit < 0 && { color: "#EF4444" }]}>
+                              ${availCredit.toFixed(2)}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={[styles.modalCancelBtn, { marginTop: 10 }]}
+                  onPress={() => setShowMemberModal(false)}
+                >
+                  <Text style={styles.modalCancelText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* YEAHPAY TERMINAL PROCESSING MODAL */}
+      <Modal
+        visible={terminalModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (terminalStatus !== "processing") setTerminalModalVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.terminalModalCard, { width: "90%", maxWidth: 420 }]}>
+            <View style={styles.terminalIconWrap}>
+              {terminalStatus === "processing" ? (
+                <ActivityIndicator size="large" color="#059669" />
+              ) : terminalStatus === "success" ? (
+                <Ionicons name="checkmark-circle" size={54} color="#10B981" />
+              ) : terminalStatus === "cancelled" ? (
+                <Ionicons name="close-circle" size={54} color="#F59E0B" />
+              ) : (
+                <Ionicons name="alert-circle" size={54} color="#EF4444" />
+              )}
+            </View>
+
+            <Text style={styles.terminalTitle}>
+              {terminalStatus === "processing"
+                ? "Waiting for Terminal Payment"
+                : terminalStatus === "success"
+                ? "Payment Approved!"
+                : terminalStatus === "cancelled"
+                ? "Payment Cancelled"
+                : "Payment Declined"}
+            </Text>
+
+            <Text style={styles.terminalSubtitle}>
+              {terminalMessage}
+            </Text>
+
+            <View style={styles.terminalAmountBox}>
+              <Text style={styles.terminalAmountLabel}>Payable Total</Text>
+              <Text style={styles.terminalAmountValue}>${finalTotal.toFixed(2)}</Text>
+            </View>
+
+            {terminalStatus === "processing" ? (
+              <TouchableOpacity
+                style={styles.terminalCancelBtn}
+                onPress={() => {
+                  setTerminalModalVisible(false);
+                  setTerminalStatus("idle");
+                  toast.showToast({ message: "Terminal request dismissed", type: "warning" });
+                }}
+              >
+                <Text style={styles.terminalCancelBtnText}>Dismiss / Cancel</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, { width: "100%", marginTop: 12 }]}
+                onPress={() => setTerminalModalVisible(false)}
+              >
+                <Text style={styles.modalSaveText}>Close</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -3362,10 +4139,285 @@ const styles = StyleSheet.create({
   payMethodLabelActive: {
     color: "#FF5A16",
   },
+  payMethodYeahPay: {
+    borderColor: "#10B981",
+    borderWidth: 1.5,
+    backgroundColor: "#F0FDF4",
+  },
+  payMethodLabelYeahPay: {
+    color: "#059669",
+    fontWeight: "700",
+  },
+
+  /* Member / Credit Badge Above Complete Payment */
+  memberPaymodePromptWrap: {
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  selectedMemberBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  selectedMemberBadgeLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  selectedMemberIconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#FF5A16",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  selectedMemberNameText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  selectedMemberPhoneText: {
+    fontSize: 9.5,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+  },
+  memberChangeBtn: {
+    backgroundColor: "#FF5A16",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  memberChangeBtnText: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  memberRemoveBtn: {
+    padding: 3,
+    marginLeft: 2,
+  },
+  memberSelectPromptBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    borderStyle: "dashed",
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  memberSelectPromptText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: "#FF5A16",
+  },
+
+  /* Member / Credit Modal Styling */
+  memberModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    ...Platform.select({
+      web: { boxShadow: "0 10px 25px rgba(0,0,0,0.15)" } as any,
+    }),
+  },
+  memberModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  memberModalHeaderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memberModalTitle: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  memberModalSubtitle: {
+    fontSize: 11,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+  },
+  memberModalCloseBtn: {
+    padding: 4,
+  },
+  memberSearchBar: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 10,
+    height: 38,
+  },
+  memberSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: "#0F172A",
+  },
+  quickAddToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FF5A16",
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    justifyContent: "center",
+  },
+  quickAddToggleBtnText: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  memberListItemCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 10,
+    marginBottom: 6,
+  },
+  memberListItemCardSelected: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FF5A16",
+    borderWidth: 1.5,
+  },
+  memberListItemName: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  memberListItemPhone: {
+    fontSize: 11,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  memberListItemAvailLabel: {
+    fontSize: 9.5,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+  },
+  memberListItemAvailVal: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#10B981",
+  },
+  inactivePillText: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    color: "#EF4444",
+  },
+  quickAddFormField: {
+    marginBottom: 10,
+  },
+  quickAddLabel: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#334155",
+    marginBottom: 4,
+  },
+  quickAddInput: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: "#0F172A",
+  },
+
+  /* YeahPay Terminal Modal Styling */
+  terminalModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 24,
+    alignItems: "center",
+  },
+  terminalIconWrap: {
+    marginBottom: 14,
+  },
+  terminalTitle: {
+    fontSize: 17,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+    textAlign: "center",
+  },
+  terminalSubtitle: {
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  terminalAmountBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginVertical: 14,
+    width: "100%",
+  },
+  terminalAmountLabel: {
+    fontSize: 11,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+  },
+  terminalAmountValue: {
+    fontSize: 22,
+    fontFamily: Fonts.bold,
+    color: "#059669",
+    marginTop: 2,
+  },
+  terminalCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    width: "100%",
+    alignItems: "center",
+  },
+  terminalCancelBtnText: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#64748B",
+  },
 
   /* COLUMN 2: CENTER DISH GROUPS */
   centerGroupsColumn: {
-    width: 275,
+    width: 295,
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     borderWidth: 1,
@@ -3386,7 +4438,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   groupsHeaderTitle: {
-    fontSize: 14.5,
+    fontSize: 15,
     fontFamily: Fonts.bold,
     color: "#0F172A",
   },
@@ -3416,6 +4468,84 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  toggleViewIconBtnActive: {
+    backgroundColor: "#FF5A16",
+    borderColor: "#FF5A16",
+  },
+  favoritesButtonRow: {
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    paddingBottom: 6,
+    backgroundColor: "#FFFFFF",
+  },
+  favoritesBigBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF5F7",
+    borderWidth: 1.5,
+    borderColor: "#FECDD3",
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    height: 50,
+    shadowColor: "#E11D48",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  favoritesBigBtnActive: {
+    backgroundColor: "#E11D48",
+    borderColor: "#BE123C",
+    shadowColor: "#E11D48",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.32,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  favoritesIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#FFE4E6",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  favoritesIconCircleActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.24)",
+  },
+  favoritesBigBtnText: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: "#BE123C",
+    letterSpacing: 0.3,
+  },
+  favoritesBigBtnTextActive: {
+    color: "#FFFFFF",
+  },
+  favoritesCountBadge: {
+    backgroundColor: "#FFE4E6",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: "#FECDD3",
+  },
+  favoritesCountBadgeActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.24)",
+    borderColor: "rgba(255, 255, 255, 0.4)",
+  },
+  favoritesCountBadgeText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: "#BE123C",
+  },
+  favoritesCountBadgeTextActive: {
+    color: "#FFFFFF",
+  },
   dishGroupPanelBody: {
     flex: 1,
     flexDirection: "row",
@@ -3440,9 +4570,9 @@ const styles = StyleSheet.create({
     width: (Platform.OS === "web" ? "calc(50% - 3px)" : "48.5%") as any,
     backgroundColor: "#F8FAFC",
     borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 8,
-    minHeight: 44,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: "#F1F5F9",
     flexDirection: "row",
@@ -3455,21 +4585,21 @@ const styles = StyleSheet.create({
   },
   dishGroupName2Col: {
     flex: 1,
-    fontSize: 11.5,
+    fontSize: 12.5,
     fontFamily: Fonts.bold,
     color: "#1E293B",
     marginRight: 4,
-    lineHeight: 14,
+    lineHeight: 15,
   },
   dishGroupName2ColActive: {
     color: "#FFFFFF",
   },
   dishGroupBadge2Col: {
     backgroundColor: "#E2E8F0",
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
     borderRadius: 8,
-    minWidth: 18,
+    minWidth: 20,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3477,7 +4607,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   dishGroupBadgeText2Col: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontFamily: Fonts.bold,
     color: "#475569",
   },
@@ -3576,7 +4706,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   dishesHeaderRow: {
-    height: 42,
+    height: 38,
     flexShrink: 0,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
@@ -3667,30 +4797,65 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
+  /* FAVORITES VIEW: SINGLE HORIZONTAL ROW */
+  favoritesRowContainer: {
+    flex: 1,
+    padding: 10,
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
+    overflow: "hidden",
+  },
+  favoritesHorizontalScroll: {
+    width: "100%",
+    flexGrow: 0,
+  },
+  favoritesHorizontalContent: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 8,
+    paddingRight: 24,
+    paddingBottom: 8,
+  },
+  favoriteCardItem: {
+    width: 130,
+    flexShrink: 0,
+  },
+
   dishesGridScroll: {
     flex: 1,
     minHeight: 0,
     overflow: "hidden",
   },
   dishesGridContainer: {
-    padding: 4,
-    paddingBottom: 4,
+    padding: 3,
+    paddingBottom: 3,
+    flexGrow: 1,
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
   },
   dishesGrid: {
+    flex: 1,
+    height: "100%",
     flexDirection: "row",
     flexWrap: "wrap",
+    alignContent: "flex-start",
     gap: 4,
   },
   dishCardItem: {
     width: (Platform.OS === "web" ? "calc(16.666% - 3.5px)" : "15.5%") as any,
-    minWidth: 78,
+    height: (Platform.OS === "web" ? "calc(25% - 3px)" : undefined) as any,
   },
   dishCard: {
+    height: "100%",
     backgroundColor: "#FFFFFF",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
@@ -3701,7 +4866,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   dishCoverWrap: {
-    height: 48,
+    flex: 1,
+    minHeight: 32,
     width: "100%",
     backgroundColor: "#F8FAFC",
     position: "relative",
@@ -3762,15 +4928,15 @@ const styles = StyleSheet.create({
   },
 
   dishCardBody: {
-    paddingHorizontal: 4,
-    paddingVertical: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 2.5,
+    flexShrink: 0,
   },
   dishCardName: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontFamily: Fonts.bold,
     color: "#0F172A",
-    minHeight: 24,
-    lineHeight: 12,
+    lineHeight: 13,
   },
   dishCardFooter: {
     flexDirection: "row",
@@ -3779,14 +4945,14 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   dishCardPrice: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontFamily: Fonts.bold,
     color: "#FF5A16",
   },
   addPlusBtn: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 4.5,
     backgroundColor: "#FF5A16",
     alignItems: "center",
     justifyContent: "center",
@@ -3797,7 +4963,7 @@ const styles = StyleSheet.create({
 
   /* DISHES BOTTOM PAGINATION BAR */
   dishesPaginationBar: {
-    height: 38,
+    height: 34,
     flexShrink: 0,
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
@@ -3805,7 +4971,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     zIndex: 10,
   },
   paginationLeft: {

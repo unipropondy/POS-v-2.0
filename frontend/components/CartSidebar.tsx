@@ -1036,6 +1036,8 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
   });
 
   const enableKOT = useGeneralSettingsStore((s: any) => s.settings.enableKOT);
+  const enableKDS = useGeneralSettingsStore((s: any) => s.settings.enableKDS !== false);
+  const enableReceiptPrint = useGeneralSettingsStore((s: any) => s.settings.enableReceiptPrint !== false);
   const enableCheckoutBill = useGeneralSettingsStore((s: any) => s.settings.enableCheckoutBill);
   const enableCheckoutFlow = useGeneralSettingsStore((s: any) => s.settings.enableCheckoutFlow !== undefined ? s.settings.enableCheckoutFlow : true);
   const enableDirectProcessToPay = useGeneralSettingsStore((s: any) => s.settings.enableDirectProcessToPay !== undefined ? s.settings.enableDirectProcessToPay : false);
@@ -1571,26 +1573,30 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
     const currentOrderId = targetOrderId || "NEW";
     const currentItems = [...unsentItems];
 
-    // 1. Alert KDS immediately (No waiting)
-    socket.emit("new_order", {
-      orderId: currentOrderId,
-      context: orderContext,
-      items: currentItems.map((i) => ({ ...i, status: "SENT" })),
-      createdAt: Date.now(),
-    });
+    // 1. Alert KDS immediately (if KDS is enabled in settings)
+    if (enableKDS !== false) {
+      socket.emit("new_order", {
+        orderId: currentOrderId,
+        context: orderContext,
+        items: currentItems.map((i) => ({ ...i, status: "SENT" })),
+        createdAt: Date.now(),
+      });
+    }
 
-    // 2. Start Printers immediately (No waiting)
-    (async () => {
-      const isAdditional = cart.some((i: any) => isItemSent(i));
-      await UniversalPrinter.routeAndPrintOrderKOT(
-        currentOrderId,
-        orderContext,
-        currentItems,
-        isAdditional,
-        user?.userName || "Staff",
-        true // skipDuplicateGuard: cashier manual send is always authoritative
-      );
-    })();
+    // 2. Start Printers immediately (if KOT is enabled in settings)
+    if (enableKOT !== false) {
+      (async () => {
+        const isAdditional = cart.some((i: any) => isItemSent(i));
+        await UniversalPrinter.routeAndPrintOrderKOT(
+          currentOrderId,
+          orderContext,
+          currentItems,
+          isAdditional,
+          user?.userName || "Staff",
+          true // skipDuplicateGuard: cashier manual send is always authoritative
+        );
+      })();
+    }
 
     const shouldSkipRedirect = skipRedirect || enableDirectPaymentToProcess;
 

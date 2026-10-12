@@ -120,6 +120,7 @@ router.get("/dishes/all", async (req, res) => {
         ISNULL(d.IsCombo, 0) AS IsCombo,
         ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
         ISNULL(d.IsPublished, 0) AS IsPublished,
+        ISNULL(d.isFavourite, 0) AS isFavourite,
         ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
         ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
         ISNULL(cat.IsPublished, 0) AS CategoryPublished,
@@ -153,6 +154,71 @@ router.get("/dishes/all", async (req, res) => {
   }
 });
 
+router.get("/dishes/favourites", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query(`
+      SELECT 
+        d.DishId, d.Name, d.DishGroupId, d.currentcost AS Price,
+        d.DishCode, d.Description, d.AvailableTimeFrom, d.AvailableTimeTo,
+        d.Imageid AS Image, CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
+        ISNULL(d.IsOpenItem, 0) AS IsOpenItem,
+        ISNULL(d.isServiceCharge, 1) AS isServiceCharge,
+        ISNULL(d.IsCombo, 0) AS IsCombo,
+        ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
+        ISNULL(d.IsPublished, 0) AS IsPublished,
+        ISNULL(d.isFavourite, 0) AS isFavourite,
+        ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
+        ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
+        ISNULL(cat.IsPublished, 0) AS CategoryPublished,
+        ISNULL(dgm.IsPublished, 0) AS GroupPublished,
+        ISNULL((
+          SELECT CAST(dmap.DishGroupId AS VARCHAR(50)) + ','
+          FROM DishGroupMapping dmap
+          WHERE dmap.DishId = d.DishId
+          FOR XML PATH('')
+        ), '') AS MappedGroupIds,
+        (SELECT COUNT(1) FROM DishModifier dm WHERE dm.DishId = d.DishId) AS HasModifiers,
+        CAST(ISNULL(d.IsDiscountAllowed, 1) AS INT) AS IsDiscountAllowed,
+        ISNULL(ckt.KitchenTypeCode, '2') as KitchenTypeCode,
+        ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
+        pm.PrinterPath AS PrinterIP,
+        ISNULL(d.SordCode, 0) AS SordCode
+      FROM DishMaster d
+      LEFT JOIN DishGroupMaster dgm ON d.DishGroupId = dgm.DishGroupId
+      LEFT JOIN CategoryMaster cat ON dgm.CategoryId = cat.CategoryId
+      LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
+      LEFT JOIN (
+        SELECT *, ROW_NUMBER() OVER(PARTITION BY LOWER(TRIM(KitchenTypeName)) ORDER BY PrinterId) as rn 
+        FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
+      ) pm ON LOWER(TRIM(ISNULL(ckt.KitchenTypeName, cat.CategoryName))) = LOWER(TRIM(pm.KitchenTypeName)) AND pm.rn = 1
+      WHERE d.IsActive = 1 AND d.isFavourite = 1
+      ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+router.post("/dishes/:DishId/toggle-favourite", async (req, res) => {
+  try {
+    const dishId = req.params.DishId;
+    const pool = await poolPromise;
+    await pool.request()
+      .input("DishId", dishId)
+      .query(`
+        UPDATE DishMaster 
+        SET isFavourite = CASE WHEN isFavourite = 1 THEN 0 ELSE 1 END 
+        WHERE DishId = @DishId
+      `);
+    setCache("dishes_all", null);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/dishes/group/:DishGroupId", async (req, res) => {
   try {
     const dishGroupId = req.params.DishGroupId;
@@ -180,6 +246,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
               ISNULL(d.IsCombo, 0) AS IsCombo,
               ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
               ISNULL(d.IsPublished, 0) AS IsPublished,
+              ISNULL(d.isFavourite, 0) AS isFavourite,
               ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
               ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
               ISNULL(cat.IsPublished, 0) AS CategoryPublished,

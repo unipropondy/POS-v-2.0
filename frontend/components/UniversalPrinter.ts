@@ -1573,6 +1573,14 @@ class UniversalPrinter {
     discountInfo?: DiscountInfo,
   ): Promise<boolean> {
     try {
+      // Check General Settings: Print Receipt & Checkout Bill
+      const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
+      const { enableReceiptPrint, enableCheckoutBill } = useGeneralSettingsStore.getState().settings;
+      if (enableReceiptPrint === false || enableCheckoutBill === false) {
+        if (__DEV__) console.log("🧾 [UniversalPrinter] Checkout bill receipt printing is disabled in General Settings.");
+        return false;
+      }
+
       // ✅ FIX: Match the logic in PaymentSuccess by ensuring we have a valid ID
       const targetUserId = outletId || "1";
       const company = await BillPDFGenerator.loadSettings(targetUserId);
@@ -2246,12 +2254,12 @@ class UniversalPrinter {
         return false;
       }
 
-      // 2. Check enableKOT & enableKDSPrint settings
+      // 2. Check enableKOT & enableKDS / enableKDSPrint settings
       const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
-      const { enableKOT, enableKDSPrint, enableComboPrint } = useGeneralSettingsStore.getState().settings;
+      const { enableKOT, enableKDS, enableKDSPrint, enableComboPrint } = useGeneralSettingsStore.getState().settings;
 
       const shouldPrintKOT = enableKOT !== false;
-      const shouldPrintKDS = enableKDSPrint !== false;
+      const shouldPrintKDS = enableKDS !== false && enableKDSPrint !== false;
 
       if (!shouldPrintKOT && !shouldPrintKDS) {
         if (__DEV__) console.log("🖨️ [UniversalPrinter] Both KOT and KDS printing are disabled in General Settings.");
@@ -2377,6 +2385,14 @@ class UniversalPrinter {
 
   static async printReceiptAuto(settlementData: any): Promise<boolean> {
     try {
+      // Check General Settings: Print Receipt
+      const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
+      const { enableReceiptPrint } = useGeneralSettingsStore.getState().settings;
+      if (enableReceiptPrint === false) {
+        if (__DEV__) console.log("🧾 [UniversalPrinter] Automatic receipt printing is disabled in General Settings.");
+        return false;
+      }
+
       const header = settlementData?.header || {};
       const orderId = header.OrderId || header.SettlementID || "";
       if (orderId && this.isDuplicateReceiptPrint(orderId)) {
