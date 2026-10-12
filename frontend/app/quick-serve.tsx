@@ -221,10 +221,6 @@ export default function QuickServePOSScreen() {
     const nextVal = enabled !== undefined ? enabled : !quickServeModeEnabled;
     setQuickServeModeEnabled(nextVal);
     AsyncStorage.setItem("QUICK_SERVE_MODE_ENABLED", String(nextVal));
-    toast.showToast({
-      message: nextVal ? "⚡ Quick Serve UI Enabled (ON)" : "🏬 Normal POS Mode (OFF)",
-      type: "info",
-    });
     if (!nextVal) {
       fetchNormalPOSTables();
     }
@@ -578,10 +574,6 @@ export default function QuickServePOSScreen() {
         setIsQuickAddMode(false);
         setNewName("");
         setNewPhone("");
-        toast.showToast({
-          message: isCredit ? "Credit customer added & selected!" : "Member added & selected!",
-          type: "success",
-        });
       } else {
         toast.showToast({
           message: data.error || "Could not add customer",
@@ -1118,7 +1110,6 @@ export default function QuickServePOSScreen() {
     };
 
     addToCartGlobal(cartItem as any);
-    toast.showToast({ message: `Added ${dish.Name}`, type: "success" });
   };
 
   const addWithModifiers = () => {
@@ -1186,7 +1177,6 @@ export default function QuickServePOSScreen() {
     addToCartGlobal(cartItem as any);
     setShowModifier(false);
     setSelectedDish(null);
-    toast.showToast({ message: `Added ${selectedDish.Name}`, type: "success" });
   };
 
   const confirmOpenItemPrice = () => {
@@ -2759,7 +2749,6 @@ export default function QuickServePOSScreen() {
                         onPress={async () => {
                           await selectQuickServeTable(t, true);
                           setTableModalVisible(false);
-                          toast.showToast({ message: `Selected ${tableName}`, type: "success" });
                         }}
                         activeOpacity={0.8}
                       >
@@ -2786,7 +2775,6 @@ export default function QuickServePOSScreen() {
                 onPress={async () => {
                   await fetchMasterTablesAndAutoSelectFree();
                   setTableModalVisible(false);
-                  toast.showToast({ message: "Auto-selected first free table", type: "info" });
                 }}
               >
                 <Ionicons name="sparkles-outline" size={16} color="#FF5A16" style={{ marginRight: 6 }} />
@@ -2820,8 +2808,12 @@ export default function QuickServePOSScreen() {
                 style={styles.modalSaveBtn}
                 onPress={() => {
                   const val = parseFloat(tempDiscount) || 0;
-                  setDiscountPercent(Math.min(100, Math.max(0, val)));
+                  const finalVal = Math.min(100, Math.max(0, val));
+                  setDiscountPercent(finalVal);
                   setDiscountModalVisible(false);
+                  if (finalVal > 0) {
+                    toast.showToast({ message: `🎉 Discount Applied: ${finalVal}%`, type: "success" });
+                  }
                 }}
               >
                 <Text style={styles.modalSaveText}>Apply</Text>
@@ -3243,7 +3235,6 @@ export default function QuickServePOSScreen() {
                       onPress={() => {
                         setRewardMember(item);
                         setShowRewardModal(false);
-                        toast.showToast({ message: `Linked Member: ${item.Name}`, type: "success" });
                       }}
                     >
                       <View>
@@ -3327,7 +3318,6 @@ export default function QuickServePOSScreen() {
                       onPress={() => {
                         setLoyaltyCustomer(item);
                         setShowLoyaltyModal(false);
-                        toast.showToast({ message: `Linked Loyalty Customer: ${item.Name}`, type: "success" });
                       }}
                     >
                       <View>
@@ -3550,10 +3540,6 @@ export default function QuickServePOSScreen() {
                           onPress={() => {
                             setSelectedMember(item);
                             setShowMemberModal(false);
-                            toast.showToast({
-                              message: `Selected ${memberModalType === "CREDIT" ? "Credit Customer" : "Member"}: ${item.Name}`,
-                              type: "success",
-                            });
                           }}
                         >
                           <View style={{ flex: 1 }}>
@@ -3637,7 +3623,6 @@ export default function QuickServePOSScreen() {
                 onPress={() => {
                   setTerminalModalVisible(false);
                   setTerminalStatus("idle");
-                  toast.showToast({ message: "Terminal request dismissed", type: "warning" });
                 }}
               >
                 <Text style={styles.terminalCancelBtnText}>Dismiss / Cancel</Text>
