@@ -5,6 +5,7 @@ export type OrderContext = {
   section?: string;
   tableId?: string;
   tableNo?: string;
+  tableName?: string;
   takeawayNo?: string;
   serverId?: number;
   serverName?: string;

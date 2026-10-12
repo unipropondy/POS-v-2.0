@@ -422,7 +422,7 @@ type CartState = {
   completeOrder: (tableId: string) => Promise<{ success: boolean }>;
   markAllAsSent: (skipSync?: boolean) => void;
   combineDuplicates: () => void;
-  clearTableSession: (tableId: string) => void;
+  clearTableSession: (tableId: string, section?: string, tableNo?: string) => void;
   cancelPendingSync: () => void;
 
   // 🛡️ Implementation Details (Internal use)
@@ -914,7 +914,7 @@ export const useCartStore = create<CartState>()(
       clearAllCarts: () =>
         set({ carts: {}, discounts: {}, tableOrderIds: {}, currentContextId: null, lastLocalUpdate: {}, lastServerSync: {} }),
 
-      clearTableSession: (tableId) => {
+      clearTableSession: (tableId, section, tableNo) => {
         set((state) => {
           const newCarts = { ...state.carts };
           const newDiscounts = { ...state.discounts };
@@ -923,36 +923,48 @@ export const useCartStore = create<CartState>()(
           const newLastServerSync = { ...state.lastServerSync };
 
           // 🚀 Clean up tableOrderIds
-          delete newTableOrderIds[tableId];
+          if (tableId) delete newTableOrderIds[tableId];
+          if (tableNo) delete newTableOrderIds[tableNo];
 
-          // 🚀 Find table section & tableNo to also match suffix contextIds (e.g. DINE_IN_SECTION_1_5)
+          const cleanTargetId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
           const { useTableStatusStore } = require("./tableStatusStore");
           const tables = useTableStatusStore.getState().tables || [];
-          const cleanTargetId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
           const targetTable = tables.find((t: any) => {
             const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
-            return tId === cleanTargetId;
+            return (cleanTargetId && tId === cleanTargetId) || (tableNo && String(t.tableNo) === String(tableNo)) || (String(t.tableNo) === String(tableId));
           });
 
+          const effSection = section || targetTable?.section;
+          const effTableNo = tableNo || targetTable?.tableNo || (tableId && tableId.length < 10 ? tableId : undefined);
+
           const matchContextSuffixes: string[] = [];
-          if (targetTable) {
-            matchContextSuffixes.push(`_${targetTable.section}_${targetTable.tableNo}`);
-            matchContextSuffixes.push(`_${targetTable.tableNo}`);
+          if (effTableNo) {
+            matchContextSuffixes.push(`_${effTableNo}`);
+            if (effSection) {
+              matchContextSuffixes.push(`_${effSection}_${effTableNo}`);
+              const altSec = effSection.replace(/^SECTION_/i, "");
+              matchContextSuffixes.push(`_${altSec}_${effTableNo}`);
+              matchContextSuffixes.push(`_SECTION_${altSec}_${effTableNo}`);
+            }
           }
 
           const matchKey = (ctx: string) => {
-            const matchesId = ctx.includes(tableId);
+            const matchesId = cleanTargetId && cleanTargetId.length > 5 ? ctx.toLowerCase().includes(cleanTargetId) : false;
             const matchesSuffix = matchContextSuffixes.some(suffix => ctx.endsWith(suffix));
             return matchesId || matchesSuffix;
           };
 
-          // 🚀 Comprehensive cleanup for ALL matching contexts
-          Object.keys(newCarts).forEach(ctx => { if (matchKey(ctx)) delete newCarts[ctx]; });
+          const now = Date.now();
+          Object.keys(newCarts).forEach(ctx => {
+            if (matchKey(ctx)) {
+              delete newCarts[ctx];
+              newLastLocalUpdate[ctx] = now;
+            }
+          });
           Object.keys(newDiscounts).forEach(ctx => { if (matchKey(ctx)) delete newDiscounts[ctx]; });
-          Object.keys(newLastLocalUpdate).forEach(ctx => { if (matchKey(ctx)) delete newLastLocalUpdate[ctx]; });
           Object.keys(newLastServerSync).forEach(ctx => { if (matchKey(ctx)) delete newLastServerSync[ctx]; });
 
-          if (__DEV__) console.log(`🧹 [CartStore] Table session cleared: ${tableId}`);
+          if (__DEV__) console.log(`🧹 [CartStore] Table session cleared: tableId=${tableId}, section=${effSection}, tableNo=${effTableNo}`);
 
           return {
             carts: newCarts,

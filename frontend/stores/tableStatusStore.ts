@@ -69,8 +69,8 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
 
       // 🛡️ SYNC SHIELD: Prioritize modifiedOn (Version Check) over simple timer
       if (isExternal) {
-        // If we have timestamps, use them for definitive versioning
-        if (modifiedOn && lastModified && modifiedOn <= lastModified) {
+        // If we have timestamps, use them for definitive versioning (never block EMPTY status)
+        if (status !== 'EMPTY' && (status as any) !== 0 && modifiedOn && lastModified && modifiedOn < lastModified) {
           return state; // Stale update
         }
         // 🚀 FIX: Strictly ignore external updates if recently edited locally (< 3s)
@@ -104,12 +104,12 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         status,
         startTime: parsedStartTime || existingTable?.startTime || Date.now(),
         lockedByName,
-        totalAmount: totalAmount !== undefined ? totalAmount : (existingTable?.totalAmount ?? 0),
-        isHoldOvertime: isHoldOvertime !== undefined ? isHoldOvertime : (existingTable?.isHoldOvertime ?? false),
+        totalAmount: status === 'EMPTY' ? 0 : (totalAmount !== undefined ? totalAmount : (existingTable?.totalAmount ?? 0)),
+        isHoldOvertime: status === 'EMPTY' ? false : (isHoldOvertime !== undefined ? isHoldOvertime : (existingTable?.isHoldOvertime ?? false)),
         lastModified: modifiedOn || existingTable?.lastModified || "",
-        entryStatus: entryStatus !== undefined ? entryStatus : existingTable?.entryStatus,
-        customerName: customerName !== undefined ? customerName : existingTable?.customerName,
-        pax: pax !== undefined ? pax : existingTable?.pax,
+        entryStatus: status === 'EMPTY' ? undefined : (entryStatus !== undefined ? entryStatus : existingTable?.entryStatus),
+        customerName: status === 'EMPTY' ? undefined : (customerName !== undefined ? customerName : existingTable?.customerName),
+        pax: status === 'EMPTY' ? undefined : (pax !== undefined ? pax : existingTable?.pax),
       };
 
       const newTables = [...state.tables];
@@ -136,7 +136,7 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       const { [tableNo]: _, ...rest } = state.lockedTableNames;
       const newTables = state.tables.map((t) => {
         if (t.section === section && t.tableNo === tableNo) {
-          return { ...t, status: 'EMPTY' as TableStatusType, totalAmount: 0, startTime: 0, orderId: '', customerName: undefined, pax: undefined };
+          return { ...t, status: 'EMPTY' as TableStatusType, totalAmount: 0, startTime: 0, orderId: '', isHoldOvertime: false, customerName: undefined, pax: undefined };
         }
         return t;
       });
@@ -263,9 +263,10 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       updates.forEach((update) => {
         const cleanUpdateId = String(update.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
         const existingTable = newMap[cleanUpdateId];
-        
-        // 🛡️ SYNC SHIELD: Only update if incoming data is NEWER
-        if (update.lastModified && existingTable?.lastModified && update.lastModified <= existingTable.lastModified) {
+        const isStatusEmpty = update.status === 'EMPTY' || (update.status as any) === 0;
+
+        // 🛡️ SYNC SHIELD: Only update if incoming data is NEWER (never block EMPTY status)
+        if (!isStatusEmpty && update.lastModified && existingTable?.lastModified && update.lastModified < existingTable.lastModified) {
           return;
         }
 
@@ -273,9 +274,7 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         const lastEdit = state.lastLocalUpdate[key] || 0;
 
         // 🛡️ SYNC SHIELD: Ignore stale background updates if recently edited locally
-        // 🚀 FIX: Removed !update.lastModified check to strictly honor the 3s window.
-        // UNLESS the status is EMPTY (0) or LOCKED (5), which should sync instantly.
-        if (now - lastEdit < 3000 && update.status !== 'EMPTY' && (update.status as any) !== 0 && update.status !== 'LOCKED' && (update.status as any) !== 5) return;
+        if (now - lastEdit < 3000 && !isStatusEmpty && update.status !== 'LOCKED' && (update.status as any) !== 5) return;
 
         const existingIndex = newTables.findIndex(
           (t) => (String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanUpdateId && !!cleanUpdateId) || (t.section === update.section && t.tableNo === update.tableNo)
@@ -285,7 +284,14 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
           ...(existingIndex > -1 ? newTables[existingIndex] : {}),
           ...update,
           tableId: cleanUpdateId || (existingIndex > -1 ? newTables[existingIndex].tableId : ""),
-          startTime: update.startTime || (existingIndex > -1 ? newTables[existingIndex].startTime : 0) || Date.now(),
+          status: update.status,
+          orderId: isStatusEmpty ? "" : (update.orderId || (existingIndex > -1 ? newTables[existingIndex].orderId : "")),
+          startTime: isStatusEmpty ? 0 : (update.startTime || (existingIndex > -1 ? newTables[existingIndex].startTime : 0) || Date.now()),
+          totalAmount: isStatusEmpty ? 0 : (update.totalAmount !== undefined ? update.totalAmount : (existingIndex > -1 ? newTables[existingIndex].totalAmount : 0)),
+          isHoldOvertime: isStatusEmpty ? false : (update.isHoldOvertime !== undefined ? update.isHoldOvertime : (existingIndex > -1 ? newTables[existingIndex].isHoldOvertime : false)),
+          customerName: isStatusEmpty ? undefined : update.customerName,
+          pax: isStatusEmpty ? undefined : update.pax,
+          entryStatus: isStatusEmpty ? undefined : update.entryStatus,
         };
 
         if (existingIndex > -1) newTables[existingIndex] = updatedTable;

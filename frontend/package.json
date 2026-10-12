@@ -1,7 +1,7 @@
 {
   "name": "restaurantapp",
   "main": "expo-router/entry",
-  "version": "3.0.0",
+  "version": "5.0.0",
   "scripts": {
     "start": "cross-env NODE_OPTIONS=--max-old-space-size=4096 EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK=1 expo start",
     "start:clean": "cross-env NODE_OPTIONS=--max-old-space-size=4096 EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK=1 expo start -c",

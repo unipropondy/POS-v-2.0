@@ -123,7 +123,12 @@ export default function OrderTypeSelectionScreen() {
   };
 
   const handleQuickServe = () => {
-    setShowQuickServeModal(true);
+    const token = `QS-${Math.floor(1000 + Math.random() * 9000)}`;
+    useOrderContextStore.getState().setOrderContext({
+      orderType: "TAKEAWAY",
+      takeawayNo: token,
+    });
+    router.push("/quick-serve" as any);
   };
 
   return (

@@ -248,6 +248,7 @@ async function getOrGenerateOrderId(req, tableId) {
               AND h.OrderNumber IS NOT NULL
               AND h.OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '')
               AND h.OrderNumber NOT LIKE 'TEMP-%'
+              AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0)
             ORDER BY h.CreatedOn DESC
           `);
       } else {
@@ -261,6 +262,7 @@ async function getOrGenerateOrderId(req, tableId) {
               AND h.OrderNumber IS NOT NULL
               AND h.OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '')
               AND h.OrderNumber NOT LIKE 'TEMP-%'
+              AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0)
             ORDER BY h.CreatedOn DESC
           `);
       }
@@ -857,8 +859,9 @@ async function syncTableStatus(req, tableId) {
     -- 🚀 ROBUST LOOKUP: Prioritize the CurrentOrderId stored in TableMaster to avoid ghost orders
     SELECT TOP 1 @ActualOrderId = OrderId, @ActualOrderNo = OrderNumber
     FROM RestaurantOrderCur 
-    WHERE (OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur h2 WHERE h2.OrderNumber = @CurrentOrderId AND h2.isOrderClosed = 0))
-       OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@TableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL))
+    WHERE ((OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur h2 WHERE h2.OrderNumber = @CurrentOrderId AND (h2.isOrderClosed = 0 OR h2.isOrderClosed IS NULL)))
+       OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@TableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL)))
+       AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur d WHERE d.OrderId = RestaurantOrderCur.OrderId AND d.StatusCode <> 0)
     ORDER BY CASE WHEN OrderNumber = @CurrentOrderId THEN 0 ELSE 1 END, CreatedOn DESC;
 
     DECLARE @TakeawayOverride INT = 0;
@@ -1624,6 +1627,7 @@ router.get("/cart/:tableId", async (req, res) => {
             WHERE (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid)))
               AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
               AND OrderNumber IS NOT NULL AND OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '') AND OrderNumber NOT LIKE 'TEMP-%'
+              AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur d WHERE d.OrderId = RestaurantOrderCur.OrderId AND d.StatusCode <> 0)
             ORDER BY CreatedOn DESC
           `);
         const dbOrderNo = activeDbOrder.recordset[0]?.OrderNumber;
@@ -2775,18 +2779,22 @@ router.post("/merge", async (req, res) => {
             WHERE OrderId = @childOid;
           `);
 
-        // C. Close source order
+        // C. Close source order (and all remaining open headers for this child table)
         console.log(
           `[MERGE LOOP] Closing source order GUID: ${sourceOrderGuid}...`,
         );
         await transaction
           .request()
-          .input("childOid", sql.UniqueIdentifier, sourceOrderGuid).query(`
+          .input("childOid", sql.UniqueIdentifier, sourceOrderGuid)
+          .input("childTableNo", sql.NVarChar(50), String(sourceTableNo))
+          .input("cleanSourceId", sql.NVarChar(50), String(cleanSourceId))
+          .query(`
             UPDATE RestaurantOrderCur
             SET isOrderClosed = 1,
                 StatusCode = 3,
                 ModifiedOn = GETDATE()
-            WHERE OrderId = @childOid
+            WHERE OrderId = @childOid 
+               OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@childTableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@cleanSourceId))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL))
           `);
 
         // D. Clear source table & persistent CartItems
@@ -2798,22 +2806,40 @@ router.post("/merge", async (req, res) => {
           .input("cartId", sql.NVarChar(128), cleanSourceId)
           .query("DELETE FROM [dbo].[CartItems] WHERE [CartId] = @cartId");
 
-        await transaction
-          .request()
-          .input("tid", sql.UniqueIdentifier, cleanSourceId)
-          .query(
-            "UPDATE TableMaster SET Status = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL WHERE TableId = @tid",
-          );
+        const validSourceGuid = toGuidOrNull(cleanSourceId);
+        if (validSourceGuid) {
+          await transaction
+            .request()
+            .input("tid", sql.UniqueIdentifier, validSourceGuid)
+            .input("tno", sql.NVarChar(50), String(sourceTableNo))
+            .query(
+              "UPDATE TableMaster SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid OR TableNumber = @tno",
+            );
+        } else {
+          await transaction
+            .request()
+            .input("tno", sql.NVarChar(50), String(sourceTableNo))
+            .query(
+              "UPDATE TableMaster SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno OR TableId = @tno",
+            );
+        }
 
         // E. Emit source socket events immediately
         console.log(`[MERGE LOOP] Broadcasting source table update events...`);
         if (io) {
+          const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
+          const sourceSection = sectionMap[String(sourceCheck.recordset[0]?.DiningSection)] || "SECTION_1";
           io.emit("table_status_updated", {
             tableId: cleanSourceId.toLowerCase(),
+            tableNo: sourceTableNo,
+            section: sourceSection,
             status: 0,
             totalAmount: 0,
+            startTime: null,
+            customerName: null,
+            pax: null,
           });
-          io.emit("cart_updated", { tableId: cleanSourceId.toLowerCase() });
+          io.emit("cart_updated", { tableId: cleanSourceId.toLowerCase(), tableNo: sourceTableNo });
           io.emit("order_closed", {
             tableId: cleanSourceId.toLowerCase(),
             tableNo: sourceTableNo,

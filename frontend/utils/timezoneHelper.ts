@@ -18,15 +18,15 @@ export function getSingaporeDateString(date: Date = new Date()): string {
 
 export function formatToSingaporeDate(
   dateInput: Date | string | number,
-  options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
+  options: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' }
 ): string {
   if (!dateInput) return "";
   const date = parseDatabaseDate(dateInput);
   if (isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Singapore',
     ...options
-  }).format(date);
+  }).format(date).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
 }
 
 export function formatToSingaporeTime(
@@ -36,19 +36,19 @@ export function formatToSingaporeTime(
   if (!dateInput) return "";
   const date = parseDatabaseDate(dateInput);
   if (isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Singapore',
     ...options
-  }).format(date);
+  }).format(date).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
 }
 
 export function formatToSingaporeDateTime(dateInput: Date | string | number): string {
   if (!dateInput) return "";
   const date = parseDatabaseDate(dateInput);
   if (isNaN(date.getTime())) return "";
-  const dateStr = formatToSingaporeDate(date, { day: 'numeric', month: 'short' });
+  const dateStr = formatToSingaporeDate(date, { day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeStr = formatToSingaporeTime(date, { hour: '2-digit', minute: '2-digit', hour12: true });
-  return `${dateStr} • ${timeStr}`;
+  return `${dateStr} • ${timeStr}`.replace(/[\u202F\u00A0\uFEFF]/g, ' ');
 }
 
 export function getSingaporeDate(): Date {

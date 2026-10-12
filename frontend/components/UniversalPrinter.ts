@@ -869,7 +869,11 @@ class UniversalPrinter {
     const tableNo = data.tableNo || "N/A";
     const deviceNo = data.deviceNo || "1";
     const orderNo = data.orderNo || data.orderId || "N/A";
-    const waiter = data.waiterName || "Staff";
+    const rawWaiter = data.waiterName || "Staff";
+    const isQuick = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === "QUICK_SERVE" || data.orderType === "QUICK_SERVE" || data.section === "QUICK_SERVE" || (typeof rawWaiter === "string" && rawWaiter.toLowerCase().includes("(quick serve)")));
+    const cleanTableNo = (tableNo || "").replace(/^table\s+/gi, "").trim() || tableNo;
+    const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes("(quick serve)") ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
+    const waiter = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || "Staff") : rawWaiter;
     const kotDateStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date());
     const kotTimeStr = formatToSingaporeTime(new Date(), { hour: '2-digit', minute: '2-digit', hour12: false });
     const timestamp = `${kotDateStr} ${kotTimeStr}`;
@@ -1015,8 +1019,8 @@ class UniversalPrinter {
           <div class="header-box">${title}</div>
           <div class="timestamp">${timestamp}</div>
           
-          <div class="table-info">
-            <span>Table:${tableNo}</span>
+          <div class="table-info" style="font-size: 18px; font-weight: 900; white-space: nowrap;">
+            <span>TABLE: ${displayTable}</span>
           </div>
           
           <div class="headers">
@@ -1041,11 +1045,12 @@ class UniversalPrinter {
                     </div>
                     ${groupItems.map((item: any) => {
                       const noteText = item.note || item.notes || item.Remarks || item.remarks;
-                      const comboSels = item.comboSelections || 
+                      const rawCombo = item.comboSelections || item.selectedCombos || item.combos ||
                         (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
-                          ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : p.groups; } catch { return undefined; } })() 
-                          : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : undefined)) || [];
-                      const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
+                          ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []); } catch { return undefined; } })() 
+                          : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : (typeof item.ComboDetailsJSON === 'object' && item.ComboDetailsJSON ? (item.ComboDetailsJSON.groups || item.ComboDetailsJSON.items || []) : undefined)));
+                      const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
+                      const hasCombo = comboSels.length > 0;
 
                       return `
                         <div class="item-row">
@@ -1067,11 +1072,14 @@ class UniversalPrinter {
                               : ""
                           }
                           ${
-                            hasCombo && !data.disableComboPrint
+                            hasCombo
                               ? `<div class="modifier-list">${comboSels.map((g: any) => {
-                                  const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
+                                  const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
                                   if (Array.isArray(choices)) {
-                                    return choices.map((opt: any) => `<span class="modifier-item">- ${opt.name}</span>`).join("");
+                                    return choices.map((opt: any) => {
+                                      const optName = opt.name || opt.DishName || opt.itemName || "";
+                                      return optName ? `<span class="modifier-item">- ${optName}</span>` : "";
+                                    }).join("");
                                   }
                                   return "";
                                 }).join("")}</div>`
@@ -1087,11 +1095,12 @@ class UniversalPrinter {
 
               return items.map((item: any) => {
                 const noteText = item.note || item.notes || item.Remarks || item.remarks;
-                const comboSels = item.comboSelections || 
+                const rawCombo = item.comboSelections || item.selectedCombos || item.combos || 
                   (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
-                    ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : p.groups; } catch { return undefined; } })() 
-                    : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : undefined)) || [];
-                const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
+                    ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []); } catch { return undefined; } })() 
+                    : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : (typeof item.ComboDetailsJSON === 'object' && item.ComboDetailsJSON ? (item.ComboDetailsJSON.groups || item.ComboDetailsJSON.items || []) : undefined)));
+                const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
+                const hasCombo = comboSels.length > 0;
 
                 return `
                   <div class="item-row">
@@ -1130,14 +1139,17 @@ class UniversalPrinter {
                         : ""
                     }
                     ${
-                      hasCombo && !data.disableComboPrint
+                      hasCombo
                         ? `
                       <div class="modifier-list">
                         ${comboSels
                           .map((g: any) => {
-                            const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
+                            const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
                             if (Array.isArray(choices)) {
-                              return choices.map((opt: any) => `<span class="modifier-item">- ${opt.name}</span>`).join("");
+                              return choices.map((opt: any) => {
+                                const optName = opt.name || opt.DishName || opt.itemName || "";
+                                return optName ? `<span class="modifier-item">- ${optName}</span>` : "";
+                              }).join("");
                             }
                             return "";
                           })
@@ -1181,12 +1193,16 @@ class UniversalPrinter {
 
     const items       = (data.items || []).filter((i: any) => (i.status || i.Status || "").toUpperCase() !== "VOIDED");
     const tableNo     = data.tableNo || "N/A";
-    const waiter      = data.waiterName || "Staff";
+    const rawWaiter   = data.waiterName || "Staff";
+    const isQuick     = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === "QUICK_SERVE" || data.orderType === "QUICK_SERVE" || data.section === "QUICK_SERVE" || (typeof rawWaiter === "string" && rawWaiter.toLowerCase().includes("(quick serve)")));
+    const cleanTableNo = (tableNo || "").replace(/^table\s+/gi, "").trim() || tableNo;
+    const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes("(quick serve)") ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
+    const waiter      = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || "Staff") : rawWaiter;
     const orderNo     = data.orderNo || data.orderId || "";
     const kitchenName = data.kitchenName || "";
 
-    const kotDateStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", day: "2-digit", month: "2-digit", year: "2-digit" }).format(new Date());
-    const kotTimeStr = formatToSingaporeTime(new Date(), { hour: "2-digit", minute: "2-digit", hour12: false });
+    const kotDateStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+    const kotTimeStr = formatToSingaporeTime(new Date(), { hour: "2-digit", minute: "2-digit", hour12: false }).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
 
     const DIV = "[L]------------------------------------------------\n";
 
@@ -1239,30 +1255,28 @@ class UniversalPrinter {
         });
       }
 
-      let comboSels = item.comboSelections;
+      let comboSels = item.comboSelections || item.selectedCombos || item.combos;
       if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
         const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
         if (rawCombo) {
           if (typeof rawCombo === 'string') {
             try {
               const parsed = JSON.parse(rawCombo);
-              comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || []);
+              comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || parsed.selections || []);
             } catch (e) {
               comboSels = [];
             }
           } else if (Array.isArray(rawCombo)) {
             comboSels = rawCombo;
           } else if (typeof rawCombo === 'object') {
-            comboSels = rawCombo.groups || rawCombo.items || [];
+            comboSels = rawCombo.groups || rawCombo.items || rawCombo.selections || [];
           }
         }
       }
 
-      // Respect "Disable Combo Print" setting: skip sub-items when flag is true
-      const disableComboPrint = !!(data as any).disableComboPrint;
-      if (!disableComboPrint && Array.isArray(comboSels) && comboSels.length > 0) {
+      if (Array.isArray(comboSels) && comboSels.length > 0) {
         comboSels.forEach((g: any) => {
-          const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
+          const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
           if (Array.isArray(choices)) {
             choices.forEach((opt: any) => {
               const optName = opt.name || opt.DishName || opt.itemName || "";
@@ -1292,13 +1306,8 @@ class UniversalPrinter {
     text += `[C]<B>${kotDateStr}  ${kotTimeStr}</B>\n`;
     text += DIV;
 
-    if (type === "KDS_PRINT") {
-      text += `[C]<font size='big'><B>TABLE NO : ${tableNo}</B></font>\n`;
-      text += DIV;
-    } else {
-      text += `[C]<font size='big'><B>TABLE : ${tableNo}</B></font>\n`;
-      text += DIV;
-    }
+    text += `[C]<font size='big'><B>TABLE: ${displayTable}</B></font>\n`;
+    text += DIV;
 
     text += "[L]<B>QTY  ITEM</B>\n";
     text += DIV;
@@ -1780,7 +1789,9 @@ class UniversalPrinter {
     const dateFormatted = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
     text += `[L]<B>Date: ${dateFormatted} ${formatToSingaporeTime(saleDate)}</B>\n`;
     if (saleData.waiterName && saleData.waiterName !== "Staff") {
-      text += `[L]<B>Waiter: ${saleData.waiterName}</B>\n`;
+      const isQuick = !!(saleData.isQuickServe || saleData.isQuick || saleData.isQuickServeMode || saleData.waiterName.toLowerCase().includes("(quick serve)"));
+      const displayWaiter = isQuick ? (saleData.waiterName.toLowerCase().includes("(quick serve)") ? saleData.waiterName : `${saleData.waiterName} (quick serve)`) : saleData.waiterName;
+      text += `[L]<B>Waiter: ${displayWaiter}</B>\n`;
     }
     // Print Member Mobile Number on receipt
     if (saleData.mobileNo) {
@@ -2120,7 +2131,7 @@ class UniversalPrinter {
     text += "[C]<B>THANK YOU! COME AGAIN!</B>\n";
     text += "[C]SMART-CAFE BY UNIPROSG\n";
 
-    return text;
+    return text.replace(/[\u202F\u00A0\uFEFF]/g, ' ');
   }
 
   // ==================== PDF FALLBACK WITH DISCOUNT ====================
@@ -2222,7 +2233,7 @@ class UniversalPrinter {
 
   static async routeAndPrintOrderKOT(
     orderId: string,
-    orderContext: { orderType?: string; tableNo?: string; takeawayNo?: string; section?: string },
+    orderContext: { orderType?: string; tableNo?: string; takeawayNo?: string; section?: string; isQuickServe?: boolean; isQuick?: boolean; isQuickServeMode?: boolean },
     items: any[],
     isAdditional: boolean = false,
     waiterName: string = "Staff",
@@ -2251,6 +2262,8 @@ class UniversalPrinter {
         orderContext.orderType === "DINE_IN"
           ? orderContext.tableNo
           : `TW-${orderContext.takeawayNo}`;
+
+      const isQuick = !!(orderContext.isQuickServe || (orderContext as any).isQuick || (orderContext as any).isQuickServeMode);
 
       // 3 & 4 & 5. Print one KOT per kitchen group if KOT printing is enabled
       if (shouldPrintKOT) {
@@ -2299,11 +2312,12 @@ class UniversalPrinter {
             orderNo: orderId,
             tableNo,
             waiterName,
+            isQuickServe: isQuick,
             items: groupItems,
             kitchenCode: kCode,
             kitchenName:
               groupItems[0].KitchenTypeName || (kCode === "0" ? "KITCHEN" : kCode),
-            disableComboPrint: !!enableComboPrint,
+            disableComboPrint: false,
           };
           try {
             console.log(`🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
@@ -2343,6 +2357,7 @@ class UniversalPrinter {
             orderNo: orderId,
             tableNo,
             waiterName,
+            isQuickServe: isQuick,
             items,
             kitchenName: "KDS",
           };
@@ -2770,7 +2785,7 @@ class UniversalPrinter {
   static generateSettlementReportHTML(settlementRows: any[], company: any, period?: string): string {
     const symbol = company.currencySymbol || "$";
     const now = new Date();
-    const printDate = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const printDate = (now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
 
     // Aggregate totals by payment mode
     const paymentTotals: Record<string, number> = {};
@@ -2837,7 +2852,7 @@ class UniversalPrinter {
     try {
       const symbol = company.currencySymbol || "$";
       const now = new Date();
-      const printDate = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+      const printDate = (now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
 
       // Aggregate totals by payment mode
       const paymentTotals: Record<string, number> = {};

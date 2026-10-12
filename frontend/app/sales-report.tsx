@@ -1352,7 +1352,7 @@ export default function SalesReport() {
         } else if (mode === "CREDIT") {
           acc.Credit += roundedSysAmount;
           acc.CreditOutstanding += Math.round(((Number(s.OutstandingAmount) || 0) + Number.EPSILON) * 100) / 100;
-        } else if (mode === "FOC") {
+        } else if (mode === "FOC" || mode === "4" || mode.includes("FOC") || mode.includes("FREE")) {
           acc.FocSales += roundedSysAmount;
         }
 
@@ -1484,13 +1484,19 @@ export default function SalesReport() {
         let matchedMode = dbPaymentModes.find((m) => {
           const dbName = String(m.payMode || "").toUpperCase().trim();
           const dbDesc = String(m.description || "").toUpperCase().trim();
-          return salePayMode === dbName || salePayMode === dbDesc;
+          const dbPos = String(m.position || m.Position || "").trim();
+          return salePayMode === dbName || salePayMode === dbDesc || salePayMode === dbPos;
         });
 
         // Second pass: if no exact match, try greedy/wildcard match
         if (!matchedMode) {
           matchedMode = dbPaymentModes.find((m) => {
             const dbName = String(m.payMode || "").toUpperCase().trim();
+            const dbDesc = String(m.description || "").toUpperCase().trim();
+            if ((dbName === "FOC" || dbDesc === "FOC" || dbName.includes("FREE") || dbDesc.includes("FREE")) &&
+                (salePayMode.includes("FOC") || salePayMode === "4" || salePayMode.includes("FREE"))) {
+              return true;
+            }
             if ((dbName === "PAYNOW" || dbName === "PAY NOW" || dbName === "UPI" || dbName === "GPAY") &&
                 (salePayMode.includes("PAYNOW") || salePayMode.includes("PAY NOW") || salePayMode.includes("UPI") || salePayMode.includes("GPAY"))) {
               return true;
@@ -6395,7 +6401,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.4)",
   },
-  modalDismiss: { ...StyleSheet.absoluteFill },
+  modalDismiss: { ...StyleSheet.absoluteFillObject },
   modalContent: {
     width: "92%",
     maxWidth: 400,

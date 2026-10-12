@@ -407,7 +407,9 @@ class SunmiPrinterService {
       }
       await SunmiModule.printText(formatter.left(`DATE: ${dateStr} ${timeStr}`));
       if (saleData.waiterName && saleData.waiterName !== "Staff") {
-        await SunmiModule.printText(formatter.left(`WAITER: ${saleData.waiterName}`));
+        const isQuick = !!(saleData.isQuickServe || saleData.isQuick || saleData.isQuickServeMode || saleData.waiterName.toLowerCase().includes("(quick serve)"));
+        const displayWaiter = isQuick ? (saleData.waiterName.toLowerCase().includes("(quick serve)") ? saleData.waiterName : `${saleData.waiterName} (quick serve)`) : saleData.waiterName;
+        await SunmiModule.printText(formatter.left(`WAITER: ${displayWaiter}`));
       }
       await SunmiModule.printText(formatter.divider("-"));
 
@@ -815,7 +817,11 @@ class SunmiPrinterService {
       const items = data.items || [];
       const tableNo = data.tableNo || "N/A";
       const orderNo = data.orderNo || data.orderId || "N/A";
-      const waiter = data.waiterName || "Staff";
+      const rawWaiter = data.waiterName || "Staff";
+      const isQuick = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === "QUICK_SERVE" || data.orderType === "QUICK_SERVE" || data.section === "QUICK_SERVE" || (typeof rawWaiter === "string" && rawWaiter.toLowerCase().includes("(quick serve)")));
+      const cleanTableNo = (tableNo || "").replace(/^table\s+/gi, "").trim() || tableNo;
+      const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes("(quick serve)") ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
+      const waiter = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || "Staff") : rawWaiter;
       const now = new Date();
       const dateStr = formatToSingaporeDate(now, { day: '2-digit', month: '2-digit' });
       const timeStr = formatToSingaporeTime(now, { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -843,7 +849,7 @@ class SunmiPrinterService {
       // ============ TABLE INFO ============
       await SunmiModule.printText(formatter.doubleDivider("="));
       await setSize(fontSizes.table);
-      await SunmiModule.printText(formatter.left(`TABLE: ${tableNo}`));
+      await SunmiModule.printText(formatter.left(`TABLE: ${displayTable}`));
       await SunmiModule.lineWrap(1);
 
       await setSize(fontSizes.timestamp);
@@ -897,6 +903,41 @@ class SunmiPrinterService {
           try {
             if (SunmiModule.setBold) await SunmiModule.setBold(false);
           } catch (_) {}
+        }
+
+        let comboSels = item.comboSelections || item.selectedCombos || item.combos;
+        if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
+          const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
+          if (rawCombo) {
+            if (typeof rawCombo === 'string') {
+              try {
+                const parsed = JSON.parse(rawCombo);
+                comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || parsed.selections || []);
+              } catch (e) {
+                comboSels = [];
+              }
+            } else if (Array.isArray(rawCombo)) {
+              comboSels = rawCombo;
+            } else if (typeof rawCombo === 'object') {
+              comboSels = rawCombo.groups || rawCombo.items || rawCombo.selections || [];
+            }
+          }
+        }
+
+        if (Array.isArray(comboSels) && comboSels.length > 0) {
+          await setSize(fontSizes.modifier);
+          for (const g of comboSels) {
+            const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
+            if (Array.isArray(choices)) {
+              for (const opt of choices) {
+                const optName = opt.name || opt.DishName || opt.itemName || "";
+                if (optName) {
+                  await SunmiModule.printText(formatter.left(`    - ${optName}`));
+                  await SunmiModule.lineWrap(1);
+                }
+              }
+            }
+          }
         }
 
         const noteText = item.note || item.notes || item.Remarks || item.remarks;

@@ -66,6 +66,33 @@ router.get("/all", async (req, res) => {
     };
 
     const holdMinutes = await getHoldOvertimeMinutes();
+
+    // 🛡️ AUTO-RECONCILE: Clear ghost/stale tables whose orders are closed or fully paid
+    try {
+      await pool.request().query(`
+        UPDATE tm
+        SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL
+        FROM TableMaster tm
+        WHERE tm.Status IN (1, 2, 3, 4)
+          AND (
+            (tm.CurrentOrderId IS NOT NULL AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur roc 
+              WHERE (roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+            ))
+            OR
+            (NOT EXISTS (
+              SELECT 1 FROM CartItems ci WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber
+            ) AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur roc 
+              WHERE (roc.Tableno = tm.TableNumber OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+            ))
+          );
+      `);
+    } catch (reconcileErr) {
+      console.warn("Table auto-reconciliation warning:", reconcileErr.message);
+    }
     let query = `
       SELECT TableId AS id, CAST(TableNumber AS VARCHAR(50)) AS label,
       CAST(DiningSection AS VARCHAR(10)) AS DiningSection, LockedByName as lockedByName,

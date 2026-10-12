@@ -11,7 +11,8 @@ const normalizePayMode = (paymentMethod = "CASH") => {
   if (raw.includes("GRAB") || raw === "10") return "GRAB";
   if (raw.includes("FOODPANDA") || raw === "9") return "FOODPANDA";
   if (raw.includes("PAYNOW") || raw === "3" || raw.includes("PAY NOW")) return "PAYNOW";
-  if (raw.includes("UPI") || raw === "4" || raw.includes("GPAY") || raw.includes("PHONE") || raw.includes("PAYTM")) return "UPI";
+  if (raw.includes("FOC") || raw === "4" || raw.includes("FREE")) return "FOC";
+  if (raw.includes("UPI") || raw.includes("GPAY") || raw.includes("PHONE") || raw.includes("PAYTM")) return "UPI";
   if (raw.includes("NETS") || raw === "2") return "NETS";
   if (raw.includes("MEMBER") || raw === "5") return "MEMBER";
   if (raw.includes("CREDIT") || raw === "6") return "CREDIT";
@@ -185,7 +186,8 @@ async function fetchFullReportData(startDateStr, endDateStr, pool, cashierFilter
      let matchedMode = allPaymodes.find(pm => {
        const name = pm.PayMode.toUpperCase().trim();
        const desc = ((pm.Description && pm.Description.trim()) || pm.PayMode).toUpperCase().trim();
-       return rawMode === name || rawMode === desc;
+       const pos = String(pm.Position || "").trim();
+       return rawMode === name || rawMode === desc || rawMode === pos;
      });
 
     // Second pass: if no exact match, try greedy/wildcard match against all database payment modes
@@ -193,6 +195,10 @@ async function fetchFullReportData(startDateStr, endDateStr, pool, cashierFilter
       matchedMode = allPaymodes.find(pm => {
         const name = pm.PayMode.toUpperCase().trim();
         const desc = ((pm.Description && pm.Description.trim()) || pm.PayMode).toUpperCase().trim();
+        if ((name === "FOC" || desc === "FOC" || name.includes("FREE") || desc.includes("FREE")) &&
+            (rawMode.includes("FOC") || rawMode === "4" || rawMode.includes("FREE"))) {
+          return true;
+        }
         if ((name === "PAYNOW" || desc === "PAYNOW" || name === "PAY NOW" || desc === "PAY NOW" || name === "UPI" || name === "GPAY") &&
             (rawMode.includes("PAYNOW") || rawMode.includes("PAY NOW") || rawMode.includes("UPI") || rawMode.includes("GPAY") || rawMode.includes("PHONE") || rawMode.includes("PAYTM"))) {
           return true;

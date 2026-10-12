@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 
-export const APP_VERSION = "3.0.0";
+export const APP_VERSION = "5.0.0";
 const STORAGE_KEY = "pos_install_prompt_dismissed_version";
 
 export interface BeforeInstallPromptEvent extends Event {

@@ -67,6 +67,13 @@ import {
 } from "../../stores/tableStatusStore";
 import { useTerminalPaymentStore } from "../../stores/terminalPaymentStore";
 
+const getSectionFromDiningSection = (ds: number) => {
+  if (ds === 1) return "SECTION_1";
+  if (ds === 2) return "SECTION_2";
+  if (ds === 3) return "SECTION_3";
+  return "TAKEAWAY";
+};
+
 // --- MOBILE SOLID COLORS ---
 const SOLID_LIGHT_GREEN = "#F0FDF4";
 
@@ -498,7 +505,11 @@ const TableItemComponent = React.memo(
     backgroundTheme?: string;
   }) => {
     // 🚀 O(1) Store Subscription: Only re-renders when THIS table changes
-    const tableData = useTableStatusStore((state) => state.tableMap[tableId]);
+    const cleanId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+    const tableData = useTableStatusStore((state) => 
+      state.tableMap[cleanId] || 
+      state.tables.find(t => String(t.tableNo) === String(item.label) && t.section === getSectionFromDiningSection(item.DiningSection))
+    );
 
     // Subscribe to terminal payment session — re-renders only when this table's session changes
     const terminalStatus = useTerminalPaymentStore(
@@ -519,16 +530,22 @@ const TableItemComponent = React.memo(
       : Number(item.Status);
 
     const billAmount =
-      tableData?.totalAmount !== undefined
-        ? tableData.totalAmount
-        : Number(item.totalAmount) || 0;
+      status === 0 || tableData?.status === "EMPTY"
+        ? 0
+        : (tableData?.totalAmount !== undefined
+            ? tableData.totalAmount
+            : Number(item.totalAmount) || 0);
+
     const rawStartTime =
-      tableData?.startTime ||
-      (item.StartTime
-        ? typeof item.StartTime === "string"
-          ? parseDatabaseDate(item.StartTime).getTime()
-          : item.StartTime
-        : 0);
+      status === 0 || tableData?.status === "EMPTY"
+        ? 0
+        : (tableData?.startTime ||
+            (item.StartTime
+              ? typeof item.StartTime === "string"
+                ? parseDatabaseDate(item.StartTime).getTime()
+                : item.StartTime
+              : 0));
+
     const isOvertime =
       status !== 0 &&
       (tableData?.isHoldOvertime ||

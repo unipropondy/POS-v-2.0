@@ -663,7 +663,7 @@ export default function SummaryScreen() {
 
       // 🚀 INSTANT SYNC AND CLEAR FOR ALL SOURCE TABLES
       for (const table of sourceTables) {
-        useCartStore.getState().clearTableSession(table.tableId);
+        useCartStore.getState().clearTableSession(table.tableId, table.section, table.tableNo);
         useTableStatusStore.getState().updateTableStatus(
           table.tableId,
           table.section,
@@ -674,6 +674,17 @@ export default function SummaryScreen() {
           undefined,
           0
         );
+
+        // Also close in activeOrdersStore
+        const matchingOrder = activeSessions.find(
+          (o: any) =>
+            o.context?.orderType === "DINE_IN" &&
+            String(o.context.section || "").trim().toLowerCase() === String(table.section || "").trim().toLowerCase() &&
+            String(o.context.tableNo || "").trim().toLowerCase() === String(table.tableNo || "").trim().toLowerCase()
+        );
+        if (matchingOrder?.orderId) {
+          useActiveOrdersStore.getState().closeActiveOrder(matchingOrder.orderId);
+        }
       }
 
       await useCartStore.getState().fetchCartFromDB(context.tableId);

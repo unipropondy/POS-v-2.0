@@ -50,7 +50,7 @@ const generateRandomBillId = () => {
 };
 
 const normalizeReportPayModeSql = (columnName = "sts.PayMode", settlementIdColumn = "sh.SettlementID") => {
-  const resolvedPayMode = `COALESCE((
+  const resolvedPayMode = `COALESCE(NULLIF(LTRIM(RTRIM(${columnName})), ''), (
     SELECT TOP 1 LTRIM(RTRIM(pd2.Remarks))
     FROM (
       SELECT Remarks, RestaurantBillId FROM PaymentDetailCur WHERE Remarks IS NOT NULL AND LTRIM(RTRIM(Remarks)) <> ''
@@ -58,7 +58,7 @@ const normalizeReportPayModeSql = (columnName = "sts.PayMode", settlementIdColum
       SELECT Remarks, RestaurantBillId FROM PaymentDetail WHERE Remarks IS NOT NULL AND LTRIM(RTRIM(Remarks)) <> ''
     ) pd2
     WHERE pd2.RestaurantBillId = ${settlementIdColumn}
-  ), ${columnName})`;
+  ))`;
 
   const rawSql = `
     UPPER(ISNULL(
@@ -77,7 +77,8 @@ const normalizeReportPayModeSql = (columnName = "sts.PayMode", settlementIdColum
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('GRAB', '10') OR UPPER(${resolvedPayMode}) LIKE '%GRAB%' THEN 'GRAB'
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('FOODPANDA', '9') OR UPPER(${resolvedPayMode}) LIKE '%FOODPANDA%' THEN 'FOODPANDA'
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('NETS', '2') OR UPPER(${resolvedPayMode}) LIKE '%NETS%' THEN 'NETS'
-        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('UPI', '4') OR UPPER(${resolvedPayMode}) LIKE '%UPI%' OR UPPER(${resolvedPayMode}) LIKE '%GPAY%' THEN 'UPI'
+        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('FOC', '4') OR UPPER(${resolvedPayMode}) LIKE '%FOC%' OR UPPER(${resolvedPayMode}) LIKE '%FREE%' THEN 'FOC'
+        WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('UPI', 'GPAY', 'PAYTM', 'PHONEPE') OR UPPER(${resolvedPayMode}) LIKE '%UPI%' OR UPPER(${resolvedPayMode}) LIKE '%GPAY%' THEN 'UPI'
         WHEN UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, '')))) IN ('MEMBER', '5') OR UPPER(${resolvedPayMode}) LIKE '%MEMBER%' THEN 'MEMBER'
         ELSE UPPER(LTRIM(RTRIM(ISNULL(${resolvedPayMode}, 'CASH'))))
       END
@@ -1031,7 +1032,8 @@ router.get("/login-wise-sales", async (req, res) => {
           ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('CREDIT','6') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS CreditAmount,
           ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('GRAB','10') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS GrabAmount,
           ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('FOODPANDA','9') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS FoodPandaAmount,
-          ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('UPI','4','GPAY') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS UpiAmount,
+          ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('FOC','4','FREE OF CHARGE','FREE') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS FocAmount,
+          ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('UPI','GPAY','PAYTM','PHONEPE') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS UpiAmount,
           ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(ISNULL(sts.PayMode,'')) LIKE 'YEAHPAY%' THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS YeahPayAmount
         FROM SettlementHeader sh
         LEFT JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
@@ -1434,7 +1436,7 @@ router.get("/settlement", async (req, res) => {
             CASE 
               WHEN LTRIM(RTRIM(sd.PayMode)) = '2' THEN 'NETS'
               WHEN LTRIM(RTRIM(sd.PayMode)) = '3' THEN 'PAYNOW'
-              WHEN LTRIM(RTRIM(sd.PayMode)) = '4' THEN 'UPI'
+              WHEN LTRIM(RTRIM(sd.PayMode)) = '4' THEN 'FOC'
               ELSE LTRIM(RTRIM(ISNULL(sd.PayMode, 'CASH')))
             END
           )))) as Paymode,
@@ -1566,7 +1568,7 @@ router.get("/day-end-summary", async (req, res) => {
               CASE 
                 WHEN LTRIM(RTRIM(sd.PayMode)) = '2' THEN 'NETS'
                 WHEN LTRIM(RTRIM(sd.PayMode)) = '3' THEN 'PAYNOW'
-                WHEN LTRIM(RTRIM(sd.PayMode)) = '4' THEN 'UPI / GPAY'
+                WHEN LTRIM(RTRIM(sd.PayMode)) = '4' THEN 'FOC'
                 ELSE LTRIM(RTRIM(ISNULL(sd.PayMode, 'CASH')))
               END
             )))) as Paymode,
@@ -2951,13 +2953,23 @@ router.post("/save", async (req, res) => {
 
           // 🚀 CLEANUP MERGED SOURCE TABLES AS WELL (Bullet 5)
           try {
+            const targetTableNoVal = targetTableNo || cleanTableId;
             const childTablesRes = await transaction.request()
               .input("orderNo", sql.NVarChar(50), displayOrderId)
+              .input("guidOid", sql.UniqueIdentifier, guidOrderId || DEFAULT_GUID)
+              .input("targetTno", sql.NVarChar(50), String(targetTableNoVal))
               .query(`
                 SELECT tm.TableId, tm.TableNumber, tm.DiningSection
                 FROM OrderMergeHistory omh
-                JOIN TableMaster tm ON omh.ChildTableNo = tm.TableNumber
-                WHERE omh.ParentOrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                JOIN TableMaster tm ON (
+                  omh.ChildTableNo = tm.TableNumber 
+                  OR TRY_CAST(omh.ChildOrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100))
+                  OR TRY_CAST(omh.ChildOrderId AS NVARCHAR(100)) = TRY_CAST(tm.TableId AS NVARCHAR(100))
+                )
+                WHERE omh.ParentOrderId = @guidOid 
+                   OR omh.ParentTableNo = @targetTno
+                   OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                   OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrder WHERE OrderNumber = @orderNo)
               `);
 
             if (childTablesRes.recordset && childTablesRes.recordset.length > 0) {
@@ -2973,9 +2985,17 @@ router.post("/save", async (req, res) => {
                   .input("cartId", sql.NVarChar(128), childTableId)
                   .query("DELETE FROM [dbo].[CartItems] WHERE [CartId] = @cartId");
 
-                await transaction.request()
-                  .input("tid", sql.NVarChar(128), childTableId)
-                  .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
+                const validChildGuid = toGuidOrNull(childTableId);
+                if (validChildGuid) {
+                  await transaction.request()
+                    .input("tid", sql.UniqueIdentifier, validChildGuid)
+                    .input("tno", sql.NVarChar(50), String(childTableNo))
+                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid OR TableNumber = @tno");
+                } else {
+                  await transaction.request()
+                    .input("tno", sql.NVarChar(50), String(childTableNo))
+                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno OR TableId = @tno");
+                }
 
                 if (io) {
                   io.emit("table_status_updated", { 
@@ -2984,9 +3004,11 @@ router.post("/save", async (req, res) => {
                     totalAmount: 0,
                     startTime: null,
                     tableNo: childTableNo,
-                    section: childSection
+                    section: childSection,
+                    customerName: null,
+                    pax: null
                   });
-                  io.emit("cart_updated", { tableId: childTableId.toLowerCase() });
+                  io.emit("cart_updated", { tableId: childTableId.toLowerCase(), tableNo: childTableNo });
                   io.emit("order_closed", { tableId: childTableId.toLowerCase(), tableNo: childTableNo, orderId: displayOrderId });
                 }
               }
@@ -2995,10 +3017,24 @@ router.post("/save", async (req, res) => {
             console.error("⚠️ [SAVE SALE] Merged tables cleanup failed:", childErr.message);
           }
 
-          // 🚀 GLOBAL KDS SYNC: Mark order as closed in professional tables
+          // 🚀 GLOBAL KDS SYNC: Mark parent order and all child merged orders as closed in professional tables
           await transaction.request()
             .input("orderNo", sql.NVarChar(50), displayOrderId)
-            .query("UPDATE RestaurantOrderCur SET isOrderClosed = 1, ModifiedOn = GETDATE() WHERE OrderNumber = @orderNo");
+            .input("guidOid", sql.UniqueIdentifier, guidOrderId || DEFAULT_GUID)
+            .input("targetTno", sql.NVarChar(50), String(tableNo || cleanTableId))
+            .query(`
+              UPDATE RestaurantOrderCur 
+              SET isOrderClosed = 1, ModifiedOn = GETDATE() 
+              WHERE OrderNumber = @orderNo 
+                 OR OrderId IN (
+                   SELECT omh.ChildOrderId 
+                   FROM OrderMergeHistory omh
+                   WHERE omh.ParentOrderId = @guidOid 
+                      OR omh.ParentTableNo = @targetTno
+                      OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                      OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrder WHERE OrderNumber = @orderNo)
+                 )
+            `);
         }
       }
 

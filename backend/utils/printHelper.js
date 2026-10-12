@@ -21,7 +21,11 @@ function formatKOTThermalText(data, type = 'NEW') {
 
   const items       = (data.items || []).filter(i => (i.status || i.Status || '').toUpperCase() !== 'VOIDED');
   const tableNo     = data.tableNo     || 'N/A';
-  const waiter      = data.waiterName  || 'Staff';
+  const rawWaiter   = data.waiterName  || 'Staff';
+  const isQuick     = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === 'QUICK_SERVE' || data.orderType === 'QUICK_SERVE' || data.section === 'QUICK_SERVE' || (typeof rawWaiter === 'string' && rawWaiter.toLowerCase().includes('(quick serve)')));
+  const cleanTableNo = (tableNo || '').replace(/^table\s+/gi, '').trim() || tableNo;
+  const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes('(quick serve)') ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
+  const waiter      = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || 'Staff') : rawWaiter;
   const orderNo     = data.orderNo     || data.orderId || '';
   const kitchenName = data.kitchenName || '';
 
@@ -41,13 +45,8 @@ function formatKOTThermalText(data, type = 'NEW') {
   text += DIV;
 
   // TABLE visible at top for both KOT and KDS
-  if (type === 'KDS_PRINT') {
-    text += `[C]<font size='big'><B>TABLE NO : ${tableNo}</B></font>\n`;
-    text += DIV;
-  } else {
-    text += `[C]<font size='big'><B>TABLE : ${tableNo}</B></font>\n`;
-    text += DIV;
-  }
+  text += `[C]<font size='big'><B>TABLE: ${displayTable}</B></font>\n`;
+  text += DIV;
 
   text += "[L]<B>QTY  ITEM</B>\n";
   text += DIV;
@@ -192,28 +191,28 @@ function _formatItem(item) {
   }
 
   // Combo selections
-  let comboSels = item.comboSelections;
+  let comboSels = item.comboSelections || item.selectedCombos || item.combos;
   if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
     const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
     if (rawCombo) {
       if (typeof rawCombo === 'string') {
         try {
           const parsed = JSON.parse(rawCombo);
-          comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || []);
+          comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || parsed.selections || []);
         } catch (e) {
           comboSels = [];
         }
       } else if (Array.isArray(rawCombo)) {
         comboSels = rawCombo;
       } else if (typeof rawCombo === 'object') {
-        comboSels = rawCombo.groups || rawCombo.items || [];
+        comboSels = rawCombo.groups || rawCombo.items || rawCombo.selections || [];
       }
     }
   }
 
   if (Array.isArray(comboSels) && comboSels.length > 0) {
     comboSels.forEach(g => {
-      const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
+      const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
       if (Array.isArray(choices)) {
         choices.forEach(opt => {
           const optName = opt.name || opt.DishName || opt.itemName || '';

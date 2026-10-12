@@ -219,7 +219,8 @@ router.get("/users-settlement", async (req, res) => {
             ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('CREDIT','6') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS CreditAmount,
             ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('GRAB','10') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS GrabAmount,
             ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('FOODPANDA','9') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS FoodPandaAmount,
-            ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('UPI','4','GPAY') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS UpiAmount,
+            ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('FOC','4','FREE OF CHARGE','FREE') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS FocAmount,
+            ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(LTRIM(RTRIM(ISNULL(sts.PayMode,'')))) IN ('UPI','GPAY','PAYTM','PHONEPE') THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS UpiAmount,
             ISNULL(SUM(CASE WHEN ISNULL(sh.IsCancelled, 0) = 0 AND UPPER(ISNULL(sts.PayMode,'')) LIKE 'YEAHPAY%' THEN ISNULL(sts.SysAmount,0) ELSE 0 END), 0) AS YeahPayAmount
           FROM SettlementHeader sh
           LEFT JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
