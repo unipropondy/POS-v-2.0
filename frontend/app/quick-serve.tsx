@@ -1090,9 +1090,10 @@ export default function QuickServePOSScreen() {
 
   const addSimpleToCart = (dish: any, overridePrice?: number) => {
     const itemPrice = overridePrice !== undefined ? overridePrice : Number(dish.Price || dish.currentcost || 0);
-    const currentKitchen = categories.find((k) => k.CategoryId === selectedCategoryId);
-    const kitchenName = dish.KitchenTypeName || currentKitchen?.KitchenTypeName || "KITCHEN";
+    const currentKitchen = categories.find((k) => String(k.CategoryId) === String(dish.CategoryId || selectedCategoryId));
+    const kitchenName = dish.KitchenTypeName || currentKitchen?.KitchenTypeName || currentKitchen?.CategoryName || "KITCHEN";
     const kitchenCode = dish.KitchenTypeCode || currentKitchen?.KitchenTypeCode || "2";
+    const printerIp = dish.PrinterIP || currentKitchen?.PrinterIP || "";
 
     const cartItem: Omit<CartItem, "qty" | "lineItemId"> & { Image?: string; IsVeg?: boolean } = {
       id: String(dish.DishId),
@@ -1104,7 +1105,7 @@ export default function QuickServePOSScreen() {
       takeawayCharge: Number(dish.TakeawayCharge || 0),
       KitchenTypeCode: kitchenCode,
       KitchenTypeName: kitchenName,
-      PrinterIP: dish.PrinterIP || "",
+      PrinterIP: printerIp,
       Image: dish.Image || dish.ImagePath || dish.image,
       IsVeg: dish.IsVeg,
     };
@@ -1154,9 +1155,10 @@ export default function QuickServePOSScreen() {
     const basePrice = Number(selectedDish.Price || selectedDish.currentcost || 0);
     const finalPrice = basePrice + modifierPriceTotal;
 
-    const currentKitchen = categories.find((k) => k.CategoryId === selectedCategoryId);
-    const kitchenName = selectedDish.KitchenTypeName || currentKitchen?.KitchenTypeName || "KITCHEN";
+    const currentKitchen = categories.find((k) => String(k.CategoryId) === String(selectedDish.CategoryId || selectedCategoryId));
+    const kitchenName = selectedDish.KitchenTypeName || currentKitchen?.KitchenTypeName || currentKitchen?.CategoryName || "KITCHEN";
     const kitchenCode = selectedDish.KitchenTypeCode || currentKitchen?.KitchenTypeCode || "2";
+    const printerIp = selectedDish.PrinterIP || currentKitchen?.PrinterIP || "";
 
     const cartItem: Omit<CartItem, "qty" | "lineItemId"> & { Image?: string; IsVeg?: boolean } = {
       id: String(selectedDish.DishId),
@@ -1169,7 +1171,7 @@ export default function QuickServePOSScreen() {
       takeawayCharge: Number(selectedDish.TakeawayCharge || 0),
       KitchenTypeCode: kitchenCode,
       KitchenTypeName: kitchenName,
-      PrinterIP: selectedDish.PrinterIP || "",
+      PrinterIP: printerIp,
       Image: selectedDish.Image || selectedDish.ImagePath || selectedDish.image,
       IsVeg: selectedDish.IsVeg,
     };
@@ -1372,11 +1374,42 @@ export default function QuickServePOSScreen() {
   const executePaymentFinalize = async () => {
     setIsProcessingPayment(true);
     try {
+      if (cartItems.length === 0) {
+        toast.showToast({ message: "Cart is empty!", type: "warning" });
+        return;
+      }
+
       const activeTableId = selectedTable ? String(selectedTable.id || selectedTable.TableId || "") : "";
       const rawTableName = selectedTable ? String(selectedTable.label || selectedTable.TableNumber || selectedTable.name || "01") : "01";
       const formattedTableName = rawTableName.toLowerCase().startsWith("table") ? rawTableName : `Table ${rawTableName}`;
-
       const cashierIdent = user?.userName || user?.userId || user?.userCode || "123";
+
+      // 🛡️ CRITICAL SNAPSHOT: Clone cart items BEFORE clearCart() empties the reactive Zustand store!
+      const itemsSnapshot = cartItems.map((item: any) => {
+        const matchingDish = dishes.find((d: any) => String(d.DishId) === String(item.id || item.DishId));
+        const matchingCat = categories.find((c: any) => String(c.CategoryId) === String(matchingDish?.CategoryId || item.CategoryId));
+        const kCode = item.KitchenTypeCode || matchingDish?.KitchenTypeCode || matchingCat?.KitchenTypeCode || "2";
+        const kName = item.KitchenTypeName || matchingDish?.KitchenTypeName || matchingCat?.KitchenTypeName || matchingCat?.CategoryName || "KITCHEN";
+        const pIp = item.PrinterIP || matchingDish?.PrinterIP || matchingCat?.PrinterIP || "";
+
+        return {
+          ...item,
+          id: String(item.id || item.DishId),
+          DishId: String(item.id || item.DishId),
+          name: item.name || item.DishName,
+          price: Number(item.price || 0),
+          qty: Number(item.qty || 1),
+          subtotal: Number(item.price || 0) * Number(item.qty || 1),
+          modifiers: item.modifiers || [],
+          comboSelections: item.comboSelections || [],
+          isServiceCharge: item.isServiceCharge !== false,
+          KitchenTypeCode: kCode,
+          KitchenTypeName: kName,
+          PrinterIP: pIp,
+          status: "SENT",
+        };
+      });
+
       const saleData = {
         totalAmount: finalTotal,
         subTotal: subtotal,
@@ -1396,16 +1429,7 @@ export default function QuickServePOSScreen() {
         memberId: selectedMember?.MemberId || null,
         customerName: selectedMember?.Name || null,
         mobileNo: selectedMember?.Phone || null,
-        items: cartItems.map((item: any) => ({
-          id: String(item.id || item.DishId),
-          DishId: String(item.id || item.DishId),
-          name: item.name || item.DishName,
-          price: Number(item.price || 0),
-          qty: Number(item.qty || 1),
-          subtotal: Number(item.price || 0) * Number(item.qty || 1),
-          modifiers: item.modifiers || [],
-          isServiceCharge: item.isServiceCharge !== false,
-        })),
+        items: itemsSnapshot,
         payments: [
           {
             payMode: selectedPaymentMethod,
@@ -1424,7 +1448,7 @@ export default function QuickServePOSScreen() {
       });
 
       const resJson = await res.json();
-      if (!res.ok && !resJson.success) {
+      if (!res.ok || !resJson.success) {
         throw new Error(resJson.error || resJson.message || "Failed to save transaction to sales report");
       }
 
@@ -1432,7 +1456,6 @@ export default function QuickServePOSScreen() {
 
       // ⚡ LIGHTNING FAST COMPLETION:
       // Instantly release UI, clear cart & show toast! (Cashier never waits!)
-      setIsProcessingPayment(false);
       clearCart();
       generatePosOrderId();
       setDiscountPercent(0);
@@ -1446,41 +1469,52 @@ export default function QuickServePOSScreen() {
         duration: 3000,
       });
 
-      // Prepare order context & receipt data for background printing
+      // Prepare order context with complete properties for KDS & KOT
       const orderContextObj = {
         orderType: isTakeawayOrder ? "TAKEAWAY" : "DINE_IN",
         tableNo: formattedTableName,
-        tableId: activeTableId,
-        section: selectedSection || "Section 1",
+        takeawayNo: rawTableName.replace(/[^0-9]/g, "") || "1",
+        tableId: activeTableId || "1",
+        section: selectedSection || (isTakeawayOrder ? "TAKEAWAY" : "SECTION_1"),
         isQuickServe: true,
+        isQuick: true,
+        isQuickServeMode: true,
       };
 
+      // Paid receipt data for UniversalPrinter.smartPrint
       const receiptPrintData = {
-        ...saleData,
+        invoiceNumber: generatedBillNo,
         orderId: generatedBillNo,
         billNo: generatedBillNo,
-        items: cartItems,
+        tableNo: formattedTableName,
         total: finalTotal,
+        totalAmount: finalTotal,
+        subTotal: subtotal,
         subtotal: subtotal,
         discountAmount: discountAmount,
         serviceCharge: serviceChargeAmount,
+        takeawayCharge: totalTakeawayChargesAmount,
         taxAmount: gstAmount,
-        tableNo: formattedTableName,
+        paymentMethod: selectedPaymentMethod,
+        cashPaid: selectedPaymentMethod === "CASH" ? (parseFloat(customAmount) || finalTotal) : finalTotal,
+        change: selectedPaymentMethod === "CASH" ? Math.max(0, (parseFloat(customAmount) || finalTotal) - finalTotal) : 0,
+        items: itemsSnapshot,
+        payments: saleData.payments,
         waiterName: cashierIdent,
         date: new Date(),
-        isCheckout: true,
+        isCheckout: false,
         isQuickServe: true,
       };
 
       // 🚀 ASYNCHRONOUS FIRE-AND-FORGET PRINTING & TABLE REFRESH
       (async () => {
-        // 1. KDS Alert via Socket
-        if (enableKDS && socket) {
+        // 1. KDS Alert via Socket (respects enableKDS setting)
+        if (enableKDS !== false && socket) {
           try {
             socket.emit("new_order", {
               orderId: generatedBillNo,
               context: orderContextObj,
-              items: cartItems.map((i: any) => ({ ...i, status: "SENT" })),
+              items: itemsSnapshot.map((i: any) => ({ ...i, status: "SENT" })),
               createdAt: Date.now(),
             });
           } catch (sErr) {
@@ -1488,13 +1522,13 @@ export default function QuickServePOSScreen() {
           }
         }
 
-        // 2. KOT Printing
-        if (enableKOT) {
+        // 2. KOT Printing (respects enableKOT setting)
+        if (enableKOT !== false) {
           try {
             await UniversalPrinter.routeAndPrintOrderKOT(
               generatedBillNo,
               orderContextObj,
-              cartItems,
+              itemsSnapshot,
               false,
               cashierIdent,
               true
@@ -1504,13 +1538,18 @@ export default function QuickServePOSScreen() {
           }
         }
 
-        // 3. Receipt Bill Printing
-        if (enableReceiptPrint && enableCheckoutBill) {
+        // 3. Receipt Bill Printing (respects enableReceiptPrint setting)
+        if (enableReceiptPrint !== false) {
           try {
-            await UniversalPrinter.printCheckoutBill(
+            await UniversalPrinter.smartPrint(
               receiptPrintData,
               user?.userId || "SYSTEM"
             );
+            if (selectedPaymentMethod === "CASH") {
+              try {
+                await UniversalPrinter.openCashDrawer();
+              } catch (_) {}
+            }
           } catch (billErr) {
             console.error("[QuickServe] Automatic Receipt Print Error:", billErr);
           }
@@ -1536,12 +1575,13 @@ export default function QuickServePOSScreen() {
 
     } catch (err: any) {
       console.error("Payment error:", err);
-      setIsProcessingPayment(false);
       toast.showToast({
         message: "Payment Failed",
         subtitle: err.message || "Failed to process sale transaction",
         type: "error",
       });
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
 
