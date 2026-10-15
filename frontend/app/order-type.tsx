@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   Modal,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,26 +24,144 @@ import { useToast } from "@/components/Toast";
 import { API_URL } from "@/constants/Config";
 import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 
-// High-resolution photography
-const DINE_IN_IMG = "https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?q=80&w=1000&auto=format&fit=crop";
-const TAKE_AWAY_IMG = "https://images.unsplash.com/photo-1526367790999-0150786686a2?q=80&w=1000&auto=format&fit=crop";
-const QUICK_SERVE_IMG = "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=1000&auto=format&fit=crop";
-const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png";
+// Local image assets matching the exact reference design
+const DINE_IN_IMG = require("../assets/images/order_type_dine_in.jpg");
+const TAKE_AWAY_IMG = require("../assets/images/order_type_takeaway.jpg");
+const QUICK_SERVE_IMG = require("../assets/images/order_type_quickserve.jpg");
+const BG_DISHES_IMG = require("../assets/images/order_type_bg.jpg");
+
+interface OrderCardProps {
+  type: "DINE_IN" | "TAKEAWAY" | "QUICK_SERVE";
+  title: string;
+  subtitle: string;
+  image: any;
+  accentColor: string;
+  accentGradient: [string, string];
+  iconName: keyof typeof Ionicons.glyphMap;
+  features: Array<{ icon: keyof typeof Ionicons.glyphMap; text: string }>;
+  buttonText: string;
+  onPress: () => void;
+  isHovered: boolean;
+  onHoverIn: () => void;
+  onHoverOut: () => void;
+  isDesktop: boolean;
+  isTablet: boolean;
+  isMobile: boolean;
+  isTabletPortrait: boolean;
+}
+
+function OrderCard({
+  type,
+  title,
+  subtitle,
+  image,
+  accentColor,
+  accentGradient,
+  iconName,
+  features,
+  buttonText,
+  onPress,
+  isHovered,
+  onHoverIn,
+  onHoverOut,
+  isDesktop,
+  isTablet,
+  isMobile,
+  isTabletPortrait,
+}: OrderCardProps) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.card,
+        isDesktop && styles.cardDesktop,
+        isTablet && !isTabletPortrait && styles.cardTablet,
+        isTabletPortrait && styles.cardTabletPortrait,
+        isMobile && styles.cardMobile,
+        isHovered && styles.cardHovered,
+        pressed ? styles.cardPressed : null,
+      ]}
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+    >
+      {/* Top Banner Image with Wave Curve */}
+      <View style={[styles.cardImageContainer, isMobile && styles.cardImageContainerMobile]}>
+        <Image source={image} style={styles.cardImage} resizeMode="cover" />
+
+        {/* Organic S-Curve Wave at the bottom of the photo */}
+        <View style={styles.waveSvgWrapper}>
+          <Svg viewBox="0 0 360 38" style={styles.waveSvg} preserveAspectRatio="none">
+            <Defs>
+              <SvgLinearGradient id={`grad-${type}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor={accentGradient[0]} />
+                <Stop offset="100%" stopColor={accentGradient[1]} />
+              </SvgLinearGradient>
+            </Defs>
+            {/* Colored wavy accent ribbon */}
+            <Path
+              d="M0,10 C85,26 140,2 220,18 C285,28 320,12 360,20 L360,38 L0,38 Z"
+              fill={`url(#grad-${type})`}
+            />
+            {/* Crisp white cutout forming the card body transition */}
+            <Path
+              d="M0,18 C85,34 140,10 220,26 C285,36 320,20 360,28 L360,38 L0,38 Z"
+              fill="#FFFFFF"
+            />
+          </Svg>
+        </View>
+      </View>
+
+      {/* Floating Center Icon Badge */}
+      <View style={styles.iconCircleWrapper}>
+        <View style={[styles.iconCircleBadge, { borderColor: accentColor }]}>
+          <Ionicons name={iconName} size={24} color={accentColor} />
+        </View>
+      </View>
+
+      {/* Card Content */}
+      <View style={[styles.cardContent, isMobile && styles.cardContentMobile]}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <View style={[styles.titleUnderline, { backgroundColor: accentColor }]} />
+        <Text style={styles.cardSubtitle}>{subtitle}</Text>
+
+        {/* Feature Badges Row */}
+        <View style={styles.featureChipsRow}>
+          {features.map((feat, idx) => (
+            <View key={idx} style={styles.chip}>
+              <Ionicons name={feat.icon} size={12.5} color={accentColor} />
+              <Text style={styles.chipText}>{feat.text}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Action Button */}
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: accentColor }]}
+          onPress={onPress}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.actionButtonText}>{buttonText}</Text>
+          <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+        </TouchableOpacity>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function OrderTypeSelectionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height; // True landscape detection based on orientation
+  const isLandscape = width > height;
 
   const { user, logout } = useAuthStore();
   const toast = useToast();
   const { settings, fetchSettings } = useGeneralSettingsStore();
 
-  const [showQuickServeModal, setShowQuickServeModal] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>("");
   const [currentDate, setCurrentDate] = useState<string>("");
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // Dynamic company settings from Receipt/Company settings API
   const [companyInfo, setCompanyInfo] = useState<{
@@ -72,24 +190,32 @@ export default function OrderTypeSelectionScreen() {
       .catch((err) => console.log("Error fetching company settings:", err));
   }, []);
 
-  // Live clock and date update
+  // Live clock and date update (Singapore Time, UTC+8)
   useEffect(() => {
     const updateDateTime = () => {
       const now = new Date();
       const dateOptions: Intl.DateTimeFormatOptions = {
+        timeZone: "Asia/Singapore",
         weekday: "short",
         day: "2-digit",
         month: "short",
         year: "numeric",
       };
-      setCurrentDate(now.toLocaleDateString("en-US", dateOptions));
+      const formattedDate = now
+        .toLocaleDateString("en-US", dateOptions)
+        .replace(/[\u202F\u00A0\uFEFF]/g, " ");
+      setCurrentDate(formattedDate);
 
       const timeOptions: Intl.DateTimeFormatOptions = {
+        timeZone: "Asia/Singapore",
         hour: "2-digit",
         minute: "2-digit",
         hour12: true,
       };
-      setCurrentTime(now.toLocaleTimeString("en-US", timeOptions));
+      const formattedTime = now
+        .toLocaleTimeString("en-US", timeOptions)
+        .replace(/[\u202F\u00A0\uFEFF]/g, " ");
+      setCurrentTime(formattedTime);
     };
 
     updateDateTime();
@@ -100,7 +226,7 @@ export default function OrderTypeSelectionScreen() {
   if (settings && settings.enableQuickServe === false) {
     return (
       <View style={{ flex: 1, backgroundColor: "#F8FAFC", justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#FF9500" />
+        <ActivityIndicator size="large" color="#F97316" />
       </View>
     );
   }
@@ -131,10 +257,15 @@ export default function OrderTypeSelectionScreen() {
     router.push("/quick-serve" as any);
   };
 
-  const isMobile = width < 600;
-  const isTablet = width >= 600 && width <= 1024;
-  const isDesktop = width > 1024;
-  // Portrait tablet: show cards in a nice single/wrapped column
+  const handleLogout = async () => {
+    setShowUserMenu(false);
+    await logout();
+    router.replace("/login" as any);
+  };
+
+  const isMobile = width < 680;
+  const isTablet = width >= 680 && width <= 1080;
+  const isDesktop = width > 1080;
   const isTabletPortrait = isTablet && !isLandscape;
 
   return (
@@ -152,75 +283,119 @@ export default function OrderTypeSelectionScreen() {
               resizeMode="contain"
             />
           ) : (
-            <View style={[styles.logoBadge, isMobile && styles.logoBadgeMobile]}>
-              <Ionicons name="restaurant" size={isMobile ? 16 : 20} color="#FFFFFF" />
+            <View style={[styles.headerLogoCircle, isMobile && styles.headerLogoCircleMobile]}>
+              <Ionicons name="restaurant" size={isMobile ? 18 : 22} color="#7C2D12" />
             </View>
           )}
 
           <View style={styles.brandTitleContainer}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text
-                style={[styles.brandTitle, isMobile && styles.brandTitleMobile]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {companyInfo?.CompanyName || "FOOD POS"}
-              </Text>
-            </View>
-            <Text style={[styles.brandSubtitle, isMobile && styles.brandSubtitleMobile]}>RESTAURANT SYSTEM</Text>
+            <Text
+              style={[styles.brandTitle, isMobile && styles.brandTitleMobile]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {companyInfo?.CompanyName || "My Restaurant"}
+            </Text>
+            <Text style={[styles.brandSubtitle, isMobile && styles.brandSubtitleMobile]}>
+              RESTAURANT SYSTEM
+            </Text>
           </View>
         </View>
 
-        {/* Center: Date & Time Display - Hidden on Mobile to avoid collision */}
+        {/* Center: Date & Time Display Badge */}
         {!isMobile && (
           <View style={styles.headerCenter}>
             <View style={styles.dateTimeBadge}>
               <View style={styles.badgeItem}>
-                <Ionicons name="calendar-outline" size={13} color="#FF9500" />
+                <Ionicons name="calendar-outline" size={14} color="#F97316" />
                 <Text style={styles.dateTimeText}>{currentDate}</Text>
               </View>
               <View style={styles.dateTimeDivider} />
               <View style={styles.badgeItem}>
-                <Ionicons name="time-outline" size={13} color="#FF9500" />
+                <Ionicons name="time-outline" size={14} color="#F97316" />
                 <Text style={styles.dateTimeText}>{currentTime}</Text>
               </View>
             </View>
           </View>
         )}
 
-        {/* Right: User Avatar */}
+        {/* Right: User Avatar & Dropdown Caret */}
         <View style={styles.headerRight}>
-          <View style={[styles.userInfo, isMobile && styles.userInfoMobile]}>
+          <TouchableOpacity
+            style={[styles.userInfo, isMobile && styles.userInfoMobile]}
+            onPress={() => setShowUserMenu(!showUserMenu)}
+            activeOpacity={0.8}
+          >
             <View style={[styles.avatarCircle, isMobile && styles.avatarCircleMobile]}>
               <Ionicons name="person" size={isMobile ? 13 : 15} color="#475569" />
               <View style={styles.onlineDot} />
             </View>
             <View style={styles.userTextContainer}>
               <Text style={[styles.userName, isMobile && styles.userNameMobile]} numberOfLines={1}>
-                {user?.userName || "UNIPRO"}
+                {user?.userName || "123"}
               </Text>
-              <Text style={[styles.userRole, isMobile && styles.userRoleMobile]}>{user?.role || "ADMIN"}</Text>
+              <Text style={[styles.userRole, isMobile && styles.userRoleMobile]}>
+                {user?.role || "ADMIN"}
+              </Text>
             </View>
-          </View>
+            <Ionicons name="chevron-down" size={14} color="#64748B" style={{ marginLeft: 5 }} />
+          </TouchableOpacity>
         </View>
+      </View>
+
+      {/* USER DROPDOWN POPUP */}
+      {showUserMenu && (
+        <Pressable style={styles.userMenuBackdrop} onPress={() => setShowUserMenu(false)}>
+          <View style={styles.userMenuDropdown}>
+            <View style={styles.userMenuHeader}>
+              <Text style={styles.userMenuHeaderName}>{user?.userName || "123"}</Text>
+              <Text style={styles.userMenuHeaderRole}>{user?.role || "ADMIN"}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.userMenuItem}
+              onPress={() => {
+                setShowUserMenu(false);
+                router.push("/general-settings" as any);
+              }}
+            >
+              <Ionicons name="settings-outline" size={17} color="#475569" />
+              <Text style={styles.userMenuItemText}>Settings</Text>
+            </TouchableOpacity>
+            <View style={styles.userMenuDivider} />
+            <TouchableOpacity style={styles.userMenuItem} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={17} color="#EF4444" />
+              <Text style={[styles.userMenuItemText, { color: "#EF4444" }]}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      )}
+
+      {/* FULL ARTISAN GOURMET BACKGROUND WALLPAPER */}
+      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <Image
+          source={BG_DISHES_IMG}
+          style={styles.fullBgImage}
+          resizeMode="cover"
+        />
+        <View style={styles.centerContrastWash} />
       </View>
 
       {/* MAIN CONTENT AREA */}
       {isDesktop ? (
-        /* FIXED NON-SCROLL DESKTOP FIT */
+        /* FIXED DESKTOP VIEW - PERFECT NO SCROLL FIT */
         <View style={styles.mainFixedContainer}>
-          <View style={styles.ambientBlob1} />
-          <View style={styles.ambientBlob2} />
-
           <View style={styles.fixedContentInner}>
             {/* HERO TITLE SECTION */}
             <View style={styles.heroSection}>
               <View style={styles.welcomePill}>
-                <Ionicons name="sparkles" size={13} color="#FF9500" />
+                <Ionicons name="sparkles" size={13} color="#F97316" />
                 <Text style={styles.welcomePillText}>Select Service Mode</Text>
               </View>
               <Text style={styles.mainTitle}>
-                Welcome to <Text style={{ color: "#FF9500" }}>{companyInfo?.CompanyName || "My Restaurant"}</Text>
+                Welcome to{" "}
+                <Text style={{ color: "#F97316" }}>
+                  {companyInfo?.CompanyName || "My Restaurant"}
+                </Text>
               </Text>
               <Text style={styles.subTitle}>
                 Choose your order fulfillment type below to start creating bills
@@ -230,134 +405,83 @@ export default function OrderTypeSelectionScreen() {
             {/* CARDS ROW */}
             <View style={styles.cardsRow}>
               {/* CARD 1: DINE IN */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.card,
-                  styles.cardDesktop,
-                  hoveredCard === 1 && styles.cardHovered,
-                  pressed ? styles.cardPressed : null,
+              <OrderCard
+                type="DINE_IN"
+                title="DINE IN"
+                subtitle="Serve customers at designated tables with real-time status"
+                image={DINE_IN_IMG}
+                accentColor="#EF4444"
+                accentGradient={["#FF2A42", "#DC2626"]}
+                iconName="restaurant"
+                features={[
+                  { icon: "storefront-outline", text: "Table Management" },
+                  { icon: "print-outline", text: "KOT Printing" },
                 ]}
+                buttonText="Start Dine In"
                 onPress={handleDineIn}
+                isHovered={hoveredCard === 1}
                 onHoverIn={() => setHoveredCard(1)}
                 onHoverOut={() => setHoveredCard(null)}
-              >
-                <View style={styles.cardHeaderAccent} />
-                <View style={styles.cardContentMinimal}>
-                  <View style={[styles.minimalIconCircle, { borderColor: "#FF4D5E", backgroundColor: "#FFF1F2" }]}>
-                    <Ionicons name="restaurant-outline" size={26} color="#FF4D5E" />
-                  </View>
-                  <Text style={styles.cardTitle}>DINE IN</Text>
-                  <View style={[styles.titleUnderline, { backgroundColor: "#FF4D5E" }]} />
-                  <Text style={styles.cardSubtitle}>Serve customers at designated tables with real-time status</Text>
-                  <View style={styles.featureChipsRow}>
-                    <View style={styles.chip}>
-                      <Ionicons name="checkmark-circle" size={12} color="#FF4D5E" />
-                      <Text style={styles.chipText}>Table Management</Text>
-                    </View>
-                    <View style={styles.chip}>
-                      <Ionicons name="checkmark-circle" size={12} color="#FF4D5E" />
-                      <Text style={styles.chipText}>KOT Printing</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: "#FF4D5E" }]}
-                    onPress={handleDineIn}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.actionButtonText}>Start Dine In</Text>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                  </TouchableOpacity>
-                </View>
-              </Pressable>
+                isDesktop={isDesktop}
+                isTablet={isTablet}
+                isMobile={isMobile}
+                isTabletPortrait={isTabletPortrait}
+              />
 
               {/* CARD 2: TAKE AWAY */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.card,
-                  styles.cardDesktop,
-                  hoveredCard === 2 && styles.cardHovered,
-                  pressed ? styles.cardPressed : null,
+              <OrderCard
+                type="TAKEAWAY"
+                title="TAKE AWAY"
+                subtitle="Quick order processing for carry-out & pickup orders"
+                image={TAKE_AWAY_IMG}
+                accentColor="#F97316"
+                accentGradient={["#FB923C", "#EA580C"]}
+                iconName="bag-handle"
+                features={[
+                  { icon: "ticket-outline", text: "Auto Token No." },
+                  { icon: "flash", text: "Fast Checkout" },
                 ]}
+                buttonText="Start Take Away"
                 onPress={handleTakeAway}
+                isHovered={hoveredCard === 2}
                 onHoverIn={() => setHoveredCard(2)}
                 onHoverOut={() => setHoveredCard(null)}
-              >
-                <View style={[styles.cardHeaderAccent, { backgroundColor: "#FF9500" }]} />
-                <View style={styles.cardContentMinimal}>
-                  <View style={[styles.minimalIconCircle, { borderColor: "#FF9500", backgroundColor: "#FFF7ED" }]}>
-                    <Ionicons name="bag-handle-outline" size={26} color="#FF9500" />
-                  </View>
-                  <Text style={styles.cardTitle}>TAKE AWAY</Text>
-                  <View style={[styles.titleUnderline, { backgroundColor: "#FF9500" }]} />
-                  <Text style={styles.cardSubtitle}>Quick order processing for carry-out & pickup orders</Text>
-                  <View style={styles.featureChipsRow}>
-                    <View style={styles.chip}>
-                      <Ionicons name="checkmark-circle" size={12} color="#FF9500" />
-                      <Text style={styles.chipText}>Auto Token No.</Text>
-                    </View>
-                    <View style={styles.chip}>
-                      <Ionicons name="checkmark-circle" size={12} color="#FF9500" />
-                      <Text style={styles.chipText}>Fast Checkout</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: "#FF9500" }]}
-                    onPress={handleTakeAway}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.actionButtonText}>Start Take Away</Text>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                  </TouchableOpacity>
-                </View>
-              </Pressable>
+                isDesktop={isDesktop}
+                isTablet={isTablet}
+                isMobile={isMobile}
+                isTabletPortrait={isTabletPortrait}
+              />
 
               {/* CARD 3: QUICK SERVE */}
               {settings.enableQuickServe !== false && (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.card,
-                    styles.cardDesktop,
-                    hoveredCard === 3 && styles.cardHovered,
-                    pressed ? styles.cardPressed : null,
+                <OrderCard
+                  type="QUICK_SERVE"
+                  title="QUICK SERVE"
+                  subtitle="Rapid billing for high-volume walk-in counters"
+                  image={QUICK_SERVE_IMG}
+                  accentColor="#10B981"
+                  accentGradient={["#34D399", "#059669"]}
+                  iconName="flash"
+                  features={[
+                    { icon: "card-outline", text: "Instant Pay" },
+                    { icon: "print-outline", text: "Direct KOT" },
                   ]}
+                  buttonText="Start Quick Serve"
                   onPress={handleQuickServe}
+                  isHovered={hoveredCard === 3}
                   onHoverIn={() => setHoveredCard(3)}
                   onHoverOut={() => setHoveredCard(null)}
-                >
-                  <View style={[styles.cardHeaderAccent, { backgroundColor: "#22C55E" }]} />
-                  <View style={styles.cardContentMinimal}>
-                    <View style={[styles.minimalIconCircle, { borderColor: "#22C55E", backgroundColor: "#F0FDF4" }]}>
-                      <Ionicons name="flash-outline" size={26} color="#22C55E" />
-                    </View>
-                    <Text style={styles.cardTitle}>QUICK SERVE</Text>
-                    <View style={[styles.titleUnderline, { backgroundColor: "#22C55E" }]} />
-                    <Text style={styles.cardSubtitle}>Rapid billing for high-volume walk-in counters</Text>
-                    <View style={styles.featureChipsRow}>
-                      <View style={styles.chip}>
-                        <Ionicons name="checkmark-circle" size={12} color="#22C55E" />
-                        <Text style={styles.chipText}>Instant Pay</Text>
-                      </View>
-                      <View style={styles.chip}>
-                        <Ionicons name="checkmark-circle" size={12} color="#22C55E" />
-                        <Text style={styles.chipText}>Direct KOT</Text>
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: "#22C55E" }]}
-                      onPress={handleQuickServe}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.actionButtonText}>Start Quick Serve</Text>
-                      <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                    </TouchableOpacity>
-                  </View>
-                </Pressable>
+                  isDesktop={isDesktop}
+                  isTablet={isTablet}
+                  isMobile={isMobile}
+                  isTabletPortrait={isTabletPortrait}
+                />
               )}
             </View>
           </View>
         </View>
       ) : (
-        /* SCROLLABLE RESPONSIVE LAYOUT FOR MOBILE & TABLET */
+        /* SCROLLABLE LAYOUT FOR MOBILE AND TABLETS */
         <ScrollView
           style={styles.mobileScrollView}
           contentContainerStyle={[
@@ -366,17 +490,17 @@ export default function OrderTypeSelectionScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.ambientBlob1} />
-          <View style={styles.ambientBlob2} />
-
           {/* HERO TITLE SECTION */}
           <View style={[styles.heroSection, isMobile && styles.heroSectionMobile]}>
             <View style={styles.welcomePill}>
-              <Ionicons name="sparkles" size={12} color="#FF9500" />
+              <Ionicons name="sparkles" size={12} color="#F97316" />
               <Text style={styles.welcomePillText}>Select Service Mode</Text>
             </View>
             <Text style={[styles.mainTitle, isMobile && styles.mainTitleMobile]}>
-              Welcome to <Text style={{ color: "#FF9500" }}>{companyInfo?.CompanyName || "My Restaurant"}</Text>
+              Welcome to{" "}
+              <Text style={{ color: "#F97316" }}>
+                {companyInfo?.CompanyName || "My Restaurant"}
+              </Text>
             </Text>
             <Text style={[styles.subTitle, isMobile && styles.subTitleMobile]}>
               Choose your order fulfillment type below to start creating bills
@@ -393,237 +517,81 @@ export default function OrderTypeSelectionScreen() {
             ]}
           >
             {/* CARD 1: DINE IN */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.card,
-                isMobile && styles.cardMobile,
-                isTabletPortrait && styles.cardTabletPortrait,
-                isTablet && !isTabletPortrait && styles.cardTablet,
-                pressed ? styles.cardPressed : null,
+            <OrderCard
+              type="DINE_IN"
+              title="DINE IN"
+              subtitle="Serve customers at designated tables with real-time status"
+              image={DINE_IN_IMG}
+              accentColor="#EF4444"
+              accentGradient={["#FF2A42", "#DC2626"]}
+              iconName="restaurant"
+              features={[
+                { icon: "storefront-outline", text: "Table Management" },
+                { icon: "print-outline", text: "KOT Printing" },
               ]}
+              buttonText="Start Dine In"
               onPress={handleDineIn}
-            >
-              <View style={styles.cardHeaderAccent} />
-              <View style={[styles.cardContentMinimal, isMobile && styles.cardContentMinimalMobile]}>
-                <View
-                  style={[
-                    styles.minimalIconCircle,
-                    isMobile && styles.minimalIconCircleMobile,
-                    { borderColor: "#FF4D5E", backgroundColor: "#FFF1F2" },
-                  ]}
-                >
-                  <Ionicons name="restaurant-outline" size={isMobile ? 22 : 26} color="#FF4D5E" />
-                </View>
-                <Text style={[styles.cardTitle, isMobile && styles.cardTitleMobile]}>DINE IN</Text>
-                <View style={[styles.titleUnderline, { backgroundColor: "#FF4D5E" }]} />
-                <Text style={[styles.cardSubtitle, isMobile && styles.cardSubtitleMobile]}>
-                  Serve customers at designated tables with real-time status
-                </Text>
-                <View style={styles.featureChipsRow}>
-                  <View style={styles.chip}>
-                    <Ionicons name="checkmark-circle" size={11} color="#FF4D5E" />
-                    <Text style={styles.chipText}>Table Management</Text>
-                  </View>
-                  <View style={styles.chip}>
-                    <Ionicons name="checkmark-circle" size={11} color="#FF4D5E" />
-                    <Text style={styles.chipText}>KOT Printing</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.actionButtonMobile, { backgroundColor: "#FF4D5E" }]}
-                  onPress={handleDineIn}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.actionButtonText}>Start Dine In</Text>
-                  <Ionicons name="arrow-forward" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                </TouchableOpacity>
-              </View>
-            </Pressable>
+              isHovered={false}
+              onHoverIn={() => {}}
+              onHoverOut={() => {}}
+              isDesktop={isDesktop}
+              isTablet={isTablet}
+              isMobile={isMobile}
+              isTabletPortrait={isTabletPortrait}
+            />
 
             {/* CARD 2: TAKE AWAY */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.card,
-                isMobile && styles.cardMobile,
-                isTabletPortrait && styles.cardTabletPortrait,
-                isTablet && !isTabletPortrait && styles.cardTablet,
-                pressed ? styles.cardPressed : null,
+            <OrderCard
+              type="TAKEAWAY"
+              title="TAKE AWAY"
+              subtitle="Quick order processing for carry-out & pickup orders"
+              image={TAKE_AWAY_IMG}
+              accentColor="#F97316"
+              accentGradient={["#FB923C", "#EA580C"]}
+              iconName="bag-handle"
+              features={[
+                { icon: "ticket-outline", text: "Auto Token No." },
+                { icon: "flash", text: "Fast Checkout" },
               ]}
+              buttonText="Start Take Away"
               onPress={handleTakeAway}
-            >
-              <View style={[styles.cardHeaderAccent, { backgroundColor: "#FF9500" }]} />
-              <View style={[styles.cardContentMinimal, isMobile && styles.cardContentMinimalMobile]}>
-                <View
-                  style={[
-                    styles.minimalIconCircle,
-                    isMobile && styles.minimalIconCircleMobile,
-                    { borderColor: "#FF9500", backgroundColor: "#FFF7ED" },
-                  ]}
-                >
-                  <Ionicons name="bag-handle-outline" size={isMobile ? 22 : 26} color="#FF9500" />
-                </View>
-                <Text style={[styles.cardTitle, isMobile && styles.cardTitleMobile]}>TAKE AWAY</Text>
-                <View style={[styles.titleUnderline, { backgroundColor: "#FF9500" }]} />
-                <Text style={[styles.cardSubtitle, isMobile && styles.cardSubtitleMobile]}>
-                  Quick order processing for carry-out & pickup orders
-                </Text>
-                <View style={styles.featureChipsRow}>
-                  <View style={styles.chip}>
-                    <Ionicons name="checkmark-circle" size={11} color="#FF9500" />
-                    <Text style={styles.chipText}>Auto Token No.</Text>
-                  </View>
-                  <View style={styles.chip}>
-                    <Ionicons name="checkmark-circle" size={11} color="#FF9500" />
-                    <Text style={styles.chipText}>Fast Checkout</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.actionButtonMobile, { backgroundColor: "#FF9500" }]}
-                  onPress={handleTakeAway}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.actionButtonText}>Start Take Away</Text>
-                  <Ionicons name="arrow-forward" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                </TouchableOpacity>
-              </View>
-            </Pressable>
+              isHovered={false}
+              onHoverIn={() => {}}
+              onHoverOut={() => {}}
+              isDesktop={isDesktop}
+              isTablet={isTablet}
+              isMobile={isMobile}
+              isTabletPortrait={isTabletPortrait}
+            />
 
             {/* CARD 3: QUICK SERVE */}
             {settings.enableQuickServe !== false && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.card,
-                  isMobile && styles.cardMobile,
-                  isTabletPortrait && styles.cardTabletPortrait,
-                  isTablet && !isTabletPortrait && styles.cardTablet,
-                  pressed ? styles.cardPressed : null,
+              <OrderCard
+                type="QUICK_SERVE"
+                title="QUICK SERVE"
+                subtitle="Rapid billing for high-volume walk-in counters"
+                image={QUICK_SERVE_IMG}
+                accentColor="#10B981"
+                accentGradient={["#34D399", "#059669"]}
+                iconName="flash"
+                features={[
+                  { icon: "card-outline", text: "Instant Pay" },
+                  { icon: "print-outline", text: "Direct KOT" },
                 ]}
+                buttonText="Start Quick Serve"
                 onPress={handleQuickServe}
-              >
-                <View style={[styles.cardHeaderAccent, { backgroundColor: "#22C55E" }]} />
-                <View style={[styles.cardContentMinimal, isMobile && styles.cardContentMinimalMobile]}>
-                  <View
-                    style={[
-                      styles.minimalIconCircle,
-                      isMobile && styles.minimalIconCircleMobile,
-                      { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
-                    ]}
-                  >
-                    <Ionicons name="flash-outline" size={isMobile ? 22 : 26} color="#22C55E" />
-                  </View>
-                  <Text style={[styles.cardTitle, isMobile && styles.cardTitleMobile]}>QUICK SERVE</Text>
-                  <View style={[styles.titleUnderline, { backgroundColor: "#22C55E" }]} />
-                  <Text style={[styles.cardSubtitle, isMobile && styles.cardSubtitleMobile]}>
-                    Rapid billing for high-volume walk-in counters
-                  </Text>
-                  <View style={styles.featureChipsRow}>
-                    <View style={styles.chip}>
-                      <Ionicons name="checkmark-circle" size={11} color="#22C55E" />
-                      <Text style={styles.chipText}>Instant Pay</Text>
-                    </View>
-                    <View style={styles.chip}>
-                      <Ionicons name="checkmark-circle" size={11} color="#22C55E" />
-                      <Text style={styles.chipText}>Direct KOT</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.actionButtonMobile, { backgroundColor: "#22C55E" }]}
-                    onPress={handleQuickServe}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.actionButtonText}>Start Quick Serve</Text>
-                    <Ionicons name="arrow-forward" size={15} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                  </TouchableOpacity>
-                </View>
-              </Pressable>
+                isHovered={false}
+                onHoverIn={() => {}}
+                onHoverOut={() => {}}
+                isDesktop={isDesktop}
+                isTablet={isTablet}
+                isMobile={isMobile}
+                isTabletPortrait={isTabletPortrait}
+              />
             )}
           </View>
         </ScrollView>
       )}
-
-      {/* ULTRA-PREMIUM COMING SOON MODAL FOR QUICK SERVE */}
-      <Modal
-        visible={showQuickServeModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowQuickServeModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.comingSoonModalCard}>
-            {/* Top Gradient Header Banner */}
-            <LinearGradient
-              colors={["#047857", "#10B981", "#34D399"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.modalHeaderBanner}
-            >
-              <TouchableOpacity
-                style={styles.modalCloseBtn}
-                onPress={() => setShowQuickServeModal(false)}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="close" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <View style={styles.bannerSparkleBg}>
-                <Ionicons name="sparkles-outline" size={80} color="rgba(255, 255, 255, 0.15)" />
-              </View>
-            </LinearGradient>
-
-            {/* Overlapping Hero Icon Circle */}
-            <View style={styles.heroIconWrapper}>
-              <View style={styles.comingSoonIconCircle}>
-                <Ionicons name="flash" size={34} color="#059669" />
-              </View>
-            </View>
-
-            {/* Modal Body Content */}
-            <View style={styles.modalBodyContent}>
-              <Text style={styles.comingSoonTitle}>Quick Serve POS ⚡</Text>
-
-              <View style={styles.comingSoonBadge}>
-                <View style={styles.pulseDot} />
-                <Text style={styles.comingSoonBadgeText}>FEATURE IN DEVELOPMENT</Text>
-              </View>
-
-              <Text style={styles.comingSoonDesc}>
-                High-speed walk-in counter billing, instant checkout, and direct kitchen dispatch are currently being crafted for maximum efficiency!
-              </Text>
-
-              {/* Feature Chips */}
-              <View style={styles.modalFeatureGrid}>
-                <View style={styles.modalFeatureChip}>
-                  <Ionicons name="flash-outline" size={14} color="#059669" />
-                  <Text style={styles.modalFeatureChipText}>Instant Pay</Text>
-                </View>
-                <View style={styles.modalFeatureChip}>
-                  <Ionicons name="print-outline" size={14} color="#059669" />
-                  <Text style={styles.modalFeatureChipText}>Direct KOT</Text>
-                </View>
-                <View style={styles.modalFeatureChip}>
-                  <Ionicons name="speedometer-outline" size={14} color="#059669" />
-                  <Text style={styles.modalFeatureChipText}>Fast Counter</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setShowQuickServeModal(false)}
-                activeOpacity={0.88}
-                style={{ width: "100%", marginTop: 4 }}
-              >
-                <LinearGradient
-                  colors={["#10B981", "#059669"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.comingSoonBtnGradient}
-                >
-                  <Text style={styles.comingSoonBtnText}>Got It, Close</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -631,226 +599,30 @@ export default function OrderTypeSelectionScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.65)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  comingSoonModalCard: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    overflow: "hidden",
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 16 },
-        shadowOpacity: 0.22,
-        shadowRadius: 28,
-      },
-      android: {
-        elevation: 16,
-      },
-      web: {
-        boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
-      },
-    }),
-  },
-  modalHeaderBanner: {
-    width: "100%",
-    height: 110,
-    position: "relative",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalCloseBtn: {
-    position: "absolute",
-    top: 14,
-    right: 14,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.22)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
-  },
-  bannerSparkleBg: {
-    position: "absolute",
-    right: -10,
-    top: -10,
-  },
-  heroIconWrapper: {
-    marginTop: -38,
-    zIndex: 10,
-  },
-  comingSoonIconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 4,
-    borderColor: "#ECFDF5",
-    justifyContent: "center",
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#059669",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 10,
-      },
-      android: {
-        elevation: 6,
-      },
-      web: {
-        boxShadow: "0 10px 25px rgba(5, 150, 105, 0.2)",
-      },
-    }),
-  },
-  modalBodyContent: {
-    width: "100%",
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 24,
-    alignItems: "center",
-  },
-  comingSoonTitle: {
-    fontFamily: Fonts.extraBold || "System",
-    fontSize: 23,
-    color: "#0F172A",
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  comingSoonBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 14,
-    marginBottom: 14,
-  },
-  pulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#10B981",
-    marginRight: 6,
-  },
-  comingSoonBadgeText: {
-    fontFamily: Fonts.bold || "System",
-    fontSize: 10.5,
-    color: "#047857",
-    letterSpacing: 0.6,
-  },
-  comingSoonDesc: {
-    fontFamily: Fonts.medium || "System",
-    fontSize: 13.5,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 18,
-  },
-  modalFeatureGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 22,
-  },
-  modalFeatureChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  modalFeatureChipText: {
-    fontFamily: Fonts.semiBold || "System",
-    fontSize: 11.5,
-    color: "#334155",
-  },
-  comingSoonBtnGradient: {
-    width: "100%",
-    paddingVertical: 14,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#059669",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-      },
-      android: {
-        elevation: 6,
-      },
-      web: {
-        boxShadow: "0 8px 20px rgba(5, 150, 105, 0.3)",
-      },
-    }),
-  },
-  comingSoonBtnText: {
-    fontFamily: Fonts.bold || "System",
-    fontSize: 15,
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
-  },
-  ambientBlob1: {
-    position: "absolute",
-    top: -100,
-    left: -100,
-    width: 350,
-    height: 350,
-    borderRadius: 175,
-    backgroundColor: "rgba(255, 77, 94, 0.03)",
-  },
-  ambientBlob2: {
-    position: "absolute",
-    bottom: -100,
-    right: -100,
-    width: 400,
-    height: 400,
-    borderRadius: 200,
-    backgroundColor: "rgba(255, 149, 0, 0.03)",
+    backgroundColor: "#FDFDFD",
   },
   header: {
-    height: 62,
+    height: 64,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#F1F5F9",
     zIndex: 100,
     ...Platform.select({
       ios: {
         shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.03,
-        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
       },
       android: {
         elevation: 3,
       },
       web: {
-        boxShadow: "0 4px 20px rgba(15, 23, 42, 0.04)",
+        boxShadow: "0 2px 12px rgba(15, 23, 42, 0.04)",
       },
     }),
   },
@@ -859,46 +631,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerCompanyLogo: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 10,
     marginRight: 12,
   },
-  logoBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#FF4D5E",
+  headerLogoCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1.5,
+    borderColor: "#D97706",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
+  },
+  headerLogoCircleMobile: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginRight: 8,
   },
   brandTitleContainer: {
     justifyContent: "center",
   },
   brandTitle: {
     fontFamily: Fonts.extraBold || "System",
-    fontSize: 18,
+    fontSize: 18.5,
     color: "#0F172A",
-    letterSpacing: 0.4,
-  },
-  proBadge: {
-    backgroundColor: "rgba(255, 77, 94, 0.1)",
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-  },
-  proBadgeText: {
-    fontSize: 9.5,
-    fontFamily: Fonts.bold || "System",
-    color: "#FF4D5E",
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   brandSubtitle: {
     fontFamily: Fonts.semiBold || "System",
-    fontSize: 9,
+    fontSize: 9.5,
     color: "#64748B",
-    letterSpacing: 1.6,
+    letterSpacing: 1.8,
     marginTop: 0,
   },
   headerCenter: {
@@ -909,10 +677,10 @@ const styles = StyleSheet.create({
   dateTimeBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
@@ -922,15 +690,15 @@ const styles = StyleSheet.create({
   },
   dateTimeText: {
     fontFamily: Fonts.semiBold || "System",
-    fontSize: 12.5,
+    fontSize: 13,
     color: "#334155",
-    marginLeft: 5,
+    marginLeft: 6,
   },
   dateTimeDivider: {
     width: 1,
-    height: 12,
+    height: 14,
     backgroundColor: "#CBD5E1",
-    marginHorizontal: 10,
+    marginHorizontal: 12,
   },
   headerRight: {
     flexDirection: "row",
@@ -939,18 +707,17 @@ const styles = StyleSheet.create({
   userInfo: {
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 16,
     backgroundColor: "#F8FAFC",
-    paddingHorizontal: 9,
+    paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   avatarCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "#E2E8F0",
     justifyContent: "center",
     alignItems: "center",
@@ -970,51 +737,19 @@ const styles = StyleSheet.create({
   },
   userTextContainer: {
     justifyContent: "center",
-    paddingRight: 2,
   },
   userName: {
     fontFamily: Fonts.bold || "System",
-    fontSize: 12.5,
+    fontSize: 13,
     color: "#1E293B",
   },
   userRole: {
-    fontFamily: Fonts.medium || "System",
+    fontFamily: Fonts.semiBold || "System",
     fontSize: 10,
     color: "#64748B",
     marginTop: -1,
   },
-  menuButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FF9500",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 11,
-    gap: 6,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#FF9500",
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
-      },
-      android: {
-        elevation: 3,
-      },
-      web: {
-        boxShadow: "0 4px 12px rgba(255, 149, 0, 0.25)",
-      },
-    }),
-  },
-  menuButtonActive: {
-    backgroundColor: "#D97706",
-  },
-  menuButtonText: {
-    fontFamily: Fonts.semiBold || "System",
-    fontSize: 13.5,
-    color: "#FFFFFF",
-  },
-  menuOverlay: {
+  userMenuBackdrop: {
     position: "absolute",
     top: 0,
     bottom: 0,
@@ -1022,379 +757,295 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 999,
   },
-  menuModalContainer: {
+  userMenuDropdown: {
     position: "absolute",
-    right: 24,
-    width: 310,
-    maxHeight: 520,
+    top: 70,
+    right: 28,
+    width: 190,
     backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    overflow: "hidden",
+    borderRadius: 14,
+    paddingVertical: 6,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     ...Platform.select({
       ios: {
         shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.18,
-        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 18,
       },
       android: {
-        elevation: 14,
+        elevation: 8,
       },
       web: {
-        boxShadow: "0 12px 36px rgba(15, 23, 42, 0.16)",
+        boxShadow: "0 10px 25px rgba(15, 23, 42, 0.12)",
       },
     }),
   },
-  menuModalHeaderOrange: {
-    backgroundColor: "#E95709",
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  headerAvatarContainer: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#FFFFFF",
-    padding: 2,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerAvatarImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-  },
-  headerUserTextCol: {
-    justifyContent: "center",
-  },
-  headerUserNameTextOrange: {
-    fontFamily: Fonts.extraBold || "System",
-    fontSize: 17,
-    color: "#FFFFFF",
-    letterSpacing: 0.4,
-  },
-  headerUserRoleTextOrange: {
-    fontFamily: Fonts.semiBold || "System",
-    fontSize: 11,
-    color: "rgba(255, 255, 255, 0.9)",
-    letterSpacing: 0.4,
-    marginTop: 1,
-  },
-  menuListScrollView: {
-    maxHeight: 440,
-  },
-  menuListBody: {
+  userMenuHeader: {
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
   },
-  menuRowItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 9,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
-  menuRowItemExpanded: {
-    backgroundColor: "#F8FAFC",
-  },
-  menuRowLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  menuIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#FFF7ED",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  menuRowText: {
+  userMenuHeaderName: {
     fontFamily: Fonts.bold || "System",
-    fontSize: 15,
-    color: "#1E293B",
+    fontSize: 13.5,
+    color: "#0F172A",
   },
-  subMenuContainer: {
-    borderLeftWidth: 2,
-    borderLeftColor: "#F1F5F9",
-    marginLeft: 28,
-    marginVertical: 4,
-    paddingLeft: 6,
-    gap: 2,
+  userMenuHeaderRole: {
+    fontFamily: Fonts.medium || "System",
+    fontSize: 10.5,
+    color: "#64748B",
   },
-  subMenuItem: {
+  userMenuItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 8,
     gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
-  subIconBox: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: "#FFF7ED",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  subMenuItemText: {
-    fontFamily: Fonts.medium || "System",
-    fontSize: 13.5,
+  userMenuItemText: {
+    fontFamily: Fonts.semiBold || "System",
+    fontSize: 13,
     color: "#334155",
   },
-  menuDivider: {
+  userMenuDivider: {
     height: 1,
     backgroundColor: "#F1F5F9",
     marginVertical: 4,
-    marginHorizontal: 10,
   },
+
+  /* Full-bleed Gourmet Background Wallpaper */
+  fullBgImage: {
+    width: "100%",
+    height: "100%",
+  },
+  centerContrastWash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+
+  /* Fixed Desktop Layout */
   mainFixedContainer: {
     flex: 1,
-    position: "relative",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    zIndex: 10,
   },
   fixedContentInner: {
     width: "100%",
-    maxWidth: 1120,
+    maxWidth: 1140,
     alignItems: "center",
     justifyContent: "center",
   },
   heroSection: {
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 18,
   },
   welcomePill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 6,
     backgroundColor: "#FFF7ED",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 16,
+    paddingHorizontal: 13,
+    paddingVertical: 4.5,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: "#FFEDD5",
     marginBottom: 8,
   },
   welcomePillText: {
     fontFamily: Fonts.bold || "System",
-    fontSize: 11,
-    color: "#FF9500",
-    letterSpacing: 0.4,
+    fontSize: 11.8,
+    color: "#F97316",
+    letterSpacing: 0.3,
   },
   mainTitle: {
     fontFamily: Fonts.extraBold || "System",
-    fontSize: 32,
+    fontSize: 29,
     color: "#0F172A",
-    letterSpacing: 0.4,
+    letterSpacing: 0.35,
     textAlign: "center",
     marginBottom: 4,
   },
   subTitle: {
     fontFamily: Fonts.medium || "System",
-    fontSize: 14,
+    fontSize: 13.8,
     color: "#64748B",
     textAlign: "center",
-    maxWidth: 460,
+    maxWidth: 480,
   },
+
+  /* Cards Row & Grid */
   cardsRow: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "stretch",
     gap: 24,
     width: "100%",
-    maxWidth: 1120,
-    flexWrap: "wrap",
-  },
-  cardsColumn: {
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 16,
+    maxWidth: 1140,
   },
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#F1F5F9",
     position: "relative",
     ...Platform.select({
       ios: {
         shadowColor: "#0F172A",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.07,
-        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 9 },
+        shadowOpacity: 0.08,
+        shadowRadius: 18,
       },
       android: {
-        elevation: 5,
+        elevation: 6,
       },
       web: {
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+        boxShadow: "0 9px 28px rgba(15, 23, 42, 0.08)",
+        transition: "all 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
       },
     }),
   },
   cardDesktop: {
     flex: 1,
-    minWidth: 260,
-    maxWidth: 355,
+    minWidth: 290,
+    maxWidth: 335,
   },
   cardHovered: {
     ...Platform.select({
       web: {
-        boxShadow: "0 16px 36px rgba(15, 23, 42, 0.10)",
-        transform: "translateY(-4px)",
+        boxShadow: "0 18px 40px rgba(15, 23, 42, 0.13)",
+        transform: "translateY(-6px)",
       },
     }),
   },
   cardPressed: {
-    opacity: 0.95,
+    opacity: 0.96,
   },
-  cardHeaderAccent: {
-    height: 4,
-    backgroundColor: "#FF4D5E",
-    width: "100%",
-  },
+
+  /* Card Image Banner & Wave */
   cardImageContainer: {
-    height: 135,
     width: "100%",
+    height: 125,
     position: "relative",
+    overflow: "hidden",
+    backgroundColor: "#F1F5F9",
+  },
+  cardImageContainerMobile: {
+    height: 110,
   },
   cardImage: {
     width: "100%",
     height: "100%",
-    resizeMode: "cover",
   },
-  imageGradientOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.25)",
-  },
-  cardHeaderBadgeRow: {
+  waveSvgWrapper: {
     position: "absolute",
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 38,
+    zIndex: 5,
   },
-  cardTag: {
-    backgroundColor: "rgba(255, 77, 94, 0.15)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+  waveSvg: {
+    width: "100%",
+    height: 38,
   },
-  cardTagText: {
-    fontFamily: Fonts.bold || "System",
-    fontSize: 9.5,
-    color: "#FF4D5E",
-    letterSpacing: 0.7,
+
+  /* Floating Center Badge */
+  iconCircleWrapper: {
+    alignItems: "center",
+    marginTop: -28,
+    zIndex: 10,
   },
   iconCircleBadge: {
-    position: "absolute",
-    bottom: -20,
-    alignSelf: "center",
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 3.5,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 3.5,
-    borderColor: "#FFFFFF",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.14,
-        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3.5 },
+        shadowOpacity: 0.13,
+        shadowRadius: 7,
       },
       android: {
-        elevation: 5,
+        elevation: 6,
       },
       web: {
-        boxShadow: "0 3px 10px rgba(0, 0, 0, 0.14)",
+        boxShadow: "0 5px 14px rgba(0, 0, 0, 0.11)",
       },
     }),
   },
+
+  /* Card Content Body */
   cardContent: {
-    paddingTop: 26,
+    paddingTop: 8,
     paddingBottom: 18,
     paddingHorizontal: 18,
     alignItems: "center",
   },
-  cardContentMinimal: {
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    alignItems: "center",
+  cardContentMobile: {
+    paddingTop: 8,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
   },
-  minimalIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
+  cardTitle: {
+    fontFamily: Fonts.extraBold || "System",
+    fontSize: 19.5,
+    color: "#0F172A",
+    letterSpacing: 0.7,
+    marginBottom: 3,
   },
   titleUnderline: {
     width: 28,
     height: 3,
     borderRadius: 2,
-    marginTop: 4,
-    marginBottom: 10,
-  },
-  cardTitle: {
-    fontFamily: Fonts.extraBold || "System",
-    fontSize: 19,
-    color: "#0F172A",
-    letterSpacing: 0.7,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   cardSubtitle: {
     fontFamily: Fonts.regular || "System",
-    fontSize: 12.5,
+    fontSize: 12.2,
     color: "#64748B",
     marginBottom: 12,
     textAlign: "center",
     lineHeight: 17,
+    height: 34,
   },
   featureChipsRow: {
     flexDirection: "row",
-    gap: 6,
-    marginBottom: 16,
+    gap: 7,
+    marginBottom: 14,
     flexWrap: "wrap",
     justifyContent: "center",
   },
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     backgroundColor: "#F8FAFC",
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   chipText: {
-    fontFamily: Fonts.medium || "System",
-    fontSize: 11,
-    color: "#475569",
+    fontFamily: Fonts.semiBold || "System",
+    fontSize: 11.2,
+    color: "#334155",
   },
   actionButton: {
     width: "100%",
-    height: 44,
+    height: 42,
     borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
@@ -1402,32 +1053,29 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.12,
-        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3.5 },
+        shadowOpacity: 0.14,
+        shadowRadius: 7,
       },
       android: {
-        elevation: 3,
+        elevation: 4,
       },
       web: {
-        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.11)",
       },
     }),
   },
   actionButtonText: {
     fontFamily: Fonts.bold || "System",
-    fontSize: 14,
+    fontSize: 14.5,
     color: "#FFFFFF",
     letterSpacing: 0.3,
   },
-  actionButtonMobile: {
-    height: 42,
-    borderRadius: 10,
-  },
-  // Responsive styles for Mobile & Tablet
+
+  /* Mobile and Tablet Styles */
   headerMobile: {
-    height: 54,
-    paddingHorizontal: 14,
+    height: 56,
+    paddingHorizontal: 16,
   },
   headerCompanyLogoMobile: {
     width: 32,
@@ -1435,24 +1083,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 8,
   },
-  logoBadgeMobile: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    marginRight: 8,
-  },
   brandTitleMobile: {
-    fontSize: 15,
+    fontSize: 16,
   },
   brandSubtitleMobile: {
-    fontSize: 8,
+    fontSize: 8.5,
     letterSpacing: 1.2,
   },
   userInfoMobile: {
-    marginRight: 0,
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 14,
+    borderRadius: 16,
   },
   avatarCircleMobile: {
     width: 24,
@@ -1461,10 +1102,10 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   userNameMobile: {
-    fontSize: 11,
+    fontSize: 11.5,
   },
   userRoleMobile: {
-    fontSize: 9,
+    fontSize: 9.5,
   },
   mobileScrollView: {
     flex: 1,
@@ -1473,82 +1114,62 @@ const styles = StyleSheet.create({
   mobileScrollContent: {
     flexGrow: 1,
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 16,
     paddingBottom: 40,
     alignItems: "center",
   },
   tabletScrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingTop: 20,
     paddingBottom: 48,
   },
   heroSectionMobile: {
-    marginBottom: 12,
+    marginBottom: 18,
   },
   mainTitleMobile: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 30,
   },
   subTitleMobile: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 12.5,
+    lineHeight: 17,
     maxWidth: 320,
-    marginBottom: 2,
   },
   cardsColumnMobile: {
     flexDirection: "column",
     alignItems: "center",
     width: "100%",
-    gap: 12,
+    gap: 18,
   },
   cardsRowTablet: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
     alignItems: "stretch",
-    gap: 16,
+    gap: 20,
     width: "100%",
   },
   cardsColumnTabletPortrait: {
     flexDirection: "column",
     alignItems: "center",
     width: "100%",
-    gap: 14,
+    gap: 18,
   },
   cardMobile: {
     width: "100%",
     maxWidth: 420,
-    borderRadius: 16,
+    borderRadius: 20,
   },
   cardTablet: {
     width: "46%",
-    minWidth: 280,
+    minWidth: 290,
     maxWidth: 420,
-    borderRadius: 18,
+    borderRadius: 20,
   },
   cardTabletPortrait: {
     width: "100%",
     maxWidth: 480,
-    borderRadius: 18,
-  },
-  cardContentMinimalMobile: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-  },
-  minimalIconCircleMobile: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginBottom: 6,
-  },
-  cardTitleMobile: {
-    fontSize: 16,
-    marginBottom: 2,
-  },
-  cardSubtitleMobile: {
-    fontSize: 11,
-    marginBottom: 8,
-    lineHeight: 15,
+    borderRadius: 20,
   },
 });

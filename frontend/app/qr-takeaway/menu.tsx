@@ -808,9 +808,6 @@ export default function CustomerMenuScreen() {
     <View style={styles.container}>
       {/* Header bar */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace("/qr-takeaway" as any)}>
-          <Ionicons name="chevron-back" size={24} color="#0F172A" />
-        </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Takeaway Menu</Text>
           <Text style={[styles.tableBadge, { backgroundColor: "#fff7ed", color: "#ea580c", borderColor: "#fed7aa" }]}>
