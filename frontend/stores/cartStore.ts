@@ -362,6 +362,7 @@ type CartState = {
   carts: Record<string, CartItem[]>;
   discounts: Record<string, DiscountInfo>;
   tableOrderIds: Record<string, string | null>;
+  tablePaymentStatus: Record<string, { isPaid: boolean; paymentStatus: string }>;
 
   currentContextId: string | null;
   pendingSync: boolean;
@@ -443,6 +444,7 @@ export const useCartStore = create<CartState>()(
       carts: {},
       discounts: {},
       tableOrderIds: {},
+      tablePaymentStatus: {},
       currentContextId: null,
       pendingSync: false,
       lastLocalUpdate: {},
@@ -1597,6 +1599,13 @@ export const useCartStore = create<CartState>()(
                 carts: { ...state.carts, [resolvedContextId!]: mergedItems },
                 cartQtyMap: { ...state.cartQtyMap, [resolvedContextId!]: newQtyMap },
                 tableOrderIds: { ...state.tableOrderIds, [tableId]: orderId },
+                tablePaymentStatus: {
+                  ...state.tablePaymentStatus,
+                  [tableId]: {
+                    isPaid: Boolean(data.isPaid),
+                    paymentStatus: data.paymentStatus || (data.isPaid ? "PAID" : "UNPAID"),
+                  },
+                },
                 lastServerSync: { ...state.lastServerSync, [resolvedContextId!]: Date.now() },
                 pendingSync: false
               };

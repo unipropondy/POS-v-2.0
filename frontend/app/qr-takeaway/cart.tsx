@@ -424,6 +424,12 @@ export default function CustomerCartScreen() {
         if (orderContext?.tableId) {
           useCartStore.getState().setTableOrderId(orderContext.tableId, orderId);
         }
+        if (orderContext && orderId) {
+          useOrderContextStore.getState().setOrderContext({
+            ...orderContext,
+            orderId: String(orderId),
+          });
+        }
 
         // Update promo balance
         if (applyPromo && activePromoCode) {

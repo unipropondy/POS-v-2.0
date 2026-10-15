@@ -7,6 +7,7 @@ export type OrderContext = {
   tableNo?: string;
   tableName?: string;
   takeawayNo?: string;
+  orderId?: string;
   serverId?: number;
   serverName?: string;
 };

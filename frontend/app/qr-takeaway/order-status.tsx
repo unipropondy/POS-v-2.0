@@ -434,6 +434,65 @@ export default function CustomerOrderStatusScreen() {
   const [onlineStep, setOnlineStep] = useState<"summary" | "qr">("summary");
   const [isProcessingCashier, setIsProcessingCashier] = useState(false);
 
+  const [currentOrderId, setCurrentOrderId] = useState<string>(() => {
+    return (
+      (orderContext as any)?.orderId ||
+      (orderContext?.tableId && useCartStore.getState().tableOrderIds[orderContext.tableId]) ||
+      (typeof localStorage !== "undefined" ? localStorage.getItem("last_tw_order_id") : "") ||
+      ""
+    );
+  });
+  const [isPaid, setIsPaid] = useState<boolean>(() => {
+    if (orderContext?.tableId && useCartStore.getState().tablePaymentStatus?.[orderContext.tableId]?.isPaid) {
+      return true;
+    }
+    return false;
+  });
+  const [paymentStatus, setPaymentStatus] = useState<"PAID" | "PENDING_CASHIER" | "UNPAID">(() => {
+    if (orderContext?.tableId && useCartStore.getState().tablePaymentStatus?.[orderContext.tableId]) {
+      return useCartStore.getState().tablePaymentStatus[orderContext.tableId].paymentStatus as any;
+    }
+    return "UNPAID";
+  });
+
+  const fetchOrderStatus = async () => {
+    const targetTableId = orderContext?.tableId || orderContext?.tableNo;
+    const targetOrderId =
+      currentOrderId ||
+      (orderContext as any)?.orderId ||
+      (targetTableId ? useCartStore.getState().tableOrderIds[targetTableId] : null) ||
+      (typeof localStorage !== "undefined" ? localStorage.getItem("last_tw_order_id") : null);
+
+    const queryKey = targetOrderId || targetTableId;
+    if (!queryKey) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/orders/order-status/${encodeURIComponent(queryKey)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.orderNumber) {
+            setCurrentOrderId(data.orderNumber);
+            if (typeof localStorage !== "undefined") {
+              localStorage.setItem("last_tw_order_id", data.orderNumber);
+            }
+            if (targetTableId) {
+              useCartStore.getState().setTableOrderId(targetTableId, data.orderNumber);
+            }
+          }
+          if (data.isPaid !== undefined) {
+            setIsPaid(Boolean(data.isPaid));
+          }
+          if (data.paymentStatus) {
+            setPaymentStatus(data.paymentStatus);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("fetchOrderStatus error:", err);
+    }
+  };
+
   const [promoInput, setPromoInput] = useState("");
   const [promoError, setPromoError] = useState("");
   const [validatingPromo, setValidatingPromo] = useState(false);
@@ -500,8 +559,18 @@ export default function CustomerOrderStatusScreen() {
         // 🚀 FORCE FETCH: Bypasses Latency Shield since we navigate here immediately after placing an order
         fetchCartFromDB(targetTableId, true);
       }
+      fetchOrderStatus();
     }
   }, [orderContext]);
+
+  // Polling for live payment & order status sync
+  useEffect(() => {
+    fetchOrderStatus();
+    const interval = setInterval(() => {
+      fetchOrderStatus();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [orderContext, currentOrderId]);
 
   useEffect(() => {
     if (!orderContext?.tableId) return;
@@ -535,17 +604,29 @@ export default function CustomerOrderStatusScreen() {
       const cleanCurrent = String(orderContext.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
       if (cleanTarget === cleanCurrent && orderContext.tableId) {
         fetchCartFromDB(orderContext.tableId, true);
+        fetchOrderStatus();
+      }
+    };
+
+    const handlePaymentUpdated = () => {
+      fetchOrderStatus();
+      if (orderContext.tableId) {
+        fetchCartFromDB(orderContext.tableId, true);
       }
     };
 
     socket.on("order_closed", handleOrderClosed);
     socket.on("table_status_updated", handleTableStatus);
     socket.on("cart_updated", handleCartUpdated);
+    socket.on("settlement_updated", handlePaymentUpdated);
+    socket.on("qr_payment_confirmed", handlePaymentUpdated);
 
     return () => {
       socket.off("order_closed", handleOrderClosed);
       socket.off("table_status_updated", handleTableStatus);
       socket.off("cart_updated", handleCartUpdated);
+      socket.off("settlement_updated", handlePaymentUpdated);
+      socket.off("qr_payment_confirmed", handlePaymentUpdated);
     };
   }, [orderContext]);
 
@@ -897,29 +978,40 @@ export default function CustomerOrderStatusScreen() {
 
   const displayCurrency = currencySymbol || "$";
   
-  // Format clean, attractive takeaway token number (e.g. TW-0006 or TW-2)
-  const orderNoLabel = (() => {
-    if (orderContext?.takeawayNo && String(orderContext.takeawayNo).trim() !== "") {
-      const clean = String(orderContext.takeawayNo).replace(/^TW-?/i, "").trim();
-      return clean ? `TW-${clean}` : "TW-01";
+  // 🎯 Resolve official Order Number (NOT the table TW number)
+  const displayOrderNo = (() => {
+    // 1. From item's OrderNumber (attached to active order details in DB)
+    const itemOrderNo = (activeItems[0] as any)?.OrderNumber || (activeItems[0] as any)?.orderNumber;
+    if (itemOrderNo && String(itemOrderNo).trim() !== "" && !String(itemOrderNo).startsWith("TEMP-") && !String(itemOrderNo).toUpperCase().startsWith("TW-")) {
+      return String(itemOrderNo).trim();
     }
-    const raw = 
-      (orderContext?.tableId && useCartStore.getState().tableOrderIds[orderContext.tableId]) ||
-      (typeof localStorage !== "undefined" ? localStorage.getItem("last_tw_order_id") : null) ||
-      orderContext?.tableNo ||
-      "2";
-    const str = String(raw).trim();
-    if (str.includes("-")) {
-      const parts = str.split("-");
-      const last = parts[parts.length - 1];
-      if (last && /^\d+$/.test(last)) {
-        return `TW-${last}`;
-      }
+    // 2. From state / fetched order ID
+    if (currentOrderId && String(currentOrderId).trim() !== "" && !String(currentOrderId).startsWith("TEMP-") && !String(currentOrderId).toUpperCase().startsWith("TW-")) {
+      return String(currentOrderId).trim();
     }
-    if (str.length >= 8 && /^\d+$/.test(str)) {
-      return `TW-${str.slice(-4)}`;
+    // 3. From tableOrderIds in cartStore
+    const storeOrderId = orderContext?.tableId ? useCartStore.getState().tableOrderIds[orderContext.tableId] : null;
+    if (storeOrderId && String(storeOrderId).trim() !== "" && !String(storeOrderId).startsWith("TEMP-") && !String(storeOrderId).toUpperCase().startsWith("TW-")) {
+      return String(storeOrderId).trim();
     }
-    const clean = str.replace(/^TW-?/i, "").trim();
+    // 4. From localStorage
+    const localOrderId = typeof localStorage !== "undefined" ? localStorage.getItem("last_tw_order_id") : null;
+    if (localOrderId && String(localOrderId).trim() !== "" && !String(localOrderId).startsWith("TEMP-") && !String(localOrderId).toUpperCase().startsWith("TW-")) {
+      return String(localOrderId).trim();
+    }
+    // 5. From orderContext.orderId
+    const ctxOrderId = (orderContext as any)?.orderId;
+    if (ctxOrderId && String(ctxOrderId).trim() !== "" && !String(ctxOrderId).startsWith("TEMP-") && !String(ctxOrderId).toUpperCase().startsWith("TW-")) {
+      return String(ctxOrderId).trim();
+    }
+    return "";
+  })();
+
+  // Distinct label for Takeaway slot/counter (e.g. TW-7)
+  const takeawayNoLabel = (() => {
+    const raw = orderContext?.takeawayNo || orderContext?.tableNo || "";
+    if (!raw) return "";
+    const clean = String(raw).replace(/^TW-?/i, "").trim();
     return clean ? `TW-${clean}` : "TW-01";
   })();
 
@@ -1078,17 +1170,41 @@ export default function CustomerOrderStatusScreen() {
               </View>
 
               <View style={styles.heroTextContent}>
-                {/* Pill Chip for Order Number */}
-                <View style={[styles.orderChip, isReady && styles.orderChipReady]}>
-                  <Ionicons 
-                    name="receipt-outline" 
-                    size={12} 
-                    color={isReady ? "#059669" : "#EA580C"} 
-                    style={{ marginRight: 4 }} 
-                  />
-                  <Text style={[styles.orderChipText, isReady && styles.orderChipTextReady]}>
-                    Order #{orderNoLabel}
-                  </Text>
+                {/* Badges Row: Order Number + Takeaway Slot + Payment Status */}
+                <View style={styles.orderChipsRow}>
+                  {/* Real Order Number Chip */}
+                  <View style={[styles.orderChip, isReady && styles.orderChipReady]}>
+                    <Ionicons 
+                      name="receipt-outline" 
+                      size={12} 
+                      color={isReady ? "#059669" : "#EA580C"} 
+                      style={{ marginRight: 4 }} 
+                    />
+                    <Text style={[styles.orderChipText, isReady && styles.orderChipTextReady]}>
+                      Order #{displayOrderNo || "Pending"}
+                    </Text>
+                  </View>
+
+                  {/* Takeaway Slot Chip (Explicitly marked as Takeaway slot, NOT order number) */}
+                  {takeawayNoLabel ? (
+                    <View style={styles.takeawaySlotChip}>
+                      <Ionicons name="bag-handle-outline" size={11} color="#64748B" style={{ marginRight: 3 }} />
+                      <Text style={styles.takeawaySlotChipText}>{takeawayNoLabel}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Paid Status Pill */}
+                  <View style={[styles.paymentPill, isPaid ? styles.paymentPillPaid : styles.paymentPillUnpaid]}>
+                    <Ionicons 
+                      name={isPaid ? "checkmark-circle" : "time-outline"} 
+                      size={12} 
+                      color={isPaid ? "#059669" : "#D97706"} 
+                      style={{ marginRight: 3 }} 
+                    />
+                    <Text style={[styles.paymentPillText, isPaid ? styles.paymentPillTextPaid : styles.paymentPillTextUnpaid]}>
+                      {isPaid ? "Paid" : (paymentStatus === "PENDING_CASHIER" ? "Pay at Cashier" : "Unpaid")}
+                    </Text>
+                  </View>
                 </View>
 
                 {/* Main Headline */}
@@ -1296,6 +1412,38 @@ export default function CustomerOrderStatusScreen() {
                 {displayCurrency}{grandTotal.toFixed(2)}
               </Text>
             </View>
+
+            {/* Payment Status Row */}
+            <View style={styles.paymentSummaryRow}>
+              <View style={styles.paymentSummaryLeft}>
+                <Ionicons name="card-outline" size={16} color="#64748B" style={{ marginRight: 6 }} />
+                <Text style={styles.paymentSummaryLabel}>Payment Status</Text>
+              </View>
+              <View style={[styles.paymentSummaryBadge, isPaid ? styles.paymentSummaryBadgePaid : styles.paymentSummaryBadgeUnpaid]}>
+                <Ionicons 
+                  name={isPaid ? "checkmark-circle" : "time-outline"} 
+                  size={14} 
+                  color={isPaid ? "#059669" : "#D97706"} 
+                  style={{ marginRight: 5 }} 
+                />
+                <Text style={[styles.paymentSummaryBadgeText, isPaid ? styles.paymentSummaryBadgeTextPaid : styles.paymentSummaryBadgeTextUnpaid]}>
+                  {isPaid ? "Paid" : (paymentStatus === "PENDING_CASHIER" ? "Pay at Cashier (Pending)" : "Unpaid")}
+                </Text>
+              </View>
+            </View>
+
+            {!isPaid && enableOnlinePayment && (
+              <TouchableOpacity
+                style={styles.payNowOnlineBtn}
+                onPress={handleTriggerYeahPay}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="card" size={17} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={styles.payNowOnlineBtnText}>
+                  Pay Online via YeahPay ({displayCurrency}{grandTotal.toFixed(2)})
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Card: Takeaway Counter Instruction */}
@@ -1900,6 +2048,13 @@ const styles = StyleSheet.create({
   heroTextContent: {
     flex: 1,
   },
+  orderChipsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 6,
+  },
   orderChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -1910,7 +2065,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#FFD9C4",
-    marginBottom: 5,
   },
   orderChipReady: {
     backgroundColor: "#DCFCE7",
@@ -1924,6 +2078,49 @@ const styles = StyleSheet.create({
   },
   orderChipTextReady: {
     color: "#15803D",
+  },
+  takeawaySlotChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  takeawaySlotChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#475569",
+    letterSpacing: 0.2,
+  },
+  paymentPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  paymentPillPaid: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  paymentPillUnpaid: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
+  },
+  paymentPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  paymentPillTextPaid: {
+    color: "#059669",
+  },
+  paymentPillTextUnpaid: {
+    color: "#D97706",
   },
   headingRow: {
     flexDirection: "row",
@@ -2143,6 +2340,72 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     color: "#FF5722",
+  },
+  paymentSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  paymentSummaryLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  paymentSummaryLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  paymentSummaryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  paymentSummaryBadgePaid: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  paymentSummaryBadgeUnpaid: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
+  },
+  paymentSummaryBadgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  paymentSummaryBadgeTextPaid: {
+    color: "#059669",
+  },
+  paymentSummaryBadgeTextUnpaid: {
+    color: "#D97706",
+  },
+  payNowOnlineBtn: {
+    marginTop: 14,
+    backgroundColor: "#8B5CF6",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  payNowOnlineBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.2,
   },
 
   /* Takeaway Counter Instruction */

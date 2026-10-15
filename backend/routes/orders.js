@@ -8,7 +8,7 @@ const { authenticateToken } = require("../middleware/auth");
 router.use((req, res, next) => {
   // Allow customer guest QR endpoints to bypass token check
   const bypassPaths = ["/save-cart", "/checkout", "/send", "/payment-status", "/complete-online-payment"];
-  const isBypass = bypassPaths.includes(req.path) || req.path.startsWith("/cart/");
+  const isBypass = bypassPaths.includes(req.path) || req.path.startsWith("/cart/") || req.path.startsWith("/order-status/");
   if (isBypass) {
     return next();
   }
@@ -556,9 +556,9 @@ async function syncToProfessionalTables(
         .trim();
       const finalProdId = toGuidOrNull(cleanProdId) || DEFAULT_GUID;
       const lineItemId =
-        item.lineItemId && item.lineItemId.length > 10
-          ? item.lineItemId
-          : require("crypto").randomUUID();
+        toGuidOrNull(item.lineItemId) ||
+        toGuidOrNull(item.id) ||
+        require("crypto").randomUUID();
       const itemStatus = item.status || item.Status;
       const currentStatusCode = statusCodes[itemStatus] || 2;
       console.log(`[syncToProfessionalTables] Item: ${item.name || 'Dish'} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
@@ -1275,29 +1275,36 @@ router.post("/send", async (req, res) => {
     });
     activeSendLocks.set(tableKey, lockPromise);
 
-    const transaction = new sql.Transaction(pool);
-    await transaction.begin();
-    try {
-      // 1. 🚀 GENERATE PROFESSIONAL ID NOW (At the moment of sending)
-      // Check if this table already has active SENT items in DB (= additional order)
-      const sentCountCheck = await pool.request()
-        .input('tidForCheck', sql.VarChar(50), cleanId)
-        .query(`
-          DECLARE @TableNoCheck VARCHAR(20);
-          SELECT TOP 1 @TableNoCheck = TableNumber FROM TableMaster WHERE TableNumber = @tidForCheck OR (TRY_CAST(@tidForCheck AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tidForCheck AS UNIQUEIDENTIFIER));
+    // 1. 🚀 GENERATE PROFESSIONAL ID NOW (Before transaction to avoid nested transaction deadlocks)
+    // Check if this table already has active SENT items in DB (= additional order)
+    const sentCountCheck = await pool.request()
+      .input('tidForCheck', sql.VarChar(50), cleanId)
+      .query(`
+        DECLARE @TableNoCheck VARCHAR(20);
+        SELECT TOP 1 @TableNoCheck = TableNumber FROM TableMaster WHERE TableNumber = @tidForCheck OR (TRY_CAST(@tidForCheck AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tidForCheck AS UNIQUEIDENTIFIER));
 
-          SELECT COUNT(*) AS SentCount
-          FROM RestaurantOrderDetailCur d
-          JOIN RestaurantOrderCur h ON h.OrderId = d.OrderId
-          WHERE (RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@TableNoCheck)) OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tidForCheck)))
-            AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
-            AND d.StatusCode >= 2
-        `);
+        SELECT COUNT(*) AS SentCount
+        FROM RestaurantOrderDetailCur d
+        JOIN RestaurantOrderCur h ON h.OrderId = d.OrderId
+        WHERE (RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@TableNoCheck)) OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tidForCheck)))
+          AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+          AND d.StatusCode >= 2
+      `);
 
-      const existingSentCount = sentCountCheck.recordset[0]?.SentCount || 0;
-      const isAdditionalOrder = existingSentCount > 0;
+    const existingSentCount = sentCountCheck.recordset[0]?.SentCount || 0;
+    const isAdditionalOrder = existingSentCount > 0;
 
-      const finalOrderId = await getOrGenerateOrderId(req, cleanId);
+    const finalOrderId = await getOrGenerateOrderId(req, cleanId);
+
+    const isQROrder = req.body.entryStatus === "q";
+    const isTakeawayOrder = req.body.orderType === "TAKEAWAY" || !cleanId || cleanId === "TAKEAWAY" || String(cleanId).startsWith("TAKEAWAY");
+    let sentItems = [];
+
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const transaction = new sql.Transaction(pool);
+      await transaction.begin();
+      try {
 
       // 2. FORCE SENT STATUS — use items from client, or fall back to DB items
       let clientItems = items || [];
@@ -1336,7 +1343,7 @@ router.post("/send", async (req, res) => {
               AND d.StatusCode <> 0`);
         clientItems = dbItems.recordset;
       }
-      const sentItems = clientItems.map((item) => ({
+      sentItems = clientItems.map((item) => ({
         ...item,
         status:
           item.status === "VOIDED" || item.StatusCode === 0 ? "VOIDED" : "SENT",
@@ -1458,8 +1465,6 @@ router.post("/send", async (req, res) => {
 
       // 4. Lock Table to the new ID
       // 🔹 QR ORDER: If entry_status is 'q' and QR setting is ON, keep Status 2 (Payment Pending)
-      const isQROrder = req.body.entryStatus === "q";
-      const isTakeawayOrder = req.body.orderType === "TAKEAWAY" || !cleanId || cleanId === "TAKEAWAY" || String(cleanId).startsWith("TAKEAWAY");
       let tableStatus = 1; // Default: Dining/Active (occupied)
       let paymentStatus = null;
       if (isQROrder) {
@@ -1487,7 +1492,19 @@ router.post("/send", async (req, res) => {
           `);
       }
 
-      await transaction.commit();
+        await transaction.commit();
+        break;
+      } catch (txErr) {
+        try { await transaction.rollback(); } catch (_) { }
+        const isDeadlock = txErr && (txErr.number === 1205 || (txErr.message && txErr.message.toLowerCase().includes("deadlock")));
+        if (isDeadlock && attempt < maxRetries) {
+          console.warn(`⚠️ [Send Guard] Deadlock encountered for table "${cleanId}" (attempt ${attempt}/${maxRetries}). Retrying in ${60 * attempt}ms...`);
+          await new Promise((r) => setTimeout(r, 60 * attempt + Math.floor(Math.random() * 40)));
+          continue;
+        }
+        throw txErr;
+      }
+    }
 
       // 🔹 PRINTING: For Dine-In QR orders, queue print jobs immediately.
       // For QR Takeaway orders, ONLY print after payment is completed!
@@ -1511,10 +1528,17 @@ router.post("/send", async (req, res) => {
             tableNo,
             sentItems,
             isAdditional: isAdditionalOrder,
+            isPaid: isPaidOrder,
+            payMode: req.body.payMode || "Cash",
+            customerName: req.body.customerName || null,
+            mobileNo: req.body.mobileNo || null,
+            discountAmount: req.body.discountAmount || 0,
+            takeawayCharge: req.body.takeawayCharge || 0,
+            io: req.app.get("io"),
           });
-          console.log(`[QR Print Queue] Queued KOT/KDS jobs for Order ${finalOrderId} Table ${tableNo}`);
+          console.log(`[QR Print Queue] Queued print jobs for Order ${finalOrderId} Table ${tableNo}`);
         } catch (queueErr) {
-          console.error("❌ Failed to queue QR KOT/KDS print jobs:", queueErr.message);
+          console.error("❌ Failed to queue QR print jobs:", queueErr.message);
         }
       } else if (isQROrder && isTakeawayOrder) {
         console.log(`[QR Print Queue] ⏸️ Skipping immediate print for unpaid QR Takeaway order ${finalOrderId}. Will print after payment is completed.`);
@@ -1592,20 +1616,14 @@ router.post("/send", async (req, res) => {
 
       // 5. Refresh totals and notify instantly
       syncTableStatus(req, cleanId).catch(() => { });
-    } catch (e) {
-      if (rejectLock) rejectLock(e);
-      await transaction.rollback();
-      console.error("❌ SendOrder SQL Error:", e.message);
-      res.status(500).json({ error: "SEND_ERROR: " + e.message });
+    } catch (err) {
+      if (rejectLock) rejectLock(err);
+      console.error("❌ SendOrder Error:", err.message);
+      res.status(500).json({ error: "SEND_ERROR: " + (err.message || String(err)) });
     } finally {
       if (tableKey) activeSendLocks.delete(tableKey);
     }
-  } catch (err) {
-    if (rejectLock) rejectLock(err);
-    if (tableKey) activeSendLocks.delete(tableKey);
-    res.status(500).json({ error: err.message });
-  }
-});
+  });
 
 router.get("/cart/:tableId", async (req, res) => {
   try {
@@ -1623,17 +1641,18 @@ router.get("/cart/:tableId", async (req, res) => {
       return res.json({ items: [], currentOrderId: null });
     }
 
-    // Get table info (TableNumber + CurrentOrderId)
+    // Get table info (TableNumber + CurrentOrderId, PAYMENT_STATUS)
     const tableInfo = await pool
       .request()
       .input("tid", sql.VarChar(50), cleanId)
       .query(
-        "SELECT TableNumber, CurrentOrderId FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
+        "SELECT TableNumber, CurrentOrderId, PAYMENT_STATUS FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
       );
 
     const tableRow = tableInfo.recordset[0];
     const tableNumber = tableRow?.TableNumber;
     let currentOrderId = tableRow?.CurrentOrderId;
+    let rawPaymentStatus = tableRow?.PAYMENT_STATUS ?? 0;
 
     // 🚀 RESOLVE ACTIVE DB ORDER ID: If TableMaster has no current order ID, check RestaurantOrderCur
     if (!currentOrderId || currentOrderId === "NEW" || currentOrderId === "PENDING" || currentOrderId.length < 5) {
@@ -1662,6 +1681,30 @@ router.get("/cart/:tableId", async (req, res) => {
         }
       } catch (err) {
         console.warn("⚠️ Failed to resolve active DB order in /cart:", err.message);
+      }
+    }
+
+    // Determine payment status (PAID, PENDING_CASHIER, UNPAID)
+    let isPaid = Number(rawPaymentStatus) === 1;
+    let paymentStatus = isPaid ? "PAID" : (Number(rawPaymentStatus) === 2 ? "PENDING_CASHIER" : "UNPAID");
+
+    if (currentOrderId && !isPaid) {
+      try {
+        const settleCheck = await pool
+          .request()
+          .input("ordNo", sql.NVarChar(50), String(currentOrderId))
+          .query(`
+            SELECT TOP 1 SettlementID 
+            FROM SettlementHeader 
+            WHERE OrderNumber = @ordNo 
+               OR (TRY_CAST(@ordNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@ordNo AS UNIQUEIDENTIFIER))
+          `);
+        if (settleCheck.recordset && settleCheck.recordset.length > 0) {
+          isPaid = true;
+          paymentStatus = "PAID";
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to check SettlementHeader for paymentStatus:", err.message);
       }
     }
 
@@ -1708,6 +1751,8 @@ router.get("/cart/:tableId", async (req, res) => {
           d.OrderDetailId as lineItemId, d.DishId as id,ISNULL(d.SongName,'') as songName,d.Quantity as qty, 
           d.PricePerUnit as price, 
           ISNULL(NULLIF(d.DishName,''), dish.Name) as name,
+          h.OrderNumber as OrderNumber,
+          h.OrderNumber as orderNumber,
           d.ModifiersJSON, d.ComboDetailsJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
           ISNULL(d.DiscountAmount, 0) as discount,
           ISNULL(d.DiscountType, NULL) as discountType,
@@ -1770,8 +1815,145 @@ router.get("/cart/:tableId", async (req, res) => {
         : [],
     }));
 
-    res.json({ items, currentOrderId: isRealOrderId ? currentOrderId : null, orderDiscount });
+    res.json({
+      items,
+      currentOrderId: isRealOrderId ? currentOrderId : null,
+      orderNumber: isRealOrderId ? currentOrderId : null,
+      orderDiscount,
+      paymentStatus,
+      isPaid: Boolean(isPaid)
+    });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/order-status/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || id === "undefined" || id === "null") {
+      return res.status(400).json({ error: "Missing id" });
+    }
+    const pool = await poolPromise;
+    const cleanId = String(id).replace(/^\{|\}$/g, "").trim();
+
+    // 1. Check if id is an OrderNumber in RestaurantOrderCur
+    let orderRes = await pool.request()
+      .input("id", sql.NVarChar(100), cleanId)
+      .query(`
+        SELECT TOP 1 
+          h.OrderId, h.OrderNumber, RTRIM(LTRIM(h.Tableno)) as Tableno, h.isOrderClosed, h.CreatedOn,
+          (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 3) as ReadyCount,
+          (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 2) as SentCount,
+          (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 4) as ServedCount,
+          (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0) as TotalCount
+        FROM RestaurantOrderCur h
+        WHERE h.OrderNumber = @id 
+           OR (TRY_CAST(@id AS UNIQUEIDENTIFIER) IS NOT NULL AND h.OrderId = TRY_CAST(@id AS UNIQUEIDENTIFIER))
+        ORDER BY h.CreatedOn DESC
+      `);
+
+    let order = orderRes.recordset[0];
+
+    // 2. If not found by OrderNumber, check by TableMaster (tableId or TableNumber)
+    if (!order) {
+      const tableCheck = await pool.request()
+        .input("tid", sql.VarChar(50), cleanId)
+        .query(`
+          SELECT TableNumber, CurrentOrderId, PAYMENT_STATUS 
+          FROM TableMaster 
+          WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+        `);
+      const tableRow = tableCheck.recordset[0];
+      const tableNo = tableRow?.TableNumber;
+      const curOid = tableRow?.CurrentOrderId;
+
+      if (curOid && curOid.length > 5 && curOid !== "NEW" && curOid !== "PENDING") {
+        const orderByCurOid = await pool.request()
+          .input("oid", sql.NVarChar(100), curOid)
+          .query(`
+            SELECT TOP 1 
+              h.OrderId, h.OrderNumber, RTRIM(LTRIM(h.Tableno)) as Tableno, h.isOrderClosed, h.CreatedOn,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 3) as ReadyCount,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 2) as SentCount,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 4) as ServedCount,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0) as TotalCount
+            FROM RestaurantOrderCur h
+            WHERE h.OrderNumber = @oid
+            ORDER BY h.CreatedOn DESC
+          `);
+        order = orderByCurOid.recordset[0];
+      }
+
+      if (!order && tableNo) {
+        const orderRecent = await pool.request()
+          .input("tno", sql.VarChar(50), tableNo)
+          .query(`
+            SELECT TOP 1 
+              h.OrderId, h.OrderNumber, RTRIM(LTRIM(h.Tableno)) as Tableno, h.isOrderClosed, h.CreatedOn,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 3) as ReadyCount,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 2) as SentCount,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 4) as ServedCount,
+              (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0) as TotalCount
+            FROM RestaurantOrderCur h
+            WHERE RTRIM(LTRIM(h.Tableno)) = @tno AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+            ORDER BY h.CreatedOn DESC
+          `);
+        order = orderRecent.recordset[0];
+      }
+    }
+
+    const orderNumber = order?.OrderNumber || null;
+    const tableNo = order?.Tableno || cleanId;
+
+    // Check payment status from TableMaster
+    const tableInfo = await pool.request()
+      .input("tid", sql.VarChar(50), tableNo)
+      .query(`
+        SELECT PAYMENT_STATUS 
+        FROM TableMaster 
+        WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+      `);
+    const rawPaymentStatus = tableInfo.recordset[0]?.PAYMENT_STATUS ?? 0;
+    let isPaid = Number(rawPaymentStatus) === 1;
+    let paymentStatus = isPaid ? "PAID" : (Number(rawPaymentStatus) === 2 ? "PENDING_CASHIER" : "UNPAID");
+
+    // Check SettlementHeader
+    if (orderNumber && !isPaid) {
+      const settleCheck = await pool.request()
+        .input("ordNo", sql.NVarChar(100), orderNumber)
+        .query(`
+          SELECT TOP 1 SettlementID 
+          FROM SettlementHeader 
+          WHERE OrderNumber = @ordNo
+        `);
+      if (settleCheck.recordset && settleCheck.recordset.length > 0) {
+        isPaid = true;
+        paymentStatus = "PAID";
+      }
+    }
+
+    let status = "Order Received";
+    if (order) {
+      if (order.TotalCount > 0 && order.ServedCount === order.TotalCount) {
+        status = "Picked Up / Completed";
+      } else if (order.ReadyCount > 0) {
+        status = "Ready for Pickup";
+      } else if (order.SentCount > 0) {
+        status = "Preparing Order";
+      }
+    }
+
+    return res.json({
+      success: true,
+      orderNumber,
+      tableNo,
+      isPaid: Boolean(isPaid),
+      paymentStatus, // 'PAID' | 'PENDING_CASHIER' | 'UNPAID'
+      status
+    });
+  } catch (err) {
+    console.error("❌ /order-status/:id Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3314,14 +3496,17 @@ router.post("/payment-status", async (req, res) => {
         });
 
         if (printItems.length > 0) {
+          const ioInst = req.app.get("io");
           await queueQRPrintJobs(pool, sql, {
             orderId: orderNo,
             tableNo: actualTableNo,
             sentItems: printItems,
             isAdditional: false,
+            isPaid: true,
+            payMode: payMode || "Yeahpay Paynow",
+            io: ioInst,
           });
-          console.log(`[QR Print Queue] Queued KOT/KDS jobs after payment confirmation for Order ${orderNo} Table ${actualTableNo}`);
-          const ioInst = req.app.get("io");
+          console.log(`[QR Print Queue] Queued KOT/KDS/Receipt jobs after payment confirmation for Order ${orderNo} Table ${actualTableNo}`);
           if (ioInst) {
             ioInst.emit("print_jobs_available", { orderId: orderNo, storeId: "STORE_001" });
           }
@@ -3355,6 +3540,24 @@ router.post("/complete-online-payment", async (req, res) => {
     if (orderNo) {
       const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow");
       const ioInst = req.app.get("io");
+
+      try {
+        const { queueQRPrintJobs } = require("../utils/printHelper");
+        await queueQRPrintJobs(pool, sql, {
+          orderId: orderNo,
+          tableNo: cleanId || "TAKEAWAY",
+          isPaid: true,
+          payMode: paymentMethod || "Yeahpay Paynow",
+          io: ioInst,
+        });
+        console.log(`[QR Print Queue] Queued print jobs in complete-online-payment for Order ${orderNo}`);
+        if (ioInst) {
+          ioInst.emit("print_jobs_available", { orderId: orderNo, storeId: "STORE_001" });
+        }
+      } catch (printErr) {
+        console.error("❌ Failed to queue print jobs in /complete-online-payment:", printErr.message);
+      }
+
       if (ioInst) {
         ioInst.emit("settlement_updated", { action: "settlement_saved", orderId: orderNo });
         ioInst.emit("sales_updated", { orderId: orderNo });
