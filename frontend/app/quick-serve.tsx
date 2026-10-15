@@ -26,11 +26,13 @@ import { useCompanySettingsStore } from "@/stores/companySettingsStore";
 import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 import { useToast } from "@/components/Toast";
 import StoreSettingsModal from "@/components/payment/StoreSettingsModal";
+import PayNowPaymentModal from "@/components/payment/PayNowPaymentModal";
 import ComboCustomizer from "@/components/ComboCustomizer";
 import UniversalPrinter from "@/components/UniversalPrinter";
 import DiscountModal from "@/components/DiscountModal";
 import ItemDiscountModal from "@/components/ItemDiscountModal";
 import { socket } from "@/constants/socket";
+import { CustomerDisplaySync } from "@/utils/CustomerDisplaySync";
 
 const getImageUrl = (imagePath: string | null | undefined) => {
   if (!imagePath) return null;
@@ -57,6 +59,11 @@ export default function QuickServePOSScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const isTablet = width >= 768 && width < 1100;
+
+  // Mobile navigation tab: "order" (Cart/Checkout) | "groups" (Categories/Groups) | "dishes" (Menu Items)
+  const [mobileActiveTab, setMobileActiveTab] = useState<"order" | "groups" | "dishes">("dishes");
   const toast = useToast();
   const { user } = useAuthStore();
 
@@ -346,6 +353,9 @@ export default function QuickServePOSScreen() {
   const [terminalStatus, setTerminalStatus] = useState<"idle" | "processing" | "success" | "cancelled" | "failed">("idle");
   const [terminalMessage, setTerminalMessage] = useState<string>("");
 
+  // PayNow QR Modal State
+  const [showPayNowModal, setShowPayNowModal] = useState<boolean>(false);
+
   // Discount, Promo, Reward, Loyalty Modals State
   const [showDiscountTypeModal, setShowDiscountTypeModal] = useState<boolean>(false);
   const [showDiscount, setShowDiscount] = useState<boolean>(false);
@@ -590,7 +600,11 @@ export default function QuickServePOSScreen() {
   const handleSelectPaymode = (modeKey: string) => {
     setSelectedPaymentMethod(modeKey);
     const upper = modeKey.toUpperCase().trim();
-    if (upper === "MEMBER") {
+    if (upper === "PAYNOW") {
+      if (cartItems.length > 0) {
+        setShowPayNowModal(true);
+      }
+    } else if (upper === "MEMBER") {
       setMemberModalType("MEMBER");
       if (!selectedMember) {
         setShowMemberModal(true);
@@ -1015,6 +1029,145 @@ export default function QuickServePOSScreen() {
     return Math.max(0, tot);
   }, [subtotal, discountAmount, serviceChargeAmount, totalTakeawayChargesAmount, gstAmount, companySettings]);
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // 🖥️ QUICK SERVE CUSTOMER DISPLAY LIVE SCREEN MIRROR SYNC (VIA PRINT BRIDGE)
+  // Mirrors active cart, dish groups, dishes & selected paymode on customer screen
+  // ═════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const rawTableName = selectedTable
+      ? String(selectedTable.label || selectedTable.TableNumber || selectedTable.name || "01")
+      : "01";
+    const formattedTableName = rawTableName.toLowerCase().startsWith("table")
+      ? rawTableName
+      : `Table ${rawTableName}`;
+
+    const orderCtx = {
+      orderType: (isTakeawayOrder ? "TAKEAWAY" : "DINE_IN") as "DINE_IN" | "TAKEAWAY",
+      tableNo: isTakeawayOrder ? "Takeaway" : formattedTableName,
+      tableId: selectedTable ? String(selectedTable.id || selectedTable.TableId || "") : "01",
+      section: isTakeawayOrder ? "TAKEAWAY" : (selectedSection || "Section 1"),
+      serverName: user?.userName || user?.userId || "Quick Serve",
+    };
+
+    // Prepare Dish Groups snapshot for middle panel mirroring
+    const mirrorGroups = (allDishGroups.length > 0 ? allDishGroups : categories).slice(0, 10).map((g: any) => {
+      const gId = g.DishGroupId || g.CategoryId || g.id;
+      const gName = g.DishGroupName || g.KitchenTypeName || g.CategoryName || g.name || "Group";
+      const isAct = leftPanelView === "dishgroup"
+        ? String(selectedDishGroupId) === String(gId)
+        : String(selectedCategoryId) === String(gId);
+      return {
+        id: gId,
+        name: gName,
+        count: getDishGroupCount ? getDishGroupCount(g) : undefined,
+        isActive: isAct,
+      };
+    });
+
+    // Prepare Dishes snapshot for right panel mirroring (up to 12 visible dishes)
+    const mirrorDishes = (paginatedDishes && paginatedDishes.length > 0 ? paginatedDishes : sortedDishes).slice(0, 12).map((d: any, idx: number) => {
+      const rawImg = d.Image || d.ImagePath || d.image;
+      const imgUri = getImageUrl(rawImg) || DEFAULT_DISH_IMAGES[idx % DEFAULT_DISH_IMAGES.length];
+      return {
+        id: d.DishId || idx,
+        name: d.Name || "Dish",
+        price: Number(d.Price || d.currentcost || 0),
+        image: imgUri,
+        qtyInCart: cartQtyMap[String(d.DishId)] || 0,
+        isSoldOut: Boolean(d.IsSoldOut),
+      };
+    });
+
+    // Prepare Paymodes list for payment footer mirroring
+    const mirrorPaymodes = (activePaymodes.length > 0 ? activePaymodes : [
+      { key: "CASH", label: "Cash" },
+      { key: "CARD", label: "Card" },
+      { key: "NETS", label: "NETS" },
+      { key: "PAYNOW", label: "PayNow" },
+      { key: "UPI", label: "UPI" },
+    ]).map((pm: any) => {
+      const modeKey = String(pm.payMode || pm.description || pm.key || "").toUpperCase();
+      const modeLabel = pm.description || pm.payMode || pm.label || modeKey;
+      return {
+        key: modeKey,
+        label: modeLabel,
+        isSelected: selectedPaymentMethod.toUpperCase().trim() === modeKey,
+      };
+    });
+
+    const activeCatTitle = leftPanelView === "favorites"
+      ? "Favorite Dishes"
+      : leftPanelView === "category"
+      ? (selectedCategoryId !== null
+          ? `${categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.KitchenTypeName || "Category"} Dishes`
+          : "All Category Dishes")
+      : (selectedDishGroupId !== null
+          ? `${allDishGroups.find((g) => String(g.DishGroupId) === String(selectedDishGroupId))?.DishGroupName || "Dish Group"} Dishes`
+          : "All Menu Dishes");
+
+    CustomerDisplaySync.syncCart({
+      orderContext: orderCtx,
+      cart: cartItems,
+      discountInfo: appliedOrderDiscount?.applied
+        ? {
+            applied: true,
+            type: appliedOrderDiscount.type || "percentage",
+            value: appliedOrderDiscount.value || 0,
+            label: appliedOrderDiscount.label,
+          }
+        : discountPercent > 0
+        ? {
+            applied: true,
+            type: "percentage",
+            value: discountPercent,
+            label: `${discountPercent}%`,
+          }
+        : null,
+      gstPercentage: applicableGstPercentage,
+      roundOff: 0,
+      active: true,
+      orderId: quickServeToken,
+      paymentMethod: selectedPaymentMethod,
+      memberName: selectedMember?.Name || "",
+      isSplit: false,
+      splitPayments: [],
+      takeawayCharge: totalTakeawayChargesAmount,
+      // Quick Serve Mirror Attributes
+      isQuickServe: true,
+      quickServeGroups: mirrorGroups,
+      quickServeDishes: mirrorDishes,
+      quickServeCategoryTitle: activeCatTitle,
+      quickServePaymodes: mirrorPaymodes,
+    });
+  }, [
+    cartItems,
+    selectedPaymentMethod,
+    finalTotal,
+    subtotal,
+    discountAmount,
+    gstAmount,
+    serviceChargeAmount,
+    totalTakeawayChargesAmount,
+    selectedTable,
+    isTakeawayOrder,
+    quickServeToken,
+    selectedMember,
+    selectedDishGroupId,
+    selectedCategoryId,
+    leftPanelView,
+    paginatedDishes,
+    allDishGroups,
+    activePaymodes,
+    cartQtyMap,
+  ]);
+
+  // When exiting or unmounting Quick Serve screen, transition Customer Display back to Idle
+  useEffect(() => {
+    return () => {
+      CustomerDisplaySync.syncIdle();
+    };
+  }, []);
+
   // Modifiers helper
   const groupedModifiers = useMemo(() => {
     if (!modifiers || modifiers.length === 0) return [];
@@ -1090,10 +1243,9 @@ export default function QuickServePOSScreen() {
 
   const addSimpleToCart = (dish: any, overridePrice?: number) => {
     const itemPrice = overridePrice !== undefined ? overridePrice : Number(dish.Price || dish.currentcost || 0);
-    const currentKitchen = categories.find((k) => String(k.CategoryId) === String(dish.CategoryId || selectedCategoryId));
-    const kitchenName = dish.KitchenTypeName || currentKitchen?.KitchenTypeName || currentKitchen?.CategoryName || "KITCHEN";
+    const currentKitchen = categories.find((k) => k.CategoryId === selectedCategoryId);
+    const kitchenName = dish.KitchenTypeName || currentKitchen?.KitchenTypeName || "KITCHEN";
     const kitchenCode = dish.KitchenTypeCode || currentKitchen?.KitchenTypeCode || "2";
-    const printerIp = dish.PrinterIP || currentKitchen?.PrinterIP || "";
 
     const cartItem: Omit<CartItem, "qty" | "lineItemId"> & { Image?: string; IsVeg?: boolean } = {
       id: String(dish.DishId),
@@ -1105,7 +1257,7 @@ export default function QuickServePOSScreen() {
       takeawayCharge: Number(dish.TakeawayCharge || 0),
       KitchenTypeCode: kitchenCode,
       KitchenTypeName: kitchenName,
-      PrinterIP: printerIp,
+      PrinterIP: dish.PrinterIP || "",
       Image: dish.Image || dish.ImagePath || dish.image,
       IsVeg: dish.IsVeg,
     };
@@ -1155,10 +1307,9 @@ export default function QuickServePOSScreen() {
     const basePrice = Number(selectedDish.Price || selectedDish.currentcost || 0);
     const finalPrice = basePrice + modifierPriceTotal;
 
-    const currentKitchen = categories.find((k) => String(k.CategoryId) === String(selectedDish.CategoryId || selectedCategoryId));
-    const kitchenName = selectedDish.KitchenTypeName || currentKitchen?.KitchenTypeName || currentKitchen?.CategoryName || "KITCHEN";
+    const currentKitchen = categories.find((k) => k.CategoryId === selectedCategoryId);
+    const kitchenName = selectedDish.KitchenTypeName || currentKitchen?.KitchenTypeName || "KITCHEN";
     const kitchenCode = selectedDish.KitchenTypeCode || currentKitchen?.KitchenTypeCode || "2";
-    const printerIp = selectedDish.PrinterIP || currentKitchen?.PrinterIP || "";
 
     const cartItem: Omit<CartItem, "qty" | "lineItemId"> & { Image?: string; IsVeg?: boolean } = {
       id: String(selectedDish.DishId),
@@ -1171,7 +1322,7 @@ export default function QuickServePOSScreen() {
       takeawayCharge: Number(selectedDish.TakeawayCharge || 0),
       KitchenTypeCode: kitchenCode,
       KitchenTypeName: kitchenName,
-      PrinterIP: printerIp,
+      PrinterIP: selectedDish.PrinterIP || "",
       Image: selectedDish.Image || selectedDish.ImagePath || selectedDish.image,
       IsVeg: selectedDish.IsVeg,
     };
@@ -1258,7 +1409,7 @@ export default function QuickServePOSScreen() {
     }
   };
 
-  const handleCompletePayment = async () => {
+  const handleCompletePayment = async (skipPayNowCheck = false) => {
     if (cartItems.length === 0) {
       toast.showToast({ message: "Cart is empty!", type: "warning" });
       return;
@@ -1291,6 +1442,12 @@ export default function QuickServePOSScreen() {
           return;
         }
       }
+    }
+
+    // 1b. PayNow QR popup — show QR, wait for manual confirmation
+    if (!skipPayNowCheck && normMethod === "PAYNOW") {
+      setShowPayNowModal(true);
+      return;
     }
 
     // 2. Terminal Payment Flow for YeahPay
@@ -1374,39 +1531,38 @@ export default function QuickServePOSScreen() {
   const executePaymentFinalize = async () => {
     setIsProcessingPayment(true);
     try {
-      if (cartItems.length === 0) {
-        toast.showToast({ message: "Cart is empty!", type: "warning" });
-        return;
-      }
-
       const activeTableId = selectedTable ? String(selectedTable.id || selectedTable.TableId || "") : "";
       const rawTableName = selectedTable ? String(selectedTable.label || selectedTable.TableNumber || selectedTable.name || "01") : "01";
       const formattedTableName = rawTableName.toLowerCase().startsWith("table") ? rawTableName : `Table ${rawTableName}`;
+
       const cashierIdent = user?.userName || user?.userId || user?.userCode || "123";
 
-      // 🛡️ CRITICAL SNAPSHOT: Clone cart items BEFORE clearCart() empties the reactive Zustand store!
-      const itemsSnapshot = cartItems.map((item: any) => {
-        const matchingDish = dishes.find((d: any) => String(d.DishId) === String(item.id || item.DishId));
-        const matchingCat = categories.find((c: any) => String(c.CategoryId) === String(matchingDish?.CategoryId || item.CategoryId));
-        const kCode = item.KitchenTypeCode || matchingDish?.KitchenTypeCode || matchingCat?.KitchenTypeCode || "2";
-        const kName = item.KitchenTypeName || matchingDish?.KitchenTypeName || matchingCat?.KitchenTypeName || matchingCat?.CategoryName || "KITCHEN";
-        const pIp = item.PrinterIP || matchingDish?.PrinterIP || matchingCat?.PrinterIP || "";
+      // ⚡ SNAPSHOT CART BEFORE CLEARING (for printing)
+      const currentCartSnapshot = [...cartItems];
 
+      // ⚡ INSTANT OPTIMISTIC CLEAR — wipe cart immediately so UI feels instant with ZERO delay
+      const targetCtx = useCartStore.getState().currentContextId || getContextId(useOrderContextStore.getState().currentOrder);
+      if (targetCtx) {
+        useCartStore.getState().setCartItems(targetCtx, [], true, "QUICK_SERVE_PAID_COMPLETE");
+      }
+      useCartStore.getState().clearTableSession(activeTableId, selectedSection, formattedTableName);
+      useCartStore.setState((state) => {
+        const nextCarts = { ...state.carts };
+        const nextCartQtyMap = { ...state.cartQtyMap };
+        if (targetCtx) {
+          nextCarts[targetCtx] = [];
+          nextCartQtyMap[targetCtx] = {};
+        }
+        Object.keys(nextCarts).forEach((k) => {
+          if (activeTableId && (k.includes(activeTableId) || k.toLowerCase().includes(activeTableId.toLowerCase()))) {
+            nextCarts[k] = [];
+            nextCartQtyMap[k] = {};
+          }
+        });
         return {
-          ...item,
-          id: String(item.id || item.DishId),
-          DishId: String(item.id || item.DishId),
-          name: item.name || item.DishName,
-          price: Number(item.price || 0),
-          qty: Number(item.qty || 1),
-          subtotal: Number(item.price || 0) * Number(item.qty || 1),
-          modifiers: item.modifiers || [],
-          comboSelections: item.comboSelections || [],
-          isServiceCharge: item.isServiceCharge !== false,
-          KitchenTypeCode: kCode,
-          KitchenTypeName: kName,
-          PrinterIP: pIp,
-          status: "SENT",
+          carts: nextCarts,
+          cartQtyMap: nextCartQtyMap,
+          lastLocalUpdate: { ...state.lastLocalUpdate, ...(targetCtx ? { [targetCtx]: Date.now() + 15000 } : {}) },
         };
       });
 
@@ -1429,7 +1585,16 @@ export default function QuickServePOSScreen() {
         memberId: selectedMember?.MemberId || null,
         customerName: selectedMember?.Name || null,
         mobileNo: selectedMember?.Phone || null,
-        items: itemsSnapshot,
+        items: currentCartSnapshot.map((item: any) => ({
+          id: String(item.id || item.DishId),
+          DishId: String(item.id || item.DishId),
+          name: item.name || item.DishName,
+          price: Number(item.price || 0),
+          qty: Number(item.qty || 1),
+          subtotal: Number(item.price || 0) * Number(item.qty || 1),
+          modifiers: item.modifiers || [],
+          isServiceCharge: item.isServiceCharge !== false,
+        })),
         payments: [
           {
             payMode: selectedPaymentMethod,
@@ -1448,15 +1613,13 @@ export default function QuickServePOSScreen() {
       });
 
       const resJson = await res.json();
-      if (!res.ok || !resJson.success) {
+      if (!res.ok && !resJson.success) {
         throw new Error(resJson.error || resJson.message || "Failed to save transaction to sales report");
       }
 
       const generatedBillNo = resJson.billNo || resJson.orderId || quickServeToken;
 
-      // ⚡ LIGHTNING FAST COMPLETION:
-      // Instantly release UI, clear cart & show toast! (Cashier never waits!)
-      clearCart();
+      setIsProcessingPayment(false);
       generatePosOrderId();
       setDiscountPercent(0);
       setCustomAmount("");
@@ -1469,52 +1632,62 @@ export default function QuickServePOSScreen() {
         duration: 3000,
       });
 
-      // Prepare order context with complete properties for KDS & KOT
+      // 🖥️ Notify Customer Display of Payment Success
+      CustomerDisplaySync.syncPaymentSuccess({
+        orderId: generatedBillNo,
+        total: finalTotal,
+        paid: finalTotal,
+        change: 0,
+        method: selectedPaymentMethod,
+      });
+
+      const effectiveTableNo = isTakeawayOrder ? "Takeaway" : formattedTableName;
+      const effectiveTableId = isTakeawayOrder ? "takeaway" : activeTableId;
+      const effectiveTakeawayNo = isTakeawayOrder ? (generatedBillNo ? String(generatedBillNo).slice(-4) : "1") : undefined;
+
+      // Prepare order context & receipt data for background printing
       const orderContextObj = {
         orderType: isTakeawayOrder ? "TAKEAWAY" : "DINE_IN",
-        tableNo: formattedTableName,
-        takeawayNo: rawTableName.replace(/[^0-9]/g, "") || "1",
-        tableId: activeTableId || "1",
-        section: selectedSection || (isTakeawayOrder ? "TAKEAWAY" : "SECTION_1"),
+        tableNo: effectiveTableNo,
+        tableId: effectiveTableId,
+        section: isTakeawayOrder ? "TAKEAWAY" : (selectedSection || "Section 1"),
+        takeawayNo: effectiveTakeawayNo,
         isQuickServe: true,
-        isQuick: true,
-        isQuickServeMode: true,
       };
 
-      // Paid receipt data for UniversalPrinter.smartPrint
       const receiptPrintData = {
-        invoiceNumber: generatedBillNo,
+        ...saleData,
         orderId: generatedBillNo,
         billNo: generatedBillNo,
-        tableNo: formattedTableName,
+        items: currentCartSnapshot,
         total: finalTotal,
-        totalAmount: finalTotal,
-        subTotal: subtotal,
         subtotal: subtotal,
         discountAmount: discountAmount,
         serviceCharge: serviceChargeAmount,
-        takeawayCharge: totalTakeawayChargesAmount,
         taxAmount: gstAmount,
-        paymentMethod: selectedPaymentMethod,
-        cashPaid: selectedPaymentMethod === "CASH" ? (parseFloat(customAmount) || finalTotal) : finalTotal,
-        change: selectedPaymentMethod === "CASH" ? Math.max(0, (parseFloat(customAmount) || finalTotal) - finalTotal) : 0,
-        items: itemsSnapshot,
-        payments: saleData.payments,
+        tableNo: effectiveTableNo,
+        takeawayNo: effectiveTakeawayNo,
         waiterName: cashierIdent,
         date: new Date(),
-        isCheckout: false,
+        isCheckout: false, // ✅ Completed Payment Receipt (NOT 'PAYMENT PENDING')
         isQuickServe: true,
       };
 
       // 🚀 ASYNCHRONOUS FIRE-AND-FORGET PRINTING & TABLE REFRESH
       (async () => {
-        // 1. KDS Alert via Socket (respects enableKDS setting)
-        if (enableKDS !== false && socket) {
+        // 1. KDS Alert via Socket
+        const liveSettings = useGeneralSettingsStore.getState().settings || {};
+        const isKDSEnabled = liveSettings.enableKDS !== false;
+        const isKOTEnabled = liveSettings.enableKOT !== false;
+        const isKDSPrintEnabled = isKDSEnabled && liveSettings.enableKDSPrint !== false;
+        const isReceiptPrintEnabled = liveSettings.enableReceiptPrint !== false;
+
+        if (isKDSEnabled && socket) {
           try {
             socket.emit("new_order", {
               orderId: generatedBillNo,
               context: orderContextObj,
-              items: itemsSnapshot.map((i: any) => ({ ...i, status: "SENT" })),
+              items: currentCartSnapshot.map((i: any) => ({ ...i, status: "SENT" })),
               createdAt: Date.now(),
             });
           } catch (sErr) {
@@ -1522,66 +1695,62 @@ export default function QuickServePOSScreen() {
           }
         }
 
-        // 2. KOT Printing (respects enableKOT setting)
-        if (enableKOT !== false) {
+        // 2. Kitchen / KDS Order Printing (Prints KOT to kitchen printers AND/OR KDS printer)
+        if (isKOTEnabled || isKDSPrintEnabled) {
           try {
             await UniversalPrinter.routeAndPrintOrderKOT(
               generatedBillNo,
               orderContextObj,
-              itemsSnapshot,
+              currentCartSnapshot,
               false,
               cashierIdent,
-              true
+              true // skipDuplicateGuard: cashier direct flow is authoritative
             );
           } catch (kotErr) {
-            console.error("[QuickServe] Automatic KOT Print Error:", kotErr);
+            console.error("[QuickServe] Automatic KOT / KDS Print Error:", kotErr);
           }
         }
 
-        // 3. Receipt Bill Printing (respects enableReceiptPrint setting)
-        if (enableReceiptPrint !== false) {
+        // 3. Receipt Bill Printing (Complete Payment Receipt)
+        if (isReceiptPrintEnabled) {
           try {
             await UniversalPrinter.smartPrint(
               receiptPrintData,
               user?.userId || "SYSTEM"
             );
-            if (selectedPaymentMethod === "CASH") {
-              try {
-                await UniversalPrinter.openCashDrawer();
-              } catch (_) {}
-            }
           } catch (billErr) {
             console.error("[QuickServe] Automatic Receipt Print Error:", billErr);
           }
         }
 
-        // 4. Background Table Auto-Advance
-        try {
-          const updatedTables = await fetch(`${API_URL}/api/tables/all`).then((r) => r.json());
-          if (Array.isArray(updatedTables) && updatedTables.length > 0) {
-            setAllMasterTables(updatedTables);
-            const freeTables = updatedTables.filter(
-              (t: any) => t.Status === 0 || t.Status === null || t.Status === undefined || String(t.Status) === "0"
-            );
-            if (freeTables.length > 0) {
-              const nextFree = freeTables.find((t: any) => String(t.id || t.TableId) !== activeTableId) || freeTables[0];
-              selectQuickServeTable(nextFree, true);
+        // 4. Background Table Auto-Advance (for Dine-In only)
+        if (!isTakeawayOrder) {
+          try {
+            const updatedTables = await fetch(`${API_URL}/api/tables/all`).then((r) => r.json());
+            if (Array.isArray(updatedTables) && updatedTables.length > 0) {
+              setAllMasterTables(updatedTables);
+              const freeTables = updatedTables.filter(
+                (t: any) => t.Status === 0 || t.Status === null || t.Status === undefined || String(t.Status) === "0"
+              );
+              if (freeTables.length > 0) {
+                const nextFree = freeTables.find((t: any) => String(t.id || t.TableId) !== activeTableId) || freeTables[0];
+                selectQuickServeTable(nextFree, true);
+              }
             }
+          } catch (tErr) {
+            console.error("[QuickServe] Table refresh error:", tErr);
           }
-        } catch (tErr) {
-          console.error("[QuickServe] Table refresh error:", tErr);
         }
       })().catch(console.error);
 
     } catch (err: any) {
       console.error("Payment error:", err);
+      setIsProcessingPayment(false);
       toast.showToast({
         message: "Payment Failed",
         subtitle: err.message || "Failed to process sale transaction",
         type: "error",
       });
-    } finally {
-      setIsProcessingPayment(false);
     }
   };
 
@@ -1659,12 +1828,16 @@ export default function QuickServePOSScreen() {
     const isCurrentlyTW = currentOrder?.orderType === "TAKEAWAY";
     const newOrderType = isCurrentlyTW ? "DINE_IN" : "TAKEAWAY";
 
+    const rawTableLabel = selectedTable ? String(selectedTable.label || selectedTable.TableNumber || selectedTable.name || "01") : "01";
+    const defaultDineInTable = rawTableLabel.toLowerCase().startsWith("table") ? rawTableLabel : `Table ${rawTableLabel}`;
+
     const updatedContext = {
       ...(currentOrder || {}),
       orderType: newOrderType as "DINE_IN" | "TAKEAWAY",
-      section: isCurrentlyTW ? (currentOrder?.section || "SECTION_1") : "TAKEAWAY",
-      tableNo: currentOrder?.tableNo || (isCurrentlyTW ? "Table 01" : "TW-1"),
-      tableId: currentOrder?.tableId || (isCurrentlyTW ? "1" : "tw_1"),
+      section: isCurrentlyTW ? (selectedSection || "SECTION_1") : "TAKEAWAY",
+      tableNo: isCurrentlyTW ? defaultDineInTable : "Takeaway",
+      tableId: isCurrentlyTW ? (selectedTable ? String(selectedTable.id || selectedTable.TableId || "1") : "1") : "takeaway",
+      takeawayNo: isCurrentlyTW ? undefined : "1",
     };
 
     useOrderContextStore.getState().setOrderContext(updatedContext);
@@ -1704,26 +1877,28 @@ export default function QuickServePOSScreen() {
           </View>
         </View>
 
-        {/* SEARCH BAR */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search dishes by name or code..."
-            placeholderTextColor="#94A3B8"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* SEARCH BAR (Hidden on tiny mobile or compacted) */}
+        {!isMobile && (
+          <View style={styles.searchContainer}>
+            <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search dishes by name or code..."
+              placeholderTextColor="#94A3B8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* TOP RIGHT CONTROLS */}
         <View style={styles.navRight}>
-          {showLoyalty && (
+          {showLoyalty && isMobile && (
             <TouchableOpacity
               style={[styles.summaryActionBtn, { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" }]}
               onPress={() => setShowLoyaltyModal(true)}
@@ -1743,7 +1918,7 @@ export default function QuickServePOSScreen() {
             <Text style={[styles.summaryActionBtnText, { color: "#FF5A16" }]}>Discount</Text>
           </TouchableOpacity>
 
-          {showRewardPoints && (
+          {showRewardPoints && isMobile && (
             <TouchableOpacity
               style={[styles.summaryActionBtn, { backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }]}
               onPress={() => setShowRewardModal(true)}
@@ -1754,7 +1929,7 @@ export default function QuickServePOSScreen() {
             </TouchableOpacity>
           )}
 
-          {showPromoCode && (
+          {showPromoCode && isMobile && (
             <TouchableOpacity
               style={[styles.summaryActionBtn, { backgroundColor: "#F3E8FF", borderColor: "#E9D5FF" }]}
               onPress={() => setShowPromoModal(true)}
@@ -1811,11 +1986,84 @@ export default function QuickServePOSScreen() {
         </View>
       </View>
 
+      {/* MOBILE COMPACT SEARCH BAR */}
+      {isMobile && (
+        <View style={styles.mobileSearchWrapper}>
+          <View style={styles.mobileSearchContainer}>
+            <Ionicons name="search-outline" size={16} color="#94A3B8" style={{ marginRight: 6 }} />
+            <TextInput
+              style={styles.mobileSearchInput}
+              placeholder="Search dishes..."
+              placeholderTextColor="#94A3B8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={16} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* MOBILE TOP TAB SEGMENT (Order | Groups | Dishes) */}
+      {isMobile && (
+        <View style={styles.mobileTabBarContainer}>
+          <TouchableOpacity
+            style={[styles.mobileTabButton, mobileActiveTab === "dishes" && styles.mobileTabButtonActive]}
+            onPress={() => setMobileActiveTab("dishes")}
+          >
+            <Ionicons
+              name="fast-food-outline"
+              size={15}
+              color={mobileActiveTab === "dishes" ? "#FF5A16" : "#64748B"}
+              style={{ marginRight: 5 }}
+            />
+            <Text style={[styles.mobileTabButtonText, mobileActiveTab === "dishes" && styles.mobileTabButtonTextActive]}>
+              Menu Dishes
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.mobileTabButton, mobileActiveTab === "groups" && styles.mobileTabButtonActive]}
+            onPress={() => setMobileActiveTab("groups")}
+          >
+            <Ionicons
+              name="restaurant-outline"
+              size={15}
+              color={mobileActiveTab === "groups" ? "#FF5A16" : "#64748B"}
+              style={{ marginRight: 5 }}
+            />
+            <Text style={[styles.mobileTabButtonText, mobileActiveTab === "groups" && styles.mobileTabButtonTextActive]}>
+              {leftPanelView === "category" ? "Categories" : "Groups"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.mobileTabButton, mobileActiveTab === "order" && styles.mobileTabButtonActive]}
+            onPress={() => setMobileActiveTab("order")}
+          >
+            <Ionicons
+              name="cart-outline"
+              size={15}
+              color={mobileActiveTab === "order" ? "#FF5A16" : "#64748B"}
+              style={{ marginRight: 5 }}
+            />
+            <Text style={[styles.mobileTabButtonText, mobileActiveTab === "order" && styles.mobileTabButtonTextActive]}>
+              Cart ({cartItems.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* 3-COLUMN MAIN BODY */}
       {quickServeModeEnabled ? (
-        <View style={styles.mainBody3Column}>
-          {/* ================= COLUMN 1: LEFT SIDE → CURRENT ORDER / CART ================= */}
-          <View style={styles.leftCartColumn}>
+        <>
+          <View style={[styles.mainBody3Column, isMobile && styles.mainBodyMobile, isTablet && styles.mainBodyTablet]}>
+            {/* ================= COLUMN 1: LEFT SIDE → CURRENT ORDER / CART ================= */}
+            {(!isMobile || mobileActiveTab === "order") && (
+            <View style={[styles.leftCartColumn, isMobile && styles.leftCartColumnMobile, isTablet && styles.leftCartColumnTablet]}>
             {/* CART HEADER BANNER */}
             <View style={styles.cartHeaderBanner}>
               <View style={styles.cartHeaderLeft}>
@@ -2154,7 +2402,7 @@ export default function QuickServePOSScreen() {
                   styles.completePaymentBtn,
                   cartItems.length === 0 && styles.completePaymentBtnDisabled,
                 ]}
-                onPress={handleCompletePayment}
+                onPress={() => handleCompletePayment()}
                 disabled={cartItems.length === 0 || isProcessingPayment}
                 activeOpacity={0.88}
               >
@@ -2169,9 +2417,11 @@ export default function QuickServePOSScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          )}
 
           {/* ================= COLUMN 2: CENTER → Category / Dish Groups / Favorites ================= */}
-          <View style={styles.centerGroupsColumn}>
+          {(!isMobile || mobileActiveTab === "groups") && (
+          <View style={[styles.centerGroupsColumn, isMobile && styles.centerGroupsColumnMobile, isTablet && styles.centerGroupsColumnTablet]}>
             {/* CATEGORY / DISH GROUP HEADER */}
             <View style={styles.groupsHeader}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -2219,7 +2469,10 @@ export default function QuickServePOSScreen() {
                         styles.categoryCard,
                         isActive && styles.categoryCardActive,
                       ]}
-                      onPress={() => handleSelectCategory(cat.CategoryId)}
+                      onPress={() => {
+                        handleSelectCategory(cat.CategoryId);
+                        if (isMobile) setMobileActiveTab("dishes");
+                      }}
                       activeOpacity={0.85}
                     >
                       <Text
@@ -2269,6 +2522,7 @@ export default function QuickServePOSScreen() {
                     ]}
                     onPress={() => {
                       setLeftPanelView((prev) => (prev === "favorites" ? "dishgroup" : "favorites"));
+                      if (isMobile) setMobileActiveTab("dishes");
                     }}
                     activeOpacity={0.85}
                   >
@@ -2341,6 +2595,7 @@ export default function QuickServePOSScreen() {
                             onPress={() => {
                               setLeftPanelView("dishgroup");
                               setSelectedDishGroupId(group.DishGroupId);
+                              if (isMobile) setMobileActiveTab("dishes");
                             }}
                             activeOpacity={0.85}
                           >
@@ -2403,9 +2658,11 @@ export default function QuickServePOSScreen() {
             </>
           )}
         </View>
+        )}
 
-          {/* ================= COLUMN 3: RIGHT SIDE → DISHES ================= */}
-          <View style={styles.rightDishesColumn}>
+        {/* ================= COLUMN 3: RIGHT SIDE → DISHES ================= */}
+        {(!isMobile || mobileActiveTab === "dishes") && (
+        <View style={[styles.rightDishesColumn, isMobile && styles.rightDishesColumnMobile]}>
             {/* DISHES PANEL HEADER & FILTERS */}
             <View style={styles.dishesHeaderRow}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -2533,7 +2790,7 @@ export default function QuickServePOSScreen() {
                       const qtyInCart = cartQtyMap[String(dish.DishId)] || 0;
 
                       return (
-                        <View key={dish.DishId || idx} style={styles.dishCardItem}>
+                        <View key={dish.DishId || idx} style={[styles.dishCardItem, isMobile && styles.dishCardItemMobile, isTablet && styles.dishCardItemTablet]}>
                           <TouchableOpacity
                             style={[styles.dishCard, isSoldOut && styles.dishCardSoldOut]}
                             onPress={() => handleDishClick(dish)}
@@ -2666,7 +2923,37 @@ export default function QuickServePOSScreen() {
               </View>
             )}
           </View>
+          )}
         </View>
+
+        {/* MOBILE FLOATING CART BAR (Shown on 'dishes' and 'groups' tabs when cart has items) */}
+        {isMobile && mobileActiveTab !== "order" && cartItems.length > 0 && (
+          <TouchableOpacity
+            style={styles.mobileFloatingCartBar}
+            onPress={() => setMobileActiveTab("order")}
+            activeOpacity={0.9}
+          >
+            <View style={styles.mobileFloatingCartLeft}>
+              <View style={styles.mobileFloatingCartBadge}>
+                <Text style={styles.mobileFloatingCartBadgeText}>
+                  {cartItems.reduce((acc, it) => acc + (it.qty || 1), 0)}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.mobileFloatingCartTitle}>View Current Order</Text>
+                <Text style={styles.mobileFloatingCartSub}>
+                  {cartItems.length} item{cartItems.length > 1 ? "s" : ""}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.mobileFloatingCartRight}>
+              <Text style={styles.mobileFloatingCartTotal}>${finalTotal.toFixed(2)}</Text>
+              <Ionicons name="arrow-forward-circle" size={24} color="#FFFFFF" style={{ marginLeft: 6 }} />
+            </View>
+          </TouchableOpacity>
+        )}
+        </>
       ) : (
         /* NORMAL POS TABLE VIEW */
         <View style={styles.normalPosContainer}>
@@ -2867,6 +3154,20 @@ export default function QuickServePOSScreen() {
       <StoreSettingsModal
         visible={storeSettingsVisible}
         onClose={() => setStoreSettingsVisible(false)}
+      />
+
+      {/* PAYNOW QR MODAL */}
+      <PayNowPaymentModal
+        visible={showPayNowModal}
+        amount={finalTotal}
+        onSuccess={() => {
+          setShowPayNowModal(false);
+          handleCompletePayment(true);
+        }}
+        onFailed={() => {
+          setShowPayNowModal(false);
+        }}
+        onClose={() => setShowPayNowModal(false)}
       />
 
       {/* MODIFIER MODAL */}
@@ -3835,6 +4136,129 @@ const styles = StyleSheet.create({
     minHeight: 0,
     overflow: "hidden",
   },
+  mainBodyMobile: {
+    padding: 6,
+    gap: 0,
+  },
+  mainBodyTablet: {
+    padding: 8,
+    gap: 8,
+  },
+
+  /* MOBILE TOP COMPACT SEARCH BAR */
+  mobileSearchWrapper: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  mobileSearchContainer: {
+    height: 36,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  mobileSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: "#0F172A",
+  },
+
+  /* MOBILE SEGMENT TAB BAR (Dishes | Groups | Cart) */
+  mobileTabBarContainer: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  mobileTabButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  mobileTabButtonActive: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FF5A16",
+  },
+  mobileTabButtonText: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#64748B",
+  },
+  mobileTabButtonTextActive: {
+    color: "#FF5A16",
+  },
+
+  /* MOBILE FLOATING CART BAR */
+  mobileFloatingCartBar: {
+    position: "absolute",
+    bottom: 12,
+    left: 12,
+    right: 12,
+    backgroundColor: "#FF5A16",
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: "#FF5A16",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 999,
+  },
+  mobileFloatingCartLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  mobileFloatingCartBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mobileFloatingCartBadgeText: {
+    fontSize: 12,
+    fontFamily: Fonts.black,
+    color: "#FF5A16",
+  },
+  mobileFloatingCartTitle: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#FFFFFF",
+  },
+  mobileFloatingCartSub: {
+    fontSize: 10,
+    fontFamily: Fonts.medium,
+    color: "rgba(255,255,255,0.85)",
+  },
+  mobileFloatingCartRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  mobileFloatingCartTotal: {
+    fontSize: 16,
+    fontFamily: Fonts.black,
+    color: "#FFFFFF",
+  },
 
   /* COLUMN 1: LEFT SIDE CART */
   leftCartColumn: {
@@ -3848,6 +4272,13 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     minHeight: 0,
     height: "100%",
+  },
+  leftCartColumnMobile: {
+    width: "100%",
+    borderRadius: 12,
+  },
+  leftCartColumnTablet: {
+    width: 300,
   },
   cartHeaderBanner: {
     height: 42,
@@ -4453,6 +4884,13 @@ const styles = StyleSheet.create({
     minHeight: 0,
     height: "100%",
   },
+  centerGroupsColumnMobile: {
+    width: "100%",
+    borderRadius: 12,
+  },
+  centerGroupsColumnTablet: {
+    width: 240,
+  },
   groupsHeader: {
     height: 42,
     paddingHorizontal: 12,
@@ -4730,6 +5168,10 @@ const styles = StyleSheet.create({
     minHeight: 0,
     height: "100%",
   },
+  rightDishesColumnMobile: {
+    width: "100%",
+    borderRadius: 12,
+  },
   dishesHeaderRow: {
     height: 38,
     flexShrink: 0,
@@ -4870,6 +5312,14 @@ const styles = StyleSheet.create({
   dishCardItem: {
     width: (Platform.OS === "web" ? "calc(16.666% - 3.5px)" : "15.5%") as any,
     height: (Platform.OS === "web" ? "calc(25% - 3px)" : undefined) as any,
+  },
+  dishCardItemTablet: {
+    width: (Platform.OS === "web" ? "calc(25% - 4px)" : "23.5%") as any,
+    height: 140,
+  },
+  dishCardItemMobile: {
+    width: (Platform.OS === "web" ? "calc(50% - 3px)" : "48%") as any,
+    height: 160,
   },
   dishCard: {
     height: "100%",

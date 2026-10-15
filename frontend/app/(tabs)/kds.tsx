@@ -504,13 +504,18 @@ export default function KDSScreen() {
   const handlePrintOrder = async (order: any) => {
     try {
       const isQuick = !!(order.context?.isQuickServe || order.context?.isQuick || order.context?.isQuickServeMode || order.isQuickServe);
+      const effectiveTable = order.context?.orderType === "DINE_IN"
+        ? order.context?.tableNo
+        : (order.context?.takeawayNo && String(order.context?.takeawayNo) !== "undefined" ? `TW-${order.context.takeawayNo}` : "Takeaway");
       const orderData = {
         orderId: order.orderId,
         orderNo: order.orderId,
-        tableNo: order.context.orderType === "DINE_IN" ? order.context.tableNo : `TW-${order.context.takeawayNo}`,
+        orderType: order.context?.orderType,
+        takeawayNo: order.context?.takeawayNo,
+        tableNo: effectiveTable,
         deviceNo: "1",
         waiterName: user?.userName || "Staff",
-        isQuickServe: isQuick,
+        isQuickServe: false,
         items: order.items,
         kitchenName: "KDS"
       };

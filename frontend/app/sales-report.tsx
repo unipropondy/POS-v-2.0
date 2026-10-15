@@ -1900,9 +1900,28 @@ export default function SalesReport() {
         change: 0,
         items: mappedItems,
         roundOff: Number(selectedOrder.RoundedBy ?? 0),
-        // ✅ Reprint Fix: use originalDate so the receipt shows the original bill date not today
-        date: selectedOrder.SettlementDate || new Date(),
-        originalDate: selectedOrder.SettlementDate || null,
+        // ✅ Reprint Fix: use originalDate so the receipt shows the original bill date not today.
+        // Prefer SettlementDate (already +08:00 formatted by the backend).
+        // Fall back to LastSettlementDate: Tedious serialises MSSQL local-time datetimes as
+        // "...Z" (falsely UTC), so we must re-attach +08:00 before handing it to parseDatabaseDate,
+        // otherwise the old dist-bundle code adds +8 hours a second time → wrong time on receipt.
+        ...(() => {
+          const raw = selectedOrder.SettlementDate || selectedOrder.LastSettlementDate;
+          if (!raw) return { date: new Date(), originalDate: null };
+          // If it already carries an explicit timezone offset leave it alone; otherwise treat as SGT.
+          let dateStr: string;
+          if (typeof raw === 'string') {
+            dateStr = /[+-]\d{2}:\d{2}$/.test(raw)
+              ? raw
+              : raw.replace(/Z$/i, '') + '+08:00';
+          } else if (raw instanceof Date) {
+            // Tedious Date: UTC wall-clock IS the SGT local value → replace Z with +08:00
+            dateStr = raw.toISOString().replace(/Z$/, '+08:00');
+          } else {
+            dateStr = String(raw).replace(/Z$/i, '') + '+08:00';
+          }
+          return { date: dateStr, originalDate: dateStr };
+        })(),
         isReprint: true,
         // ✅ Reprint Fix: waiterName was missing — add it for receipt display
         waiterName: selectedOrder.WaiterName || selectedOrder.ServerName || selectedOrder.CashierName || "",
@@ -3661,7 +3680,7 @@ export default function SalesReport() {
                     >
                       <Text style={[styles.modalSub, { fontSize: 10 }]}>
                         {(() => {
-                          const dateObj = parseDatabaseDate(selectedOrder?.SettlementDate);
+                          const dateObj = parseDatabaseDate(selectedOrder?.SettlementDate || selectedOrder?.LastSettlementDate);
                           if (!dateObj || isNaN(dateObj.getTime())) return "N/A";
                           const datePart = new Intl.DateTimeFormat('en-GB', {
                             timeZone: 'Asia/Singapore',

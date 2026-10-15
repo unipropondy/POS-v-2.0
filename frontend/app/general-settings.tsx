@@ -181,6 +181,11 @@ export default function GeneralSettingsScreen() {
       ? settings.enableNotificationSound
       : true,
   );
+  const [enableQRTWPayAtCashier, setEnableQRTWPayAtCashier] = useState(
+    settings.enableQRTWPayAtCashier !== undefined
+      ? settings.enableQRTWPayAtCashier
+      : true,
+  );
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -313,6 +318,11 @@ export default function GeneralSettingsScreen() {
         ? settings.enableNotificationSound
         : true,
     );
+    setEnableQRTWPayAtCashier(
+      settings.enableQRTWPayAtCashier !== undefined
+        ? settings.enableQRTWPayAtCashier
+        : true,
+    );
   }, [settings]);
 
   const [passwordAction, setPasswordAction] = useState<
@@ -381,6 +391,7 @@ export default function GeneralSettingsScreen() {
         enableReceiptPrint,
         enableVoiceSuccess,
         enableNotificationSound,
+        enableQRTWPayAtCashier,
       },
       {
         userName: user?.userName || user?.fullName || "",
@@ -475,6 +486,19 @@ export default function GeneralSettingsScreen() {
           icon: "pencil-outline",
           value: enableCookingInstructions,
           onToggle: setEnableCookingInstructions,
+        },
+      ],
+    },
+    {
+      title: "QR - TW Ordering & Payments",
+      icon: "bag-handle-outline",
+      items: [
+        {
+          title: "Pay at Cashier",
+          desc: "Allow QR Takeaway customers to choose 'Pay at Cashier'. When disabled, only online payment is available.",
+          icon: "storefront-outline",
+          value: enableQRTWPayAtCashier,
+          onToggle: setEnableQRTWPayAtCashier,
         },
       ],
     },

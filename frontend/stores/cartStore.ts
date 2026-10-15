@@ -58,6 +58,8 @@ export type CartItem = {
   comboSelections?: any[];
   IsDiscountAllowed?: number | boolean;
   isFoc?: boolean;
+  Image?: string;
+  image?: string;
 };
 
 export type DiscountInfo = {
@@ -311,6 +313,8 @@ const normalizeCartItem = (item: any, fallback: Partial<CartItem> = {}): CartIte
     discountAmount: Number(item.discount ?? item.discountAmount ?? item.DiscountAmount ?? fallback.discountAmount ?? discount),
     discountType: item.discountType || item.DiscountType || fallback.discountType || "percentage",
     isFoc: getNormalizedBoolean(item.isFoc, item.IsFoc, fallback.isFoc),
+    Image: item.Image || item.image || item.DishImage || fallback.Image || fallback.image,
+    image: item.Image || item.image || item.DishImage || fallback.Image || fallback.image,
   };
 };
 

@@ -50,7 +50,7 @@ export interface CompanySettings {
 interface CompanySettingsState {
   settings: CompanySettings;
   loading: boolean;
-  fetchSettings: (userId: string) => Promise<void>;
+  fetchSettings: (userId?: string) => Promise<void>;
   updateSettings: (newSettings: Partial<CompanySettings>, userId?: string) => Promise<boolean>;
 }
 
@@ -83,7 +83,7 @@ export const useCompanySettingsStore = create<CompanySettingsState>()(
       settings: DEFAULT_SETTINGS,
       loading: false,
 
-      fetchSettings: async (userId: string) => {
+      fetchSettings: async (userId: string = "1") => {
         set({ loading: true });
         try {
           const response = await fetch(`${API_URL}/api/company-settings/1`);

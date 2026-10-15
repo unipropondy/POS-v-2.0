@@ -553,7 +553,20 @@ export default function CartScreen() {
                 });
                 for (const [kCode, items] of Object.entries(kitchenGroups)) {
                   const printerIp = items[0].PrinterIP;
-                  const kotData = { orderId: officialOrderId, orderNo: officialOrderId, tableNo: context.orderType === "DINE_IN" ? context.tableNo : `TW-${context.takeawayNo}`, deviceNo: "1", waiterName: user?.userName || "Staff", items: items, kitchenName: items[0].KitchenTypeName || "KITCHEN" };
+                  const effectiveTable = context.orderType === "DINE_IN"
+                    ? context.tableNo
+                    : (context.takeawayNo && String(context.takeawayNo) !== "undefined" ? `TW-${context.takeawayNo}` : "Takeaway");
+                  const kotData = {
+                    orderId: officialOrderId,
+                    orderNo: officialOrderId,
+                    orderType: context.orderType,
+                    takeawayNo: context.takeawayNo,
+                    tableNo: effectiveTable,
+                    deviceNo: "1",
+                    waiterName: user?.userName || "Staff",
+                    items: items,
+                    kitchenName: items[0].KitchenTypeName || "KITCHEN"
+                  };
                   const isAdditional = cart.some((i: any) => isItemSent(i));
                   await UniversalPrinter.printKOT(kotData, "SYSTEM", isAdditional ? "ADDITIONAL" : "NEW", printerIp);
                 }
@@ -561,10 +574,15 @@ export default function CartScreen() {
                 // 🚀 KDS Auto-Print Copy
                 const enableKDSPrint = useGeneralSettingsStore.getState().settings.enableKDSPrint !== false;
                 if (enableKDSPrint) {
+                  const effectiveTable = context.orderType === "DINE_IN"
+                    ? context.tableNo
+                    : (context.takeawayNo && String(context.takeawayNo) !== "undefined" ? `TW-${context.takeawayNo}` : "Takeaway");
                   const kdsData = {
                     orderId: officialOrderId,
                     orderNo: officialOrderId,
-                    tableNo: context.orderType === "DINE_IN" ? context.tableNo : `TW-${context.takeawayNo}`,
+                    orderType: context.orderType,
+                    takeawayNo: context.takeawayNo,
+                    tableNo: effectiveTable,
                     deviceNo: "1",
                     waiterName: user?.userName || "Staff",
                     items: cart.filter((i: any) => i.status !== 'VOIDED' && !i.isVoided),

@@ -407,8 +407,7 @@ class SunmiPrinterService {
       }
       await SunmiModule.printText(formatter.left(`DATE: ${dateStr} ${timeStr}`));
       if (saleData.waiterName && saleData.waiterName !== "Staff") {
-        const isQuick = !!(saleData.isQuickServe || saleData.isQuick || saleData.isQuickServeMode || saleData.waiterName.toLowerCase().includes("(quick serve)"));
-        const displayWaiter = isQuick ? (saleData.waiterName.toLowerCase().includes("(quick serve)") ? saleData.waiterName : `${saleData.waiterName} (quick serve)`) : saleData.waiterName;
+        const displayWaiter = String(saleData.waiterName).replace(/\s*\(quick serve\)/gi, "").trim() || "Staff";
         await SunmiModule.printText(formatter.left(`WAITER: ${displayWaiter}`));
       }
       await SunmiModule.printText(formatter.divider("-"));
@@ -818,10 +817,31 @@ class SunmiPrinterService {
       const tableNo = data.tableNo || "N/A";
       const orderNo = data.orderNo || data.orderId || "N/A";
       const rawWaiter = data.waiterName || "Staff";
-      const isQuick = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === "QUICK_SERVE" || data.orderType === "QUICK_SERVE" || data.section === "QUICK_SERVE" || (typeof rawWaiter === "string" && rawWaiter.toLowerCase().includes("(quick serve)")));
-      const cleanTableNo = (tableNo || "").replace(/^table\s+/gi, "").trim() || tableNo;
-      const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes("(quick serve)") ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
-      const waiter = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || "Staff") : rawWaiter;
+      const isTakeaway =
+        data.orderType === "TAKEAWAY" ||
+        data.orderContext?.orderType === "TAKEAWAY" ||
+        data.context?.orderType === "TAKEAWAY" ||
+        data.isTakeaway ||
+        data.IsTakeaway ||
+        String(tableNo).toUpperCase().includes("TAKEAWAY") ||
+        String(tableNo).toUpperCase().startsWith("TW");
+
+      let displayTable = "";
+      if (isTakeaway) {
+        const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo;
+        const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
+          ? String(rawTw).replace(/^TW-?/i, "").trim()
+          : (orderNo && orderNo !== "N/A" ? String(orderNo).slice(-4) : "");
+        displayTable = cleanTw ? `TAKEAWAY #${cleanTw}` : "TAKEAWAY";
+      } else {
+        const cleanTableNo = String(tableNo || "1")
+          .replace(/\s*\(quick serve\)/gi, "")
+          .replace(/^table\s+/gi, "")
+          .trim() || "1";
+        displayTable = `Table ${cleanTableNo}`;
+      }
+
+      const waiter = (typeof rawWaiter === "string") ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff" : "Staff";
       const now = new Date();
       const dateStr = formatToSingaporeDate(now, { day: '2-digit', month: '2-digit' });
       const timeStr = formatToSingaporeTime(now, { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -849,7 +869,7 @@ class SunmiPrinterService {
       // ============ TABLE INFO ============
       await SunmiModule.printText(formatter.doubleDivider("="));
       await setSize(fontSizes.table);
-      await SunmiModule.printText(formatter.left(`TABLE: ${displayTable}`));
+      await SunmiModule.printText(formatter.left(isTakeaway ? displayTable : `TABLE: ${displayTable}`));
       await SunmiModule.lineWrap(1);
 
       await setSize(fontSizes.timestamp);

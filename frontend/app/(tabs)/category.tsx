@@ -4546,6 +4546,26 @@ export default function Category() {
                     <Text style={styles.subMenuItemText}>Table QR Codes</Text>
                   </TouchableOpacity>
 
+                  {/* QR for Takeaway */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.subMenuItem}
+                    onPress={() => {
+                      setIsMenuVisible(false);
+                      router.push("/takeaway-qr" as any);
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.menuIconContainer,
+                        { backgroundColor: "#ea580c" + "15" },
+                      ]}
+                    >
+                      <Ionicons name="bag-handle-outline" size={18} color="#ea580c" />
+                    </View>
+                    <Text style={styles.subMenuItemText}>QR for Takeaway</Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     activeOpacity={0.7}
                     style={styles.subMenuItem}

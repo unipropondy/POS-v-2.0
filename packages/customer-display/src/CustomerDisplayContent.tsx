@@ -547,6 +547,369 @@ export default function CustomerDisplayContent() {
 
   // Active checkout view
   if (displayState.active) {
+    // ═════════════════════════════════════════════════════════════════════════
+    // QUICK SERVE DEDICATED SCREEN MIRROR VIEW
+    // Mirrors the exact Quick Serve layout (Cart, Groups, Dishes & Paymode)
+    // ═════════════════════════════════════════════════════════════════════════
+    if (displayState.isQuickServe) {
+      const qsItems = displayState.items || [];
+      const qsGroups = displayState.quickServeGroups || [];
+      const qsDishes = displayState.quickServeDishes || [];
+      const qsPaymodes = displayState.quickServePaymodes || [];
+      const currentMethod = (displayState.paymentMethod || "CASH").toUpperCase().trim();
+      const currSymbol = companySettings?.currencySymbol || "$";
+      const isPayNowMode = currentMethod === "PAYNOW" || currentMethod === "PAY-NOW";
+      const payNowQr = paymentSettings?.payNowQrUrl ? getLogoUri(paymentSettings.payNowQrUrl) : "";
+      const isUpiMode = currentMethod === "UPI" || (/UPI|GPAY|PHONE|PAYTM/i.test(currentMethod) && !!paymentSettings?.upiId);
+
+      return (
+        <View style={styles.qsMirrorContainer}>
+          {renderTerminalModal()}
+          {renderBackButton()}
+
+          {/* Change Terminal Pill */}
+          {terminalCode ? (
+            <TouchableOpacity
+              style={styles.terminalPill}
+              onPress={() => {
+                setSelectedTerminalCode(terminalCode);
+                setShowTerminalModal(true);
+              }}
+            >
+              <Ionicons name="tv-outline" size={12} color={Theme.primary} />
+              <Text style={styles.terminalPillText}>{terminalName || terminalCode}</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* TOP QUICK SERVE HEADER BAR */}
+          <View style={styles.qsMirrorTopNavbar}>
+            <View style={styles.qsMirrorNavLeft}>
+              <View style={styles.qsMirrorLogoWrap}>
+                <Ionicons name="flash" size={20} color="#FF5A16" style={{ marginRight: 6 }} />
+                <Text style={styles.qsMirrorLogoTitle}>
+                  Quick Serve <Text style={{ color: "#FF5A16" }}>POS</Text>
+                </Text>
+              </View>
+              <View style={styles.qsMirrorCustomerBadge}>
+                <Ionicons name="eye-outline" size={13} color="#FF5A16" style={{ marginRight: 4 }} />
+                <Text style={styles.qsMirrorCustomerBadgeText}>Customer Display</Text>
+              </View>
+            </View>
+
+            <View style={styles.qsMirrorNavRight}>
+              <View style={styles.qsMirrorOrderTypePill}>
+                <Ionicons
+                  name={displayState.orderType === "TAKEAWAY" ? "bag-handle-outline" : "cart-outline"}
+                  size={15}
+                  color="#FF5A16"
+                  style={{ marginRight: 5 }}
+                />
+                <Text style={styles.qsMirrorOrderTypePillText}>
+                  {displayState.orderType === "TAKEAWAY" ? "Takeaway" : "Dine In"}
+                </Text>
+              </View>
+
+              {displayState.tableNo ? (
+                <View style={styles.qsMirrorTablePill}>
+                  <View style={styles.qsMirrorTableCircle}>
+                    <Text style={styles.qsMirrorTableCircleText}>
+                      {String(displayState.tableNo).replace(/[^0-9]/g, "") || "1"}
+                    </Text>
+                  </View>
+                  <Text style={styles.qsMirrorTableNameText}>
+                    {displayState.tableNo}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {/* MAIN 3-COLUMN QUICK SERVE SCREEN MIRROR BODY */}
+          <View style={[styles.qsMirrorBody, windowWidth < 768 && styles.qsMirrorBodyMobile, windowWidth >= 768 && windowWidth < 1100 && styles.qsMirrorBodyTablet]}>
+            {/* ════════ COLUMN 1: CURRENT ORDER & TOTALS & PAYMODE ════════ */}
+            <View style={[styles.qsMirrorColCart, windowWidth < 768 && styles.qsMirrorColCartMobile, windowWidth >= 768 && windowWidth < 1100 && styles.qsMirrorColCartTablet]}>
+              <View style={styles.qsMirrorCartHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="cart" size={17} color="#FFFFFF" />
+                  <Text style={styles.qsMirrorCartHeaderTitle}>Current Order</Text>
+                  <View style={styles.qsMirrorCartCountBadge}>
+                    <Text style={styles.qsMirrorCartCountText}>
+                      {qsItems.reduce((acc: number, it: any) => acc + (it.qty || 1), 0)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* CART ITEMS SCROLL */}
+              <ScrollView style={styles.qsMirrorCartScroll} showsVerticalScrollIndicator={false}>
+                {qsItems.length === 0 ? (
+                  <View style={styles.qsMirrorEmptyCart}>
+                    <Ionicons name="basket-outline" size={38} color="#CBD5E1" />
+                    <Text style={styles.qsMirrorEmptyCartTitle}>Order cart is empty</Text>
+                    <Text style={styles.qsMirrorEmptyCartSub}>Dishes added will appear here</Text>
+                  </View>
+                ) : (
+                  qsItems.map((item: any, idx: number) => {
+                    const lineTotal = Number(item.finalPrice !== undefined ? item.finalPrice : (item.price || 0) * (item.qty || 1));
+                    return (
+                      <View key={item.lineItemId || idx} style={styles.qsMirrorCartItem}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.qsMirrorCartItemName} numberOfLines={2}>
+                            {item.name}
+                          </Text>
+                          {item.modifiers && item.modifiers.length > 0 ? (
+                            <View style={{ marginTop: 2 }}>
+                              {item.modifiers.map((m: any, mIdx: number) => (
+                                <Text key={mIdx} style={styles.qsMirrorCartItemSub}>
+                                  + {m.ModifierName || m.name || m}
+                                </Text>
+                              ))}
+                            </View>
+                          ) : null}
+                        </View>
+                        <View style={styles.qsMirrorCartQtyPill}>
+                          <Text style={styles.qsMirrorCartQtyText}>× {item.qty}</Text>
+                        </View>
+                        <Text style={styles.qsMirrorCartItemPrice}>
+                          {currSymbol}{lineTotal.toFixed(2)}
+                        </Text>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+
+              {/* CART TOTALS AREA */}
+              <View style={styles.qsMirrorCartFooter}>
+                <View style={styles.qsMirrorSummaryRow}>
+                  <Text style={styles.qsMirrorSummaryLabel}>Subtotal</Text>
+                  <Text style={styles.qsMirrorSummaryVal}>{currSymbol}{(displayState.subTotal || 0).toFixed(2)}</Text>
+                </View>
+
+                {displayState.orderDiscountAmount > 0 || displayState.itemDiscounts > 0 ? (
+                  <View style={styles.qsMirrorSummaryRow}>
+                    <Text style={[styles.qsMirrorSummaryLabel, { color: "#FF5A16" }]}>Discount</Text>
+                    <Text style={[styles.qsMirrorSummaryVal, { color: "#FF5A16" }]}>
+                      -{currSymbol}{((displayState.orderDiscountAmount || 0) + (displayState.itemDiscounts || 0)).toFixed(2)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {(displayState.serviceChargeAmount || 0) > 0 ? (
+                  <View style={styles.qsMirrorSummaryRow}>
+                    <Text style={styles.qsMirrorSummaryLabel}>
+                      Service Charge ({displayState.serviceChargePercentage || 0}%)
+                    </Text>
+                    <Text style={styles.qsMirrorSummaryVal}>{currSymbol}{(displayState.serviceChargeAmount || 0).toFixed(2)}</Text>
+                  </View>
+                ) : null}
+
+                {(displayState.gstAmount || 0) > 0 ? (
+                  <View style={styles.qsMirrorSummaryRow}>
+                    <Text style={styles.qsMirrorSummaryLabel}>GST</Text>
+                    <Text style={styles.qsMirrorSummaryVal}>{currSymbol}{(displayState.gstAmount || 0).toFixed(2)}</Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.qsMirrorFinalTotalCard}>
+                  <Text style={styles.qsMirrorFinalTotalLabel}>Total Payable</Text>
+                  <Text style={styles.qsMirrorFinalTotalVal}>
+                    {currSymbol}{(displayState.netTotal || 0).toFixed(2)}
+                  </Text>
+                </View>
+
+                {/* PAYMODE BADGES / ACTIVE PAYMENT BAR */}
+                <View style={styles.qsMirrorPaymodeSection}>
+                  <View style={styles.qsMirrorPaymodeHeader}>
+                    <Text style={styles.qsMirrorPaymodeTitle}>Payment Mode</Text>
+                    <View style={styles.qsMirrorActiveModeBadge}>
+                      <Ionicons name="checkmark-circle" size={13} color="#FF5A16" style={{ marginRight: 4 }} />
+                      <Text style={styles.qsMirrorActiveModeText}>{currentMethod}</Text>
+                    </View>
+                  </View>
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.qsMirrorPaymodesRow}>
+                    {(qsPaymodes.length > 0 ? qsPaymodes : [
+                      { key: "CASH", label: "Cash" },
+                      { key: "CARD", label: "Card" },
+                      { key: "NETS", label: "NETS" },
+                      { key: "PAYNOW", label: "PayNow" },
+                      { key: "UPI", label: "UPI" },
+                    ]).map((pm: any) => {
+                      const isSel = pm.isSelected || pm.key === currentMethod;
+                      return (
+                        <View
+                          key={pm.key}
+                          style={[
+                            styles.qsMirrorPaymodePill,
+                            isSel && styles.qsMirrorPaymodePillActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.qsMirrorPaymodePillText,
+                              isSel && styles.qsMirrorPaymodePillTextActive,
+                            ]}
+                          >
+                            {pm.label}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                {/* QR CODE DISPLAY IF PAYNOW OR UPI SELECTED */}
+                {(isPayNowMode && (payNowQr || paymentSettings?.payNowQrUrl)) || (isUpiMode && paymentSettings?.upiId) ? (
+                  <View style={styles.qsMirrorQrCard}>
+                    <Text style={styles.qsMirrorQrTitle}>
+                      {isPayNowMode ? "Scan with PayNow" : "Scan to Pay UPI"}
+                    </Text>
+                    <View style={styles.qsMirrorQrBox}>
+                      {isPayNowMode && payNowQr ? (
+                        <Image
+                          source={{ uri: payNowQr }}
+                          style={{ width: 100, height: 100 }}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <QRCode
+                          value={paymentSettings?.upiId ? `upi://pay?pa=${paymentSettings.upiId}&pn=${encodeURIComponent(companySettings?.name || "Restaurant")}&am=${(displayState.netTotal || 0).toFixed(2)}&cu=INR` : "https://paynow.sg"}
+                          size={100}
+                        />
+                      )}
+                    </View>
+                    <Text style={styles.qsMirrorQrSubtitle}>
+                      {currSymbol}{(displayState.netTotal || 0).toFixed(2)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+
+            {/* ════════ COLUMN 2: CENTER GROUPS / CATEGORIES ════════ */}
+            <View style={styles.qsMirrorColGroups}>
+              <View style={styles.qsMirrorPanelHeader}>
+                <Ionicons name="restaurant-outline" size={16} color="#FF5A16" />
+                <Text style={styles.qsMirrorPanelHeaderTitle}>Dish Groups</Text>
+              </View>
+
+              <ScrollView style={styles.qsMirrorGroupsScroll} showsVerticalScrollIndicator={false}>
+                {qsGroups.length === 0 ? (
+                  <View style={styles.qsMirrorEmptyGroups}>
+                    <Ionicons name="grid-outline" size={32} color="#CBD5E1" />
+                    <Text style={styles.qsMirrorEmptyGroupsText}>Menu Groups</Text>
+                  </View>
+                ) : (
+                  qsGroups.map((g: any) => {
+                    const isGroupActive = !!g.isActive;
+                    return (
+                      <View
+                        key={g.id}
+                        style={[
+                          styles.qsMirrorGroupCard,
+                          isGroupActive && styles.qsMirrorGroupCardActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.qsMirrorGroupName,
+                            isGroupActive && styles.qsMirrorGroupNameActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {g.name}
+                        </Text>
+                        {g.count !== undefined ? (
+                          <View
+                            style={[
+                              styles.qsMirrorGroupBadge,
+                              isGroupActive && styles.qsMirrorGroupBadgeActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.qsMirrorGroupBadgeText,
+                                isGroupActive && styles.qsMirrorGroupBadgeTextActive,
+                              ]}
+                            >
+                              {g.count}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+
+            {/* ════════ COLUMN 3: RIGHT DISHES GRID ════════ */}
+            <View style={styles.qsMirrorColDishes}>
+              <View style={styles.qsMirrorPanelHeader}>
+                <Ionicons name="fast-food-outline" size={17} color="#FF5A16" />
+                <Text style={styles.qsMirrorPanelHeaderTitle}>
+                  {displayState.quickServeCategoryTitle || "Featured Menu"}
+                </Text>
+              </View>
+
+              <ScrollView
+                style={styles.qsMirrorDishesScroll}
+                contentContainerStyle={styles.qsMirrorDishesGrid}
+                showsVerticalScrollIndicator={false}
+              >
+                {qsDishes.length === 0 ? (
+                  <View style={styles.qsMirrorEmptyDishes}>
+                    <Ionicons name="restaurant-outline" size={44} color="#CBD5E1" />
+                    <Text style={styles.qsMirrorEmptyDishesText}>Browse live items on POS</Text>
+                  </View>
+                ) : (
+                  qsDishes.map((dish: any) => {
+                    const inCart = (dish.qtyInCart || 0) > 0;
+                    return (
+                      <View key={dish.id} style={styles.qsMirrorDishCard}>
+                        <View style={styles.qsMirrorDishImgWrap}>
+                          {dish.image ? (
+                            <Image
+                              source={{ uri: dish.image }}
+                              style={styles.qsMirrorDishImg}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.qsMirrorDishImgPlaceholder}>
+                              <Ionicons name="restaurant" size={24} color="#CBD5E1" />
+                            </View>
+                          )}
+                          {inCart ? (
+                            <View style={styles.qsMirrorInCartBadge}>
+                              <Text style={styles.qsMirrorInCartBadgeText}>{dish.qtyInCart}</Text>
+                            </View>
+                          ) : null}
+                          {dish.isSoldOut ? (
+                            <View style={styles.qsMirrorSoldOutBadge}>
+                              <Text style={styles.qsMirrorSoldOutText}>Sold Out</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <View style={styles.qsMirrorDishBody}>
+                          <Text style={styles.qsMirrorDishName} numberOfLines={1}>
+                            {dish.name}
+                          </Text>
+                          <Text style={styles.qsMirrorDishPrice}>
+                            {currSymbol}{(dish.price || 0).toFixed(2)}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
     const pm = (displayState.paymentMethod || '').toUpperCase().trim();
     const isYeahPayPayNow = pm === 'YEAHPAY_PAYNOW';
     const isUPI =
@@ -1937,6 +2300,555 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontFamily: Fonts.black,
     color: Theme.primary,
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // QUICK SERVE SCREEN MIRROR STYLES
+  // ═══════════════════════════════════════════════════════════════════════════
+  qsMirrorContainer: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  qsMirrorTopNavbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  qsMirrorNavLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  qsMirrorLogoWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  qsMirrorLogoTitle: {
+    fontSize: 18,
+    fontFamily: Fonts.black,
+    color: "#0F172A",
+  },
+  qsMirrorCustomerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  qsMirrorCustomerBadgeText: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#FF5A16",
+  },
+  qsMirrorNavRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  qsMirrorOrderTypePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  qsMirrorOrderTypePillText: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#FF5A16",
+  },
+  qsMirrorTablePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    paddingRight: 12,
+    paddingLeft: 4,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 6,
+  },
+  qsMirrorTableCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#FF5A16",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qsMirrorTableCircleText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: Fonts.black,
+  },
+  qsMirrorTableNameText: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  qsMirrorBody: {
+    flex: 1,
+    flexDirection: "row",
+    padding: 14,
+    gap: 14,
+  },
+  qsMirrorBodyMobile: {
+    flexDirection: "column",
+    padding: 8,
+    gap: 8,
+  },
+  qsMirrorBodyTablet: {
+    padding: 10,
+    gap: 10,
+  },
+  // COLUMN 1: CART & TOTALS
+  qsMirrorColCart: {
+    width: 380,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  qsMirrorColCartMobile: {
+    width: "100%",
+  },
+  qsMirrorColCartTablet: {
+    width: 310,
+  },
+  qsMirrorCartHeader: {
+    backgroundColor: "#FF5A16",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  qsMirrorCartHeaderTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+  },
+  qsMirrorCartCountBadge: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  qsMirrorCartCountText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+  },
+  qsMirrorCartScroll: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  qsMirrorEmptyCart: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  qsMirrorEmptyCartTitle: {
+    marginTop: 10,
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#64748B",
+  },
+  qsMirrorEmptyCartSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#94A3B8",
+    fontFamily: Fonts.regular,
+  },
+  qsMirrorCartItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  qsMirrorCartItemName: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: "#1E293B",
+  },
+  qsMirrorCartItemSub: {
+    fontSize: 11,
+    color: "#64748B",
+    fontFamily: Fonts.regular,
+  },
+  qsMirrorCartQtyPill: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginRight: 10,
+  },
+  qsMirrorCartQtyText: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#334155",
+  },
+  qsMirrorCartItemPrice: {
+    fontSize: 14,
+    fontFamily: Fonts.black,
+    color: "#0F172A",
+    minWidth: 65,
+    textAlign: "right",
+  },
+  qsMirrorCartFooter: {
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    padding: 14,
+    backgroundColor: "#FAFBFD",
+  },
+  qsMirrorSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  qsMirrorSummaryLabel: {
+    fontSize: 13,
+    color: "#64748B",
+    fontFamily: Fonts.medium,
+  },
+  qsMirrorSummaryVal: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#1E293B",
+  },
+  qsMirrorFinalTotalCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  qsMirrorFinalTotalLabel: {
+    fontSize: 15,
+    fontFamily: Fonts.black,
+    color: "#9A3412",
+  },
+  qsMirrorFinalTotalVal: {
+    fontSize: 22,
+    fontFamily: Fonts.black,
+    color: "#EA580C",
+  },
+  qsMirrorPaymodeSection: {
+    marginTop: 4,
+  },
+  qsMirrorPaymodeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  qsMirrorPaymodeTitle: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#64748B",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  qsMirrorActiveModeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  qsMirrorActiveModeText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: "#EA580C",
+  },
+  qsMirrorPaymodesRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  qsMirrorPaymodePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  qsMirrorPaymodePillActive: {
+    backgroundColor: "#FF5A16",
+    borderColor: "#FF5A16",
+  },
+  qsMirrorPaymodePillText: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#475569",
+  },
+  qsMirrorPaymodePillTextActive: {
+    color: "#FFFFFF",
+  },
+  qsMirrorQrCard: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+  qsMirrorQrTitle: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+    marginBottom: 6,
+  },
+  qsMirrorQrBox: {
+    padding: 6,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  qsMirrorQrSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    fontFamily: Fonts.black,
+    color: "#FF5A16",
+  },
+
+  // COLUMN 2: GROUPS
+  qsMirrorColGroups: {
+    width: 220,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  qsMirrorPanelHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FAFAFA",
+  },
+  qsMirrorPanelHeaderTitle: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  qsMirrorGroupsScroll: {
+    flex: 1,
+    padding: 10,
+  },
+  qsMirrorEmptyGroups: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  qsMirrorEmptyGroupsText: {
+    marginTop: 8,
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: "#94A3B8",
+  },
+  qsMirrorGroupCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 8,
+  },
+  qsMirrorGroupCardActive: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FF5A16",
+  },
+  qsMirrorGroupName: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#334155",
+    flex: 1,
+  },
+  qsMirrorGroupNameActive: {
+    color: "#EA580C",
+  },
+  qsMirrorGroupBadge: {
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 6,
+  },
+  qsMirrorGroupBadgeActive: {
+    backgroundColor: "#FF5A16",
+  },
+  qsMirrorGroupBadgeText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: "#475569",
+  },
+  qsMirrorGroupBadgeTextActive: {
+    color: "#FFFFFF",
+  },
+
+  // COLUMN 3: DISHES
+  qsMirrorColDishes: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  qsMirrorDishesScroll: {
+    flex: 1,
+    padding: 12,
+  },
+  qsMirrorDishesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  qsMirrorEmptyDishes: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  qsMirrorEmptyDishesText: {
+    marginTop: 10,
+    fontSize: 14,
+    fontFamily: Fonts.medium,
+    color: "#94A3B8",
+  },
+  qsMirrorDishCard: {
+    width: 170,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  qsMirrorDishImgWrap: {
+    width: "100%",
+    height: 100,
+    backgroundColor: "#F1F5F9",
+    position: "relative",
+  },
+  qsMirrorDishImg: {
+    width: "100%",
+    height: "100%",
+  },
+  qsMirrorDishImgPlaceholder: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8FAFC",
+  },
+  qsMirrorInCartBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "#FF5A16",
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qsMirrorInCartBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: Fonts.black,
+  },
+  qsMirrorSoldOutBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  qsMirrorSoldOutText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+  },
+  qsMirrorDishBody: {
+    padding: 10,
+  },
+  qsMirrorDishName: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#1E293B",
+    marginBottom: 4,
+  },
+  qsMirrorDishPrice: {
+    fontSize: 14,
+    fontFamily: Fonts.black,
+    color: "#FF5A16",
   },
 });
 

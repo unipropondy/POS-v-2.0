@@ -102,15 +102,16 @@ export function parseDatabaseDate(dateInput: Date | string | number): Date {
     return new Date(isoStr);
   }
 
-  // If string has explicit timezone offset (+08:00, -05:00, Z), parse directly as JS Date
-  if (/[Z+-]\d{2}:?\d{2}$/i.test(str) || str.endsWith('Z')) {
+  // If string has explicit numeric timezone offset (+08:00, -05:00, etc.), parse directly as JS Date
+  if (/[+-]\d{2}:?\d{2}$/.test(str)) {
     const directParsed = new Date(str);
     if (!isNaN(directParsed.getTime())) {
       return directParsed;
     }
   }
 
-  // For bare local date strings (e.g. "2026-09-22 15:26:00"), normalize space to 'T' and append SGT (+08:00)
+  // MSSQL datetime columns (e.g. GETDATE() or LastSettlementDate) are stored in Singapore local time (+08:00).
+  // When serialized by Tedious/JSON, they often receive a false trailing 'Z'. Strip any trailing 'Z' or offset.
   let cleanStr = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
 
   if (!cleanStr.includes('T') && cleanStr.includes(' ') && !/^[a-zA-Z]{3}/.test(cleanStr)) {

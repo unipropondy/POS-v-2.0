@@ -47,6 +47,11 @@ export interface SyncCartParams {
   isSplit?: boolean;
   splitPayments?: any[];
   takeawayCharge?: number;
+  isQuickServe?: boolean;
+  quickServeGroups?: any[];
+  quickServeDishes?: any[];
+  quickServeCategoryTitle?: string;
+  quickServePaymodes?: any[];
 }
 
 export interface PaymentSuccessParams {
@@ -102,7 +107,7 @@ export const CustomerDisplaySync = {
       const isDisplayOn = useGeneralSettingsStore.getState().settings.customerSideDisplay;
       if (!isDisplayOn) return;
 
-      const { orderContext, cart, discountInfo, gstPercentage, roundOff, active, orderId, paymentMethod, memberName, isSplit, splitPayments, takeawayCharge } = params;
+      const { orderContext, cart, discountInfo, gstPercentage, roundOff, active, orderId, paymentMethod, memberName, isSplit, splitPayments, takeawayCharge, isQuickServe, quickServeGroups, quickServeDishes, quickServeCategoryTitle, quickServePaymodes } = params;
       const companySettings = useCompanySettingsStore.getState().settings;
       const paymentSettings = usePaymentSettingsStore.getState().settings;
 
@@ -248,6 +253,11 @@ export const CustomerDisplaySync = {
         upiId: paymentSettings?.upiId || "",
         payNowQrUrl: paymentSettings?.payNowQrUrl ? (paymentSettings.payNowQrUrl.startsWith("data:") || paymentSettings.payNowQrUrl.startsWith("http") ? paymentSettings.payNowQrUrl : `${API_URL}${paymentSettings.payNowQrUrl.startsWith("/") ? "" : "/"}${paymentSettings.payNowQrUrl}`) : "",
         currencySymbol: companySettings?.currencySymbol || "₹",
+        isQuickServe: isQuickServe || false,
+        quickServeGroups: quickServeGroups || [],
+        quickServeDishes: quickServeDishes || [],
+        quickServeCategoryTitle: quickServeCategoryTitle || "",
+        quickServePaymodes: quickServePaymodes || [],
       };
 
       console.log("🖥️ [CustomerDisplaySync] Emitting cart update for Table/Takeaway:", payload.tableNo, "| Terminal:", payload.terminalCode);

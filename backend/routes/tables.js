@@ -342,6 +342,145 @@ router.post("/save-guest", async (req, res) => {
   }
 });
 
+// ✅ Route: POST /api/tables/auto-assign-takeaway
+// Concurrency-safe automatic table assignment for Takeaway QR orders (TW1 to TW20)
+router.post("/auto-assign-takeaway", async (req, res) => {
+  const { customerName, pax } = req.body;
+  const guestNameVal = customerName && customerName.trim() ? customerName.trim().substring(0, 9) : "Takeaway";
+  const paxVal = pax ? parseInt(pax) : 1;
+
+  try {
+    const pool = await poolPromise;
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      // 1. Find the first available table between TW1 and TW20 ordered by table index (1 to 20).
+      // Use UPDLOCK, ROWLOCK, HOLDLOCK to guarantee atomic selection and prevent race conditions.
+      const candidateQuery = `
+        SELECT TOP 1
+          tm.TableId,
+          tm.TableNumber,
+          tm.DiningSection,
+          CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) as TwNum
+        FROM TableMaster tm WITH (UPDLOCK, ROWLOCK, HOLDLOCK)
+        WHERE tm.DiningSection = '4'
+          AND tm.TableNumber LIKE 'TW[0-9]%'
+          AND CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) BETWEEN 1 AND 20
+          AND (tm.Status = 0 OR tm.Status IS NULL)
+          AND (
+            tm.CurrentOrderId IS NULL 
+            OR NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+              WHERE (roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+            )
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM RestaurantOrderCur rocActive WITH (NOLOCK)
+            WHERE RTRIM(LTRIM(rocActive.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+              AND (rocActive.isOrderClosed = 0 OR rocActive.isOrderClosed IS NULL)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM CartItems ci WITH (NOLOCK)
+            WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+          )
+        ORDER BY CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) ASC;
+      `;
+
+      const candidateResult = await transaction.request().query(candidateQuery);
+
+      if (!candidateResult.recordset || candidateResult.recordset.length === 0) {
+        await transaction.rollback();
+        return res.status(409).json({
+          success: false,
+          error: "NO_TABLES_AVAILABLE",
+          message: "All takeaway tables (TW1–TW20) are currently occupied. Please wait a moment or place your order at the counter.",
+        });
+      }
+
+      const assigned = candidateResult.recordset[0];
+      const assignedTableId = assigned.TableId;
+      const assignedTableNo = assigned.TableNumber;
+
+      // 2. Reserve / assign this table atomically: set Status = 1, entry_status = 'q', customerName, StartTime
+      await transaction.request()
+        .input("tableId", sql.UniqueIdentifier, assignedTableId)
+        .input("customerName", sql.NVarChar(50), guestNameVal)
+        .input("pax", sql.Int, paxVal)
+        .query(`
+          UPDATE TableMaster
+          SET Status = 1,
+              entry_status = 'q',
+              PAYMENT_STATUS = 0,
+              CustomerName = @customerName,
+              Pax = @pax,
+              StartTime = GETDATE(),
+              ModifiedOn = GETDATE()
+          WHERE TableId = @tableId;
+        `);
+
+      const selectResult = await transaction.request()
+        .input("tableId", sql.UniqueIdentifier, assignedTableId)
+        .query(`
+          SELECT 
+            TableId,
+            TableNumber,
+            DiningSection,
+            Status,
+            TotalAmount,
+            CONVERT(VARCHAR, StartTime, 126) AS StartTime,
+            CONVERT(VARCHAR, ModifiedOn, 126) AS ModifiedOn,
+            entry_status AS entryStatus
+          FROM TableMaster
+          WHERE TableId = @tableId;
+        `);
+
+      await transaction.commit();
+
+      const row = selectResult.recordset[0];
+      const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
+
+      // 3. Emit real-time socket event so POS, KDS, and waitstaff screens update immediately
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("table_status_updated", {
+          tableId: String(assignedTableId).toLowerCase(),
+          status: 1,
+          totalAmount: 0,
+          startTime: row?.StartTime,
+          tableNo: assignedTableNo,
+          section: "TAKEAWAY",
+          modifiedOn: row?.ModifiedOn,
+          entryStatus: "q",
+          customerName: guestNameVal,
+          pax: paxVal,
+        });
+      }
+
+      console.log(`✅ [Auto-Assign Takeaway] Successfully assigned table ${assignedTableNo} (${assignedTableId}) to customer "${guestNameVal}"`);
+
+      return res.json({
+        success: true,
+        table: {
+          tableId: String(assignedTableId),
+          tableNo: assignedTableNo,
+          section: "TAKEAWAY",
+          diningSection: "4",
+          customerName: guestNameVal,
+          pax: paxVal,
+        },
+      });
+    } catch (txnErr) {
+      await transaction.rollback();
+      throw txnErr;
+    }
+  } catch (err) {
+    console.error("❌ AUTO-ASSIGN TAKEAWAY ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ✅ Route to create a new Table
 router.post("/create", async (req, res) => {
   const { tableNumber, diningSection, seats, tableType, xSize, ySize } = req.body;

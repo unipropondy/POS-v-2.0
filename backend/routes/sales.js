@@ -352,7 +352,7 @@ router.get("/all", async (req, res) => {
         SELECT * FROM (
            SELECT 
              sh.SettlementID, 
-             sh.LastSettlementDate AS SettlementDate, 
+             CONVERT(VARCHAR(33), sh.LastSettlementDate, 126) + '+08:00' AS SettlementDate, 
              COALESCE(sh.start_date, CAST(sh.LastSettlementDate AS DATE)) AS BusinessDate,
              sh.BillNo AS OrderId, 
              sh.OrderType,
@@ -415,7 +415,7 @@ router.get("/all", async (req, res) => {
 
            SELECT 
              cct.TransactionId AS SettlementID,
-             cct.CreatedDate AS SettlementDate,
+             CONVERT(VARCHAR(33), cct.CreatedDate, 126) + '+08:00' AS SettlementDate,
              COALESCE(cct.start_date, CAST(cct.CreatedDate AS DATE)) AS BusinessDate,
              CASE 
                WHEN cct.CustomerType = 'CREDIT' THEN 'Credit Payment Collected'
@@ -473,7 +473,7 @@ router.get("/all", async (req, res) => {
         SELECT TOP 200 * FROM (
            SELECT 
              sh.SettlementID, 
-             sh.LastSettlementDate AS SettlementDate, 
+             CONVERT(VARCHAR(33), sh.LastSettlementDate, 126) + '+08:00' AS SettlementDate, 
              COALESCE(sh.start_date, CAST(sh.LastSettlementDate AS DATE)) AS BusinessDate,
              sh.BillNo AS OrderId, 
              sh.OrderType,
@@ -535,7 +535,7 @@ router.get("/all", async (req, res) => {
  
            SELECT 
              cct.TransactionId AS SettlementID,
-             cct.CreatedDate AS SettlementDate,
+             CONVERT(VARCHAR(33), cct.CreatedDate, 126) + '+08:00' AS SettlementDate,
              COALESCE(cct.start_date, CAST(cct.CreatedDate AS DATE)) AS BusinessDate,
              CASE 
                WHEN cct.CustomerType = 'CREDIT' THEN 'Credit Payment Collected'
@@ -666,7 +666,7 @@ router.get("/transactions", async (req, res) => {
       .input("Start", sql.DateTime, startDate || new Date(new Date().setDate(new Date().getDate() - 30)))
       .input("End", sql.DateTime, endDate || new Date())
       .query(`
-        SELECT sh.SettlementID, sh.LastSettlementDate as LastSettlementDate, sh.BillNo, sh.SysAmount AS TotalAmount, sts.PayMode,
+        SELECT sh.SettlementID, CONVERT(VARCHAR(33), sh.LastSettlementDate, 126) + '+08:00' as LastSettlementDate, sh.BillNo, sh.SysAmount AS TotalAmount, sts.PayMode,
         CONVERT(VARCHAR(8), sh.LastSettlementDate, 112) + '-' + RIGHT('0000' + CAST(sh.OrderId AS VARCHAR(10)), 4) AS OrderId,
         sh.IsCancelled, sh.CancellationReason
         FROM SettlementHeader sh
@@ -720,6 +720,23 @@ router.get("/settlement/:id", async (req, res) => {
       header = headerResult.recordset[0];
       const settlementId = header.SettlementID;
 
+      // ✅ Fix: Tedious serializes MSSQL datetime as "...Z" (treats local SGT time as UTC).
+      // Normalise LastSettlementDate → SettlementDate with explicit +08:00 so the frontend
+      // parseDatabaseDate never double-adds 8 hours when formatting receipt timestamps.
+      if (header.LastSettlementDate) {
+        const rawDate = header.LastSettlementDate;
+        let iso;
+        if (rawDate instanceof Date) {
+          // Tedious gives a JS Date whose UTC wall-clock == the SGT local time stored in MSSQL.
+          // Re-interpret those UTC numbers AS SGT by replacing the trailing Z with +08:00.
+          iso = rawDate.toISOString().replace(/Z$/, '+08:00');
+        } else {
+          const s = String(rawDate).replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
+          iso = s + '+08:00';
+        }
+        header = { ...header, SettlementDate: iso };
+      }
+
       // Fetch the items
       const itemsResult = await pool.request()
         .input("SettlementID", sql.UniqueIdentifier, settlementId)
@@ -749,7 +766,7 @@ router.get("/settlement/:id", async (req, res) => {
       const customerName = ledger.Remarks ? ledger.Remarks.split('(')[0].trim() : 'Customer';
       header = {
         SettlementID: ledger.TransactionId,
-        SettlementDate: ledger.CreatedDate,
+        SettlementDate: (ledger.CreatedDate instanceof Date ? ledger.CreatedDate.toISOString().replace(/Z$/, '+08:00') : String(ledger.CreatedDate)),
         BillNo: ledger.Remarks || 'LEDGER_PAY',
         PayMode: ledger.PaymentMethod,
         SysAmount: ledger.PaidAmount,

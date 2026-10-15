@@ -503,7 +503,7 @@ export default function RootLayout() {
     if (!fontsLoaded || !authHydrated) return;
 
     const rootSegment = segments[0];
-    if (rootSegment && (rootSegment.startsWith("customer-display") || rootSegment === "customer")) return;
+    if (rootSegment && (rootSegment.startsWith("customer-display") || rootSegment === "customer" || rootSegment === "qr-takeaway")) return;
 
     const isInsideApp = !!rootSegment && rootSegment !== "login";
     
@@ -577,6 +577,8 @@ export default function RootLayout() {
           <Stack.Screen name="terminal-settings" />
           <Stack.Screen name="customer-display" />
           <Stack.Screen name="table-master" />
+          <Stack.Screen name="takeaway-qr" />
+          <Stack.Screen name="qr-takeaway" />
         </Stack>
         <StatusBar style="light" />
       </ToastProvider>

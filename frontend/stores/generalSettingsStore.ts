@@ -30,6 +30,7 @@ export interface GeneralSettings {
   enableReceiptPrint: boolean;
   enableVoiceSuccess: boolean;
   enableNotificationSound: boolean;
+  enableQRTWPayAtCashier: boolean;
 }
 
 interface GeneralSettingsState {
@@ -68,6 +69,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
         enableReceiptPrint: true,
         enableVoiceSuccess: true,
         enableNotificationSound: true,
+        enableQRTWPayAtCashier: true,
       },
       loading: false,
 
@@ -106,6 +108,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
                 enableReceiptPrint: data.EnableReceiptPrint !== undefined ? Boolean(data.EnableReceiptPrint) : true,
                 enableVoiceSuccess: data.EnableVoiceSuccess !== undefined ? Boolean(data.EnableVoiceSuccess) : true,
                 enableNotificationSound: data.EnableNotificationSound !== undefined ? Boolean(data.EnableNotificationSound) : true,
+                enableQRTWPayAtCashier: data.EnableQRTWPayAtCashier !== undefined ? Boolean(data.EnableQRTWPayAtCashier) : true,
               },
             }));
           }
@@ -157,6 +160,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
             enableReceiptPrint: updatedSettings.enableReceiptPrint,
             enableVoiceSuccess: updatedSettings.enableVoiceSuccess,
             enableNotificationSound: updatedSettings.enableNotificationSound,
+            enableQRTWPayAtCashier: updatedSettings.enableQRTWPayAtCashier,
             userName: userInfo?.userName || useAuthStore.getState().user?.userName || useAuthStore.getState().user?.fullName || "",
             userId: userInfo?.userId || useAuthStore.getState().user?.userId || "",
             userRole: userInfo?.userRole || useAuthStore.getState().user?.roleName || useAuthStore.getState().user?.role || ""

@@ -239,7 +239,11 @@ app.post('/direct-test-print', async (req: Request, res: Response) => {
 });
 
 // Serve the static customer display files with extension-less HTML fallback
-app.use(express.static(path.join(electronApp.getAppPath(), 'customer-display-web'), { extensions: ['html'] }));
+// Checks local workspace directory first (c:\Users\UNIPRO\Desktop\POS\print-bridge\customer-display-web), then packaged app path
+const localDisplayWebPath = path.resolve(__dirname, '../../customer-display-web');
+const appDisplayWebPath = path.join(electronApp.getAppPath(), 'customer-display-web');
+const staticDisplayDir = require('fs').existsSync(localDisplayWebPath) ? localDisplayWebPath : appDisplayWebPath;
+app.use(express.static(staticDisplayDir, { extensions: ['html'] }));
 
 // Mount new customer display endpoints
 app.use('/customer-display', displayRouter);

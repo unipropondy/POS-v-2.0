@@ -805,7 +805,12 @@ private static escapeHtml(str: string): string {
               <div class="detail-row">
                 <span class="detail-label">INVOICE NO: ${billNo}</span>
                 ${saleData.tableNo ? `
-                  <span class="detail-value" style="font-size: 14px; font-weight: bold;">TABLE: ${/^\d+$/.test(String(saleData.tableNo).trim()) ? String(saleData.tableNo).trim().padStart(2, '0') : saleData.tableNo}</span>
+                  <span class="detail-value" style="font-size: 14px; font-weight: bold;">
+                    ${(saleData.orderType === "TAKEAWAY" || saleData.isTakeaway || String(saleData.tableNo).toUpperCase().includes("TAKEAWAY") || String(saleData.tableNo).toUpperCase().startsWith("TW"))
+                      ? 'TAKEAWAY'
+                      : `TABLE: ${/^\d+$/.test(String(saleData.tableNo).trim()) ? String(saleData.tableNo).trim().padStart(2, '0') : String(saleData.tableNo).replace(/\s*\(quick serve\)/gi, '')}`
+                    }
+                  </span>
                 ` : ''}
               </div>
               ${saleData.waiterName && saleData.waiterName !== "Staff" ? `

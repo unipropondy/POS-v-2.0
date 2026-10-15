@@ -866,14 +866,37 @@ class UniversalPrinter {
     title = title.replace(/\s*KOT\s*/gi, "").trim();
 
     const items = (data.items || []).filter((item: any) => (item.status || item.Status || "").toUpperCase() !== "VOIDED");
-    const tableNo = data.tableNo || "N/A";
+    const rawTableNo = data.tableNo || "";
     const deviceNo = data.deviceNo || "1";
     const orderNo = data.orderNo || data.orderId || "N/A";
     const rawWaiter = data.waiterName || "Staff";
-    const isQuick = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === "QUICK_SERVE" || data.orderType === "QUICK_SERVE" || data.section === "QUICK_SERVE" || (typeof rawWaiter === "string" && rawWaiter.toLowerCase().includes("(quick serve)")));
-    const cleanTableNo = (tableNo || "").replace(/^table\s+/gi, "").trim() || tableNo;
-    const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes("(quick serve)") ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
-    const waiter = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || "Staff") : rawWaiter;
+    
+    const isTakeaway =
+      data.orderType === "TAKEAWAY" ||
+      data.orderContext?.orderType === "TAKEAWAY" ||
+      data.context?.orderType === "TAKEAWAY" ||
+      data.isTakeaway ||
+      data.IsTakeaway ||
+      String(rawTableNo).toUpperCase().includes("TAKEAWAY") ||
+      String(rawTableNo).toUpperCase().startsWith("TW");
+
+    let displayTable = "";
+    if (isTakeaway) {
+      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo;
+      const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
+        ? String(rawTw).replace(/^TW-?/i, "").trim()
+        : (orderNo && orderNo !== "N/A" ? String(orderNo).slice(-4) : "");
+      const qsSuffix = (data.isQuickServe || data.orderContext?.isQuickServe) ? " (QS)" : "";
+      displayTable = cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`;
+    } else {
+      const cleanTableNo = String(rawTableNo || "1")
+        .replace(/\s*\(quick serve\)/gi, "")
+        .replace(/^table\s+/gi, "")
+        .trim() || "1";
+      displayTable = cleanTableNo;
+    }
+
+    const waiter = (typeof rawWaiter === "string") ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff" : "Staff";
     const kotDateStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date());
     const kotTimeStr = formatToSingaporeTime(new Date(), { hour: '2-digit', minute: '2-digit', hour12: false });
     const timestamp = `${kotDateStr} ${kotTimeStr}`;
@@ -1020,7 +1043,7 @@ class UniversalPrinter {
           <div class="timestamp">${timestamp}</div>
           
           <div class="table-info" style="font-size: 18px; font-weight: 900; white-space: nowrap;">
-            <span>TABLE: ${displayTable}</span>
+            <span>${isTakeaway ? displayTable : `TABLE: ${displayTable}`}</span>
           </div>
           
           <div class="headers">
@@ -1177,7 +1200,7 @@ class UniversalPrinter {
             Order By : ${waiter} #OR-${orderNo}
           </div>
 
-          ${kitchenName && kitchenName !== "KDS" ? `<div class="kitchen-name">${kitchenName.toUpperCase()}${tableNo && tableNo !== "N/A" ? `  /  T.NO: ${tableNo}` : ""}</div>` : ""}
+          ${kitchenName && kitchenName !== "KDS" ? `<div class="kitchen-name">${kitchenName.toUpperCase()}  /  ${isTakeaway ? displayTable : `T.NO: ${displayTable}`}</div>` : ""}
         </div>
       </body>
       </html>
@@ -1192,14 +1215,37 @@ class UniversalPrinter {
       : "NEW ORDER";
 
     const items       = (data.items || []).filter((i: any) => (i.status || i.Status || "").toUpperCase() !== "VOIDED");
-    const tableNo     = data.tableNo || "N/A";
+    const rawTableNo  = data.tableNo || "";
     const rawWaiter   = data.waiterName || "Staff";
-    const isQuick     = !!(data.isQuickServe || data.isQuick || data.isQuickServeMode || data.orderContext?.isQuickServe || data.context?.orderType === "QUICK_SERVE" || data.orderType === "QUICK_SERVE" || data.section === "QUICK_SERVE" || (typeof rawWaiter === "string" && rawWaiter.toLowerCase().includes("(quick serve)")));
-    const cleanTableNo = (tableNo || "").replace(/^table\s+/gi, "").trim() || tableNo;
-    const displayTable = isQuick ? (cleanTableNo.toLowerCase().includes("(quick serve)") ? cleanTableNo : `${cleanTableNo} (quick serve)`) : tableNo;
-    const waiter      = isQuick ? (rawWaiter.replace(/\s*\(quick serve\)/gi, '').trim() || "Staff") : rawWaiter;
     const orderNo     = data.orderNo || data.orderId || "";
     const kitchenName = data.kitchenName || "";
+
+    const isTakeaway =
+      data.orderType === "TAKEAWAY" ||
+      data.orderContext?.orderType === "TAKEAWAY" ||
+      data.context?.orderType === "TAKEAWAY" ||
+      data.isTakeaway ||
+      data.IsTakeaway ||
+      String(rawTableNo).toUpperCase().includes("TAKEAWAY") ||
+      String(rawTableNo).toUpperCase().startsWith("TW");
+
+    let displayTable = "";
+    if (isTakeaway) {
+      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo;
+      const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
+        ? String(rawTw).replace(/^TW-?/i, "").trim()
+        : (orderNo ? String(orderNo).slice(-4) : "");
+      const qsSuffix = (data.isQuickServe || data.orderContext?.isQuickServe) ? " (QS)" : "";
+      displayTable = cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`;
+    } else {
+      const cleanTableNo = String(rawTableNo || "1")
+        .replace(/\s*\(quick serve\)/gi, "")
+        .replace(/^table\s+/gi, "")
+        .trim() || "1";
+      displayTable = cleanTableNo;
+    }
+
+    const waiter = (typeof rawWaiter === "string") ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff" : "Staff";
 
     const kotDateStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
     const kotTimeStr = formatToSingaporeTime(new Date(), { hour: "2-digit", minute: "2-digit", hour12: false }).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
@@ -1306,7 +1352,11 @@ class UniversalPrinter {
     text += `[C]<B>${kotDateStr}  ${kotTimeStr}</B>\n`;
     text += DIV;
 
-    text += `[C]<font size='big'><B>TABLE: ${displayTable}</B></font>\n`;
+    if (isTakeaway) {
+      text += `[C]<font size='big'><B>${displayTable}</B></font>\n`;
+    } else {
+      text += `[C]<font size='big'><B>TABLE: ${displayTable}</B></font>\n`;
+    }
     text += DIV;
 
     text += "[L]<B>QTY  ITEM</B>\n";
@@ -1355,13 +1405,16 @@ class UniversalPrinter {
     text += `[L]<B>Order No : ${orderNo}</B>\n`;
 
     if (type !== "KDS_PRINT") {
-      const kotLabel = kitchenName && kitchenName !== "KDS"
-        ? (tableNo && tableNo !== "N/A"
-            ? `${kitchenName.toUpperCase()}  /  T.NO : ${tableNo}`
-            : kitchenName.toUpperCase())
-        : (tableNo && tableNo !== "N/A"
-            ? `T.NO : ${tableNo}`
-            : "");
+      let kotLabel = "";
+      if (isTakeaway) {
+        kotLabel = kitchenName && kitchenName !== "KDS"
+          ? `${kitchenName.toUpperCase()}  /  ${displayTable}`
+          : displayTable;
+      } else {
+        kotLabel = kitchenName && kitchenName !== "KDS"
+          ? `${kitchenName.toUpperCase()}  /  T.NO : ${displayTable}`
+          : `T.NO : ${displayTable}`;
+      }
       if (kotLabel) {
         text += DIV;
         text += `[C]<B>${kotLabel}</B>\n`;
@@ -1786,10 +1839,21 @@ class UniversalPrinter {
                      saleData.date ? parseDatabaseDate(saleData.date) : 
                      new Date();
 
-    if (saleData.tableNo) {
-      const cleanTableNo = /^\d+$/.test(String(saleData.tableNo).trim()) 
-        ? String(saleData.tableNo).trim().padStart(2, '0') 
-        : saleData.tableNo;
+    const isReceiptTW =
+      saleData.orderType === "TAKEAWAY" ||
+      saleData.isTakeaway ||
+      saleData.IsTakeaway ||
+      String(saleData.tableNo || "").toUpperCase().includes("TAKEAWAY") ||
+      String(saleData.tableNo || "").toUpperCase().startsWith("TW");
+
+    if (isReceiptTW) {
+      const rawTw = saleData.takeawayNo || (saleData.invoiceNumber || saleData.id ? String(saleData.invoiceNumber || saleData.id).slice(-4) : "");
+      const twLabel = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
+        ? `TAKEAWAY #${String(rawTw).replace(/^TW-?/i, "").trim()}`
+        : "TAKEAWAY";
+      text += this.formatTwoCols48(`<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>`, `<B>${twLabel}</B>`);
+    } else if (saleData.tableNo) {
+      const cleanTableNo = String(saleData.tableNo).replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
       text += this.formatTwoCols48(`<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>`, `<B>TABLE: ${cleanTableNo}</B>`);
     } else {
       text += `[L]<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>\n`;
@@ -1797,8 +1861,7 @@ class UniversalPrinter {
     const dateFormatted = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
     text += `[L]<B>Date: ${dateFormatted} ${formatToSingaporeTime(saleDate)}</B>\n`;
     if (saleData.waiterName && saleData.waiterName !== "Staff") {
-      const isQuick = !!(saleData.isQuickServe || saleData.isQuick || saleData.isQuickServeMode || saleData.waiterName.toLowerCase().includes("(quick serve)"));
-      const displayWaiter = isQuick ? (saleData.waiterName.toLowerCase().includes("(quick serve)") ? saleData.waiterName : `${saleData.waiterName} (quick serve)`) : saleData.waiterName;
+      const displayWaiter = String(saleData.waiterName).replace(/\s*\(quick serve\)/gi, "").trim() || "Staff";
       text += `[L]<B>Waiter: ${displayWaiter}</B>\n`;
     }
     // Print Member Mobile Number on receipt
@@ -2266,12 +2329,25 @@ class UniversalPrinter {
         return false;
       }
 
-      const tableNo =
-        orderContext.orderType === "DINE_IN"
-          ? orderContext.tableNo
-          : `TW-${orderContext.takeawayNo}`;
+      const isTakeaway =
+        orderContext.orderType === "TAKEAWAY" ||
+        orderContext.tableNo?.toUpperCase?.() === "TAKEAWAY" ||
+        orderContext.section?.toUpperCase?.() === "TAKEAWAY" ||
+        String(orderContext.tableNo || "").toUpperCase().startsWith("TW");
 
-      const isQuick = !!(orderContext.isQuickServe || (orderContext as any).isQuick || (orderContext as any).isQuickServeMode);
+      let tableNo = "";
+      let takeawayNo = orderContext.takeawayNo;
+      if (isTakeaway) {
+        if (!takeawayNo || String(takeawayNo) === "undefined") {
+          takeawayNo = orderId ? String(orderId).slice(-4) : "1";
+        }
+        tableNo = `TAKEAWAY #${takeawayNo}`;
+      } else {
+        const cleanT = (orderContext.tableNo || "Table 1").replace(/\s*\(quick serve\)/gi, "").trim();
+        const baseTableNo = cleanT.toLowerCase().startsWith("table") ? cleanT : `Table ${cleanT}`;
+        const isQS = !!(orderContext.isQuickServe || orderContext.isQuick || orderContext.isQuickServeMode);
+        tableNo = isQS ? `${baseTableNo} (QS)` : baseTableNo;
+      }
 
       // 3 & 4 & 5. Print one KOT per kitchen group if KOT printing is enabled
       if (shouldPrintKOT) {
@@ -2319,8 +2395,11 @@ class UniversalPrinter {
             orderId,
             orderNo: orderId,
             tableNo,
+            takeawayNo,
+            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
+            isTakeaway,
             waiterName,
-            isQuickServe: isQuick,
+            isQuickServe: !!(orderContext.isQuickServe || orderContext.isQuick || orderContext.isQuickServeMode),
             items: groupItems,
             kitchenCode: kCode,
             kitchenName:
@@ -2364,8 +2443,11 @@ class UniversalPrinter {
             orderId,
             orderNo: orderId,
             tableNo,
+            takeawayNo,
+            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
+            isTakeaway,
             waiterName,
-            isQuickServe: isQuick,
+            isQuickServe: !!(orderContext.isQuickServe || orderContext.isQuick || orderContext.isQuickServeMode),
             items,
             kitchenName: "KDS",
           };
@@ -2437,7 +2519,8 @@ class UniversalPrinter {
           referenceNo: p.ReferenceNo || ""
         })),
         roundOff: Number(header.RoundedBy ?? 0),
-        date: header.LastSettlementDate || new Date(),
+        date: header.SettlementDate || header.LastSettlementDate || new Date(),
+        originalDate: header.SettlementDate || header.LastSettlementDate || null,
         discountAmount: Number(header.DiscountAmount ?? 0),
         discountType: header.DiscountType || null,
         discountValue: discountValue,

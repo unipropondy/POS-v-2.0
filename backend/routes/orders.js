@@ -7,7 +7,7 @@ const { authenticateToken } = require("../middleware/auth");
 
 router.use((req, res, next) => {
   // Allow customer guest QR endpoints to bypass token check
-  const bypassPaths = ["/save-cart", "/checkout", "/send"];
+  const bypassPaths = ["/save-cart", "/checkout", "/send", "/payment-status", "/complete-online-payment"];
   const isBypass = bypassPaths.includes(req.path) || req.path.startsWith("/cart/");
   if (isBypass) {
     return next();
@@ -1459,39 +1459,52 @@ router.post("/send", async (req, res) => {
       // 4. Lock Table to the new ID
       // 🔹 QR ORDER: If entry_status is 'q' and QR setting is ON, keep Status 2 (Payment Pending)
       const isQROrder = req.body.entryStatus === "q";
+      const isTakeawayOrder = req.body.orderType === "TAKEAWAY" || !cleanId || cleanId === "TAKEAWAY" || String(cleanId).startsWith("TAKEAWAY");
       let tableStatus = 1; // Default: Dining/Active (occupied)
       let paymentStatus = null;
       if (isQROrder) {
         paymentStatus = 0;
       }
 
-      await transaction
-        .request()
-        .input("tid", sql.VarChar(50), cleanId)
-        .input("oid", sql.NVarChar(50), finalOrderId)
-        .input("status", sql.Int, tableStatus)
-        .input("paymentStatus", sql.Int, paymentStatus)
-        .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null).query(`
-          UPDATE TableMaster 
-          SET Status = CASE WHEN Status = 2 THEN 2 ELSE @status END, 
-              entry_status = @entryStatus,
-              PAYMENT_STATUS = @paymentStatus,
-              CurrentOrderId = @oid,
-              StartTime = CASE WHEN StartTime IS NULL OR StartTime < '2000-01-01' THEN GETDATE() ELSE StartTime END,
-              ModifiedOn = GETDATE()
-          WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
-        `);
+      const hasSpecificTable = cleanId && cleanId !== "TAKEAWAY" && !String(cleanId).startsWith("TAKEAWAY");
+
+      if (cleanId && (hasSpecificTable || !isTakeawayOrder)) {
+        await transaction
+          .request()
+          .input("tid", sql.VarChar(50), cleanId)
+          .input("oid", sql.NVarChar(50), finalOrderId)
+          .input("status", sql.Int, tableStatus)
+          .input("paymentStatus", sql.Int, paymentStatus)
+          .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null).query(`
+            UPDATE TableMaster 
+            SET Status = CASE WHEN Status = 2 THEN 2 ELSE @status END, 
+                entry_status = @entryStatus,
+                PAYMENT_STATUS = @paymentStatus,
+                CurrentOrderId = @oid,
+                StartTime = CASE WHEN StartTime IS NULL OR StartTime < '2000-01-01' THEN GETDATE() ELSE StartTime END,
+                ModifiedOn = GETDATE()
+            WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+          `);
+      }
 
       await transaction.commit();
 
-      if (isQROrder) {
+      // 🔹 PRINTING: For Dine-In QR orders, queue print jobs immediately.
+      // For QR Takeaway orders, ONLY print after payment is completed!
+      const isPaidOrder = req.body.isPaid === true || req.body.paymentStatus === 1;
+      const shouldPrintNow = isQROrder && (!isTakeawayOrder || isPaidOrder);
+
+      if (shouldPrintNow) {
         try {
           const { queueQRPrintJobs } = require("../utils/printHelper");
-          const tableQuery = await pool
-            .request()
-            .input("tid", sql.VarChar(50), cleanId)
-            .query("SELECT TableNumber FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))");
-          const tableNo = tableQuery.recordset[0]?.TableNumber ? String(tableQuery.recordset[0].TableNumber).trim() : "";
+          let tableNo = "TAKEAWAY";
+          if (cleanId && cleanId !== "TAKEAWAY") {
+            const tableQuery = await pool
+              .request()
+              .input("tid", sql.VarChar(50), cleanId)
+              .query("SELECT TableNumber FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))");
+            tableNo = tableQuery.recordset[0]?.TableNumber ? String(tableQuery.recordset[0].TableNumber).trim() : (isTakeawayOrder ? "TAKEAWAY" : "");
+          }
 
           await queueQRPrintJobs(pool, sql, {
             orderId: finalOrderId,
@@ -1503,6 +1516,8 @@ router.post("/send", async (req, res) => {
         } catch (queueErr) {
           console.error("❌ Failed to queue QR KOT/KDS print jobs:", queueErr.message);
         }
+      } else if (isQROrder && isTakeawayOrder) {
+        console.log(`[QR Print Queue] ⏸️ Skipping immediate print for unpaid QR Takeaway order ${finalOrderId}. Will print after payment is completed.`);
       }
 
       // Record successful send in cache
@@ -1518,33 +1533,39 @@ router.post("/send", async (req, res) => {
       // 🔥 REAL-TIME BROADCAST: Notify KDS screen, POS APK, and all waiter devices.
       const io = req.app.get("io");
       if (io) {
-        const tableQuery = await pool
-          .request()
-          .input("tid", sql.VarChar(50), cleanId)
-          .query(
-            "SELECT TableNumber, DiningSection FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
-          );
-        const tableRow = tableQuery.recordset[0];
-        const tableNo = tableRow?.TableNumber
-          ? String(tableRow.TableNumber).trim()
-          : "";
-        const sectionMap = {
-          1: "SECTION_1",
-          2: "SECTION_2",
-          3: "SECTION_3",
-          4: "TAKEAWAY",
-        };
-        const section = tableRow
-          ? sectionMap[String(tableRow.DiningSection)] || "SECTION_1"
-          : "SECTION_1";
+        let tableNo = "";
+        let section = isTakeawayOrder ? "TAKEAWAY" : "SECTION_1";
+
+        if (cleanId && cleanId !== "TAKEAWAY") {
+          const tableQuery = await pool
+            .request()
+            .input("tid", sql.VarChar(50), cleanId)
+            .query(
+              "SELECT TableNumber, DiningSection FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
+            );
+          const tableRow = tableQuery.recordset[0];
+          tableNo = tableRow?.TableNumber
+            ? String(tableRow.TableNumber).trim()
+            : "";
+          const sectionMap = {
+            1: "SECTION_1",
+            2: "SECTION_2",
+            3: "SECTION_3",
+            4: "TAKEAWAY",
+          };
+          section = tableRow
+            ? sectionMap[String(tableRow.DiningSection)] || (isTakeawayOrder ? "TAKEAWAY" : "SECTION_1")
+            : (isTakeawayOrder ? "TAKEAWAY" : "SECTION_1");
+        }
 
         io.emit("new_order", {
           orderId: finalOrderId,
           isAdditional: isAdditionalOrder,
           context: {
-            orderType: "DINE_IN",
-            tableId: cleanId,
-            tableNo: tableNo,
+            orderType: isTakeawayOrder ? "TAKEAWAY" : "DINE_IN",
+            tableId: cleanId && cleanId !== "TAKEAWAY" ? cleanId : undefined,
+            tableNo: tableNo || (isTakeawayOrder ? (req.body.takeawayNo || "TW") : null),
+            takeawayNo: isTakeawayOrder ? (tableNo || req.body.takeawayNo || finalOrderId.slice(-4)) : null,
             section: section,
             entryStatus: isQROrder ? "q" : null,
             paymentStatus: isQROrder ? 0 : null,
@@ -1559,7 +1580,7 @@ router.post("/send", async (req, res) => {
         });
         io.emit("kot_printed", { tableId: cleanId, orderId: finalOrderId });
 
-        if (isQROrder) {
+        if (shouldPrintNow) {
           io.emit("print_jobs_available", { orderId: finalOrderId, storeId: "STORE_001" });
         }
         io.emit("active_kitchen_updated", {
@@ -1702,7 +1723,8 @@ router.get("/cart/:tableId", async (req, res) => {
           ISNULL(ckt.KitchenTypeCode, '2') as KitchenTypeCode, 
           ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
           pm.PrinterPath as PrinterIP,
-          ISNULL(dish.isServiceCharge, 1) as isServiceCharge
+          ISNULL(dish.isServiceCharge, 1) as isServiceCharge,
+          dish.Imageid as Image
         FROM RestaurantOrderDetailCur d 
         JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
         LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
@@ -2927,9 +2949,256 @@ router.post("/mark-sent", async (req, res) => {
   }
 });
 
+async function resolveTableOrderNo(pool, cleanId) {
+  try {
+    const res = await pool.request().input("tid", sql.VarChar(50), cleanId).query(`
+      SELECT TOP 1 OrderNumber FROM RestaurantOrderCur 
+      WHERE (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid)) OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@tid AS UNIQUEIDENTIFIER)))
+      ORDER BY CreatedOn DESC
+    `);
+    return res.recordset[0]?.OrderNumber || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Paynow') {
+  if (!orderNumber || orderNumber === 'NEW' || orderNumber === '#NEW' || String(orderNumber).startsWith('TEMP-')) {
+    console.warn(`[settlePaidQROrder] Invalid orderNumber: ${orderNumber}`);
+    return null;
+  }
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+
+  try {
+    // 1. Fetch order
+    const ordRes = await transaction.request()
+      .input('orderNo', sql.NVarChar(50), String(orderNumber).trim())
+      .query(`
+        SELECT TOP 1 * FROM RestaurantOrderCur 
+        WHERE OrderNumber = @orderNo OR (TRY_CAST(@orderNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@orderNo AS UNIQUEIDENTIFIER))
+        ORDER BY CreatedOn DESC
+      `);
+
+    if (ordRes.recordset.length === 0) {
+      console.warn(`[settlePaidQROrder] Order ${orderNumber} not found in RestaurantOrderCur`);
+      await transaction.rollback();
+      return null;
+    }
+    const order = ordRes.recordset[0];
+    const actualOrderNo = order.OrderNumber;
+
+    // Check if already in SettlementHeader (idempotency check)
+    const existingSh = await transaction.request()
+      .input('orderNo', sql.NVarChar(50), actualOrderNo)
+      .query(`
+        SELECT TOP 1 SettlementID, BillNo 
+        FROM SettlementHeader 
+        WHERE BillNo = @orderNo
+      `);
+    if (existingSh.recordset.length > 0) {
+      console.log(`[settlePaidQROrder] Order ${actualOrderNo} is already settled in SettlementHeader with ID:`, existingSh.recordset[0].SettlementID);
+      await transaction.rollback();
+      return existingSh.recordset[0];
+    }
+
+    // 2. Fetch active business date from DateEntry
+    const dateRes = await transaction.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
+    const activeStartDate = dateRes.recordset[0]?.StartDate;
+    const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : (order.start_date || new Date().toISOString().split("T")[0]);
+
+    // 3. Fetch line items
+    const itemsRes = await transaction.request()
+      .input('orderId', sql.UniqueIdentifier, order.OrderId)
+      .query(`
+        SELECT d.*, dgm.CategoryId, cat.CategoryName, dish.DishGroupId, dgm.DishGroupName
+        FROM RestaurantOrderDetailCur d
+        LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+        LEFT JOIN DishGroupMaster dgm ON dish.DishGroupId = dgm.DishGroupId
+        LEFT JOIN CategoryMaster cat ON dgm.CategoryId = cat.CategoryId
+        WHERE d.OrderId = @orderId AND ISNULL(d.StatusCode, 1) != 0
+      `);
+    const items = itemsRes.recordset;
+
+    // 4. Resolve Paymode
+    const cleanPayMode = (payModeName || 'Yeahpay Paynow').trim();
+    const pmRes = await transaction.request()
+      .input('pmName', sql.NVarChar(100), cleanPayMode)
+      .query("SELECT TOP 1 Position, PayMode, Description FROM [dbo].[Paymode] WHERE Active = 1 AND (PayMode LIKE '%' + @pmName + '%' OR Description LIKE '%' + @pmName + '%')");
+    const paymode = pmRes.recordset[0] || { Position: 7, PayMode: 'Yeahpay Paynow', Description: 'Yeahpay Paynow' };
+
+    const settlementId = crypto.randomUUID();
+    const totalAmount = Number(order.TotalAmount || 0);
+    const takeawayCharge = Number(order.TakeawayCharge || 0);
+    const serviceCharge = Number(order.ServiceCharge || 0);
+    const totalTax = Number(order.TotalTax || 0);
+    const discountAmount = Number(order.DiscountAmount || 0);
+    const roundedBy = Number(order.RoundedBy || 0);
+    const subTotal = Number(order.TotalAmountLessFreight || order.TotalLineItemAmount || (totalAmount - takeawayCharge - serviceCharge - totalTax)) || totalAmount;
+    const receiptCount = items.reduce((sum, it) => sum + (Number(it.Quantity) || 1), 0);
+    const cashierId = order.CreatedBy || '8C026364-77E7-4002-803B-9BBE187C60BD';
+    const cleanTableNo = String(order.Tableno || 'TAKEAWAY').trim();
+
+    // 5. Insert SettlementHeader
+    await transaction.request()
+      .input('sid', sql.UniqueIdentifier, settlementId)
+      .input('subTotal', sql.Money, subTotal > 0 ? subTotal : totalAmount)
+      .input('totalTax', sql.Money, totalTax)
+      .input('discountAmount', sql.Decimal(18, 2), discountAmount)
+      .input('billNo', sql.NVarChar(50), actualOrderNo)
+      .input('orderType', sql.NVarChar(50), order.IsTakeAway || cleanTableNo.startsWith('TW') ? 'TAKEAWAY' : 'DINE-IN')
+      .input('tableNo', sql.NVarChar(50), cleanTableNo)
+      .input('section', sql.NVarChar(50), 'TAKEAWAY')
+      .input('cashierId', sql.UniqueIdentifier, cashierId)
+      .input('bizId', sql.UniqueIdentifier, order.BusinessUnitId || DEFAULT_GUID)
+      .input('sysAmount', sql.Money, totalAmount)
+      .input('guestName', sql.NVarChar(100), order.CustomerName || null)
+      .input('takeawayCharge', sql.Decimal(18, 2), takeawayCharge)
+      .input('serviceCharge', sql.Money, serviceCharge)
+      .input('roundedBy', sql.Money, roundedBy)
+      .input('startDate', sql.Date, formattedStartDate)
+      .query(`
+        INSERT INTO SettlementHeader (
+          SettlementID, LastSettlementDate, LastDayEndDate, SubTotal, TotalTax, DiscountAmount, DiscountType, 
+          BillNo, OrderType, TableNo, Section, CashierID, BusinessUnitId, 
+          SysAmount, ManualAmount, CreatedBy, CreatedOn, 
+          VoidItemQty, VoidItemAmount, RoundedBy, ServiceCharge, GuestName, Pax, TotalPax, TakeawayCharge, start_date, IsCancelled
+        ) VALUES (
+          @sid, GETDATE(), GETDATE(), @subTotal, @totalTax, @discountAmount, 'fixed', 
+          @billNo, @orderType, @tableNo, @section, @cashierId, @bizId, 
+          @sysAmount, @sysAmount, @cashierId, GETDATE(), 
+          0, 0, @roundedBy, @serviceCharge, @guestName, 1, 1, @takeawayCharge, @startDate, 0
+        )
+      `);
+
+    // 6. Insert RestaurantInvoice & RestaurantInvoiceCur
+    await transaction.request()
+      .input('bizId', sql.UniqueIdentifier, order.BusinessUnitId || DEFAULT_GUID)
+      .input('sid', sql.UniqueIdentifier, settlementId)
+      .input('orderId', sql.UniqueIdentifier, order.OrderId)
+      .input('billNo', sql.NVarChar(50), actualOrderNo)
+      .input('subTotal', sql.Decimal(18, 2), subTotal > 0 ? subTotal : totalAmount)
+      .input('totalTax', sql.Decimal(18, 2), totalTax)
+      .input('discountAmount', sql.Decimal(18, 2), discountAmount)
+      .input('totalAmount', sql.Decimal(18, 2), totalAmount)
+      .input('userId', sql.UniqueIdentifier, cashierId)
+      .input('serviceCharge', sql.Decimal(18, 2), serviceCharge)
+      .input('roundedBy', sql.Decimal(18, 2), roundedBy)
+      .input('payModeCode', sql.Int, paymode.Position)
+      .input('startDate', sql.Date, formattedStartDate)
+      .query(`
+        INSERT INTO RestaurantInvoice (
+          BusinessUnitId, RestaurantBillId, OrderId, BillNumber, OrderDateTime, TimeBilled, 
+          TotalLineItemAmount, TotalTax, DiscountAmount, TotalAmount, StatusCode, 
+          CreatedBy, CreatedOn, InvoiceDate, ServiceCharge, RoundedBy, TotalAmountLessFreight,
+          PaymentTermCode, Pax, start_date
+        ) VALUES (
+          @bizId, @sid, @orderId, @billNo, GETDATE(), GETDATE(),
+          @subTotal, @totalTax, @discountAmount, @totalAmount, 5,
+          @userId, GETDATE(), CAST(GETDATE() AS DATE), @serviceCharge, @roundedBy, @subTotal,
+          @payModeCode, 1, @startDate
+        );
+
+        INSERT INTO RestaurantInvoiceCur (
+          BusinessUnitId, RestaurantBillId, OrderId, BillNumber, OrderDateTime, TimeBilled, 
+          TotalLineItemAmount, TotalTax, DiscountAmount, TotalAmount, StatusCode, 
+          CreatedBy, CreatedOn, InvoiceDate, ServiceCharge, RoundedBy, TotalAmountLessFreight,
+          PaymentTermCode, Pax, start_date
+        ) VALUES (
+          @bizId, @sid, @orderId, @billNo, GETDATE(), GETDATE(),
+          @subTotal, @totalTax, @discountAmount, @totalAmount, 5,
+          @userId, GETDATE(), CAST(GETDATE() AS DATE), @serviceCharge, @roundedBy, @subTotal,
+          @payModeCode, 1, @startDate
+        );
+      `);
+
+    // 7. Insert SettlementTotalSales, SettlementDetail, SettlementTranDetail
+    await transaction.request()
+      .input('sid', sql.UniqueIdentifier, settlementId)
+      .input('pmName', sql.VarChar(50), (paymode.Description || paymode.PayMode || 'Yeahpay Paynow').trim())
+      .input('amount', sql.Decimal(18, 2), totalAmount)
+      .input('receiptCount', sql.Int, receiptCount)
+      .query(`
+        INSERT INTO SettlementTotalSales (SettlementID, PayMode, SysAmount, ManualAmount, AmountDiff, ReceiptCount)
+        VALUES (@sid, @pmName, @amount, @amount, 0, @receiptCount);
+
+        INSERT INTO [dbo].[SettlementDetail] (SettlementId, Paymode, SysAmount, ManualAmount, SortageOrExces, ReceiptCount, IsCollected)
+        VALUES (@sid, @pmName, @amount, @amount, 0, @receiptCount, 0);
+
+        INSERT INTO SettlementTranDetail (SettlementID, PayMode, CashIn, CashOut)
+        VALUES (@sid, @pmName, @amount, 0);
+      `);
+
+    // 8. Insert PaymentDetailCur
+    const paymentId = crypto.randomUUID();
+    await transaction.request()
+      .input('pid', sql.UniqueIdentifier, paymentId)
+      .input('sid', sql.UniqueIdentifier, settlementId)
+      .input('pmCode', sql.Int, paymode.Position)
+      .input('amount', sql.Decimal(18, 2), totalAmount)
+      .input('pmName', sql.VarChar(50), (paymode.Description || paymode.PayMode || 'Yeahpay Paynow').trim())
+      .input('bizId', sql.UniqueIdentifier, order.BusinessUnitId || DEFAULT_GUID)
+      .input('userId', sql.UniqueIdentifier, cashierId)
+      .input('startDate', sql.Date, formattedStartDate)
+      .query(`
+        INSERT INTO PaymentDetailCur (
+          PaymentId, BilledFor, RestaurantBillId, PaymentCollectedOn, PaymentType, Paymode, 
+          Amount, Remarks, BusinessUnitId, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn, 
+          isSettlement, isUploadHQ, start_date
+        ) VALUES (
+          @pid, 1, @sid, GETDATE(), 1, @pmCode, 
+          @amount, @pmName, @bizId, @userId, GETDATE(), @userId, GETDATE(), 
+          1, 0, @startDate
+        )
+      `);
+
+    // 9. Insert SettlementItemDetail
+    for (const item of items) {
+      await transaction.request()
+        .input('sid', sql.UniqueIdentifier, settlementId)
+        .input('dishId', sql.UniqueIdentifier, item.DishId)
+        .input('dishName', sql.NVarChar(255), item.DishName || item.Description || 'Item')
+        .input('songName', sql.NVarChar(255), item.SongName || '')
+        .input('qty', sql.Int, item.Quantity)
+        .input('price', sql.Decimal(18, 2), item.PricePerUnit)
+        .input('catId', sql.UniqueIdentifier, item.CategoryId || null)
+        .input('catName', sql.NVarChar(255), item.CategoryName || 'MAIN')
+        .input('groupName', sql.NVarChar(255), item.DishGroupName || 'GENERAL')
+        .input('startDate', sql.Date, formattedStartDate)
+        .query(`
+          INSERT INTO SettlementItemDetail (
+            SettlementID, DishId, DishName, SongName, Qty, Price, Status, OrderDateTime,
+            CategoryId, CategoryName, SubCategoryName, start_date
+          ) VALUES (
+            @sid, @dishId, @dishName, @songName, @qty, @price, 'NORMAL', GETDATE(),
+            @catId, @catName, @groupName, @startDate
+          )
+        `);
+    }
+
+    // 10. Update RestaurantOrderCur status
+    await transaction.request()
+      .input('orderId', sql.UniqueIdentifier, order.OrderId)
+      .query(`
+        UPDATE RestaurantOrderCur 
+        SET ModifiedOn = GETDATE()
+        WHERE OrderId = @orderId
+      `);
+
+    await transaction.commit();
+    console.log(`✅ [settlePaidQROrder] Order ${actualOrderNo} successfully settled with SettlementID: ${settlementId}`);
+    return { success: true, settlementId, billNo: actualOrderNo };
+  } catch (err) {
+    await transaction.rollback();
+    console.error(`❌ [settlePaidQROrder] Failed to settle order ${orderNumber}:`, err.message);
+    return null;
+  }
+}
+
 router.post("/payment-status", async (req, res) => {
   try {
-    const { tableId, paymentStatus } = req.body;
+    const { tableId, paymentStatus, orderId: clientOrderId, payMode } = req.body;
     if (!tableId) {
       return res.status(400).json({ error: "Missing tableId" });
     }
@@ -2937,6 +3206,20 @@ router.post("/payment-status", async (req, res) => {
       .replace(/^\{|\}$/g, "")
       .trim();
     const pool = await poolPromise;
+
+    // 🛡️ Validate: If paymentStatus is 2 (Pay at Cashier) for Takeaway, ensure EnableQRTWPayAtCashier is enabled in AppSettings
+    if (Number(paymentStatus) === 2) {
+      const isTakeaway = cleanId === "TAKEAWAY" || cleanId.startsWith("TAKEAWAY") || cleanId.startsWith("TW");
+      if (isTakeaway) {
+        const { getAppSettings } = require("../utils/settingsCache");
+        const appSettings = await getAppSettings();
+        const enableQRTWPayAtCashier = appSettings?.EnableQRTWPayAtCashier !== undefined ? Boolean(appSettings.EnableQRTWPayAtCashier) : true;
+        if (!enableQRTWPayAtCashier) {
+          return res.status(403).json({ error: "Pay at Cashier is disabled for QR Takeaway orders. Please pay online." });
+        }
+      }
+    }
+
     await pool
       .request()
       .input("tid", sql.VarChar(50), cleanId)
@@ -2962,9 +3245,125 @@ router.post("/payment-status", async (req, res) => {
       });
     }
 
+    // 🔹 When payment is completed (paymentStatus === 1):
+    // 1. Auto-settle the order in SettlementHeader so it immediately appears in Sales Report
+    if (Number(paymentStatus) === 1) {
+      try {
+        const orderNo = clientOrderId || updated?.CurrentOrderId || (await resolveTableOrderNo(pool, cleanId));
+        if (orderNo) {
+          const settledResult = await settlePaidQROrder(pool, orderNo, payMode || "Yeahpay Paynow");
+          if (settledResult && io) {
+            io.emit("settlement_updated", { action: "settlement_saved", orderId: orderNo, settlementId: settledResult.settlementId });
+            io.emit("sales_updated", { orderId: orderNo });
+          }
+        }
+      } catch (settleErr) {
+        console.error("❌ Failed to auto-settle paid QR order in /payment-status:", settleErr.message);
+      }
+    }
+
+    // 2. Trigger print jobs for QR orders
+    if (Number(paymentStatus) === 1 && updated?.CurrentOrderId) {
+      try {
+        const { queueQRPrintJobs } = require("../utils/printHelper");
+        const orderNo = updated.CurrentOrderId;
+        const actualTableNo = updated.tableNo || "TAKEAWAY";
+
+        // Query active order items to print
+        const itemsRes = await pool
+          .request()
+          .input("ordNo", sql.NVarChar(50), orderNo)
+          .query(`
+            SELECT 
+              d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, 
+              d.PricePerUnit as price, ISNULL(NULLIF(d.DishName, ''), dish.Name) as name,
+              d.Remarks as note, d.isTakeAway as isTakeaway,
+              d.ModifiersJSON, d.ComboDetailsJSON,
+              ISNULL(ckt.KitchenTypeCode, '2') as KitchenTypeCode,
+              ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
+              pm.PrinterPath as PrinterIP
+            FROM RestaurantOrderDetailCur d
+            INNER JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId
+            LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+            LEFT JOIN DishGroupMaster dgm ON dish.DishGroupId = dgm.DishGroupId
+            LEFT JOIN CategoryMaster cat ON dgm.CategoryId = cat.CategoryId
+            LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
+            LEFT JOIN (
+              SELECT *, ROW_NUMBER() OVER(PARTITION BY KitchenTypeValue ORDER BY PrinterId) as rn 
+              FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
+            ) pm ON CAST(ckt.KitchenTypeCode AS VARCHAR(50)) = CAST(pm.KitchenTypeValue AS VARCHAR(50)) AND pm.rn = 1
+            WHERE (h.OrderNumber = @ordNo OR d.OrderNumber = @ordNo)
+              AND d.StatusCode IN (1, 2)
+          `);
+
+        const printItems = (itemsRes.recordset || []).map(row => {
+          let mods = [];
+          if (row.ModifiersJSON) {
+            try { mods = JSON.parse(row.ModifiersJSON); } catch (e) {}
+          }
+          let combos = [];
+          if (row.ComboDetailsJSON) {
+            try { combos = JSON.parse(row.ComboDetailsJSON); } catch (e) {}
+          }
+          return {
+            ...row,
+            modifiers: mods,
+            comboSelections: combos,
+            isCombo: !!combos && (Array.isArray(combos) ? combos.length > 0 : !!combos.groups)
+          };
+        });
+
+        if (printItems.length > 0) {
+          await queueQRPrintJobs(pool, sql, {
+            orderId: orderNo,
+            tableNo: actualTableNo,
+            sentItems: printItems,
+            isAdditional: false,
+          });
+          console.log(`[QR Print Queue] Queued KOT/KDS jobs after payment confirmation for Order ${orderNo} Table ${actualTableNo}`);
+          const ioInst = req.app.get("io");
+          if (ioInst) {
+            ioInst.emit("print_jobs_available", { orderId: orderNo, storeId: "STORE_001" });
+          }
+        }
+      } catch (printErr) {
+        console.error("❌ Failed to queue print jobs in /payment-status:", printErr.message);
+      }
+    }
+
     res.json({ success: true, ...updated });
   } catch (err) {
     console.error("❌ payment-status Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/complete-online-payment", async (req, res) => {
+  try {
+    const { orderId, tableNo, tableId, paymentMethod } = req.body;
+    const pool = await poolPromise;
+    const cleanId = String(tableId || tableNo || "").replace(/^\{|\}$/g, "").trim();
+    const orderNo = orderId || (cleanId ? await resolveTableOrderNo(pool, cleanId) : null);
+    
+    if (cleanId) {
+      await pool.request().input("tid", sql.VarChar(50), cleanId).query(`
+        UPDATE TableMaster SET PAYMENT_STATUS = 1 WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+      `);
+      await syncTableStatus(req, cleanId);
+    }
+    
+    if (orderNo) {
+      const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow");
+      const ioInst = req.app.get("io");
+      if (ioInst) {
+        ioInst.emit("settlement_updated", { action: "settlement_saved", orderId: orderNo });
+        ioInst.emit("sales_updated", { orderId: orderNo });
+      }
+      return res.json({ success: true, ...settled });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ complete-online-payment error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

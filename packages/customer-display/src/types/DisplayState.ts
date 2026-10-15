@@ -50,6 +50,28 @@ export interface DisplayState {
     amount: number;
     status: string;
   }>;
+  // Quick Serve Screen Mirroring Fields
+  isQuickServe?: boolean;
+  quickServeGroups?: Array<{
+    id: string | number;
+    name: string;
+    count?: number;
+    isActive?: boolean;
+  }>;
+  quickServeDishes?: Array<{
+    id: string | number;
+    name: string;
+    price: number;
+    image?: string;
+    qtyInCart?: number;
+    isSoldOut?: boolean;
+  }>;
+  quickServeCategoryTitle?: string;
+  quickServePaymodes?: Array<{
+    key: string;
+    label: string;
+    isSelected?: boolean;
+  }>;
 }
 
 export const DEFAULT_STATE: DisplayState = {
