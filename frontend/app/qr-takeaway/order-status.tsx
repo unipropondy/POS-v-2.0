@@ -1015,6 +1015,15 @@ export default function CustomerOrderStatusScreen() {
     return clean ? `TW-${clean}` : "TW-01";
   })();
 
+  const orderNumberDigits = (() => {
+    if (!displayOrderNo) return "0037";
+    const str = String(displayOrderNo).trim();
+    if (str.includes("-")) {
+      return str.split("-").pop() || str;
+    }
+    return str.length > 4 ? str.slice(-4) : str;
+  })();
+
   const status = getOverallStatus();
   const isPreparing = status === "Preparing Order";
   const isReady = status === "Ready for Pickup" || status === "Picked Up / Completed";
@@ -1121,16 +1130,16 @@ export default function CustomerOrderStatusScreen() {
               {/* Elevated Takeaway Bag Container */}
               <View style={styles.bagIconContainer}>
                 <View style={[styles.bagIconCircle, isReady && styles.bagIconCircleReady]}>
-                  <Svg width="54" height="54" viewBox="0 0 64 64" fill="none">
+                  <Svg width="56" height="56" viewBox="0 0 64 64" fill="none">
                     {/* Decorative rays */}
-                    <Line x1="10" y1="22" x2="16" y2="24" stroke={isReady ? "#10B981" : "#FF8A48"} strokeWidth="2.5" strokeLinecap="round" />
-                    <Line x1="12" y1="32" x2="6" y2="33" stroke={isReady ? "#10B981" : "#FF8A48"} strokeWidth="2.5" strokeLinecap="round" />
-                    <Line x1="54" y1="22" x2="48" y2="24" stroke={isReady ? "#10B981" : "#FF8A48"} strokeWidth="2.5" strokeLinecap="round" />
-                    <Line x1="58" y1="32" x2="52" y2="33" stroke={isReady ? "#10B981" : "#FF8A48"} strokeWidth="2.5" strokeLinecap="round" />
+                    <Line x1="8" y1="21" x2="15" y2="23" stroke={isReady ? "#10B981" : "#FF5722"} strokeWidth="2.8" strokeLinecap="round" />
+                    <Line x1="8" y1="32" x2="15" y2="32" stroke={isReady ? "#10B981" : "#FF5722"} strokeWidth="2.8" strokeLinecap="round" />
+                    <Line x1="56" y1="21" x2="49" y2="23" stroke={isReady ? "#10B981" : "#FF5722"} strokeWidth="2.8" strokeLinecap="round" />
+                    <Line x1="56" y1="32" x2="49" y2="32" stroke={isReady ? "#10B981" : "#FF5722"} strokeWidth="2.8" strokeLinecap="round" />
                     
                     {/* Bag Handle */}
                     <Path
-                      d="M26 17C26 12.5 28.5 9 32 9C35.5 9 38 12.5 38 17"
+                      d="M26 17C26 12 28.5 8.5 32 8.5C35.5 8.5 38 12 38 17"
                       stroke={isReady ? "#059669" : "#FF5722"}
                       strokeWidth="3.2"
                       strokeLinecap="round"
@@ -1142,7 +1151,7 @@ export default function CustomerOrderStatusScreen() {
                     <Path
                       d="M27 25V36M25 25V28.5C25 29.6 25.9 30.5 27 30.5C28.1 30.5 29 29.6 29 28.5V25"
                       stroke="#FFFFFF"
-                      strokeWidth="1.8"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
@@ -1150,7 +1159,7 @@ export default function CustomerOrderStatusScreen() {
                     <Path
                       d="M36 30V36M36 30C37.6 30 39 28.7 39 27C39 25.3 37.6 24 36 24C34.4 24 33 25.3 33 27C33 28.7 34.4 30 36 30Z"
                       stroke="#FFFFFF"
-                      strokeWidth="1.8"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
@@ -1170,41 +1179,33 @@ export default function CustomerOrderStatusScreen() {
               </View>
 
               <View style={styles.heroTextContent}>
-                {/* Badges Row: Order Number + Takeaway Slot + Payment Status */}
-                <View style={styles.orderChipsRow}>
-                  {/* Real Order Number Chip */}
-                  <View style={[styles.orderChip, isReady && styles.orderChipReady]}>
-                    <Ionicons 
-                      name="receipt-outline" 
-                      size={14} 
-                      color={isReady ? "#059669" : "#EA580C"} 
-                      style={{ marginRight: 5 }} 
-                    />
-                    <Text style={[styles.orderChipText, isReady && styles.orderChipTextReady]}>
-                      Order #{displayOrderNo ? (displayOrderNo.includes("-") ? displayOrderNo.split("-").pop() : displayOrderNo.slice(-4)) : "Pending"}
+                {/* Top Row: ORDER label & #0037 on Left, UNPAID / PAID pill on Right */}
+                <View style={styles.heroHeaderRow}>
+                  <View style={styles.orderNumberBlock}>
+                    <Text style={styles.orderLabelSmall}>ORDER</Text>
+                    <Text style={[styles.orderHeroNumber, isReady && styles.orderHeroNumberReady]}>
+                      #{orderNumberDigits}
                     </Text>
                   </View>
 
-                  {/* Paid Status Pill */}
-                  <View style={[styles.paymentPill, isPaid ? styles.paymentPillPaid : styles.paymentPillUnpaid]}>
+                  {/* Payment Status Pill */}
+                  <View style={[styles.paymentPillNew, isPaid ? styles.paymentPillPaidNew : styles.paymentPillUnpaidNew]}>
                     <Ionicons 
                       name={isPaid ? "checkmark-circle" : "time-outline"} 
-                      size={12} 
+                      size={18} 
                       color={isPaid ? "#059669" : "#D97706"} 
-                      style={{ marginRight: 3 }} 
+                      style={{ marginRight: 6 }} 
                     />
-                    <Text style={[styles.paymentPillText, isPaid ? styles.paymentPillTextPaid : styles.paymentPillTextUnpaid]}>
-                      {isPaid ? "Paid" : (paymentStatus === "PENDING_CASHIER" ? "Pay at Cashier" : "Unpaid")}
+                    <Text style={[styles.paymentPillTextNew, isPaid ? styles.paymentPillTextPaidNew : styles.paymentPillTextUnpaidNew]}>
+                      {isPaid ? "PAID" : (paymentStatus === "PENDING_CASHIER" ? "PAY AT CASHIER" : "UNPAID")}
                     </Text>
                   </View>
                 </View>
 
                 {/* Main Headline */}
-                <View style={styles.headingRow}>
-                  <Text style={[styles.heroStatusHeading, isReady && styles.heroStatusHeadingReady]}>
-                    {statusTitle}
-                  </Text>
-                </View>
+                <Text style={[styles.heroStatusHeading, isReady && styles.heroStatusHeadingReady]}>
+                  {statusTitle}
+                </Text>
 
                 <Text style={styles.heroStatusSub}>{statusSubtitle}</Text>
               </View>
@@ -1217,15 +1218,15 @@ export default function CustomerOrderStatusScreen() {
                 {/* Node 1 */}
                 <View style={styles.stepCircleWrapper}>
                   <View style={styles.stepCheckCircle}>
-                    <Ionicons name="checkmark" size={14} color="#FFF" />
+                    <Ionicons name="checkmark" size={15} color="#FFF" />
                   </View>
                 </View>
 
-                {/* Connector 1 */}
+                {/* Connector 1: Solid line from Node 1 */}
                 <View 
                   style={[
                     styles.stepConnectorSolid, 
-                    { backgroundColor: isPreparing || isReady ? "#FF5722" : "#E2E8F0" }
+                    { backgroundColor: "#FF5722" }
                   ]} 
                 />
 
@@ -1233,7 +1234,7 @@ export default function CustomerOrderStatusScreen() {
                 <View style={styles.stepCircleWrapper}>
                   {isReady ? (
                     <View style={styles.stepCheckCircle}>
-                      <Ionicons name="checkmark" size={14} color="#FFF" />
+                      <Ionicons name="checkmark" size={15} color="#FFF" />
                     </View>
                   ) : isPreparing ? (
                     <View style={styles.stepActiveRing}>
@@ -1255,8 +1256,8 @@ export default function CustomerOrderStatusScreen() {
                 {/* Node 3 */}
                 <View style={styles.stepCircleWrapper}>
                   {isReady ? (
-                    <View style={styles.stepCheckCircle}>
-                      <Ionicons name="checkmark" size={14} color="#FFF" />
+                    <View style={[styles.stepCheckCircle, { backgroundColor: "#10B981" }]}>
+                      <Ionicons name="checkmark" size={15} color="#FFF" />
                     </View>
                   ) : (
                     <View style={styles.stepInactiveCircle} />
@@ -1284,11 +1285,11 @@ export default function CustomerOrderStatusScreen() {
 
                 {/* Label 3 */}
                 <View style={styles.stepLabelCol}>
-                  <Text style={isReady ? styles.stepLabelActive : styles.stepLabelInactive}>
+                  <Text style={isReady ? [styles.stepLabelActive, { color: "#10B981" }] : styles.stepLabelInactive}>
                     Ready for Pickup
                   </Text>
                   <Text style={styles.stepSubLabel}>
-                    {isReady ? "Ready now" : ""}
+                    {isReady ? "Ready now" : "Waiting"}
                   </Text>
                 </View>
               </View>
@@ -1965,17 +1966,18 @@ const styles = StyleSheet.create({
   },
 
   /* Card 1: Hero Banner */
+  /* Card 1: Hero Banner (Matching Image 2) */
   heroCard: {
-    backgroundColor: "#FFF8F3",
+    backgroundColor: "#FFFDFB",
     borderRadius: 24,
-    padding: 20,
+    padding: 22,
     marginBottom: 20,
     borderWidth: 1.5,
     borderColor: "#FFEADB",
     shadowColor: "#FF5722",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowRadius: 18,
     elevation: 3,
   },
   heroCardReady: {
@@ -1985,26 +1987,27 @@ const styles = StyleSheet.create({
   },
   heroTopRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
   },
   bagIconContainer: {
     position: "relative",
-    marginRight: 16,
+    marginRight: 18,
+    marginTop: 2,
   },
   bagIconCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 22,
+    width: 82,
+    height: 82,
+    borderRadius: 24,
     backgroundColor: "#FFEFE6",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
     borderColor: "#FFDCC7",
     shadowColor: "#FF5722",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 4,
   },
   bagIconCircleReady: {
     backgroundColor: "#ECFDF5",
@@ -2040,108 +2043,84 @@ const styles = StyleSheet.create({
   heroTextContent: {
     flex: 1,
   },
-  orderChipsRow: {
+  heroHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 6,
-  },
-  orderChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "#FFEFE6",
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#FFD9C4",
-  },
-  orderChipReady: {
-    backgroundColor: "#DCFCE7",
-    borderColor: "#86EFAC",
-  },
-  orderChipText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#EA580C",
-    letterSpacing: 0.4,
-  },
-  orderChipTextReady: {
-    color: "#15803D",
-  },
-  takeawaySlotChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  takeawaySlotChipText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#475569",
-    letterSpacing: 0.2,
-  },
-  paymentPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  paymentPillPaid: {
-    backgroundColor: "#ECFDF5",
-    borderColor: "#A7F3D0",
-  },
-  paymentPillUnpaid: {
-    backgroundColor: "#FFFBEB",
-    borderColor: "#FDE68A",
-  },
-  paymentPillText: {
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.2,
-  },
-  paymentPillTextPaid: {
-    color: "#059669",
-  },
-  paymentPillTextUnpaid: {
-    color: "#D97706",
-  },
-  headingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
+    justifyContent: "space-between",
     marginBottom: 4,
   },
+  orderNumberBlock: {
+    flexDirection: "column",
+  },
+  orderLabelSmall: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#475569",
+    letterSpacing: 1.4,
+    marginBottom: -2,
+  },
+  orderHeroNumber: {
+    fontSize: 48,
+    fontWeight: "900",
+    color: "#FF5722",
+    letterSpacing: -1.2,
+    lineHeight: 52,
+  },
+  orderHeroNumberReady: {
+    color: "#15803D",
+  },
+  paymentPillNew: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    alignSelf: "center",
+  },
+  paymentPillPaidNew: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#86EFAC",
+  },
+  paymentPillUnpaidNew: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FCD34D",
+  },
+  paymentPillTextNew: {
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+  paymentPillTextPaidNew: {
+    color: "#059669",
+  },
+  paymentPillTextUnpaidNew: {
+    color: "#D97706",
+  },
   heroStatusHeading: {
-    fontSize: 22,
+    fontSize: 23,
     fontWeight: "900",
     color: "#FF5722",
     letterSpacing: -0.4,
     lineHeight: 28,
+    marginTop: 6,
+    marginBottom: 3,
   },
   heroStatusHeadingReady: {
     color: "#15803D",
   },
   heroStatusSub: {
-    fontSize: 13,
-    color: "#64748B",
-    lineHeight: 19,
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 20,
     fontWeight: "500",
   },
 
   /* Stepper Timeline */
   stepperContainer: {
     marginTop: 22,
-    paddingTop: 16,
-    borderTopWidth: 1,
+    paddingTop: 18,
+    borderTopWidth: 1.5,
     borderTopColor: "#FFEAD9",
     width: "100%",
   },
@@ -2149,13 +2128,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     width: "100%",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   stepperLabelsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
-    marginTop: 8,
+    marginTop: 10,
   },
   stepLabelCol: {
     flex: 1,
@@ -2163,23 +2142,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   stepCircleWrapper: {
-    width: 26,
-    height: 26,
+    width: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
   },
   stepCheckCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: "#FF5722",
     alignItems: "center",
     justifyContent: "center",
   },
   stepActiveRing: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 2.5,
     borderColor: "#FF5722",
     backgroundColor: "#FFF8F3",
@@ -2193,32 +2172,33 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF5722",
   },
   stepInactiveCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#E2E8F0",
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#DDE3EA",
   },
   stepLabelActive: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "800",
     color: "#FF5722",
     textAlign: "center",
   },
   stepLabelInactive: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#334155",
     textAlign: "center",
   },
   stepSubLabel: {
-    fontSize: 11,
-    color: "#94A3B8",
+    fontSize: 12,
+    color: "#64748B",
     marginTop: 2,
     textAlign: "center",
+    fontWeight: "500",
   },
   stepConnectorSolid: {
     flex: 1,
-    height: 2,
+    height: 2.5,
     backgroundColor: "#FF5722",
     marginHorizontal: 4,
   },
