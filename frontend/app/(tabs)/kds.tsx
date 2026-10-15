@@ -116,7 +116,13 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
           <Text style={styles.tableInfo} numberOfLines={1}>
             {item.context.orderType === "DINE_IN"
               ? `${formatSection(item.context.section)} • Table ${item.context.tableNo}`
-              : `Takeaway • #${item.context.takeawayNo || item.orderId.slice(-4)}`}
+              : (() => {
+                  const tbl = item.context.tableNo || item.context.takeawayNo || "";
+                  const cleanTbl = String(tbl).trim();
+                  const formattedTbl = cleanTbl.toUpperCase().startsWith("TW") ? cleanTbl.toUpperCase() : (cleanTbl ? `TW${cleanTbl}` : "TW");
+                  const shortOrd = item.orderId ? `#${String(item.orderId).slice(-4)}` : "";
+                  return `TW - ${formattedTbl} ${shortOrd}`.trim();
+                })()}
           </Text>
           <Animated.Text style={[styles.timer, { color: ui.primary, opacity: timerOpacity }]}>
             {minutes}:{seconds.toString().padStart(2, "00")}
@@ -571,7 +577,13 @@ export default function KDSScreen() {
                   <Text style={styles.modalTitle}>
                     {selectedOrder?.context.orderType === "DINE_IN"
                       ? `Table ${selectedOrder.context.tableNo}`
-                      : `Takeaway #${selectedOrder?.context.takeawayNo || selectedOrder?.orderId.slice(-4)}`}
+                      : (() => {
+                          const tbl = selectedOrder?.context.tableNo || selectedOrder?.context.takeawayNo || "";
+                          const cleanTbl = String(tbl).trim();
+                          const formattedTbl = cleanTbl.toUpperCase().startsWith("TW") ? cleanTbl.toUpperCase() : (cleanTbl ? `TW${cleanTbl}` : "TW");
+                          const shortOrd = selectedOrder?.orderId ? `#${String(selectedOrder.orderId).slice(-4)}` : "";
+                          return `TW - ${formattedTbl} ${shortOrd}`.trim();
+                        })()}
                   </Text>
                   <Text style={styles.modalOrderId}>Order #{selectedOrder?.orderId}</Text>
                 </View>

@@ -881,13 +881,15 @@ class UniversalPrinter {
       String(rawTableNo).toUpperCase().startsWith("TW");
 
     let displayTable = "";
+    const shortOrderNo = (orderNo && orderNo !== "N/A") ? `#${String(orderNo).slice(-4)}` : "";
     if (isTakeaway) {
-      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo;
+      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo || data.tableNo || rawTableNo;
       const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
-        ? String(rawTw).replace(/^TW-?/i, "").trim()
-        : (orderNo && orderNo !== "N/A" ? String(orderNo).slice(-4) : "");
+        ? String(rawTw).trim()
+        : "";
+      const formattedTw = cleanTw.toUpperCase().startsWith("TW") ? cleanTw.toUpperCase() : (cleanTw ? `TW${cleanTw}` : "TW");
       const qsSuffix = (data.isQuickServe || data.orderContext?.isQuickServe) ? " (QS)" : "";
-      displayTable = cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`;
+      displayTable = shortOrderNo ? `TW - ${formattedTw} ${shortOrderNo}${qsSuffix}` : (cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`);
     } else {
       const cleanTableNo = String(rawTableNo || "1")
         .replace(/\s*\(quick serve\)/gi, "")
@@ -1230,13 +1232,15 @@ class UniversalPrinter {
       String(rawTableNo).toUpperCase().startsWith("TW");
 
     let displayTable = "";
+    const shortOrderNo = orderNo ? `#${String(orderNo).slice(-4)}` : "";
     if (isTakeaway) {
-      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo;
+      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo || data.tableNo || rawTableNo;
       const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
-        ? String(rawTw).replace(/^TW-?/i, "").trim()
-        : (orderNo ? String(orderNo).slice(-4) : "");
+        ? String(rawTw).trim()
+        : "";
+      const formattedTw = cleanTw.toUpperCase().startsWith("TW") ? cleanTw.toUpperCase() : (cleanTw ? `TW${cleanTw}` : "TW");
       const qsSuffix = (data.isQuickServe || data.orderContext?.isQuickServe) ? " (QS)" : "";
-      displayTable = cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`;
+      displayTable = shortOrderNo ? `TW - ${formattedTw} ${shortOrderNo}${qsSuffix}` : (cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`);
     } else {
       const cleanTableNo = String(rawTableNo || "1")
         .replace(/\s*\(quick serve\)/gi, "")
@@ -1847,10 +1851,8 @@ class UniversalPrinter {
       String(saleData.tableNo || "").toUpperCase().startsWith("TW");
 
     if (isReceiptTW) {
-      const rawTw = saleData.takeawayNo || (saleData.invoiceNumber || saleData.id ? String(saleData.invoiceNumber || saleData.id).slice(-4) : "");
-      const twLabel = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
-        ? `TAKEAWAY #${String(rawTw).replace(/^TW-?/i, "").trim()}`
-        : "TAKEAWAY";
+      const shortOrderNo = (saleData.invoiceNumber || saleData.id || saleData.orderNumber ? String(saleData.invoiceNumber || saleData.id || saleData.orderNumber).slice(-4) : "");
+      const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
       text += this.formatTwoCols48(`<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>`, `<B>${twLabel}</B>`);
     } else if (saleData.tableNo) {
       const cleanTableNo = String(saleData.tableNo).replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();

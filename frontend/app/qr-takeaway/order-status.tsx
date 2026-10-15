@@ -1176,22 +1176,14 @@ export default function CustomerOrderStatusScreen() {
                   <View style={[styles.orderChip, isReady && styles.orderChipReady]}>
                     <Ionicons 
                       name="receipt-outline" 
-                      size={12} 
+                      size={14} 
                       color={isReady ? "#059669" : "#EA580C"} 
-                      style={{ marginRight: 4 }} 
+                      style={{ marginRight: 5 }} 
                     />
                     <Text style={[styles.orderChipText, isReady && styles.orderChipTextReady]}>
-                      Order #{displayOrderNo || "Pending"}
+                      Order #{displayOrderNo ? (displayOrderNo.includes("-") ? displayOrderNo.split("-").pop() : displayOrderNo.slice(-4)) : "Pending"}
                     </Text>
                   </View>
-
-                  {/* Takeaway Slot Chip (Explicitly marked as Takeaway slot, NOT order number) */}
-                  {takeawayNoLabel ? (
-                    <View style={styles.takeawaySlotChip}>
-                      <Ionicons name="bag-handle-outline" size={11} color="#64748B" style={{ marginRight: 3 }} />
-                      <Text style={styles.takeawaySlotChipText}>{takeawayNoLabel}</Text>
-                    </View>
-                  ) : null}
 
                   {/* Paid Status Pill */}
                   <View style={[styles.paymentPill, isPaid ? styles.paymentPillPaid : styles.paymentPillUnpaid]}>
@@ -2060,10 +2052,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "flex-start",
     backgroundColor: "#FFEFE6",
-    paddingHorizontal: 9,
-    paddingVertical: 3.5,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#FFD9C4",
   },
   orderChipReady: {
@@ -2071,10 +2063,10 @@ const styles = StyleSheet.create({
     borderColor: "#86EFAC",
   },
   orderChipText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "800",
     color: "#EA580C",
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
   },
   orderChipTextReady: {
     color: "#15803D",

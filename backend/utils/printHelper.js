@@ -195,9 +195,15 @@ function formatKOTThermalText(data, type = "NEW", disableComboPrint = false) {
   text += DIV;
 
   // TABLE or TAKEAWAY at top
-  const tableHeader = isTakeaway
-    ? (displayTable.toUpperCase().startsWith("TAKEAWAY") ? displayTable.toUpperCase() : `TAKEAWAY: ${displayTable}`)
-    : `TABLE: ${displayTable}`;
+  const shortOrderNo = orderNo ? `#${String(orderNo).slice(-4)}` : "";
+  let tableHeader = "";
+  if (isTakeaway) {
+    const cleanTw = String(displayTable).replace(/\s*\(quick serve\)/gi, "").trim();
+    const formattedTw = cleanTw.toUpperCase().startsWith("TW") ? cleanTw.toUpperCase() : `TW${cleanTw}`;
+    tableHeader = shortOrderNo ? `TW - ${formattedTw} ${shortOrderNo}` : `TAKEAWAY: ${displayTable}`;
+  } else {
+    tableHeader = `TABLE: ${displayTable}`;
+  }
   text += `[C]<font size='big'><B>${tableHeader}</B></font>\n`;
   text += DIV;
 
@@ -230,12 +236,16 @@ function formatKOTThermalText(data, type = "NEW", disableComboPrint = false) {
   text += `[L]<B>Order No : ${orderNo}</B>\n`;
 
   if (type !== "KDS_PRINT") {
+    const cleanTw = String(tableNo).replace(/\s*\(quick serve\)/gi, "").trim();
+    const formattedTw = cleanTw.toUpperCase().startsWith("TW") ? cleanTw.toUpperCase() : `TW${cleanTw}`;
+    const twBottomLabel = shortOrderNo ? `TW - ${formattedTw} ${shortOrderNo}` : `T.NO : ${tableNo}`;
+
     const kotLabel = kitchenName && kitchenName !== "KDS"
       ? (tableNo && tableNo !== "N/A"
-          ? `${kitchenName.toUpperCase()}  /  T.NO : ${tableNo}`
+          ? (isTakeaway ? `${kitchenName.toUpperCase()}  /  ${twBottomLabel}` : `${kitchenName.toUpperCase()}  /  T.NO : ${tableNo}`)
           : kitchenName.toUpperCase())
       : (tableNo && tableNo !== "N/A"
-          ? `T.NO : ${tableNo}`
+          ? (isTakeaway ? twBottomLabel : `T.NO : ${tableNo}`)
           : "");
     if (kotLabel) {
       text += DIV;
@@ -280,8 +290,8 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
   const isTakeaway = saleData.orderType === "TAKEAWAY" || saleData.isTakeaway || tableNo.toUpperCase().startsWith("TW") || tableNo.toUpperCase().includes("TAKEAWAY");
 
   if (isTakeaway) {
-    const rawTw = saleData.takeawayNo || (tableNo.toUpperCase().startsWith("TW") ? tableNo : (billNo ? billNo.slice(-4) : ""));
-    const twLabel = rawTw ? `TAKEAWAY #${String(rawTw).replace(/^TW-?/i, "").trim()}` : "TAKEAWAY";
+    const shortOrderNo = billNo ? String(billNo).slice(-4) : "";
+    const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
     text += formatTwoCols48(`<B>Bill No: ${billNo}</B>`, `<B>${twLabel}</B>`);
   } else if (tableNo) {
     const cleanTableNo = tableNo.replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
