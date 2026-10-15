@@ -975,7 +975,7 @@ async function syncTableStatus(req, tableId) {
     WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER));
 
     SELECT 
-      Status, entry_status AS entryStatus, PAYMENT_STATUS AS paymentStatus, TotalAmount, CONVERT(VARCHAR, StartTime, 126) AS StartTime, 
+      TableId, Status, entry_status AS entryStatus, PAYMENT_STATUS AS paymentStatus, TotalAmount, CONVERT(VARCHAR, StartTime, 126) AS StartTime, 
       CurrentOrderId, TableNumber as tableNo, DiningSection as section, CustomerName as customerName, Pax as pax,
       CASE 
         WHEN Status IN (1, 2, 3) AND StartTime IS NOT NULL AND DATEDIFF(MINUTE, StartTime, GETDATE()) >= 60 THEN 1 
@@ -1002,12 +1002,14 @@ async function syncTableStatus(req, tableId) {
       4: "TAKEAWAY",
     };
     const cleanOrderId = updated.CurrentOrderId || "EMPTY";
+    const targetTableId = updated.TableId ? String(updated.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase();
 
     console.log(
-      `[TRACE] [${Date.now()}] [SOCKET_EMIT] table_status_updated | Table: ${cleanId} | Status: ${updated.Status}`,
+      `[TRACE] [${Date.now()}] [SOCKET_EMIT] table_status_updated | Table: ${cleanId} (TargetId: ${targetTableId}) | Status: ${updated.Status} | PaymentStatus: ${updated.paymentStatus}`,
     );
     req.app.get("io")?.emit("table_status_updated", {
-      tableId: cleanId.toLowerCase(),
+      tableId: targetTableId,
+      rawTableId: updated.TableId,
       status: Number(updated.Status),
       totalAmount: Number(updated.TotalAmount) || 0,
       startTime: updated.StartTime,
@@ -1019,11 +1021,11 @@ async function syncTableStatus(req, tableId) {
       isHoldOvertime: updated.isHoldOvertime || 0,
       entryStatus: updated.entryStatus || null,
       paymentStatus:
-        updated.paymentStatus !== undefined
+        updated.paymentStatus !== undefined && updated.paymentStatus !== null
           ? Number(updated.paymentStatus)
           : null,
       customerName: updated.customerName || null,
-      pax: updated.pax || null,
+      pax: updated.pax !== undefined ? Number(updated.pax) : null,
     });
   }
   return updated;
@@ -3415,14 +3417,17 @@ router.post("/payment-status", async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
+      const targetTableId = updated?.TableId ? String(updated.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase();
       io.emit("qr_payment_confirmed", {
-        tableId: cleanId.toLowerCase(),
+        tableId: targetTableId,
+        rawTableId: updated?.TableId,
         tableNo: updated?.tableNo,
         orderId: updated?.CurrentOrderId,
-        paymentStatus: paymentStatus,
+        paymentStatus: Number(paymentStatus),
+        entryStatus: updated?.entryStatus || 'q',
       });
       io.emit("active_kitchen_updated", {
-        tableId: cleanId.toLowerCase(),
+        tableId: targetTableId,
         reason: "payment_status_changed",
       });
     }
@@ -3530,16 +3535,28 @@ router.post("/complete-online-payment", async (req, res) => {
     const cleanId = String(tableId || tableNo || "").replace(/^\{|\}$/g, "").trim();
     const orderNo = orderId || (cleanId ? await resolveTableOrderNo(pool, cleanId) : null);
     
+    let updatedTable = null;
     if (cleanId) {
       await pool.request().input("tid", sql.VarChar(50), cleanId).query(`
         UPDATE TableMaster SET PAYMENT_STATUS = 1 WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
       `);
-      await syncTableStatus(req, cleanId);
+      updatedTable = await syncTableStatus(req, cleanId);
     }
     
     if (orderNo) {
       const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow");
       const ioInst = req.app.get("io");
+      if (ioInst && (cleanId || updatedTable)) {
+        const targetTableId = updatedTable?.TableId ? String(updatedTable.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase();
+        ioInst.emit("qr_payment_confirmed", {
+          tableId: targetTableId,
+          rawTableId: updatedTable?.TableId,
+          tableNo: updatedTable?.tableNo,
+          orderId: updatedTable?.CurrentOrderId || orderNo,
+          paymentStatus: 1,
+          entryStatus: updatedTable?.entryStatus || 'q',
+        });
+      }
 
       try {
         const { queueQRPrintJobs } = require("../utils/printHelper");

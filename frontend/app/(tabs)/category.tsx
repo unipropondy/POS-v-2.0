@@ -1617,21 +1617,75 @@ export default function Category() {
     }, []),
   );
 
-  // --- Real-time Sync (Polling every 120s as backup) ---
+  // --- Real-time Sync (Polling every 15s as backup) ---
   useEffect(() => {
     const interval = setInterval(() => {
       fetchTables();
-    }, 120000);
+    }, 15000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    socket.on("table_config_updated", () => {
+    const handleTableConfigUpdated = () => {
       fetchTables();
       loadBackgroundTheme();
-    });
+    };
+
+    const handleTableStatusUpdated = (data: any) => {
+      if (!data) return;
+      const cleanTableId = String(data.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+      const cleanTableNo = data.tableNo ? String(data.tableNo).trim().toLowerCase() : "";
+
+      setAllTables((prev) =>
+        prev.map((tbl) => {
+          const matchId = tbl.id && String(tbl.id).replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanTableId;
+          const matchNo = cleanTableNo && String(tbl.label).trim().toLowerCase() === cleanTableNo;
+          if (matchId || matchNo) {
+            return {
+              ...tbl,
+              Status: data.status !== undefined ? Number(data.status) : tbl.Status,
+              totalAmount: data.totalAmount !== undefined ? Number(data.totalAmount) : tbl.totalAmount,
+              entryStatus: data.entryStatus !== undefined ? data.entryStatus : tbl.entryStatus,
+              paymentStatus: data.paymentStatus !== undefined && data.paymentStatus !== null ? Number(data.paymentStatus) : tbl.paymentStatus,
+              currentOrderId: data.currentOrderId !== undefined ? data.currentOrderId : tbl.currentOrderId,
+              customerName: data.customerName !== undefined ? data.customerName : tbl.customerName,
+              pax: data.pax !== undefined ? data.pax : tbl.pax,
+            };
+          }
+          return tbl;
+        })
+      );
+    };
+
+    const handleQrPaymentConfirmed = (data: any) => {
+      if (!data) return;
+      const cleanTableId = String(data.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+      const cleanTableNo = data.tableNo ? String(data.tableNo).trim().toLowerCase() : "";
+
+      setAllTables((prev) =>
+        prev.map((tbl) => {
+          const matchId = tbl.id && String(tbl.id).replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanTableId;
+          const matchNo = cleanTableNo && String(tbl.label).trim().toLowerCase() === cleanTableNo;
+          if (matchId || matchNo) {
+            return {
+              ...tbl,
+              paymentStatus: 1,
+              entryStatus: data.entryStatus || tbl.entryStatus || 'q',
+            };
+          }
+          return tbl;
+        })
+      );
+    };
+
+    socket.on("table_config_updated", handleTableConfigUpdated);
+    socket.on("table_status_updated", handleTableStatusUpdated);
+    socket.on("qr_payment_confirmed", handleQrPaymentConfirmed);
+
     return () => {
-      socket.off("table_config_updated");
+      socket.off("table_config_updated", handleTableConfigUpdated);
+      socket.off("table_status_updated", handleTableStatusUpdated);
+      socket.off("qr_payment_confirmed", handleQrPaymentConfirmed);
     };
   }, []);
 
@@ -1704,7 +1758,9 @@ export default function Category() {
               t.TableType === uniqueTables[i].TableType &&
               t.Status === uniqueTables[i].Status &&
               t.Seats === uniqueTables[i].Seats &&
-              t.totalAmount === uniqueTables[i].totalAmount
+              t.totalAmount === uniqueTables[i].totalAmount &&
+              t.paymentStatus === uniqueTables[i].paymentStatus &&
+              t.entryStatus === uniqueTables[i].entryStatus
           );
           return isSame ? prev : uniqueTables;
         });

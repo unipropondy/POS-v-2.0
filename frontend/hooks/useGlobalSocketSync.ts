@@ -150,6 +150,7 @@ export function useGlobalSocketSync() {
       
       const customerName = data.customerName !== undefined ? data.customerName : data.CustomerName;
       const pax = data.pax !== undefined ? data.pax : data.Pax;
+      const paymentStatus = data.paymentStatus !== undefined ? Number(data.paymentStatus) : (data.PaymentStatus !== undefined ? Number(data.PaymentStatus) : undefined);
       
       const store = useTableStatusStore.getState();
       const cleanTableId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
@@ -160,8 +161,8 @@ export function useGlobalSocketSync() {
       
       if (!existingTable && data.tableNo) {
         existingTable = store.tables.find((t: any) => 
-          String(t.tableNo) === String(data.tableNo) && 
-          String(t.section) === String(data.section)
+          String(t.tableNo).trim().toLowerCase() === String(data.tableNo).trim().toLowerCase() && 
+          (!data.section || String(t.section).trim().toLowerCase() === String(data.section).trim().toLowerCase())
         );
       }
 
@@ -171,10 +172,11 @@ export function useGlobalSocketSync() {
         const rawSection = existingTable?.section || data.section;
         const normalizedSection = sectionMap[String(rawSection)] || rawSection;
         const cleanTableNo = existingTable?.tableNo || (data.tableNo ? String(data.tableNo).trim() : "");
+        const targetTableId = existingTable?.tableId || tableId;
 
         const computedStatus = (status === 5 ? "LOCKED" : (status === 1 || status === 4) ? "SENT" : status === 2 ? "BILL_REQUESTED" : status === 3 ? "HOLD" : "EMPTY");
         store.updateTableStatus(
-          tableId,
+          targetTableId,
           normalizedSection,
           cleanTableNo,
           currentOrderId || "SYNC",
@@ -187,7 +189,8 @@ export function useGlobalSocketSync() {
           data.modifiedOn || data.ModifiedOn,
           entryStatus,
           customerName,
-          pax
+          pax,
+          paymentStatus
         );
 
         if (computedStatus === "EMPTY" && tableId) {
@@ -323,8 +326,45 @@ export function useGlobalSocketSync() {
       }
     };
 
-    // --- 5.6 QR PAYMENT CONFIRMED (AUTO RECEIPT PRINT via queue) ---
-    const handleQrPaymentConfirmed = (data: { tableId: string; tableNo: string; orderId: string }) => {
+    // --- 5.6 QR PAYMENT CONFIRMED (AUTO RECEIPT PRINT via queue + INSTANT TABLE PAID STATUS) ---
+    const handleQrPaymentConfirmed = (data: { tableId: string; tableNo: string; orderId: string; paymentStatus?: number; entryStatus?: string }) => {
+      // 🚀 INSTANT PAID STATUS IN STORE
+      try {
+        const store = useTableStatusStore.getState();
+        const cleanTableId = String(data.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+        let existingTable = store.tables.find((t: any) => {
+          const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+          return tId === cleanTableId;
+        });
+        if (!existingTable && data.tableNo) {
+          existingTable = store.tables.find((t: any) =>
+            String(t.tableNo).trim().toLowerCase() === String(data.tableNo).trim().toLowerCase()
+          );
+        }
+
+        if (existingTable) {
+          store.updateTableStatus(
+            existingTable.tableId,
+            existingTable.section,
+            existingTable.tableNo,
+            data.orderId || existingTable.orderId,
+            (existingTable.status as any) || "SENT",
+            existingTable.startTime,
+            existingTable.lockedByName,
+            existingTable.totalAmount,
+            true,
+            existingTable.isHoldOvertime,
+            new Date().toISOString(),
+            data.entryStatus || existingTable.entryStatus || "q",
+            existingTable.customerName,
+            existingTable.pax,
+            1 // Mark PAID immediately!
+          );
+        }
+      } catch (e) {
+        console.warn("Failed to update tableStatusStore on qr_payment_confirmed:", e);
+      }
+
       const isCustomer =
         Platform.OS === "web" &&
         typeof window !== "undefined" &&

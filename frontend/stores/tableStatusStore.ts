@@ -39,7 +39,8 @@ type TableStatusState = {
     modifiedOn?: string,
     entryStatus?: string,
     customerName?: string,
-    pax?: number
+    pax?: number,
+    paymentStatus?: number
   ) => void;
   clearTable: (section: string, tableNo: string) => void;
   lockTable: (tableId: string, lockedByName?: string) => void;
@@ -59,7 +60,7 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
   lockedTableNames: {},
   lastLocalUpdate: {},
 
-  updateTableStatus: (tableId, section, tableNo, orderId, status, startTime, lockedByName, totalAmount, isExternal, isHoldOvertime, modifiedOn, entryStatus, customerName, pax) => {
+  updateTableStatus: (tableId, section, tableNo, orderId, status, startTime, lockedByName, totalAmount, isExternal, isHoldOvertime, modifiedOn, entryStatus, customerName, pax, paymentStatus) => {
     const cleanTableId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
     const key = `${section}_${tableNo}`;
     set((state) => {
@@ -108,6 +109,7 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         isHoldOvertime: status === 'EMPTY' ? false : (isHoldOvertime !== undefined ? isHoldOvertime : (existingTable?.isHoldOvertime ?? false)),
         lastModified: modifiedOn || existingTable?.lastModified || "",
         entryStatus: status === 'EMPTY' ? undefined : (entryStatus !== undefined ? entryStatus : existingTable?.entryStatus),
+        paymentStatus: status === 'EMPTY' ? 0 : (paymentStatus !== undefined ? Number(paymentStatus) : (existingTable?.paymentStatus ?? 0)),
         customerName: status === 'EMPTY' ? undefined : (customerName !== undefined ? customerName : existingTable?.customerName),
         pax: status === 'EMPTY' ? undefined : (pax !== undefined ? pax : existingTable?.pax),
       };
@@ -120,6 +122,9 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       if (updatedTable.tableId) {
         const cleanKey = String(updatedTable.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
         newMap[cleanKey] = updatedTable;
+      }
+      if (updatedTable.tableNo) {
+        newMap[String(updatedTable.tableNo).trim().toLowerCase()] = updatedTable;
       }
 
       return {
