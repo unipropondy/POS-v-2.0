@@ -1641,15 +1641,37 @@ export default function Category() {
           const matchId = tbl.id && String(tbl.id).replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanTableId;
           const matchNo = cleanTableNo && String(tbl.label).trim().toLowerCase() === cleanTableNo;
           if (matchId || matchNo) {
+            const rawSec = data.section || tbl.DiningSection;
+            const secStr = getSectionFromDiningSection(rawSec);
+            const numStatus = data.status !== undefined ? Number(data.status) : tbl.Status;
+            const mappedStatus = (numStatus === 5 ? "LOCKED" : (numStatus === 1 || numStatus === 4) ? "SENT" : numStatus === 2 ? "BILL_REQUESTED" : numStatus === 3 ? "HOLD" : "EMPTY");
+            useTableStatusStore.getState().updateTableStatus(
+              tbl.id,
+              secStr,
+              tbl.label,
+              (data.currentOrderId !== undefined ? data.currentOrderId : tbl.currentOrderId) || "SYNC",
+              mappedStatus as any,
+              data.startTime || (numStatus === 0 ? 0 : undefined),
+              data.lockedByName,
+              data.totalAmount !== undefined ? Number(data.totalAmount) : tbl.totalAmount,
+              false,
+              false,
+              data.modifiedOn || data.ModifiedOn,
+              data.entryStatus !== undefined ? (data.entryStatus || undefined) : (numStatus === 0 ? undefined : tbl.entryStatus),
+              data.customerName !== undefined ? (data.customerName || undefined) : (numStatus === 0 ? undefined : tbl.customerName),
+              data.pax !== undefined ? Number(data.pax) : (numStatus === 0 ? undefined : tbl.pax),
+              data.paymentStatus !== undefined && data.paymentStatus !== null ? Number(data.paymentStatus) : (numStatus === 0 ? 0 : tbl.paymentStatus)
+            );
+
             return {
               ...tbl,
-              Status: data.status !== undefined ? Number(data.status) : tbl.Status,
+              Status: numStatus,
               totalAmount: data.totalAmount !== undefined ? Number(data.totalAmount) : tbl.totalAmount,
-              entryStatus: data.entryStatus !== undefined ? data.entryStatus : tbl.entryStatus,
-              paymentStatus: data.paymentStatus !== undefined && data.paymentStatus !== null ? Number(data.paymentStatus) : tbl.paymentStatus,
-              currentOrderId: data.currentOrderId !== undefined ? data.currentOrderId : tbl.currentOrderId,
-              customerName: data.customerName !== undefined ? data.customerName : tbl.customerName,
-              pax: data.pax !== undefined ? data.pax : tbl.pax,
+              entryStatus: data.entryStatus !== undefined ? data.entryStatus : (numStatus === 0 ? null : tbl.entryStatus),
+              paymentStatus: data.paymentStatus !== undefined && data.paymentStatus !== null ? Number(data.paymentStatus) : (numStatus === 0 ? 0 : tbl.paymentStatus),
+              currentOrderId: data.currentOrderId !== undefined ? data.currentOrderId : (numStatus === 0 ? null : tbl.currentOrderId),
+              customerName: data.customerName !== undefined ? data.customerName : (numStatus === 0 ? null : tbl.customerName),
+              pax: data.pax !== undefined ? data.pax : (numStatus === 0 ? null : tbl.pax),
             };
           }
           return tbl;
@@ -1678,14 +1700,20 @@ export default function Category() {
       );
     };
 
+    const handleTablesUpdated = () => {
+      fetchTables();
+    };
+
     socket.on("table_config_updated", handleTableConfigUpdated);
     socket.on("table_status_updated", handleTableStatusUpdated);
     socket.on("qr_payment_confirmed", handleQrPaymentConfirmed);
+    socket.on("tables_updated", handleTablesUpdated);
 
     return () => {
       socket.off("table_config_updated", handleTableConfigUpdated);
       socket.off("table_status_updated", handleTableStatusUpdated);
       socket.off("qr_payment_confirmed", handleQrPaymentConfirmed);
+      socket.off("tables_updated", handleTablesUpdated);
     };
   }, []);
 

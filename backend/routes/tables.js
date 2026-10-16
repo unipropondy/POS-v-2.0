@@ -70,9 +70,10 @@ router.get("/all", async (req, res) => {
     // 🛡️ AUTO-RECONCILE: Clear ghost/stale tables whose orders are closed or fully paid
     // NOTE: Protect active Takeaway QR sessions (DiningSection 4, entry_status 'q') within 15 mins
     try {
-      await pool.request().query(`
+      const reconcileResult = await pool.request().query(`
         UPDATE tm
-        SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL
+        SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL, tm.LockedByName = NULL
+        OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection
         FROM TableMaster tm
         WHERE tm.Status IN (1, 2, 3, 4)
           -- 🛡️ DO NOT clear active Takeaway QR sessions (DiningSection 4) within active timeout (15 mins) with active session lock
@@ -98,6 +99,31 @@ router.get("/all", async (req, res) => {
             ))
           );
       `);
+
+      if (reconcileResult.recordset && reconcileResult.recordset.length > 0) {
+        const io = req.app.get("io");
+        if (io) {
+          const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
+          reconcileResult.recordset.forEach((tbl) => {
+            const cleanTid = String(tbl.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+            const secStr = sectionMap[String(tbl.DiningSection)] || "TAKEAWAY";
+            io.emit("table_status_updated", {
+              tableId: cleanTid,
+              tableNo: tbl.TableNumber,
+              section: secStr,
+              status: 0,
+              orderId: "EMPTY",
+              totalAmount: 0,
+              startTime: 0,
+              entryStatus: null,
+              paymentStatus: 0,
+              customerName: null,
+              pax: null,
+            });
+          });
+          io.emit("tables_updated");
+        }
+      }
     } catch (reconcileErr) {
       console.warn("Table auto-reconciliation warning:", reconcileErr.message);
     }

@@ -627,6 +627,62 @@ httpServer.listen(PORT, async () => {
     }
   }, 60 * 1000); // Every 60 seconds
   console.log("🧹 [PrintQueue Cleanup] Background watchdog started (every 60 seconds).");
+
+  // 🧹 QR TAKEAWAY AUTO-EXPIRY WATCHDOG: Auto-release abandoned QR takeaway tables after 15 mins and broadcast in real-time
+  setInterval(async () => {
+    try {
+      const pool = await poolPromise;
+      if (pool && pool.connected) {
+        const expiredRes = await pool.request().query(`
+          UPDATE tm
+          SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, 
+              tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL, tm.LockedByName = NULL,
+              tm.ModifiedOn = GETDATE()
+          OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection
+          FROM TableMaster tm
+          WHERE tm.Status IN (1, 2, 3, 4)
+            AND CAST(tm.DiningSection AS VARCHAR(10)) = '4'
+            AND tm.entry_status = 'q'
+            AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
+            AND (
+              tm.CurrentOrderId IS NULL 
+              OR NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderCur roc 
+                WHERE (roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                  AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+              )
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM CartItems ci WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber
+            );
+        `);
+
+        if (expiredRes.recordset && expiredRes.recordset.length > 0) {
+          console.log(`🧹 [QR Watchdog] Auto-released ${expiredRes.recordset.length} expired QR takeaway table(s):`, expiredRes.recordset.map(r => r.TableNumber).join(", "));
+          expiredRes.recordset.forEach(tbl => {
+            const cleanTid = String(tbl.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+            io.emit("table_status_updated", {
+              tableId: cleanTid,
+              tableNo: tbl.TableNumber,
+              section: "TAKEAWAY",
+              status: 0,
+              orderId: "EMPTY",
+              totalAmount: 0,
+              startTime: 0,
+              entryStatus: null,
+              paymentStatus: 0,
+              customerName: null,
+              pax: null,
+            });
+          });
+          io.emit("tables_updated");
+        }
+      }
+    } catch (err) {
+      console.error("❌ [QR Watchdog] Error auto-releasing expired tables:", err.message);
+    }
+  }, 15 * 1000); // Check every 15 seconds
+  console.log("🧹 [QR Watchdog] Background auto-expiry watchdog started (every 15 seconds).");
 });
 
 // Register global exception handlers for transaction cleanup
