@@ -48,6 +48,19 @@ const C = {
   success:       Theme.success,
 };
 
+// ─── Concurrency & Session Helper for QR Takeaway Orders ──────────────────────
+function getTakeawaySessionId(): string {
+  if (typeof window !== "undefined" && window.sessionStorage) {
+    let sessId = window.sessionStorage.getItem("tw_session_token");
+    if (!sessId) {
+      sessId = "tw_sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+      window.sessionStorage.setItem("tw_session_token", sessId);
+    }
+    return sessId;
+  }
+  return "tw_sess_" + Date.now();
+}
+
 export default function CustomerWelcomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -331,21 +344,103 @@ export default function CustomerWelcomeScreen() {
     }
   }, [promoImages, currentPromoIndex]);
 
+  // 🚀 AUTOMATIC CONCURRENCY-SAFE TABLE ASSIGNMENT ON QR SCAN / PAGE LOAD
   useEffect(() => {
-    if (scannedTable) return;
-    const { tableId, tableNo, section } = params;
-    const scanned = {
-      tableId: tableId ? String(tableId) : "TAKEAWAY",
-      tableNo: tableNo ? String(tableNo) : "Takeaway",
-      section: section ? String(section) : "TAKEAWAY",
+    let isCancelled = false;
+    const assignTableImmediately = async () => {
+      const { tableId, tableNo, section } = params;
+      // If table params are passed explicitly (e.g. from table-specific QR ?tableNo=TW3)
+      if (tableNo && String(tableNo).startsWith("TW") && tableId && tableId !== "TAKEAWAY") {
+        const explicit = {
+          tableId: String(tableId),
+          tableNo: String(tableNo),
+          section: section ? String(section) : "TAKEAWAY",
+        };
+        if (!isCancelled) setScannedTable(explicit);
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("qr_takeaway_tableId", explicit.tableId);
+          localStorage.setItem("qr_takeaway_tableNo", explicit.tableNo);
+          localStorage.setItem("qr_takeaway_section", explicit.section);
+        }
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.setItem("qr_takeaway_tableId", explicit.tableId);
+          sessionStorage.setItem("qr_takeaway_tableNo", explicit.tableNo);
+        }
+        useOrderContextStore.getState().setOrderContext({
+          orderType: "TAKEAWAY",
+          tableId: explicit.tableId,
+          tableNo: explicit.tableNo,
+          section: "TAKEAWAY",
+          takeawayNo: explicit.tableNo,
+        });
+        useCartStore.getState().setCurrentContext(explicit.tableId);
+        return;
+      }
+
+      // Check sessionStorage first in case of refresh in the same tab
+      if (typeof sessionStorage !== "undefined") {
+        const storedId = sessionStorage.getItem("qr_takeaway_tableId");
+        const storedNo = sessionStorage.getItem("qr_takeaway_tableNo");
+        if (storedId && storedNo && storedNo.startsWith("TW")) {
+          const cached = { tableId: storedId, tableNo: storedNo, section: "TAKEAWAY" };
+          if (!isCancelled) setScannedTable(cached);
+          useOrderContextStore.getState().setOrderContext({
+            orderType: "TAKEAWAY",
+            tableId: storedId,
+            tableNo: storedNo,
+            section: "TAKEAWAY",
+            takeawayNo: storedNo,
+          });
+          useCartStore.getState().setCurrentContext(storedId);
+        }
+      }
+
+      const sessionId = getTakeawaySessionId();
+      try {
+        const res = await fetch(`${API_URL}/api/tables/auto-assign-takeaway`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            customerName: "Takeaway",
+            pax: 1,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.table) {
+          const t = data.table;
+          const assigned = {
+            tableId: String(t.tableId),
+            tableNo: String(t.tableNo),
+            section: "TAKEAWAY",
+          };
+          if (!isCancelled) setScannedTable(assigned);
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("qr_takeaway_tableId", assigned.tableId);
+            localStorage.setItem("qr_takeaway_tableNo", assigned.tableNo);
+            localStorage.setItem("qr_takeaway_section", "TAKEAWAY");
+          }
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem("qr_takeaway_tableId", assigned.tableId);
+            sessionStorage.setItem("qr_takeaway_tableNo", assigned.tableNo);
+          }
+          useOrderContextStore.getState().setOrderContext({
+            orderType: "TAKEAWAY",
+            tableId: assigned.tableId,
+            tableNo: assigned.tableNo,
+            section: "TAKEAWAY",
+            takeawayNo: assigned.tableNo,
+          });
+          useCartStore.getState().setCurrentContext(assigned.tableId);
+        }
+      } catch (err) {
+        console.warn("Immediate QR Takeaway table assignment error:", err);
+      }
     };
-    setScannedTable(scanned);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("qr_takeaway_tableId", scanned.tableId);
-      localStorage.setItem("qr_takeaway_tableNo", scanned.tableNo);
-      localStorage.setItem("qr_takeaway_section", scanned.section);
-    }
-  }, [params, scannedTable]);
+
+    assignTableImmediately();
+    return () => { isCancelled = true; };
+  }, [params]);
 
   const selectCountryCode = () => {
     setShowPicker(true);
@@ -382,12 +477,15 @@ export default function CustomerWelcomeScreen() {
 
     setAuthLoading(true);
     try {
-      // 🚀 Automatically assign an available Takeaway table (TW1 - TW20)
+      const sessionId = getTakeawaySessionId();
+      const existingTid = scannedTable?.tableId || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("qr_takeaway_tableId") : null);
       const customerName = user.fullName || user.userName || "Takeaway";
       const assignRes = await fetch(`${API_URL}/api/tables/auto-assign-takeaway`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId,
+          tableId: existingTid,
           customerName,
           pax: 1,
         }),
@@ -410,6 +508,10 @@ export default function CustomerWelcomeScreen() {
         localStorage.setItem("qr_takeaway_tableId", assignedTableId);
         localStorage.setItem("qr_takeaway_tableNo", assignedTableNo);
         localStorage.setItem("qr_takeaway_section", "TAKEAWAY");
+      }
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem("qr_takeaway_tableId", assignedTableId);
+        sessionStorage.setItem("qr_takeaway_tableNo", assignedTableNo);
       }
 
       useOrderContextStore.getState().setOrderContext({
@@ -594,7 +696,9 @@ export default function CustomerWelcomeScreen() {
               <View style={{ width: 20 }} />
               <View style={[styles.tablePill, { backgroundColor: "#ea580c" }]}>
                 <Ionicons name="bag-handle" size={13} color="#FFFFFF" />
-                <Text style={styles.tablePillText}>Takeaway Order</Text>
+                <Text style={styles.tablePillText}>
+                  {scannedTable?.tableNo && scannedTable.tableNo.startsWith("TW") ? `Takeaway • Table ${scannedTable.tableNo}` : "Takeaway Order"}
+                </Text>
               </View>
             </View>
 
@@ -659,7 +763,9 @@ export default function CustomerWelcomeScreen() {
 
               <View style={[styles.tablePill, { backgroundColor: "#ea580c" }]}>
                 <Ionicons name="bag-handle" size={13} color="#FFFFFF" />
-                <Text style={styles.tablePillText}>Takeaway Order</Text>
+                <Text style={styles.tablePillText}>
+                  {scannedTable?.tableNo && scannedTable.tableNo.startsWith("TW") ? `Takeaway • Table ${scannedTable.tableNo}` : "Takeaway Order"}
+                </Text>
               </View>
             </View>
 

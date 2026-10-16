@@ -19,6 +19,9 @@ interface MenuState {
   forceRefreshMenu: () => Promise<void>;
 }
 
+let inflightMenuPromise: Promise<void> | null = null;
+const inflightGroupPromises = new Map<string, Promise<any[]>>();
+
 export const useMenuStore = create<MenuState>((set, get) => ({
   kitchens: [],
   dishGroups: {},
@@ -29,66 +32,89 @@ export const useMenuStore = create<MenuState>((set, get) => ({
   isLoading: false,
 
   fetchMenu: async (force = false) => {
-    const { lastFetched, kitchens } = get();
+    const { lastFetched, kitchens, allDishes } = get();
     // Cache for 10 minutes unless forced
-    if (!force && lastFetched && kitchens.length > 0 && Date.now() - lastFetched < 600000) {
+    if (!force && lastFetched && kitchens.length > 0 && allDishes.length > 0 && Date.now() - lastFetched < 600000) {
       return;
     }
 
-    set({ isLoading: true });
-    try {
-      // 1. Fetch kitchens
-      const kRes = await fetch(`${API_URL}/api/menu/kitchens`);
-      const kData = await kRes.json();
-      const rawKitchens = Array.isArray(kData) ? kData.filter((k: any) => k.KitchenTypeName && !k.KitchenTypeName.includes("TEST")) : [];
-      // 🟢 Deduplicate kitchens by CategoryId (since backend returns CategoryId)
-      const kitchensData = Array.from(
-        new Map(rawKitchens.map((k: any) => [k.CategoryId, k])).values()
-      );
-
-      // 2. Fetch all dishes (for search)
-      const dRes = await fetch(`${API_URL}/api/menu/dishes/all`);
-      const dData = await dRes.json();
-      const allDishesRaw = Array.isArray(dData) ? dData : [];
-      
-      // Deduplicate dishes by DishId
-      const allDishesData = Array.from(
-        new Map(allDishesRaw.map((d: any) => [d.DishId || d.id, d])).values()
-      );
-
-      set({ 
-        kitchens: kitchensData, 
-        allDishes: allDishesData,
-        lastFetched: Date.now(),
-        isLoading: false 
-      });
-    } catch (error) {
-      console.error("Failed to fetch menu:", error);
-      set({ isLoading: false });
+    // Reuse in-flight request to avoid duplicate parallel fetches
+    if (inflightMenuPromise) {
+      return inflightMenuPromise;
     }
+
+    set({ isLoading: true });
+    inflightMenuPromise = (async () => {
+      try {
+        // ⚡ Parallel fetch: load kitchens and all dishes concurrently
+        const [kRes, dRes] = await Promise.all([
+          fetch(`${API_URL}/api/menu/kitchens`),
+          fetch(`${API_URL}/api/menu/dishes/all`),
+        ]);
+
+        const [kData, dData] = await Promise.all([
+          kRes.json(),
+          dRes.json(),
+        ]);
+
+        const rawKitchens = Array.isArray(kData) ? kData.filter((k: any) => k.KitchenTypeName && !k.KitchenTypeName.includes("TEST")) : [];
+        const kitchensData = Array.from(
+          new Map(rawKitchens.map((k: any) => [k.CategoryId, k])).values()
+        );
+
+        const allDishesRaw = Array.isArray(dData) ? dData : [];
+        const allDishesData = Array.from(
+          new Map(allDishesRaw.map((d: any) => [d.DishId || d.id, d])).values()
+        );
+
+        set({ 
+          kitchens: kitchensData, 
+          allDishes: allDishesData,
+          lastFetched: Date.now(),
+          isLoading: false 
+        });
+      } catch (error) {
+        console.error("Failed to fetch menu:", error);
+        set({ isLoading: false });
+      } finally {
+        inflightMenuPromise = null;
+      }
+    })();
+
+    return inflightMenuPromise;
   },
 
   fetchGroups: async (kitchenId) => {
     const { dishGroups } = get();
     if (dishGroups[kitchenId]) return dishGroups[kitchenId];
-
-    try {
-      const res = await fetch(`${API_URL}/api/menu/dishgroups/${kitchenId}`);
-      const data = await res.json();
-      const rawGroups = Array.isArray(data) ? data : [];
-      // 🟢 Deduplicate groups by DishGroupId
-      const groups = Array.from(
-        new Map(rawGroups.map((g: any) => [g.DishGroupId || g.id, g])).values()
-      );
-      
-      set((state) => ({
-        dishGroups: { ...state.dishGroups, [kitchenId]: groups }
-      }));
-      return groups;
-    } catch (error) {
-      console.error(`Failed to fetch groups for kitchen ${kitchenId}:`, error);
-      return [];
+    if (inflightGroupPromises.has(kitchenId)) {
+      return inflightGroupPromises.get(kitchenId)!;
     }
+
+    const groupPromise = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/menu/dishgroups/${kitchenId}`);
+        const data = await res.json();
+        const rawGroups = Array.isArray(data) ? data : [];
+        // 🟢 Deduplicate groups by DishGroupId
+        const groups = Array.from(
+          new Map(rawGroups.map((g: any) => [g.DishGroupId || g.id, g])).values()
+        );
+        
+        set((state) => ({
+          dishGroups: { ...state.dishGroups, [kitchenId]: groups }
+        }));
+        return groups;
+      } catch (error) {
+        console.error(`Failed to fetch groups for kitchen ${kitchenId}:`, error);
+        return [];
+      } finally {
+        inflightGroupPromises.delete(kitchenId);
+      }
+    })();
+
+    inflightGroupPromises.set(kitchenId, groupPromise);
+    return groupPromise;
   },
 
   fetchDishes: async (groupId) => {

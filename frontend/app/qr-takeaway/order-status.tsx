@@ -455,7 +455,10 @@ export default function CustomerOrderStatusScreen() {
     return "UNPAID";
   });
 
+  const isFetchingStatusRef = useRef(false);
+
   const fetchOrderStatus = async () => {
+    if (isFetchingStatusRef.current) return;
     const targetTableId = orderContext?.tableId || orderContext?.tableNo;
     const targetOrderId =
       currentOrderId ||
@@ -466,6 +469,7 @@ export default function CustomerOrderStatusScreen() {
     const queryKey = targetOrderId || targetTableId;
     if (!queryKey) return;
 
+    isFetchingStatusRef.current = true;
     try {
       const res = await fetch(`${API_URL}/api/orders/order-status/${encodeURIComponent(queryKey)}`);
       if (res.ok) {
@@ -490,6 +494,8 @@ export default function CustomerOrderStatusScreen() {
       }
     } catch (err) {
       console.warn("fetchOrderStatus error:", err);
+    } finally {
+      isFetchingStatusRef.current = false;
     }
   };
 
@@ -548,6 +554,7 @@ export default function CustomerOrderStatusScreen() {
       .catch(() => {});
   }, []);
 
+  // 🚀 Single consolidated polling & sync effect: avoids rapid duplicate invocations
   useEffect(() => {
     if (orderContext) {
       const ctxId = getContextId(orderContext);
@@ -556,21 +563,15 @@ export default function CustomerOrderStatusScreen() {
       }
       const targetTableId = orderContext.tableId || orderContext.tableNo;
       if (targetTableId) {
-        // 🚀 FORCE FETCH: Bypasses Latency Shield since we navigate here immediately after placing an order
         fetchCartFromDB(targetTableId, true);
       }
       fetchOrderStatus();
     }
-  }, [orderContext]);
-
-  // Polling for live payment & order status sync
-  useEffect(() => {
-    fetchOrderStatus();
     const interval = setInterval(() => {
       fetchOrderStatus();
     }, 5000);
     return () => clearInterval(interval);
-  }, [orderContext, currentOrderId]);
+  }, [orderContext?.tableId, orderContext?.tableNo]);
 
   useEffect(() => {
     if (!orderContext?.tableId) return;
@@ -705,14 +706,43 @@ export default function CustomerOrderStatusScreen() {
   };
 
   const confirmLogout = () => {
-    if (orderContext?.tableId) {
-      useCartStore.getState().clearTableSession(orderContext.tableId);
+    const tableId = orderContext?.tableId || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("qr_takeaway_tableId") : null) || (typeof localStorage !== "undefined" ? localStorage.getItem("qr_takeaway_tableId") : null);
+    const tableNo = orderContext?.tableNo || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("qr_takeaway_tableNo") : null) || (typeof localStorage !== "undefined" ? localStorage.getItem("qr_takeaway_tableNo") : null);
+    const sessionId = (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("tw_session_token") : null);
+
+    // Call backend to release takeaway table if no active unclosed order exists
+    if (tableId || tableNo || sessionId) {
+      try {
+        fetch(`${API_URL}/api/tables/release-takeaway`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableId, tableNo, sessionId }),
+        }).catch((e) => console.warn("Failed to release takeaway table on logout:", e));
+      } catch (err) {
+        console.warn("release-takeaway error:", err);
+      }
+    }
+
+    if (tableId) {
+      useCartStore.getState().clearTableSession(tableId);
     }
     useOrderContextStore.getState().setOrderContext(null as any);
+
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("tw_session_token");
+      sessionStorage.removeItem("qr_takeaway_tableId");
+      sessionStorage.removeItem("qr_takeaway_tableNo");
+    }
     if (typeof localStorage !== "undefined") {
       localStorage.removeItem("isLoggedIn");
       localStorage.removeItem("qr_pos_user");
+      localStorage.removeItem("qr_takeaway_tableId");
+      localStorage.removeItem("qr_takeaway_tableNo");
+      localStorage.removeItem("qr_takeaway_section");
+      localStorage.removeItem("last_tw_order_id");
+      localStorage.removeItem("promoCode");
     }
+
     setShowLogoutModal(false);
     setIsSessionClosed(true);
   };
@@ -1179,14 +1209,16 @@ export default function CustomerOrderStatusScreen() {
               </View>
 
               <View style={styles.heroTextContent}>
-                {/* Top Row: ORDER label & #0037 on Left, UNPAID / PAID pill on Right */}
-                <View style={styles.heroHeaderRow}>
-                  <View style={styles.orderNumberBlock}>
-                    <Text style={styles.orderLabelSmall}>ORDER</Text>
-                    <Text style={[styles.orderHeroNumber, isReady && styles.orderHeroNumberReady]}>
-                      #{orderNumberDigits}
-                    </Text>
-                  </View>
+                {/* Top Row: ORDER label & #{orderNumberDigits} on Left (only when paid), UNPAID / PAID pill on Right */}
+                <View style={[styles.heroHeaderRow, !isPaid && { justifyContent: "flex-end" }]}>
+                  {isPaid ? (
+                    <View style={styles.orderNumberBlock}>
+                      <Text style={styles.orderLabelSmall}>ORDER</Text>
+                      <Text style={[styles.orderHeroNumber, isReady && styles.orderHeroNumberReady]}>
+                        #{orderNumberDigits}
+                      </Text>
+                    </View>
+                  ) : null}
 
                   {/* Payment Status Pill */}
                   <View style={[styles.paymentPillNew, isPaid ? styles.paymentPillPaidNew : styles.paymentPillUnpaidNew]}>

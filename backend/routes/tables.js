@@ -68,12 +68,20 @@ router.get("/all", async (req, res) => {
     const holdMinutes = await getHoldOvertimeMinutes();
 
     // 🛡️ AUTO-RECONCILE: Clear ghost/stale tables whose orders are closed or fully paid
+    // NOTE: Protect active Takeaway QR sessions (DiningSection 4, entry_status 'q') within 15 mins
     try {
       await pool.request().query(`
         UPDATE tm
         SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL
         FROM TableMaster tm
         WHERE tm.Status IN (1, 2, 3, 4)
+          -- 🛡️ DO NOT clear active Takeaway QR sessions (DiningSection 4) within active timeout (15 mins) with active session lock
+          AND NOT (
+            CAST(tm.DiningSection AS VARCHAR(10)) = '4' 
+            AND tm.entry_status = 'q' 
+            AND tm.LockedByName IS NOT NULL
+            AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) < 15
+          )
           AND (
             (tm.CurrentOrderId IS NOT NULL AND NOT EXISTS (
               SELECT 1 FROM RestaurantOrderCur roc 
@@ -342,21 +350,133 @@ router.post("/save-guest", async (req, res) => {
   }
 });
 
+// In-memory tracking of active takeaway sessions to preserve table for the same client session
+// Map<sessionId, { tableId: string, tableNo: string, assignedAt: number }>
+const takeawaySessionMap = new Map();
+const TAKEAWAY_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
 // ✅ Route: POST /api/tables/auto-assign-takeaway
-// Concurrency-safe automatic table assignment for Takeaway QR orders (TW1 to TW20)
+// Concurrency-safe, session-aware automatic table assignment for Takeaway QR orders (TW1 to TW20)
 router.post("/auto-assign-takeaway", async (req, res) => {
-  const { customerName, pax } = req.body;
+  const { customerName, pax, sessionId, tableId } = req.body;
   const guestNameVal = customerName && customerName.trim() ? customerName.trim().substring(0, 9) : "Takeaway";
   const paxVal = pax ? parseInt(pax) : 1;
+  const cleanSessionId = sessionId && String(sessionId).trim() !== "" ? String(sessionId).trim() : null;
+  const cleanTableId = tableId && String(tableId).trim() !== "" ? String(tableId).replace(/^\{|\}$/g, "").trim() : null;
 
   try {
     const pool = await poolPromise;
+    const now = Date.now();
+
+    // 1. Purge expired sessions from memory
+    for (const [sId, sess] of takeawaySessionMap.entries()) {
+      if (now - sess.assignedAt > TAKEAWAY_SESSION_TIMEOUT_MS) {
+        takeawaySessionMap.delete(sId);
+      }
+    }
+
+    // 2. Check if this client session already holds an active table (by tableId, in-memory, or in TableMaster.LockedByName)
+    let existingTableId = cleanTableId || (cleanSessionId ? takeawaySessionMap.get(cleanSessionId)?.tableId : null);
+    if (existingTableId || cleanSessionId) {
+      try {
+        const verifyReq = pool.request();
+        let verifySql = `
+          SELECT TableId, TableNumber, DiningSection, Status, entry_status, PAYMENT_STATUS, CurrentOrderId, CustomerName, Pax, TotalAmount
+          FROM TableMaster
+          WHERE DiningSection = '4'
+        `;
+        if (existingTableId && cleanSessionId) {
+          verifyReq.input("tid", sql.UniqueIdentifier, existingTableId);
+          verifyReq.input("sessId", sql.NVarChar(100), cleanSessionId);
+          verifySql += ` AND (TableId = @tid OR LockedByName = @sessId)`;
+        } else if (existingTableId) {
+          verifyReq.input("tid", sql.UniqueIdentifier, existingTableId);
+          verifySql += ` AND TableId = @tid`;
+        } else if (cleanSessionId) {
+          verifyReq.input("sessId", sql.NVarChar(100), cleanSessionId);
+          verifySql += ` AND LockedByName = @sessId`;
+        }
+        verifySql += `
+            AND Status = 1 
+            AND entry_status = 'q'
+            AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15
+            AND (
+              CurrentOrderId IS NULL 
+              OR NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderCur roc 
+                WHERE (roc.OrderNumber = CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(CurrentOrderId AS NVARCHAR(100)))
+                  AND roc.isOrderClosed = 1
+              )
+            );
+        `;
+
+        const verifyResult = await verifyReq.query(verifySql);
+
+        if (verifyResult.recordset && verifyResult.recordset.length > 0) {
+          const existingRow = verifyResult.recordset[0];
+          if (cleanSessionId) {
+            takeawaySessionMap.set(cleanSessionId, {
+              tableId: existingRow.TableId,
+              tableNo: existingRow.TableNumber,
+              assignedAt: now,
+              customerName: guestNameVal,
+            });
+          }
+
+          // Update customerName in DB if a real name is now provided
+          if (guestNameVal && guestNameVal !== "Takeaway") {
+            try {
+              await pool.request()
+                .input("tid", sql.UniqueIdentifier, existingRow.TableId)
+                .input("cname", sql.NVarChar(50), guestNameVal)
+                .query(`UPDATE TableMaster SET CustomerName = @cname, ModifiedOn = GETDATE() WHERE TableId = @tid`);
+
+              const io = req.app.get("io");
+              if (io) {
+                io.emit("table_status_updated", {
+                  tableId: String(existingRow.TableId).toLowerCase(),
+                  status: 1,
+                  totalAmount: existingRow.TotalAmount || 0,
+                  tableNo: existingRow.TableNumber,
+                  section: "TAKEAWAY",
+                  diningSection: "4",
+                  customerName: guestNameVal,
+                  entryStatus: "q",
+                });
+              }
+            } catch (nameErr) {
+              console.warn("Failed to update takeaway customer name:", nameErr.message);
+            }
+          }
+
+          console.log(`♻️ [Auto-Assign Takeaway] Re-using active table ${existingRow.TableNumber} for existing session "${cleanSessionId || existingTableId}"`);
+          return res.json({
+            success: true,
+            isExistingSession: true,
+            table: {
+              tableId: String(existingRow.TableId),
+              tableNo: existingRow.TableNumber,
+              section: "TAKEAWAY",
+              diningSection: "4",
+              customerName: guestNameVal,
+              pax: paxVal,
+            },
+          });
+        } else if (cleanSessionId) {
+          takeawaySessionMap.delete(cleanSessionId);
+        }
+      } catch (checkErr) {
+        console.warn("Session table check warning:", checkErr.message);
+      }
+    }
+
+    // 3. Concurrency-safe atomic reservation of a new table from TW1 to TW20
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
     try {
-      // 1. Find the first available table between TW1 and TW20 ordered by table index (1 to 20).
-      // Use UPDLOCK, ROWLOCK, HOLDLOCK to guarantee atomic selection and prevent race conditions.
+      // Find the first available table between TW1 and TW20 ordered by number (1 to 20).
+      // Uses UPDLOCK, ROWLOCK, HOLDLOCK to guarantee atomic selection and lock out race conditions.
       const candidateQuery = `
         SELECT TOP 1
           tm.TableId,
@@ -367,20 +487,32 @@ router.post("/auto-assign-takeaway", async (req, res) => {
         WHERE tm.DiningSection = '4'
           AND tm.TableNumber LIKE 'TW[0-9]%'
           AND CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) BETWEEN 1 AND 20
-          AND (tm.Status = 0 OR tm.Status IS NULL)
           AND (
-            tm.CurrentOrderId IS NULL 
-            OR NOT EXISTS (
-              SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
-              WHERE (roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
-                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+            -- Either completely empty/free
+            (tm.Status = 0 OR tm.Status IS NULL)
+            -- OR an abandoned session (> 15 minutes inactive with NO order and NO cart items)
+            OR (
+              tm.Status = 1 
+              AND tm.entry_status = 'q'
+              AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
+              AND NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+                WHERE (roc.Tableno = tm.TableNumber OR roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                  AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM CartItems ci WITH (NOLOCK)
+                WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+              )
             )
           )
+          -- Ensure NO active unclosed order exists on this table
           AND NOT EXISTS (
             SELECT 1 FROM RestaurantOrderCur rocActive WITH (NOLOCK)
             WHERE RTRIM(LTRIM(rocActive.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
               AND (rocActive.isOrderClosed = 0 OR rocActive.isOrderClosed IS NULL)
           )
+          -- Ensure NO items in CartItems
           AND NOT EXISTS (
             SELECT 1 FROM CartItems ci WITH (NOLOCK)
             WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
@@ -403,11 +535,12 @@ router.post("/auto-assign-takeaway", async (req, res) => {
       const assignedTableId = assigned.TableId;
       const assignedTableNo = assigned.TableNumber;
 
-      // 2. Reserve / assign this table atomically: set Status = 1, entry_status = 'q', customerName, StartTime
+      // 4. Reserve / assign this table atomically: set Status = 1, entry_status = 'q', customerName, StartTime, clear stale OrderId
       await transaction.request()
         .input("tableId", sql.UniqueIdentifier, assignedTableId)
         .input("customerName", sql.NVarChar(50), guestNameVal)
         .input("pax", sql.Int, paxVal)
+        .input("sessionId", sql.NVarChar(100), cleanSessionId)
         .query(`
           UPDATE TableMaster
           SET Status = 1,
@@ -416,7 +549,10 @@ router.post("/auto-assign-takeaway", async (req, res) => {
               CustomerName = @customerName,
               Pax = @pax,
               StartTime = GETDATE(),
-              ModifiedOn = GETDATE()
+              ModifiedOn = GETDATE(),
+              CurrentOrderId = NULL,
+              TotalAmount = 0,
+              LockedByName = @sessionId
           WHERE TableId = @tableId;
         `);
 
@@ -439,9 +575,18 @@ router.post("/auto-assign-takeaway", async (req, res) => {
       await transaction.commit();
 
       const row = selectResult.recordset[0];
-      const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
 
-      // 3. Emit real-time socket event so POS, KDS, and waitstaff screens update immediately
+      // 5. Store session in memory
+      if (cleanSessionId) {
+        takeawaySessionMap.set(cleanSessionId, {
+          tableId: assignedTableId,
+          tableNo: assignedTableNo,
+          assignedAt: now,
+          customerName: guestNameVal,
+        });
+      }
+
+      // 6. Emit real-time socket event so POS, KDS, and waitstaff screens update immediately
       const io = req.app.get("io");
       if (io) {
         io.emit("table_status_updated", {
@@ -458,7 +603,7 @@ router.post("/auto-assign-takeaway", async (req, res) => {
         });
       }
 
-      console.log(`✅ [Auto-Assign Takeaway] Successfully assigned table ${assignedTableNo} (${assignedTableId}) to customer "${guestNameVal}"`);
+      console.log(`✅ [Auto-Assign Takeaway] Successfully assigned table ${assignedTableNo} (${assignedTableId}) to customer "${guestNameVal}" (Session: ${cleanSessionId || 'none'})`);
 
       return res.json({
         success: true,
@@ -477,6 +622,140 @@ router.post("/auto-assign-takeaway", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ AUTO-ASSIGN TAKEAWAY ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Route: POST /api/tables/release-takeaway
+// Releases an un-ordered or closed Takeaway QR table immediately upon logout or session termination
+router.post("/release-takeaway", async (req, res) => {
+  const { tableId, tableNo, sessionId } = req.body;
+  if (!tableId && !tableNo && !sessionId) {
+    return res.status(400).json({ error: "tableId, tableNo, or sessionId required" });
+  }
+
+  try {
+    const pool = await poolPromise;
+    const cleanSessionId = sessionId && String(sessionId).trim() !== "" ? String(sessionId).trim() : null;
+    const cleanTableNo = tableNo && String(tableNo).trim() !== "" ? String(tableNo).trim() : null;
+    const cleanTableId = tableId && String(tableId).trim() !== "" ? String(tableId).replace(/^\{|\}$/g, "").trim() : null;
+
+    // 1. Find the table row(s) in TableMaster
+    const findReq = pool.request();
+    let findSql = `
+      SELECT TableId, TableNumber, DiningSection, Status, entry_status, CurrentOrderId, CustomerName, LockedByName
+      FROM TableMaster
+      WHERE DiningSection = '4'
+    `;
+
+    const conditions = [];
+    if (cleanTableId) {
+      findReq.input("tid", sql.UniqueIdentifier, cleanTableId);
+      conditions.push("TableId = @tid");
+    }
+    if (cleanTableNo) {
+      findReq.input("tno", sql.NVarChar(50), cleanTableNo);
+      conditions.push("TableNumber = @tno");
+    }
+    if (cleanSessionId) {
+      findReq.input("sessId", sql.NVarChar(100), cleanSessionId);
+      conditions.push("LockedByName = @sessId");
+    }
+
+    if (conditions.length === 0) {
+      return res.status(400).json({ error: "Invalid parameters" });
+    }
+
+    findSql += ` AND (${conditions.join(" OR ")})`;
+
+    const findRes = await findReq.query(findSql);
+    const tablesToRelease = findRes.recordset || [];
+
+    const io = req.app.get("io");
+    let releasedCount = 0;
+
+    for (const tbl of tablesToRelease) {
+      const tId = tbl.TableId;
+      const tNo = tbl.TableNumber;
+
+      // 2. Check if an active unclosed order exists with active items
+      const checkReq = pool.request()
+        .input("tid", sql.UniqueIdentifier, tId)
+        .input("tno", sql.NVarChar(50), tNo);
+
+      const checkSql = `
+        SELECT TOP 1 roc.OrderId
+        FROM RestaurantOrderCur roc WITH (NOLOCK)
+        WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(@tno)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(@tid AS NVARCHAR(100)))
+          AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+          AND EXISTS (
+            SELECT 1 FROM RestaurantOrderDetailCur d WITH (NOLOCK)
+            WHERE d.OrderId = roc.OrderId AND d.StatusCode <> 0
+          )
+      `;
+      const activeRes = await checkReq.query(checkSql);
+
+      if (activeRes.recordset && activeRes.recordset.length > 0) {
+        console.log(`ℹ️ [Release Takeaway] Table ${tNo} has active unclosed order (${activeRes.recordset[0].OrderId}). Skipping release.`);
+        continue;
+      }
+
+      // 3. Table is free of active orders -> Release it completely
+      await pool.request()
+        .input("tid", sql.UniqueIdentifier, tId)
+        .input("tno", sql.NVarChar(50), tNo)
+        .query(`
+          UPDATE TableMaster
+          SET Status = 0,
+              entry_status = NULL,
+              PAYMENT_STATUS = 0,
+              CustomerName = NULL,
+              Pax = NULL,
+              StartTime = NULL,
+              CurrentOrderId = NULL,
+              TotalAmount = 0,
+              LockedByName = NULL,
+              ModifiedOn = GETDATE()
+          WHERE TableId = @tid AND DiningSection = '4';
+
+          -- Also clear any draft cart items for this table
+          DELETE FROM CartItems
+          WHERE CartId = CAST(@tid AS NVARCHAR(128)) OR CartId = @tno;
+        `);
+
+      // 4. Remove session from in-memory tracking
+      for (const [sId, sess] of takeawaySessionMap.entries()) {
+        if (sess.tableId === tId || sess.tableNo === tNo || (cleanSessionId && sId === cleanSessionId)) {
+          takeawaySessionMap.delete(sId);
+        }
+      }
+
+      // 5. Emit real-time table status update to POS so table turns white immediately
+      if (io) {
+        io.emit("table_status_updated", {
+          tableId: String(tId).toLowerCase(),
+          status: 0,
+          totalAmount: 0,
+          startTime: null,
+          tableNo: tNo,
+          section: "TAKEAWAY",
+          diningSection: "4",
+          customerName: null,
+          entryStatus: null,
+        });
+      }
+
+      releasedCount++;
+      console.log(`✅ [Release Takeaway] Table ${tNo} (${tId}) released successfully.`);
+    }
+
+    if (cleanSessionId) {
+      takeawaySessionMap.delete(cleanSessionId);
+    }
+
+    res.json({ success: true, releasedCount });
+  } catch (err) {
+    console.error("RELEASE TAKEAWAY ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });

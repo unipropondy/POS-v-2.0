@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -423,6 +423,16 @@ export default function CustomerMenuScreen() {
   const [showLoyaltySection, setShowLoyaltySection] = useState(false);
   const { settings: generalSettings, fetchSettings: fetchGeneralSettings } = useGeneralSettingsStore();
 
+  // 💳 Track whether the current Takeaway order has completed payment
+  const [isPaid, setIsPaid] = useState<boolean>(false);
+  const tablePaymentStatus = useCartStore((state) => state.tablePaymentStatus);
+
+  const effectiveIsPaid =
+    isPaid ||
+    Boolean(orderContext?.tableId && tablePaymentStatus?.[orderContext.tableId]?.isPaid) ||
+    Boolean(orderContext?.tableNo && tablePaymentStatus?.[orderContext.tableNo]?.isPaid) ||
+    (orderContext?.tableId && tablePaymentStatus?.[orderContext.tableId]?.paymentStatus === "PAID") ||
+    (orderContext?.tableNo && tablePaymentStatus?.[orderContext.tableNo]?.paymentStatus === "PAID");
 
   useEffect(() => {
     fetchGeneralSettings();
@@ -525,14 +535,43 @@ export default function CustomerMenuScreen() {
   };
 
   const confirmLogout = () => {
-    if (orderContext?.tableId) {
-      useCartStore.getState().clearTableSession(orderContext.tableId);
+    const tableId = orderContext?.tableId || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("qr_takeaway_tableId") : null) || (typeof localStorage !== "undefined" ? localStorage.getItem("qr_takeaway_tableId") : null);
+    const tableNo = orderContext?.tableNo || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("qr_takeaway_tableNo") : null) || (typeof localStorage !== "undefined" ? localStorage.getItem("qr_takeaway_tableNo") : null);
+    const sessionId = (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("tw_session_token") : null);
+
+    // Call backend to release takeaway table if no active unclosed order exists
+    if (tableId || tableNo || sessionId) {
+      try {
+        fetch(`${API_URL}/api/tables/release-takeaway`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableId, tableNo, sessionId }),
+        }).catch((e) => console.warn("Failed to release takeaway table on logout:", e));
+      } catch (err) {
+        console.warn("release-takeaway error:", err);
+      }
+    }
+
+    if (tableId) {
+      useCartStore.getState().clearTableSession(tableId);
     }
     useOrderContextStore.getState().setOrderContext(null as any);
+
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("tw_session_token");
+      sessionStorage.removeItem("qr_takeaway_tableId");
+      sessionStorage.removeItem("qr_takeaway_tableNo");
+    }
     if (typeof localStorage !== "undefined") {
       localStorage.removeItem("isLoggedIn");
       localStorage.removeItem("qr_pos_user");
+      localStorage.removeItem("qr_takeaway_tableId");
+      localStorage.removeItem("qr_takeaway_tableNo");
+      localStorage.removeItem("qr_takeaway_section");
+      localStorage.removeItem("last_tw_order_id");
+      localStorage.removeItem("promoCode");
     }
+
     setShowLogoutModal(false);
     setIsSessionClosed(true);
   };
@@ -563,6 +602,78 @@ export default function CustomerMenuScreen() {
         document.head.appendChild(style);
       }
     }
+  }, []);
+
+  // 🛡️ Ensure Takeaway Table Assignment is Active and Persisted
+  useEffect(() => {
+    const ensureTableAssigned = async () => {
+      if (isSessionClosed) return;
+      if (orderContext?.tableId && orderContext?.tableNo && String(orderContext.tableNo).startsWith("TW")) {
+        return;
+      }
+      let storedTableId: string | null = null;
+      let storedTableNo: string | null = null;
+      if (typeof sessionStorage !== "undefined") {
+        storedTableId = sessionStorage.getItem("qr_takeaway_tableId");
+        storedTableNo = sessionStorage.getItem("qr_takeaway_tableNo");
+      }
+      if (!storedTableId && typeof localStorage !== "undefined") {
+        storedTableId = localStorage.getItem("qr_takeaway_tableId");
+        storedTableNo = localStorage.getItem("qr_takeaway_tableNo");
+      }
+
+      if (storedTableId && storedTableNo && storedTableNo.startsWith("TW")) {
+        useOrderContextStore.getState().setOrderContext({
+          orderType: "TAKEAWAY",
+          tableId: storedTableId,
+          tableNo: storedTableNo,
+          section: "TAKEAWAY",
+          takeawayNo: storedTableNo,
+        });
+        useCartStore.getState().setCurrentContext(storedTableId);
+        return;
+      }
+
+      let sessId: string | null = null;
+      if (typeof window !== "undefined" && window.sessionStorage) {
+        sessId = window.sessionStorage.getItem("tw_session_token");
+        if (!sessId) {
+          sessId = "tw_sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+          window.sessionStorage.setItem("tw_session_token", sessId);
+        }
+      }
+      try {
+        const res = await fetch(`${API_URL}/api/tables/auto-assign-takeaway`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sessId, customerName: "Takeaway", pax: 1 }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.table) {
+          const t = data.table;
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem("qr_takeaway_tableId", t.tableId);
+            sessionStorage.setItem("qr_takeaway_tableNo", t.tableNo);
+          }
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("qr_takeaway_tableId", t.tableId);
+            localStorage.setItem("qr_takeaway_tableNo", t.tableNo);
+          }
+          useOrderContextStore.getState().setOrderContext({
+            orderType: "TAKEAWAY",
+            tableId: t.tableId,
+            tableNo: t.tableNo,
+            section: "TAKEAWAY",
+            takeawayNo: t.tableNo,
+          });
+          useCartStore.getState().setCurrentContext(t.tableId);
+        }
+      } catch (e) {
+        console.warn("menu.tsx ensureTableAssigned error:", e);
+      }
+    };
+
+    ensureTableAssigned();
   }, [orderContext?.tableId]);
 
   const getDishQtyInCart = (dishId: string) => {
@@ -573,27 +684,83 @@ export default function CustomerMenuScreen() {
       .reduce((sum: number, item: any) => sum + (item.qty || 0), 0);
   };
 
-  // 🔄 REAL-TIME SYNC: Listen for cart updates from backend (when another session places order)
+  // 🔄 REAL-TIME SYNC: Listen for cart & payment status updates from backend (deduplicated)
   useEffect(() => {
-    if (!orderContext?.tableId) return;
-    const tableId = String(orderContext.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+    const tid = orderContext?.tableId;
+    const tno = orderContext?.tableNo;
+    if (!tid && !tno) return;
+
+    // Single unified fetch for cart & payment status
+    if (tid) {
+      useCartStore.getState().fetchCartFromDB(tid, true).then(() => {
+        const statusObj = useCartStore.getState().tablePaymentStatus?.[tid];
+        if (statusObj?.isPaid || statusObj?.paymentStatus === "PAID") {
+          setIsPaid(true);
+        } else {
+          setIsPaid(false);
+        }
+      });
+    }
+
+    const cleanTableId = tid ? String(tid).replace(/^\{|\}$/g, "").trim().toLowerCase() : "";
+    const cleanTableNo = tno ? String(tno).trim().toLowerCase() : "";
 
     const { socket: sharedSocket } = require("../../constants/socket");
-    sharedSocket.emit("join_table", { tableId });
+    if (cleanTableId) {
+      sharedSocket.emit("join_table", { tableId: cleanTableId });
+    }
 
     const handleCartUpdated = (data: { tableId: string; source?: string }) => {
       const incomingId = String(data.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
-      if (incomingId === tableId) {
-        useCartStore.getState().fetchCartFromDB(orderContext.tableId!, true);
+      if (incomingId === cleanTableId || incomingId === cleanTableNo) {
+        if (tid) {
+          useCartStore.getState().fetchCartFromDB(tid, true).then(() => {
+            const statusObj = useCartStore.getState().tablePaymentStatus?.[tid];
+            if (statusObj?.isPaid || statusObj?.paymentStatus === "PAID") {
+              setIsPaid(true);
+            }
+          });
+        }
+      }
+    };
+
+    const handlePaymentConfirmed = (data?: any) => {
+      const incomingId = String(data?.tableId || data?.rawTableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+      const incomingNo = String(data?.tableNo || "").trim().toLowerCase();
+      if (!incomingId && !incomingNo) {
+        setIsPaid(true);
+        return;
+      }
+      if (incomingId === cleanTableId || incomingNo === cleanTableNo) {
+        setIsPaid(true);
+        if (tid) useCartStore.getState().fetchCartFromDB(tid, true);
+      }
+    };
+
+    const handleTableStatusUpdated = (data: any) => {
+      const incomingId = String(data?.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+      const incomingNo = String(data?.tableNo || "").trim().toLowerCase();
+      if (incomingId === cleanTableId || incomingNo === cleanTableNo) {
+        if (data?.paymentStatus === 1 || data?.paymentStatus === "PAID" || data?.isPaid) {
+          setIsPaid(true);
+        } else if (data?.status === 0) {
+          setIsPaid(false);
+        }
       }
     };
 
     sharedSocket.on("cart_updated", handleCartUpdated);
+    sharedSocket.on("qr_payment_confirmed", handlePaymentConfirmed);
+    sharedSocket.on("settlement_updated", handlePaymentConfirmed);
+    sharedSocket.on("table_status_updated", handleTableStatusUpdated);
 
     return () => {
       sharedSocket.off("cart_updated", handleCartUpdated);
+      sharedSocket.off("qr_payment_confirmed", handlePaymentConfirmed);
+      sharedSocket.off("settlement_updated", handlePaymentConfirmed);
+      sharedSocket.off("table_status_updated", handleTableStatusUpdated);
     };
-  }, [orderContext?.tableId]);
+  }, [orderContext?.tableId, orderContext?.tableNo]);
 
   const currentCart = (currentContextId ? carts[currentContextId] || [] : []).filter(item => item.status === "NEW" || !item.status);
   const totalItems = currentCart.reduce((sum, item) => sum + (item.qty || 0), 0);
@@ -721,51 +888,54 @@ export default function CustomerMenuScreen() {
     );
   }
 
-  const filteredDishes = allDishes.filter((dish: any) => {
-    const isPub = dish.IsPublished !== undefined ? dish.IsPublished : dish.isPublished;
-    const catPub = dish.CategoryPublished !== undefined ? dish.CategoryPublished : dish.categoryPublished;
-    const grpPub = dish.GroupPublished !== undefined ? dish.GroupPublished : dish.groupPublished;
+  // ⚡ Memoized filtered dishes: avoids expensive re-computation across hundreds of dishes
+  const filteredDishes = useMemo(() => {
+    return allDishes.filter((dish: any) => {
+      const isPub = dish.IsPublished !== undefined ? dish.IsPublished : dish.isPublished;
+      const catPub = dish.CategoryPublished !== undefined ? dish.CategoryPublished : dish.categoryPublished;
+      const grpPub = dish.GroupPublished !== undefined ? dish.GroupPublished : dish.groupPublished;
 
-    // Exclude if IsPublished = 1 on Dish, Category, or Group level
-    if (!isPublishedForQR(isPub) || !isPublishedForQR(catPub) || !isPublishedForQR(grpPub)) {
-      return false;
-    }
-
-    // Hide if outside AvailableTimeFrom and AvailableTimeTo range
-    const timeFrom = dish.AvailableTimeFrom || dish.availableTimeFrom;
-    const timeTo = dish.AvailableTimeTo || dish.availableTimeTo;
-    if (!isDishAvailableNow(timeFrom, timeTo, currentTime)) {
-      return false;
-    }
-
-    const query = search.trim().toLowerCase();
-    if (query.length > 0) {
-      const nameMatch = dish.Name?.toLowerCase().includes(query);
-      const descMatch = dish.Description?.toLowerCase().includes(query);
-      return nameMatch || descMatch;
-    }
-    
-    // Check if dish matches group (either primary DishGroupId or via DishGroupMapping)
-    const matchesDishGroupId = (groupId: string) => {
-      if (!groupId) return false;
-      if (dish.DishGroupId === groupId) return true;
-      if (dish.MappedGroupIds) {
-        const mappedArr = String(dish.MappedGroupIds).split(',').map(s => s.trim()).filter(Boolean);
-        return mappedArr.includes(groupId);
+      // Exclude if IsPublished = 1 on Dish, Category, or Group level
+      if (!isPublishedForQR(isPub) || !isPublishedForQR(catPub) || !isPublishedForQR(grpPub)) {
+        return false;
       }
-      return false;
-    };
 
-    // Check if the dish belongs to any group in the currently selected category
-    const belongsToCategory = dishGroups.some(g => matchesDishGroupId(g.DishGroupId));
-    
-    // If a group is selected, match it; otherwise ensure it belongs to the selected category
-    const matchesGroup = selectedGroupId
-      ? matchesDishGroupId(selectedGroupId)
-      : belongsToCategory;
+      // Hide if outside AvailableTimeFrom and AvailableTimeTo range
+      const timeFrom = dish.AvailableTimeFrom || dish.availableTimeFrom;
+      const timeTo = dish.AvailableTimeTo || dish.availableTimeTo;
+      if (!isDishAvailableNow(timeFrom, timeTo, currentTime)) {
+        return false;
+      }
+
+      const query = search.trim().toLowerCase();
+      if (query.length > 0) {
+        const nameMatch = dish.Name?.toLowerCase().includes(query);
+        const descMatch = dish.Description?.toLowerCase().includes(query);
+        return nameMatch || descMatch;
+      }
       
-    return matchesGroup;
-  });
+      // Check if dish matches group (either primary DishGroupId or via DishGroupMapping)
+      const matchesDishGroupId = (groupId: string) => {
+        if (!groupId) return false;
+        if (dish.DishGroupId === groupId) return true;
+        if (dish.MappedGroupIds) {
+          const mappedArr = String(dish.MappedGroupIds).split(',').map(s => s.trim()).filter(Boolean);
+          return mappedArr.includes(groupId);
+        }
+        return false;
+      };
+
+      // Check if the dish belongs to any group in the currently selected category
+      const belongsToCategory = dishGroups.some(g => matchesDishGroupId(g.DishGroupId));
+      
+      // If a group is selected, match it; otherwise ensure it belongs to the selected category
+      const matchesGroup = selectedGroupId
+        ? matchesDishGroupId(selectedGroupId)
+        : belongsToCategory;
+        
+      return matchesGroup;
+    });
+  }, [allDishes, dishGroups, selectedGroupId, search, currentTime]);
 
   const handleAddSimple = (dish: any) => {
     const isSoldOut = dish.IsSoldOut === true || String(dish.IsSoldOut) === "1" || dish.IsSoldOut === 1 || dish.isSoldOut === true || String(dish.isSoldOut) === "1" || dish.isSoldOut === 1;
@@ -818,9 +988,12 @@ export default function CustomerMenuScreen() {
           <TouchableOpacity style={styles.requestButton} onPress={() => setShowProfileModal(true)}>
             <Ionicons name="person-circle-outline" size={24} color={Theme.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.requestButton} onPress={() => router.push("/qr-takeaway/order-status" as any)}>
-            <Ionicons name="receipt-outline" size={22} color={Theme.primary} />
-          </TouchableOpacity>
+          {/* Order Status Icon - ONLY visible after customer has paid */}
+          {effectiveIsPaid && (
+            <TouchableOpacity style={styles.requestButton} onPress={() => router.push("/qr-takeaway/order-status" as any)}>
+              <Ionicons name="receipt-outline" size={22} color={Theme.primary} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={20} color="#EF4444" />
           </TouchableOpacity>
@@ -895,7 +1068,7 @@ export default function CustomerMenuScreen() {
       )}
 
       {/* Main Dishes Catalog */}
-      {isLoading ? (
+      {isLoading || (allDishes.length === 0 && kitchens.length === 0) ? (
         <ActivityIndicator size="large" color={Theme.primary} style={styles.loader} />
       ) : (
         <FlatList

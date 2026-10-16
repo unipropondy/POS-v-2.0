@@ -943,35 +943,48 @@ async function syncTableStatus(req, tableId) {
     END
 
     -- Update TableMaster with DEFINITIVE state
+    -- 🛡️ Protect active Takeaway QR sessions (DiningSection 4, entry_status 'q') within 15 mins from being cleared when @count = 0
     UPDATE TableMaster 
     SET Status = CASE 
+        WHEN @count = 0 AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN Status
         WHEN @count = 0 THEN 0
         WHEN Status = 2 THEN 2 
         WHEN Status = 3 THEN 3
         WHEN @count > 0 THEN 1 
         ELSE 0 
     END, 
-    entry_status = CASE WHEN @count = 0 THEN NULL ELSE entry_status END,
-        TotalAmount = @total, 
-        StartTime = CASE 
-                         -- 🚀 NEW ORDER RESET: If the Order ID is changing, reset the timer to fresh
-                         WHEN @ActualOrderNo IS NOT NULL AND @ActualOrderNo <> ISNULL(CurrentOrderId, '') THEN GETDATE()
-                         -- INITIAL SET: If it was NULL/Invalid and we now have items
-                         WHEN (@count > 0 OR Status IN (2, 3)) AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
-                         -- Strictly CLEAR StartTime if table has 0 items
-                         WHEN @count = 0 THEN NULL 
-                         ELSE StartTime 
-                    END,
-        CustomerName = CASE 
-                         WHEN @count = 0 THEN NULL 
-                         ELSE CustomerName 
-                    END,
-        Pax = CASE 
-                         WHEN @count = 0 THEN NULL 
-                         ELSE Pax 
-                    END,
-        CurrentOrderId = @ActualOrderNo,
-        ModifiedOn = GETDATE()
+    entry_status = CASE 
+        WHEN @count = 0 AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN entry_status
+        WHEN @count = 0 THEN NULL 
+        ELSE entry_status 
+    END,
+    TotalAmount = @total, 
+    StartTime = CASE 
+                     -- 🚀 NEW ORDER RESET: If the Order ID is changing, reset the timer to fresh
+                     WHEN @ActualOrderNo IS NOT NULL AND @ActualOrderNo <> ISNULL(CurrentOrderId, '') THEN GETDATE()
+                     -- INITIAL SET: If it was NULL/Invalid and we now have items
+                     WHEN (@count > 0 OR Status IN (2, 3)) AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
+                     -- Keep StartTime if active Takeaway QR table with 0 items
+                     WHEN @count = 0 AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN StartTime
+                     -- Strictly CLEAR StartTime if table has 0 items
+                     WHEN @count = 0 THEN NULL 
+                     ELSE StartTime 
+                END,
+    CustomerName = CASE 
+                     WHEN @count = 0 AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN CustomerName
+                     WHEN @count = 0 THEN NULL 
+                     ELSE CustomerName 
+                END,
+    Pax = CASE 
+                     WHEN @count = 0 AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN Pax
+                     WHEN @count = 0 THEN NULL 
+                     ELSE Pax 
+                END,
+    CurrentOrderId = CASE 
+                     WHEN @count = 0 AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN CurrentOrderId
+                     ELSE @ActualOrderNo
+                END,
+    ModifiedOn = GETDATE()
     WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER));
 
     SELECT 
@@ -1155,10 +1168,12 @@ router.post("/save-cart", async (req, res) => {
           SET Status = CASE 
                          WHEN @skipSync = 1 AND Status IN (2, 3) THEN Status 
                          WHEN @oid IS NOT NULL THEN 1 
+                         WHEN CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15 THEN Status
                          ELSE 0 
                        END, 
               CurrentOrderId = @oid,
               StartTime = CASE WHEN @oid IS NOT NULL AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
+                               WHEN @oid IS NULL AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN StartTime
                                WHEN @oid IS NULL THEN NULL 
                                ELSE StartTime END
           WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
@@ -1643,18 +1658,32 @@ router.get("/cart/:tableId", async (req, res) => {
       return res.json({ items: [], currentOrderId: null });
     }
 
-    // Get table info (TableNumber + CurrentOrderId, PAYMENT_STATUS)
+    // Get table info (TableNumber + CurrentOrderId, PAYMENT_STATUS, Status)
     const tableInfo = await pool
       .request()
       .input("tid", sql.VarChar(50), cleanId)
       .query(
-        "SELECT TableNumber, CurrentOrderId, PAYMENT_STATUS FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
+        "SELECT TableNumber, CurrentOrderId, PAYMENT_STATUS, Status FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
       );
 
     const tableRow = tableInfo.recordset[0];
     const tableNumber = tableRow?.TableNumber;
     let currentOrderId = tableRow?.CurrentOrderId;
     let rawPaymentStatus = tableRow?.PAYMENT_STATUS ?? 0;
+    const tableStatus = tableRow?.Status ?? 0;
+
+    // ⚡ FAST PATH: If the table is completely clean/vacant (Status = 0) and has no currentOrderId,
+    // skip 4 heavy remote MSSQL roundtrips and return empty cart immediately (<20ms).
+    if (tableStatus === 0 && (!currentOrderId || currentOrderId === "NEW" || currentOrderId === "PENDING")) {
+      return res.json({
+        items: [],
+        currentOrderId: null,
+        orderNumber: null,
+        orderDiscount: null,
+        paymentStatus: "UNPAID",
+        isPaid: false
+      });
+    }
 
     // 🚀 RESOLVE ACTIVE DB ORDER ID: If TableMaster has no current order ID, check RestaurantOrderCur
     if (!currentOrderId || currentOrderId === "NEW" || currentOrderId === "PENDING" || currentOrderId.length < 5) {
@@ -1845,17 +1874,23 @@ router.get("/order-status/:id", async (req, res) => {
       .query(`
         SELECT TOP 1 
           h.OrderId, h.OrderNumber, RTRIM(LTRIM(h.Tableno)) as Tableno, h.isOrderClosed, h.CreatedOn,
+          tm.PAYMENT_STATUS as TablePaymentStatus,
           (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 3) as ReadyCount,
           (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 2) as SentCount,
           (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode = 4) as ServedCount,
           (SELECT COUNT(*) FROM RestaurantOrderDetailCur d WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0) as TotalCount
         FROM RestaurantOrderCur h
+        LEFT JOIN TableMaster tm ON RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
         WHERE h.OrderNumber = @id 
            OR (TRY_CAST(@id AS UNIQUEIDENTIFIER) IS NOT NULL AND h.OrderId = TRY_CAST(@id AS UNIQUEIDENTIFIER))
         ORDER BY h.CreatedOn DESC
       `);
 
     let order = orderRes.recordset[0];
+
+    let cachedPaymentStatus = order?.TablePaymentStatus !== undefined && order?.TablePaymentStatus !== null
+      ? order.TablePaymentStatus
+      : null;
 
     // 2. If not found by OrderNumber, check by TableMaster (tableId or TableNumber)
     if (!order) {
@@ -1869,6 +1904,9 @@ router.get("/order-status/:id", async (req, res) => {
       const tableRow = tableCheck.recordset[0];
       const tableNo = tableRow?.TableNumber;
       const curOid = tableRow?.CurrentOrderId;
+      if (tableRow?.PAYMENT_STATUS !== undefined && tableRow?.PAYMENT_STATUS !== null) {
+        cachedPaymentStatus = tableRow.PAYMENT_STATUS;
+      }
 
       if (curOid && curOid.length > 5 && curOid !== "NEW" && curOid !== "PENDING") {
         const orderByCurOid = await pool.request()
@@ -1908,15 +1946,18 @@ router.get("/order-status/:id", async (req, res) => {
     const orderNumber = order?.OrderNumber || null;
     const tableNo = order?.Tableno || cleanId;
 
-    // Check payment status from TableMaster
-    const tableInfo = await pool.request()
-      .input("tid", sql.VarChar(50), tableNo)
-      .query(`
-        SELECT PAYMENT_STATUS 
-        FROM TableMaster 
-        WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
-      `);
-    const rawPaymentStatus = tableInfo.recordset[0]?.PAYMENT_STATUS ?? 0;
+    // Check payment status from TableMaster (skip query if already obtained above)
+    let rawPaymentStatus = cachedPaymentStatus;
+    if (rawPaymentStatus === null || rawPaymentStatus === undefined) {
+      const tableInfo = await pool.request()
+        .input("tid", sql.VarChar(50), tableNo)
+        .query(`
+          SELECT PAYMENT_STATUS 
+          FROM TableMaster 
+          WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+        `);
+      rawPaymentStatus = tableInfo.recordset[0]?.PAYMENT_STATUS ?? 0;
+    }
     let isPaid = Number(rawPaymentStatus) === 1;
     let paymentStatus = isPaid ? "PAID" : (Number(rawPaymentStatus) === 2 ? "PENDING_CASHIER" : "UNPAID");
 
