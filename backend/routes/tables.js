@@ -669,6 +669,70 @@ router.post("/auto-assign-takeaway", async (req, res) => {
   }
 });
 
+// ✅ Route: ALL /api/tables/auto-reconcile-takeaway
+// Auto-releases QR takeaway tables whose sessions expired (> 15 mins) without placing an order
+router.all("/auto-reconcile-takeaway", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const expiredRes = await pool.request().query(`
+      DECLARE @cleared TABLE (TableId UNIQUEIDENTIFIER, TableNumber NVARCHAR(50), DiningSection INT);
+
+      UPDATE tm
+      SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, 
+          tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL, tm.LockedByName = NULL,
+          tm.ModifiedOn = GETDATE()
+      OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection INTO @cleared
+      FROM TableMaster tm
+      WHERE tm.DiningSection = '4'
+        AND tm.Status = 1
+        AND tm.entry_status = 'q'
+        AND (tm.PAYMENT_STATUS IS NULL OR tm.PAYMENT_STATUS = 0)
+        AND tm.StartTime IS NOT NULL
+        AND DATEDIFF(minute, tm.StartTime, GETDATE()) >= 15
+        AND (
+          tm.CurrentOrderId IS NULL 
+          OR NOT EXISTS (
+            SELECT 1 FROM RestaurantOrderCur roc 
+            WHERE (roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+              AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM CartItems ci WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber
+        );
+
+      SELECT TableId, TableNumber, DiningSection FROM @cleared;
+    `);
+
+    const cleared = expiredRes.recordset || [];
+    const io = req.app.get("io");
+    if (io && cleared.length > 0) {
+      cleared.forEach(tbl => {
+        const cleanTid = String(tbl.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+        io.emit("table_status_updated", {
+          tableId: cleanTid,
+          tableNo: tbl.TableNumber,
+          section: "TAKEAWAY",
+          status: 0,
+          orderId: "EMPTY",
+          totalAmount: 0,
+          startTime: 0,
+          entryStatus: null,
+          paymentStatus: 0,
+          customerName: null,
+          pax: null,
+        });
+      });
+      io.emit("tables_updated");
+    }
+
+    res.json({ success: true, clearedCount: cleared.length, clearedTables: cleared });
+  } catch (err) {
+    console.error("❌ AUTO-RECONCILE TAKEAWAY ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ✅ Route: POST /api/tables/release-takeaway
 // Releases an un-ordered or closed Takeaway QR table immediately upon logout or session termination
 router.post("/release-takeaway", async (req, res) => {
