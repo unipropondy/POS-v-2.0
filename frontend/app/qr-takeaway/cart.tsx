@@ -541,6 +541,7 @@ export default function CustomerCartScreen() {
                 : (pendingOrderId || (typeof localStorage !== "undefined" ? localStorage.getItem("last_tw_order_id") : undefined));
 
               // 🔑 TRIGGER BACKEND PRINT & AUTO-SETTLEMENT: call payment-status = 1
+              const verifiedPaidAmount = parseFloat(event.data?.amount || amountToPay);
               await fetch(`${API_URL}/api/orders/payment-status`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -549,6 +550,7 @@ export default function CustomerCartScreen() {
                   paymentStatus: 1,
                   payMode: "Yeahpay Paynow",
                   orderId: effectiveOrderId,
+                  paidAmount: verifiedPaidAmount,
                 }),
               });
             } catch (e) {

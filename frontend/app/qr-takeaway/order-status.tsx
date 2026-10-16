@@ -931,6 +931,7 @@ export default function CustomerOrderStatusScreen() {
 
           // Complete online payment in backend & close table
           try {
+            const verifiedAmt = parseFloat(event.data?.amount || grandTotal);
             await fetch(`${API_URL}/api/order/complete-online-payment`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -938,7 +939,8 @@ export default function CustomerOrderStatusScreen() {
                 orderId: currentOrdId,
                 tableNo: orderContext?.tableNo,
                 tableId: orderContext?.tableId,
-                totalAmount: grandTotal,
+                totalAmount: verifiedAmt,
+                paidAmount: verifiedAmt,
                 paymentMethod: "Yeahpay Paynow"
               })
             });

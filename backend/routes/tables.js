@@ -399,13 +399,19 @@ router.post("/auto-assign-takeaway", async (req, res) => {
         verifySql += `
             AND Status = 1 
             AND entry_status = 'q'
+            AND (PAYMENT_STATUS = 0 OR PAYMENT_STATUS IS NULL)
             AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15
             AND (
               CurrentOrderId IS NULL 
-              OR NOT EXISTS (
-                SELECT 1 FROM RestaurantOrderCur roc 
-                WHERE (roc.OrderNumber = CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(CurrentOrderId AS NVARCHAR(100)))
-                  AND roc.isOrderClosed = 1
+              OR (
+                NOT EXISTS (
+                  SELECT 1 FROM RestaurantOrderCur roc 
+                  WHERE (roc.OrderNumber = CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(CurrentOrderId AS NVARCHAR(100)))
+                    AND roc.isOrderClosed = 1
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = CurrentOrderId
+                )
               )
             );
         `;

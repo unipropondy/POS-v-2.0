@@ -143,13 +143,39 @@ function getSingaporeDateString() {
  */
 async function getOrGenerateOrderId(req, tableId) {
   const pool = await poolPromise;
+  const cleanId = await getCleanTableId(pool, tableId);
   const isTakeaway =
     !tableId ||
     tableId === "undefined" ||
     tableId === "null" ||
-    String(tableId).startsWith("TAKEAWAY");
+    String(tableId).startsWith("TAKEAWAY") ||
+    String(cleanId).startsWith("TAKEAWAY") ||
+    String(cleanId).startsWith("TW") ||
+    req.body?.orderType === "TAKEAWAY" ||
+    req.body?.isTakeaway === true ||
+    req.body?.isTakeAway === true;
 
   if (isTakeaway) {
+    // If client explicitly passed a valid active orderId that is NOT yet closed or settled:
+    if (req.body?.orderId && typeof req.body.orderId === 'string' && req.body.orderId.length > 5 && !req.body.orderId.startsWith('TEMP-') && req.body.orderId !== 'NEW' && req.body.orderId !== '#NEW') {
+      try {
+        const existingCheck = await pool.request()
+          .input("checkOid", sql.NVarChar(50), req.body.orderId)
+          .query(`
+            SELECT TOP 1 roc.OrderNumber, roc.isOrderClosed
+            FROM RestaurantOrderCur roc
+            WHERE (roc.OrderNumber = @checkOid OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = @checkOid)
+              AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber)
+          `);
+        if (existingCheck.recordset.length > 0) {
+          return existingCheck.recordset[0].OrderNumber;
+        }
+      } catch (err) {
+        console.warn("⚠️ [getOrGenerateOrderId] Check existing takeaway order failed:", err.message);
+      }
+    }
+
     try {
       const activeOrg = await getActiveOrganization();
       const currentBizId = activeOrg.businessUnitId;
@@ -192,7 +218,6 @@ async function getOrGenerateOrderId(req, tableId) {
     }
   }
 
-  const cleanId = await getCleanTableId(pool, tableId);
   if (!cleanId || cleanId === "undefined" || cleanId === "null") return "NEW";
 
   try {
@@ -202,31 +227,39 @@ async function getOrGenerateOrderId(req, tableId) {
     // was null or mismatched (e.g. after a QR order created a new ID). Ghost cleanup is now
     // handled safely by syncToProfessionalTables Ghost Shield v2 (with item migration).
 
-    // 2. Instant check for existing ID
+    // 2. Instant check for existing ID (only if not closed and not settled)
     const quickCheck = await pool
       .request()
       .input("tid", sql.VarChar(50), cleanId)
-      .query("SELECT CurrentOrderId FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))");
+      .query("SELECT tm.CurrentOrderId, tm.PAYMENT_STATUS FROM TableMaster tm WHERE tm.TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))");
 
     let existingId = quickCheck.recordset[0]?.CurrentOrderId;
+    const paymentStatus = quickCheck.recordset[0]?.PAYMENT_STATUS;
     if (
       existingId &&
       existingId !== "NEW" &&
       existingId !== "#NEW" &&
       !existingId.startsWith("TEMP-") &&
-      existingId.length > 5
+      existingId.length > 5 &&
+      paymentStatus !== 1
     ) {
-      // Check if this existing ID is already closed in the database
+      // Check if this existing ID is already closed or settled in the database
       const closedCheck = await pool.request()
         .input("oid", sql.NVarChar(50), existingId)
-        .query("SELECT TOP 1 isOrderClosed FROM RestaurantOrderCur WHERE OrderNumber = @oid OR (TRY_CAST(@oid AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@oid AS UNIQUEIDENTIFIER))");
+        .query(`
+          SELECT TOP 1 roc.isOrderClosed,
+            (SELECT COUNT(1) FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber) AS IsSettled
+          FROM RestaurantOrderCur roc 
+          WHERE roc.OrderNumber = @oid OR (TRY_CAST(@oid AS UNIQUEIDENTIFIER) IS NOT NULL AND roc.OrderId = TRY_CAST(@oid AS UNIQUEIDENTIFIER))
+        `);
 
       const isClosed = closedCheck.recordset[0]?.isOrderClosed === true;
-      if (!isClosed) {
+      const isSettled = (closedCheck.recordset[0]?.IsSettled || 0) > 0;
+      if (!isClosed && !isSettled) {
         console.log(`✅ [Cart] Reusing existing active OrderID: ${existingId}`);
         return existingId;
       }
-      console.log(`⚠️ [Cart] Stale closed OrderID detected: ${existingId}. Checking RestaurantOrderCur for active order...`);
+      console.log(`⚠️ [Cart] Stale/settled OrderID detected: ${existingId} (closed=${isClosed}, settled=${isSettled}). Checking RestaurantOrderCur for active order...`);
     }
 
     // 🚀 CRITICAL FIX: Before generating a brand new sequence number, check if there is
@@ -245,6 +278,8 @@ async function getOrGenerateOrderId(req, tableId) {
             JOIN TableMaster tm ON RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
             WHERE tm.TableId = @tidForCheck
               AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+              AND (tm.PAYMENT_STATUS = 0 OR tm.PAYMENT_STATUS IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = h.OrderNumber)
               AND h.OrderNumber IS NOT NULL
               AND h.OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '')
               AND h.OrderNumber NOT LIKE 'TEMP-%'
@@ -257,8 +292,11 @@ async function getOrGenerateOrderId(req, tableId) {
           .query(`
             SELECT TOP 1 h.OrderNumber
             FROM RestaurantOrderCur h
+            LEFT JOIN TableMaster tm ON RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
             WHERE (RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tableNoCheck)) OR RTRIM(LTRIM(h.Tableno)) = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableNumber = @tableNoCheck OR (TRY_CAST(@tableNoCheck AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tableNoCheck AS UNIQUEIDENTIFIER))))
               AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+              AND (tm.PAYMENT_STATUS = 0 OR tm.PAYMENT_STATUS IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = h.OrderNumber)
               AND h.OrderNumber IS NOT NULL
               AND h.OrderNumber NOT IN ('PENDING', 'NEW', '#NEW', '')
               AND h.OrderNumber NOT LIKE 'TEMP-%'
@@ -426,7 +464,7 @@ async function syncToProfessionalTables(
       .input("discRemarks", sql.NVarChar(250), discountRemarks || null)
       .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
       .input("mobileNo", sql.NVarChar(50), mobileNo || null)
-      .input("customerName", sql.NVarChar(150), customerName || null)
+      .input("customerName", sql.NVarChar(9), customerName ? String(customerName).substring(0, 9) : null)
       .query(`
         UPDATE RestaurantOrderCur 
         SET PriorityCode = ISNULL(PriorityCode, @priority),
@@ -454,17 +492,18 @@ async function syncToProfessionalTables(
       }
     }
 
+    const safeCustomer = (customerName || tableCustomerName || "Guest").substring(0, 9);
     await transaction
       .request()
       .input("orderId", sql.UniqueIdentifier, orderGuid)
       .input("orderNo", sql.NVarChar(50), cleanOrderNo)
-      .input("tableNo", sql.VarChar(20), actualTableNo)
+      .input("tableNo", sql.VarChar(10), String(actualTableNo || "TAKEAWAY").substring(0, 10))
       .input("userId", sql.UniqueIdentifier, finalUserId)
       .input("bizId", sql.UniqueIdentifier, bizId)
       .input("priority", sql.Int, priorityCode)
       .input("isTakeaway", sql.Bit, isTakeaway ? 1 : 0)
       .input("pax", sql.Int, tablePax)
-      .input("customerName", sql.NVarChar(150), customerName || tableCustomerName)
+      .input("customerName", sql.NVarChar(9), safeCustomer)
       .input("takeawayCharge", sql.Decimal(18, 2), initialTakeawayCharge)
       .input("startDate", sql.Date, startDate)
       .input("discAmt", sql.Decimal(18, 2), discountAmount || 0)
@@ -478,8 +517,10 @@ async function syncToProfessionalTables(
 
   // 🛡️ GHOST SHIELD v2: Migrate SENT/READY items from orphaned open orders to the definitive order,
   // then close the orphaned orders. This prevents item loss when split-brain orders exist.
-  if (actualTableNo && actualTableNo !== "undefined") {
-    // Step 1: Find all other open orders for this table (ghost orders)
+  // Takeaway orders must NEVER merge or migrate items from other orders!
+  const isTakeawayTable = isTakeaway || String(actualTableNo).startsWith("TW") || actualTableNo === "TAKEAWAY";
+  if (actualTableNo && actualTableNo !== "undefined" && !isTakeawayTable) {
+    // Step 1: Find all other open orders for this table (ghost orders) - only if NOT settled
     const ghostOrdersRes = await transaction
       .request()
       .input("orderGuid", sql.UniqueIdentifier, orderGuid)
@@ -490,6 +531,7 @@ async function syncToProfessionalTables(
         WHERE (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tableNo)) OR Tableno = @tableNo)
           AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
           AND OrderId <> @orderGuid
+          AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = RestaurantOrderCur.OrderNumber)
       `);
 
     if (ghostOrdersRes.recordset.length > 0) {
@@ -1408,61 +1450,61 @@ router.post("/send", async (req, res) => {
 
       // 2.8 🛡️ ADDITIONAL ORDER PROTECTION: If existing active items exist in DB for this order,
       // fetch them and merge with sentItems so syncToProfessionalTables retains ALL order items!
+      // CRITICAL: Takeaway orders must NEVER merge items from other orders or previous table orders!
       let itemsToSync = [...sentItems];
-      try {
-        const existingDbOrderItems = await transaction
-          .request()
-          .input("orderNoCheck", sql.NVarChar(50), finalOrderId)
-          .input("tableNoCheck", sql.VarChar(50), String(cleanId))
-          .query(`
-            DECLARE @RealTableNo VARCHAR(50);
-            SELECT TOP 1 @RealTableNo = TableNumber FROM TableMaster WHERE TableNumber = @tableNoCheck OR (TRY_CAST(@tableNoCheck AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tableNoCheck AS UNIQUEIDENTIFIER));
-            IF @RealTableNo IS NULL SET @RealTableNo = @tableNoCheck;
+      const isTakeawaySend = isTakeawayOrder || String(cleanId).startsWith("TW") || req.body?.orderType === "TAKEAWAY";
+      if (!isTakeawaySend) {
+        try {
+          const existingDbOrderItems = await transaction
+            .request()
+            .input("orderNoCheck", sql.NVarChar(50), finalOrderId)
+            .query(`
+              SELECT 
+                d.OrderDetailId as lineItemId, d.DishId as id, ISNULL(d.SongName,'') as songName, d.Quantity as qty, 
+                d.PricePerUnit as price, d.PricePerUnit as basePrice, ISNULL(NULLIF(d.DishName,''), dish.Name) as name,
+                d.ModifiersJSON, d.ComboDetailsJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
+                ISNULL(dish.TakeawayCharge, 0) as takeawayCharge,
+                ISNULL(dish.TakeawayCharge, 0) as TakeawayCharge,
+                ISNULL(d.DiscountAmount, 0) as discount, ISNULL(d.DiscountType, NULL) as discountType,
+                CASE d.StatusCode 
+                  WHEN 1 THEN 'NEW' WHEN 2 THEN 'SENT' WHEN 3 THEN 'READY' 
+                  WHEN 4 THEN 'SERVED' WHEN 5 THEN 'HOLD' WHEN 0 THEN 'VOIDED' 
+                  ELSE 'SENT' 
+                END as status
+              FROM RestaurantOrderDetailCur d 
+              JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
+              LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+              WHERE h.OrderNumber = @orderNoCheck
+                AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+                AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = h.OrderNumber)
+                AND d.StatusCode <> 0
+            `);
 
-            SELECT 
-              d.OrderDetailId as lineItemId, d.DishId as id, ISNULL(d.SongName,'') as songName, d.Quantity as qty, 
-              d.PricePerUnit as price, d.PricePerUnit as basePrice, ISNULL(NULLIF(d.DishName,''), dish.Name) as name,
-              d.ModifiersJSON, d.ComboDetailsJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
-              ISNULL(dish.TakeawayCharge, 0) as takeawayCharge,
-              ISNULL(dish.TakeawayCharge, 0) as TakeawayCharge,
-              ISNULL(d.DiscountAmount, 0) as discount, ISNULL(d.DiscountType, NULL) as discountType,
-              CASE d.StatusCode 
-                WHEN 1 THEN 'NEW' WHEN 2 THEN 'SENT' WHEN 3 THEN 'READY' 
-                WHEN 4 THEN 'SERVED' WHEN 5 THEN 'HOLD' WHEN 0 THEN 'VOIDED' 
-                ELSE 'SENT' 
-              END as status
-            FROM RestaurantOrderDetailCur d 
-            JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
-            LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
-            WHERE (h.OrderNumber = @orderNoCheck OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@RealTableNo)) OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tableNoCheck)))
-              AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
-              AND d.StatusCode <> 0
-          `);
-
-        const existingRows = existingDbOrderItems.recordset || [];
-        if (existingRows.length > 0) {
-          const sentLineItemIds = new Set(sentItems.map((i) => i.lineItemId).filter(Boolean));
-          existingRows.forEach((row) => {
-            if (!sentLineItemIds.has(row.lineItemId)) {
-              let mods = [];
-              if (row.ModifiersJSON) {
-                try { mods = typeof row.ModifiersJSON === 'string' ? JSON.parse(row.ModifiersJSON) : row.ModifiersJSON; } catch { }
+          const existingRows = existingDbOrderItems.recordset || [];
+          if (existingRows.length > 0) {
+            const sentLineItemIds = new Set(sentItems.map((i) => i.lineItemId).filter(Boolean));
+            existingRows.forEach((row) => {
+              if (!sentLineItemIds.has(row.lineItemId)) {
+                let mods = [];
+                if (row.ModifiersJSON) {
+                  try { mods = typeof row.ModifiersJSON === 'string' ? JSON.parse(row.ModifiersJSON) : row.ModifiersJSON; } catch { }
+                }
+                let combos = [];
+                if (row.ComboDetailsJSON) {
+                  try { combos = typeof row.ComboDetailsJSON === 'string' ? JSON.parse(row.ComboDetailsJSON) : row.ComboDetailsJSON; } catch { }
+                }
+                itemsToSync.push({
+                  ...row,
+                  modifiers: mods,
+                  comboSelections: combos,
+                  isCombo: !!combos && (Array.isArray(combos) ? combos.length > 0 : !!combos.groups)
+                });
               }
-              let combos = [];
-              if (row.ComboDetailsJSON) {
-                try { combos = typeof row.ComboDetailsJSON === 'string' ? JSON.parse(row.ComboDetailsJSON) : row.ComboDetailsJSON; } catch { }
-              }
-              itemsToSync.push({
-                ...row,
-                modifiers: mods,
-                comboSelections: combos,
-                isCombo: !!combos && (Array.isArray(combos) ? combos.length > 0 : !!combos.groups)
-              });
-            }
-          });
+            });
+          }
+        } catch (mergeErr) {
+          console.warn("⚠️ Failed to merge existing DB order items in /send:", mergeErr.message);
         }
-      } catch (mergeErr) {
-        console.warn("⚠️ Failed to merge existing DB order items in /send:", mergeErr.message);
       }
 
       // 3. FORCE SYNC with all merged order items
@@ -1769,6 +1811,20 @@ router.get("/cart/:tableId", async (req, res) => {
       currentOrderId !== "PENDING" &&
       currentOrderId !== "NEW";
 
+    let whereClause = "";
+    if (isRealOrderId) {
+      whereClause = "WHERE h.OrderNumber = @orderNo AND d.StatusCode <> 0";
+    } else {
+      whereClause = `WHERE 
+        (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+        AND d.StatusCode <> 0
+        AND ISNULL(d.isSettlement, 0) = 0
+        AND (
+          RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tableNo))
+          OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tid))
+        )`;
+    }
+
     const result = await pool
       .request()
       .input("tid", sql.VarChar(50), cleanId)
@@ -1811,16 +1867,7 @@ router.get("/cart/:tableId", async (req, res) => {
           SELECT *, ROW_NUMBER() OVER(PARTITION BY KitchenTypeValue ORDER BY PrinterId) as rn 
           FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
         ) pm ON CAST(ckt.KitchenTypeCode AS VARCHAR(50)) = CAST(pm.KitchenTypeValue AS VARCHAR(50)) AND pm.rn = 1
-        WHERE 
-          (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
-          AND d.StatusCode <> 0
-          AND ISNULL(d.isSettlement, 0) = 0
-          AND (
-            RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tableNo))
-            OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(@tid))
-            OR RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM((SELECT TOP 1 TableNumber FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER)))))
-            OR h.OrderNumber = @orderNo
-          )
+        ${whereClause}
         ORDER BY d.CreatedOn ASC
       `);
 
@@ -1968,7 +2015,7 @@ router.get("/order-status/:id", async (req, res) => {
         .query(`
           SELECT TOP 1 SettlementID 
           FROM SettlementHeader 
-          WHERE OrderNumber = @ordNo
+          WHERE BillNo = @ordNo OR (TRY_CAST(@ordNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@ordNo AS UNIQUEIDENTIFIER))
         `);
       if (settleCheck.recordset && settleCheck.recordset.length > 0) {
         isPaid = true;
@@ -3187,7 +3234,7 @@ async function resolveTableOrderNo(pool, cleanId) {
   }
 }
 
-async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Paynow') {
+async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Paynow', verifiedPaidAmount = null) {
   if (!orderNumber || orderNumber === 'NEW' || orderNumber === '#NEW' || String(orderNumber).startsWith('TEMP-')) {
     console.warn(`[settlePaidQROrder] Invalid orderNumber: ${orderNumber}`);
     return null;
@@ -3254,7 +3301,12 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
     const paymode = pmRes.recordset[0] || { Position: 7, PayMode: 'Yeahpay Paynow', Description: 'Yeahpay Paynow' };
 
     const settlementId = crypto.randomUUID();
-    const totalAmount = Number(order.TotalAmount || 0);
+    let totalAmount = Number(order.TotalAmount || 0);
+    const verifiedAmount = verifiedPaidAmount != null && !isNaN(Number(verifiedPaidAmount)) ? Number(verifiedPaidAmount) : null;
+    if (verifiedAmount !== null && verifiedAmount > 0 && Math.abs(totalAmount - verifiedAmount) > 0.01) {
+      console.warn(`⚠️ [settlePaidQROrder] Discrepancy detected for order ${actualOrderNo}: DB TotalAmount=${totalAmount}, VerifiedPaidAmount=${verifiedAmount}. Using verified paid amount for settlement.`);
+      totalAmount = verifiedAmount;
+    }
     const takeawayCharge = Number(order.TakeawayCharge || 0);
     const serviceCharge = Number(order.ServiceCharge || 0);
     const totalTax = Number(order.TotalTax || 0);
@@ -3479,7 +3531,8 @@ router.post("/payment-status", async (req, res) => {
       try {
         const orderNo = clientOrderId || updated?.CurrentOrderId || (await resolveTableOrderNo(pool, cleanId));
         if (orderNo) {
-          const settledResult = await settlePaidQROrder(pool, orderNo, payMode || "Yeahpay Paynow");
+          const verifiedPaidAmt = req.body?.paidAmount ? Number(req.body.paidAmount) : null;
+          const settledResult = await settlePaidQROrder(pool, orderNo, payMode || "Yeahpay Paynow", verifiedPaidAmt);
           if (settledResult && io) {
             io.emit("settlement_updated", { action: "settlement_saved", orderId: orderNo, settlementId: settledResult.settlementId });
             io.emit("sales_updated", { orderId: orderNo });
@@ -3585,7 +3638,8 @@ router.post("/complete-online-payment", async (req, res) => {
     }
     
     if (orderNo) {
-      const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow");
+      const verifiedPaidAmt = req.body.totalAmount ? Number(req.body.totalAmount) : (req.body.paidAmount ? Number(req.body.paidAmount) : null);
+      const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow", verifiedPaidAmt);
       const ioInst = req.app.get("io");
       if (ioInst && (cleanId || updatedTable)) {
         const targetTableId = updatedTable?.TableId ? String(updatedTable.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase();

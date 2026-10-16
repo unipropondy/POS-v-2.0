@@ -604,16 +604,14 @@ export default function CustomerMenuScreen() {
     }
   }, []);
 
-  // 🛡️ Ensure Takeaway Table Assignment is Active and Persisted
+  // 🛡️ Ensure Takeaway Table Assignment is Active, Verified and Persisted
   useEffect(() => {
     const ensureTableAssigned = async () => {
       if (isSessionClosed) return;
-      if (orderContext?.tableId && orderContext?.tableNo && String(orderContext.tableNo).startsWith("TW")) {
-        return;
-      }
-      let storedTableId: string | null = null;
-      let storedTableNo: string | null = null;
-      if (typeof sessionStorage !== "undefined") {
+
+      let storedTableId: string | null = orderContext?.tableId || null;
+      let storedTableNo: string | null = orderContext?.tableNo || null;
+      if (!storedTableId && typeof sessionStorage !== "undefined") {
         storedTableId = sessionStorage.getItem("qr_takeaway_tableId");
         storedTableNo = sessionStorage.getItem("qr_takeaway_tableNo");
       }
@@ -622,35 +620,48 @@ export default function CustomerMenuScreen() {
         storedTableNo = localStorage.getItem("qr_takeaway_tableNo");
       }
 
-      if (storedTableId && storedTableNo && storedTableNo.startsWith("TW")) {
-        useOrderContextStore.getState().setOrderContext({
-          orderType: "TAKEAWAY",
-          tableId: storedTableId,
-          tableNo: storedTableNo,
-          section: "TAKEAWAY",
-          takeawayNo: storedTableNo,
-        });
-        useCartStore.getState().setCurrentContext(storedTableId);
-        return;
+      // Check if table in memory was already marked paid
+      const paymentStatus = storedTableId ? useCartStore.getState().tablePaymentStatus[storedTableId] : null;
+      const isAlreadyPaid = paymentStatus?.isPaid || paymentStatus?.paymentStatus === "PAID";
+      if (isAlreadyPaid) {
+        // Table was paid - clear it so auto-assign gives a fresh unoccupied takeaway table
+        storedTableId = null;
+        storedTableNo = null;
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.removeItem("qr_takeaway_tableId");
+          sessionStorage.removeItem("qr_takeaway_tableNo");
+        }
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("qr_takeaway_tableId");
+          localStorage.removeItem("qr_takeaway_tableNo");
+        }
       }
 
       let sessId: string | null = null;
       if (typeof window !== "undefined" && window.sessionStorage) {
         sessId = window.sessionStorage.getItem("tw_session_token");
-        if (!sessId) {
+        if (!sessId || isAlreadyPaid) {
           sessId = "tw_sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
           window.sessionStorage.setItem("tw_session_token", sessId);
         }
       }
+
       try {
         const res = await fetch(`${API_URL}/api/tables/auto-assign-takeaway`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sessId, customerName: "Takeaway", pax: 1 }),
+          body: JSON.stringify({ 
+            sessionId: sessId, 
+            tableId: storedTableId, 
+            customerName: userInfo?.FullName || userInfo?.UserName || "Takeaway", 
+            pax: 1 
+          }),
         });
         const data = await res.json();
         if (res.ok && data.success && data.table) {
           const t = data.table;
+          const prevTableId = currentContextId || orderContext?.tableId;
+          
           if (typeof sessionStorage !== "undefined") {
             sessionStorage.setItem("qr_takeaway_tableId", t.tableId);
             sessionStorage.setItem("qr_takeaway_tableNo", t.tableNo);
@@ -666,6 +677,10 @@ export default function CustomerMenuScreen() {
             section: "TAKEAWAY",
             takeawayNo: t.tableNo,
           });
+
+          if (prevTableId && prevTableId !== t.tableId) {
+            useCartStore.getState().clearTableSession(prevTableId);
+          }
           useCartStore.getState().setCurrentContext(t.tableId);
         }
       } catch (e) {
