@@ -634,11 +634,13 @@ httpServer.listen(PORT, async () => {
       const pool = await poolPromise;
       if (pool && pool.connected) {
         const expiredRes = await pool.request().query(`
+          DECLARE @cleared TABLE (TableId UNIQUEIDENTIFIER, TableNumber NVARCHAR(50), DiningSection INT);
+
           UPDATE tm
           SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, 
               tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL, tm.LockedByName = NULL,
               tm.ModifiedOn = GETDATE()
-          OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection
+          OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection INTO @cleared
           FROM TableMaster tm
           WHERE tm.Status IN (1, 2, 3, 4)
             AND CAST(tm.DiningSection AS VARCHAR(10)) = '4'
@@ -655,6 +657,8 @@ httpServer.listen(PORT, async () => {
             AND NOT EXISTS (
               SELECT 1 FROM CartItems ci WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber
             );
+
+          SELECT TableId, TableNumber, DiningSection FROM @cleared;
         `);
 
         if (expiredRes.recordset && expiredRes.recordset.length > 0) {

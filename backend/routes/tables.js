@@ -71,9 +71,11 @@ router.get("/all", async (req, res) => {
     // NOTE: Protect active Takeaway QR sessions (DiningSection 4, entry_status 'q') within 15 mins
     try {
       const reconcileResult = await pool.request().query(`
+        DECLARE @cleared TABLE (TableId UNIQUEIDENTIFIER, TableNumber NVARCHAR(50), DiningSection INT);
+
         UPDATE tm
         SET tm.Status = 0, tm.entry_status = NULL, tm.TotalAmount = 0, tm.StartTime = NULL, tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL, tm.LockedByName = NULL
-        OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection
+        OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection INTO @cleared
         FROM TableMaster tm
         WHERE tm.Status IN (1, 2, 3, 4)
           -- 🛡️ DO NOT clear active Takeaway QR sessions (DiningSection 4) within active timeout (15 mins) with active session lock
@@ -98,6 +100,8 @@ router.get("/all", async (req, res) => {
                 AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
             ))
           );
+
+        SELECT TableId, TableNumber, DiningSection FROM @cleared;
       `);
 
       if (reconcileResult.recordset && reconcileResult.recordset.length > 0) {
@@ -412,12 +416,19 @@ router.post("/auto-assign-takeaway", async (req, res) => {
           WHERE DiningSection = '4'
         `;
         if (existingTableId && cleanSessionId) {
-          verifyReq.input("tid", sql.UniqueIdentifier, existingTableId);
+          verifyReq.input("tid", sql.NVarChar(100), existingTableId);
           verifyReq.input("sessId", sql.NVarChar(100), cleanSessionId);
-          verifySql += ` AND (TableId = @tid OR LockedByName = @sessId)`;
+          verifySql += ` AND (
+            (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+            OR TableNumber = @tid
+            OR LockedByName = @sessId
+          )`;
         } else if (existingTableId) {
-          verifyReq.input("tid", sql.UniqueIdentifier, existingTableId);
-          verifySql += ` AND TableId = @tid`;
+          verifyReq.input("tid", sql.NVarChar(100), existingTableId);
+          verifySql += ` AND (
+            (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+            OR TableNumber = @tid
+          )`;
         } else if (cleanSessionId) {
           verifyReq.input("sessId", sql.NVarChar(100), cleanSessionId);
           verifySql += ` AND LockedByName = @sessId`;

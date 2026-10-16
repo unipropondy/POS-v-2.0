@@ -604,10 +604,12 @@ export default function CustomerMenuScreen() {
     }
   }, []);
 
+  const assigningRef = useRef(false);
+
   // 🛡️ Ensure Takeaway Table Assignment is Active, Verified and Persisted
   useEffect(() => {
     const ensureTableAssigned = async () => {
-      if (isSessionClosed) return;
+      if (isSessionClosed || assigningRef.current) return;
 
       let storedTableId: string | null = orderContext?.tableId || null;
       let storedTableNo: string | null = orderContext?.tableNo || null;
@@ -637,6 +639,21 @@ export default function CustomerMenuScreen() {
         }
       }
 
+      // 🛡️ If table is already assigned, valid, and unpaid, DO NOT re-assign
+      if (storedTableId && storedTableNo && String(storedTableNo).startsWith("TW") && !isAlreadyPaid) {
+        if (orderContext?.tableId !== storedTableId) {
+          useOrderContextStore.getState().setOrderContext({
+            orderType: "TAKEAWAY",
+            tableId: storedTableId,
+            tableNo: storedTableNo,
+            section: "TAKEAWAY",
+            takeawayNo: storedTableNo,
+          });
+          useCartStore.getState().setCurrentContext(storedTableId);
+        }
+        return;
+      }
+
       let sessId: string | null = null;
       if (typeof window !== "undefined" && window.sessionStorage) {
         sessId = window.sessionStorage.getItem("tw_session_token");
@@ -646,6 +663,7 @@ export default function CustomerMenuScreen() {
         }
       }
 
+      assigningRef.current = true;
       try {
         const res = await fetch(`${API_URL}/api/tables/auto-assign-takeaway`, {
           method: "POST",
@@ -685,11 +703,13 @@ export default function CustomerMenuScreen() {
         }
       } catch (e) {
         console.warn("menu.tsx ensureTableAssigned error:", e);
+      } finally {
+        assigningRef.current = false;
       }
     };
 
     ensureTableAssigned();
-  }, [orderContext?.tableId]);
+  }, []);
 
   const getDishQtyInCart = (dishId: string) => {
     if (!currentContextId) return 0;

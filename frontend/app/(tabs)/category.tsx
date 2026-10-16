@@ -1949,7 +1949,7 @@ export default function Category() {
   // 🚀 Optimized Occupied Count: Only re-renders when the count changes
   const occupiedCount = useTableStatusStore(
     (state) =>
-      Object.values(state.tableMap).filter(
+      state.tables.filter(
         (t) => t.status !== "EMPTY" && t.status !== 0,
       ).length,
   );
