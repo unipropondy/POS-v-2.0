@@ -7,7 +7,7 @@
     "icon": "./frontend/assets/images/logo_pos.png",
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#FF8C00",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./frontend/assets/images/logo_pos.png"
       },
       "package": "com.unipro.smart_cafe",
