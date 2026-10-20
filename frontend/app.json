@@ -21,7 +21,7 @@
         "backgroundColor": "#FF8C00",
         "foregroundImage": "./assets/images/logo_pos.png"
       },
-      "package": "com.unipro.pos",
+      "package": "com.unipro.smart_cafe",
       "versionCode": 5,
       "permissions": [
         "INTERNET",
