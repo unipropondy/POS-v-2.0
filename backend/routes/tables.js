@@ -518,59 +518,111 @@ router.post("/auto-assign-takeaway", async (req, res) => {
     await transaction.begin();
 
     try {
-      // Find the first available table between TW1 and TW20 ordered by number (1 to 20).
-      // Uses UPDLOCK, ROWLOCK, HOLDLOCK to guarantee atomic selection and lock out race conditions.
-      const candidateQuery = `
-        SELECT TOP 1
-          tm.TableId,
-          tm.TableNumber,
-          tm.DiningSection,
-          CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) as TwNum
-        FROM TableMaster tm WITH (UPDLOCK, ROWLOCK, HOLDLOCK)
-        WHERE tm.DiningSection = '4'
-          AND tm.TableNumber LIKE 'TW[0-9]%'
-          AND CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) BETWEEN 1 AND 20
-          AND (
-            -- Either completely empty/free
-            (tm.Status = 0 OR tm.Status IS NULL)
-            -- OR an abandoned session (> 15 minutes inactive with NO order and NO cart items)
-            OR (
-              tm.Status = 1 
-              AND tm.entry_status = 'q'
-              AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
-              AND NOT EXISTS (
-                SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
-                WHERE (roc.Tableno = tm.TableNumber OR roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
-                  AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM CartItems ci WITH (NOLOCK)
-                WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+      let candidateQuery = '';
+      const candidateReq = transaction.request();
+
+      if (cleanTableId) {
+        candidateReq.input("requestedTid", sql.NVarChar(100), cleanTableId);
+        candidateQuery = `
+          SELECT TOP 1
+            tm.TableId,
+            tm.TableNumber,
+            tm.DiningSection,
+            CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) as TwNum
+          FROM TableMaster tm WITH (UPDLOCK, ROWLOCK, HOLDLOCK)
+          WHERE tm.DiningSection = '4'
+            AND (
+              (TRY_CAST(@requestedTid AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(@requestedTid AS UNIQUEIDENTIFIER))
+              OR tm.TableNumber = @requestedTid
+            )
+            AND (
+              -- Either completely empty/free
+              (tm.Status = 0 OR tm.Status IS NULL)
+              -- OR an abandoned session (> 15 minutes inactive with NO order and NO cart items)
+              OR (
+                tm.Status = 1 
+                AND tm.entry_status = 'q'
+                AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
+                AND NOT EXISTS (
+                  SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+                  WHERE (roc.Tableno = tm.TableNumber OR roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                    AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM CartItems ci WITH (NOLOCK)
+                  WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+                )
               )
             )
-          )
-          -- Ensure NO active unclosed order exists on this table
-          AND NOT EXISTS (
-            SELECT 1 FROM RestaurantOrderCur rocActive WITH (NOLOCK)
-            WHERE RTRIM(LTRIM(rocActive.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
-              AND (rocActive.isOrderClosed = 0 OR rocActive.isOrderClosed IS NULL)
-          )
-          -- Ensure NO items in CartItems
-          AND NOT EXISTS (
-            SELECT 1 FROM CartItems ci WITH (NOLOCK)
-            WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
-          )
-        ORDER BY CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) ASC;
-      `;
+            -- Ensure NO active unclosed order exists on this table
+            AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur rocActive WITH (NOLOCK)
+              WHERE RTRIM(LTRIM(rocActive.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+                AND (rocActive.isOrderClosed = 0 OR rocActive.isOrderClosed IS NULL)
+            )
+            -- Ensure NO items in CartItems
+            AND NOT EXISTS (
+              SELECT 1 FROM CartItems ci WITH (NOLOCK)
+              WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+            );
+        `;
+      } else {
+        // Find the first available table between TW1 and TW20 ordered by number (1 to 20).
+        // Uses UPDLOCK, ROWLOCK, HOLDLOCK to guarantee atomic selection and lock out race conditions.
+        candidateQuery = `
+          SELECT TOP 1
+            tm.TableId,
+            tm.TableNumber,
+            tm.DiningSection,
+            CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) as TwNum
+          FROM TableMaster tm WITH (UPDLOCK, ROWLOCK, HOLDLOCK)
+          WHERE tm.DiningSection = '4'
+            AND tm.TableNumber LIKE 'TW[0-9]%'
+            AND CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) BETWEEN 1 AND 20
+            AND (
+              -- Either completely empty/free
+              (tm.Status = 0 OR tm.Status IS NULL)
+              -- OR an abandoned session (> 15 minutes inactive with NO order and NO cart items)
+              OR (
+                tm.Status = 1 
+                AND tm.entry_status = 'q'
+                AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
+                AND NOT EXISTS (
+                  SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+                  WHERE (roc.Tableno = tm.TableNumber OR roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                    AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM CartItems ci WITH (NOLOCK)
+                  WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+                )
+              )
+            )
+            -- Ensure NO active unclosed order exists on this table
+            AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur rocActive WITH (NOLOCK)
+              WHERE RTRIM(LTRIM(rocActive.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
+                AND (rocActive.isOrderClosed = 0 OR rocActive.isOrderClosed IS NULL)
+            )
+            -- Ensure NO items in CartItems
+            AND NOT EXISTS (
+              SELECT 1 FROM CartItems ci WITH (NOLOCK)
+              WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+            )
+          ORDER BY CAST(REPLACE(tm.TableNumber, 'TW', '') AS INT) ASC;
+        `;
+      }
 
-      const candidateResult = await transaction.request().query(candidateQuery);
+      const candidateResult = await candidateReq.query(candidateQuery);
 
       if (!candidateResult.recordset || candidateResult.recordset.length === 0) {
         await transaction.rollback();
         return res.status(409).json({
           success: false,
           error: "NO_TABLES_AVAILABLE",
-          message: "All takeaway tables (TW1–TW20) are currently occupied. Please wait a moment or place your order at the counter.",
+          message: cleanTableId
+            ? `Takeaway table ${cleanTableId} is currently occupied or unavailable. Please choose another table or place your order at the counter.`
+            : "All takeaway tables (TW1–TW20) are currently occupied. Please wait a moment or place your order at the counter.",
         });
       }
 

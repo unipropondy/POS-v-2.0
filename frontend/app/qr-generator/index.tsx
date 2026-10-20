@@ -98,6 +98,10 @@ export default function QRGeneratorScreen() {
   };
 
   const buildQrUrl = (table: Table) => {
+    const isTakeaway = table.DiningSection === "4" || String(table.label).toUpperCase().startsWith("TW");
+    if (isTakeaway) {
+      return `${baseUrl}/qr-takeaway?tableId=${table.id}&tableNo=${encodeURIComponent(table.label)}&section=TAKEAWAY`;
+    }
     const sectionName = SECTION_NAMES[table.DiningSection] || "SECTION_1";
     return `${baseUrl}/customer?tableId=${table.id}&tableNo=${encodeURIComponent(table.label)}&section=${sectionName}`;
   };

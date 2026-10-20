@@ -625,22 +625,9 @@ export default function CustomerMenuScreen() {
       // Check if table in memory was already marked paid
       const paymentStatus = storedTableId ? useCartStore.getState().tablePaymentStatus[storedTableId] : null;
       const isAlreadyPaid = paymentStatus?.isPaid || paymentStatus?.paymentStatus === "PAID";
-      if (isAlreadyPaid) {
-        // Table was paid - clear it so auto-assign gives a fresh unoccupied takeaway table
-        storedTableId = null;
-        storedTableNo = null;
-        if (typeof sessionStorage !== "undefined") {
-          sessionStorage.removeItem("qr_takeaway_tableId");
-          sessionStorage.removeItem("qr_takeaway_tableNo");
-        }
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("qr_takeaway_tableId");
-          localStorage.removeItem("qr_takeaway_tableNo");
-        }
-      }
 
-      // 🛡️ If table is already assigned, valid, and unpaid, DO NOT re-assign
-      if (storedTableId && storedTableNo && String(storedTableNo).startsWith("TW") && !isAlreadyPaid) {
+      // 🛡️ If table is already assigned and valid, DO NOT re-assign another table!
+      if (storedTableId && storedTableNo && String(storedTableNo).startsWith("TW")) {
         if (orderContext?.tableId !== storedTableId) {
           useOrderContextStore.getState().setOrderContext({
             orderType: "TAKEAWAY",
@@ -653,6 +640,7 @@ export default function CustomerMenuScreen() {
         }
         return;
       }
+
 
       let sessId: string | null = null;
       if (typeof window !== "undefined" && window.sessionStorage) {

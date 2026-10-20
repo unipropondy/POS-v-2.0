@@ -349,11 +349,13 @@ export default function CustomerWelcomeScreen() {
     let isCancelled = false;
     const assignTableImmediately = async () => {
       const { tableId, tableNo, section } = params;
-      // If table params are passed explicitly (e.g. from table-specific QR ?tableNo=TW3)
-      if (tableNo && String(tableNo).startsWith("TW") && tableId && tableId !== "TAKEAWAY") {
+      // If table params are passed explicitly (e.g. from table-specific QR ?tableNo=TW1 or ?tableId=...)
+      const explicitNo = tableNo ? String(tableNo).trim() : null;
+      const explicitId = tableId && tableId !== "TAKEAWAY" ? String(tableId).trim() : null;
+      if (explicitNo && explicitNo.toUpperCase().startsWith("TW")) {
         const explicit = {
-          tableId: String(tableId),
-          tableNo: String(tableNo),
+          tableId: explicitId || explicitNo,
+          tableNo: explicitNo,
           section: section ? String(section) : "TAKEAWAY",
         };
         if (!isCancelled) setScannedTable(explicit);
@@ -392,6 +394,7 @@ export default function CustomerWelcomeScreen() {
             takeawayNo: storedNo,
           });
           useCartStore.getState().setCurrentContext(storedId);
+          return;
         }
       }
 
