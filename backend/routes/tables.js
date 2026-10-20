@@ -1187,19 +1187,28 @@ router.get("/:tableId", async (req, res) => {
       .input("tableId", sql.VarChar(50), cleanTableId)
       .query(`
         SELECT 
-          TableId AS id, 
-          TableNumber AS label,
-          DiningSection, 
-          Status, 
-          CONVERT(VARCHAR, StartTime, 126) as StartTime, 
-          ISNULL(TotalAmount, 0) as totalAmount, 
-          CurrentOrderId as currentOrderId,
-          LockedByName as lockedByName,
-          entry_status AS entryStatus,
-          CustomerName as customerName,
-          Pax as pax
-        FROM TableMaster
-        WHERE TableId = @tableId
+          tm.TableId AS id, 
+          tm.TableNumber AS label,
+          tm.DiningSection, 
+          tm.Status, 
+          CONVERT(VARCHAR, tm.StartTime, 126) as StartTime, 
+          ISNULL(tm.TotalAmount, 0) as totalAmount, 
+          tm.CurrentOrderId as currentOrderId,
+          tm.LockedByName as lockedByName,
+          tm.entry_status AS entryStatus,
+          ISNULL(NULLIF(tm.CustomerName, 'Guest'), h.CustomerName) as customerName,
+          h.CustomerId as customerId,
+          h.MobileNo as mobileNo,
+          tm.Pax as pax
+        FROM TableMaster tm
+        OUTER APPLY (
+          SELECT TOP 1 CustomerId, CustomerName, MobileNo 
+          FROM RestaurantOrderCur 
+          WHERE (OrderNumber = tm.CurrentOrderId 
+                 OR (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(tm.TableNumber)) AND (isOrderClosed = 0 OR isOrderClosed IS NULL)))
+          ORDER BY CASE WHEN OrderNumber = tm.CurrentOrderId THEN 0 ELSE 1 END, CreatedOn DESC
+        ) h
+        WHERE tm.TableId = @tableId
       `);
 
     if (result.recordset.length === 0) {

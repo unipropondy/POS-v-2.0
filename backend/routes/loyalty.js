@@ -78,8 +78,9 @@ router.get("/status/:phone", async (req, res) => {
     }
 
     const pool = await poolPromise;
+    const cleanPhone = phone.trim();
     const result = await pool.request()
-      .input("Phone", sql.NVarChar(50), phone.trim())
+      .input("Phone", sql.NVarChar(50), cleanPhone)
       .query(`
         SELECT 
           cust.LoyaltyCustomerId, 
@@ -101,19 +102,42 @@ router.get("/status/:phone", async (req, res) => {
             AND GETDATE() BETWEEN c.StartDate AND c.EndDate
         ) s
         WHERE cust.Phone = @Phone
+           OR REPLACE(REPLACE(cust.Phone, ' ', ''), '-', '') = REPLACE(REPLACE(@Phone, ' ', ''), '-', '')
+           OR (LEN(REPLACE(REPLACE(@Phone, ' ', ''), '-', '')) >= 8 AND cust.Phone LIKE '%' + REPLACE(REPLACE(@Phone, ' ', ''), '-', ''))
+           OR (LEN(REPLACE(REPLACE(@Phone, ' ', ''), '-', '')) >= 8 AND REPLACE(REPLACE(@Phone, ' ', ''), '-', '') LIKE '%' + REPLACE(REPLACE(cust.Phone, ' ', ''), '-', ''))
       `);
 
     if (result.recordset.length > 0) {
       return res.json({ success: true, exists: true, customer: result.recordset[0] });
     } else {
-      // Return a virtual new guest customer
+      // Check if this phone belongs to a registered Member in MemberMaster
+      let memberName = "";
+      try {
+        const memRes = await pool.request()
+          .input("Phone", sql.NVarChar(50), cleanPhone)
+          .query(`
+            SELECT TOP 1 Name 
+            FROM MemberMaster 
+            WHERE IsActive = 1 AND (
+              Phone = @Phone 
+              OR REPLACE(REPLACE(Phone, ' ', ''), '-', '') = REPLACE(REPLACE(@Phone, ' ', ''), '-', '')
+              OR (LEN(REPLACE(REPLACE(@Phone, ' ', ''), '-', '')) >= 8 AND Phone LIKE '%' + REPLACE(REPLACE(@Phone, ' ', ''), '-', ''))
+              OR (LEN(REPLACE(REPLACE(@Phone, ' ', ''), '-', '')) >= 8 AND REPLACE(REPLACE(@Phone, ' ', ''), '-', '') LIKE '%' + REPLACE(REPLACE(Phone, ' ', ''), '-', ''))
+            )
+          `);
+        if (memRes.recordset.length > 0 && memRes.recordset[0].Name) {
+          memberName = memRes.recordset[0].Name;
+        }
+      } catch (_) {}
+
+      // Return a virtual new guest customer with memberName if found
       return res.json({
         success: true,
         exists: false,
         customer: {
           LoyaltyCustomerId: null,
-          Phone: phone.trim(),
-          Name: "",
+          Phone: cleanPhone,
+          Name: memberName || "",
           VisitCount: 0,
           TotalVisits: 0,
           RewardsEarned: 0,

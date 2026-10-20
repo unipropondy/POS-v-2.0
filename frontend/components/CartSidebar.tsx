@@ -1022,17 +1022,26 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
   // 🟢 OPTIMIZED: Select only the tableData we care about to prevent re-renders on other tables' updates
   const tableData = useTableStatusStore((s: any) => {
     if (!orderContext) return null;
-    if (orderContext.orderType === "TAKEAWAY") {
-      return s.tables.find(
-        (t: any) =>
-          t.section === "TAKEAWAY" && t.tableNo === orderContext.takeawayNo,
-      );
+    const cleanId = String(orderContext.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+    if (cleanId && s.tableMap && s.tableMap[cleanId]) {
+      return s.tableMap[cleanId];
     }
-    return s.tables.find(
-      (t: any) =>
-        t.section === orderContext.section &&
-        t.tableNo === orderContext.tableNo,
-    );
+    const cleanTableNo = String(orderContext.orderType === "TAKEAWAY" ? orderContext.takeawayNo : orderContext.tableNo || "").trim().toLowerCase();
+    const cleanSection = String(orderContext.section || "").trim().toLowerCase();
+    if (cleanTableNo) {
+      if (s.tableMap && s.tableMap[cleanTableNo]) {
+        return s.tableMap[cleanTableNo];
+      }
+      return (s.tables || []).find((t: any) => {
+        const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+        if (cleanId && tId === cleanId) return true;
+        const tNo = String(t.tableNo ?? "").trim().toLowerCase();
+        const tSec = String(t.section ?? "").trim().toLowerCase();
+        const secMatch = !cleanSection || tSec === cleanSection || tSec.replace(/[-_]/g, "") === cleanSection.replace(/[-_]/g, "");
+        return tNo === cleanTableNo && secMatch;
+      });
+    }
+    return null;
   });
 
   const enableKOT = useGeneralSettingsStore((s: any) => s.settings.enableKOT);
@@ -1065,9 +1074,25 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
   }, [cart]);
 
   const currentTableStatus = useMemo(() => {
-    if (!tableData) return cart.length > 0 ? "SENT" : "EMPTY";
+    // 1. Check tableData first
+    let s = tableData ? (tableData.status !== undefined ? tableData.status : (tableData as any).Status) : undefined;
 
-    const s = tableData.status !== undefined ? tableData.status : (tableData as any).Status;
+    // 2. Fallback to orderContext.status (passed directly from floor plan on table tap)
+    if (s === undefined && orderContext?.status !== undefined) {
+      s = orderContext.status;
+    }
+
+    // 3. Fallback to global tableMap by tableId
+    if (s === undefined && orderContext?.tableId) {
+      const cleanId = String(orderContext.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+      const directTable = useTableStatusStore.getState().tableMap[cleanId];
+      if (directTable) {
+        s = directTable.status !== undefined ? directTable.status : (directTable as any).Status;
+      }
+    }
+
+    if (s === undefined) return cart.length > 0 ? "SENT" : "EMPTY";
+
     const strVal = String(s ?? "").trim().toUpperCase();
 
     const statusMap: Record<string, string> = {
@@ -1086,7 +1111,7 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
     };
 
     return statusMap[strVal] || (strVal || (cart.length > 0 ? "SENT" : "EMPTY"));
-  }, [tableData, cart.length]);
+  }, [tableData, cart.length, orderContext?.status, orderContext?.tableId]);
 
   // 🟢 OPTIMIZED: Select only the specific active order we care about to prevent re-renders on other orders' updates
   const activeOrder = useActiveOrdersStore((state) => {

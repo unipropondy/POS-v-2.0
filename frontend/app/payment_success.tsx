@@ -180,10 +180,15 @@ export default function PaymentSuccess() {
     } else if (params.isSplit === "true") {
       setShowSplitConfirmModal(true);
     } else {
-      // 🐛 FIX: Use section param if set; fall back to orderType to decide TAKEAWAY vs Dining section
+      // Use section param if set; fall back to orderType to decide TAKEAWAY vs Dining section
+      const isTakeaway = orderType === "TAKEAWAY" || section === "TAKEAWAY";
       const effectiveSection = (section && section.trim() !== "")
         ? section
-        : (orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
+        : (isTakeaway ? "TAKEAWAY" : "SECTION_1");
+      const targetMode = isTakeaway ? "TAKEAWAY" : "DINE_IN";
+      const { useOrderContextStore } = require("../stores/orderContextStore");
+      useOrderContextStore.getState().setServiceMode(targetMode);
+      useOrderContextStore.getState().setActiveSection(effectiveSection);
       router.replace({
         pathname: "/(tabs)/category",
         params: { section: effectiveSection },

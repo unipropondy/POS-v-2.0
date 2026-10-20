@@ -386,6 +386,7 @@ async function syncToProfessionalTables(
   discountRemarks = null,
   mobileNo = null,
   customerName = null,
+  customerId = null,
 ) {
   const isTakeaway =
     !tableId ||
@@ -452,6 +453,8 @@ async function syncToProfessionalTables(
   let finalUserId = userId;
   if (!finalUserId || finalUserId.length < 10) finalUserId = DEFAULT_GUID;
 
+  const rawCustIdStr = customerId ? String(customerId).replace(/^\{|\}$/g, "").trim() : null;
+
   if (header) {
     orderGuid = header.OrderId;
     await transaction
@@ -465,15 +468,38 @@ async function syncToProfessionalTables(
       .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
       .input("mobileNo", sql.NVarChar(50), mobileNo || null)
       .input("customerName", sql.NVarChar(9), customerName ? String(customerName).substring(0, 9) : null)
+      .input("rawCustomerId", sql.VarChar(50), rawCustIdStr)
       .query(`
+        DECLARE @ResolvedCustomerId UNIQUEIDENTIFIER = NULL;
+        IF @rawCustomerId IS NOT NULL AND TRY_CAST(@rawCustomerId AS UNIQUEIDENTIFIER) IS NOT NULL
+          SET @ResolvedCustomerId = TRY_CAST(@rawCustomerId AS UNIQUEIDENTIFIER);
+        ELSE IF @mobileNo IS NOT NULL AND @mobileNo <> ''
+          SELECT TOP 1 @ResolvedCustomerId = MemberId 
+          FROM MemberMaster 
+          WHERE IsActive = 1 AND (
+            Phone = @mobileNo 
+            OR REPLACE(REPLACE(Phone, ' ', ''), '-', '') = REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '')
+            OR (LEN(REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '')) >= 8 AND Phone LIKE '%' + REPLACE(REPLACE(@mobileNo, ' ', ''), '-', ''))
+            OR (LEN(REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '')) >= 8 AND REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '') LIKE '%' + REPLACE(REPLACE(Phone, ' ', ''), '-', ''))
+          );
+
+        DECLARE @ResolvedCustomerName NVARCHAR(9) = @customerName;
+        IF (@ResolvedCustomerName IS NULL OR @ResolvedCustomerName = '' OR @ResolvedCustomerName = 'Guest') AND @ResolvedCustomerId IS NOT NULL
+          SELECT TOP 1 @ResolvedCustomerName = SUBSTRING(Name, 1, 9) FROM MemberMaster WHERE MemberId = @ResolvedCustomerId;
+
         UPDATE RestaurantOrderCur 
         SET PriorityCode = ISNULL(PriorityCode, @priority),
             IsTakeAway = @isTakeaway,
             DiscountAmount = CASE WHEN @discAmt > 0 THEN @discAmt ELSE DiscountAmount END,
             DiscountRemarks = CASE WHEN @discRemarks IS NOT NULL THEN @discRemarks ELSE DiscountRemarks END,
             entry_status = @entryStatus,
-            MobileNo = ISNULL(MobileNo, @mobileNo),
-            CustomerName = ISNULL(CustomerName, @customerName),
+            MobileNo = COALESCE(@mobileNo, MobileNo),
+            CustomerName = CASE 
+                            WHEN @ResolvedCustomerName IS NOT NULL AND @ResolvedCustomerName <> '' AND @ResolvedCustomerName <> 'Guest' THEN @ResolvedCustomerName
+                            WHEN CustomerName IS NOT NULL AND CustomerName <> '' AND CustomerName <> 'Guest' THEN CustomerName
+                            ELSE ISNULL(@ResolvedCustomerName, CustomerName)
+                           END,
+            CustomerId = COALESCE(@ResolvedCustomerId, CustomerId),
             OrderNumber = CASE 
                             WHEN OrderNumber IS NULL OR OrderNumber = '' OR OrderNumber = 'PENDING' OR OrderNumber = 'NEW' OR OrderNumber = '#NEW' OR OrderNumber LIKE 'TEMP-%' THEN @orderNo 
                             ELSE OrderNumber 
@@ -510,9 +536,30 @@ async function syncToProfessionalTables(
       .input("discRemarks", sql.NVarChar(250), discountRemarks || null)
       .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
       .input("mobileNo", sql.NVarChar(50), mobileNo || null)
-      .query(
-        "INSERT INTO RestaurantOrderCur (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, isOrderClosed, BusinessUnitId, PriorityCode, IsTakeAway, Pax, CustomerName, TakeawayCharge, start_date, DiscountAmount, DiscountRemarks, entry_status, MobileNo) VALUES (@orderId, @orderNo, GETDATE(), @tableNo, 1, @userId, GETDATE(), 0, @bizId, @priority, @isTakeaway, @pax, @customerName, @takeawayCharge, @startDate, @discAmt, @discRemarks, @entryStatus, @mobileNo)",
-      );
+      .input("rawCustomerId", sql.VarChar(50), rawCustIdStr)
+      .query(`
+        DECLARE @ResolvedCustomerId UNIQUEIDENTIFIER = NULL;
+        IF @rawCustomerId IS NOT NULL AND TRY_CAST(@rawCustomerId AS UNIQUEIDENTIFIER) IS NOT NULL
+          SET @ResolvedCustomerId = TRY_CAST(@rawCustomerId AS UNIQUEIDENTIFIER);
+        ELSE IF @mobileNo IS NOT NULL AND @mobileNo <> ''
+          SELECT TOP 1 @ResolvedCustomerId = MemberId 
+          FROM MemberMaster 
+          WHERE IsActive = 1 AND (
+            Phone = @mobileNo 
+            OR REPLACE(REPLACE(Phone, ' ', ''), '-', '') = REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '')
+            OR (LEN(REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '')) >= 8 AND Phone LIKE '%' + REPLACE(REPLACE(@mobileNo, ' ', ''), '-', ''))
+            OR (LEN(REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '')) >= 8 AND REPLACE(REPLACE(@mobileNo, ' ', ''), '-', '') LIKE '%' + REPLACE(REPLACE(Phone, ' ', ''), '-', ''))
+          );
+
+        DECLARE @FinalCustName NVARCHAR(9) = @customerName;
+        IF (@FinalCustName IS NULL OR @FinalCustName = '' OR @FinalCustName = 'Guest') AND @ResolvedCustomerId IS NOT NULL
+          SELECT TOP 1 @FinalCustName = SUBSTRING(Name, 1, 9) FROM MemberMaster WHERE MemberId = @ResolvedCustomerId;
+        IF @FinalCustName IS NULL OR @FinalCustName = ''
+          SET @FinalCustName = 'Guest';
+
+        INSERT INTO RestaurantOrderCur (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, isOrderClosed, BusinessUnitId, PriorityCode, IsTakeAway, Pax, CustomerName, TakeawayCharge, start_date, DiscountAmount, DiscountRemarks, entry_status, MobileNo, CustomerId) 
+        VALUES (@orderId, @orderNo, GETDATE(), @tableNo, 1, @userId, GETDATE(), 0, @bizId, @priority, @isTakeaway, @pax, @FinalCustName, @takeawayCharge, @startDate, @discAmt, @discRemarks, @entryStatus, @mobileNo, @ResolvedCustomerId);
+      `);
   }
 
   // 🛡️ GHOST SHIELD v2: Migrate SENT/READY items from orphaned open orders to the definitive order,
@@ -1507,6 +1554,8 @@ router.post("/send", async (req, res) => {
         }
       }
 
+      const rawOrderCustomerId = req.body.customerId || req.body.memberId || req.body.userId || null;
+
       // 3. FORCE SYNC with all merged order items
       await syncToProfessionalTables(
         transaction,
@@ -1520,6 +1569,7 @@ router.post("/send", async (req, res) => {
         discountRemarks,
         mobileNo,
         customerName,
+        rawOrderCustomerId
       );
 
       // 4. Lock Table to the new ID
@@ -1539,13 +1589,15 @@ router.post("/send", async (req, res) => {
           .input("oid", sql.NVarChar(50), finalOrderId)
           .input("status", sql.Int, tableStatus)
           .input("paymentStatus", sql.Int, paymentStatus)
-          .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null).query(`
+          .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
+          .input("custName", sql.NVarChar, customerName || null).query(`
             UPDATE TableMaster 
             SET Status = CASE WHEN Status = 2 THEN 2 ELSE @status END, 
                 entry_status = @entryStatus,
                 PAYMENT_STATUS = @paymentStatus,
                 CurrentOrderId = @oid,
                 StartTime = CASE WHEN StartTime IS NULL OR StartTime < '2000-01-01' THEN GETDATE() ELSE StartTime END,
+                CustomerName = CASE WHEN @custName IS NOT NULL AND @custName <> '' AND @custName <> 'Guest' THEN @custName ELSE CustomerName END,
                 ModifiedOn = GETDATE()
             WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
           `);
@@ -1700,12 +1752,12 @@ router.get("/cart/:tableId", async (req, res) => {
       return res.json({ items: [], currentOrderId: null });
     }
 
-    // Get table info (TableNumber + CurrentOrderId, PAYMENT_STATUS, Status)
+    // Get table info (TableNumber + CurrentOrderId, PAYMENT_STATUS, Status, CustomerName, Pax)
     const tableInfo = await pool
       .request()
       .input("tid", sql.VarChar(50), cleanId)
       .query(
-        "SELECT TableNumber, CurrentOrderId, PAYMENT_STATUS, Status FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
+        "SELECT TableNumber, CurrentOrderId, PAYMENT_STATUS, Status, CustomerName, Pax FROM TableMaster WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))",
       );
 
     const tableRow = tableInfo.recordset[0];
@@ -1781,26 +1833,34 @@ router.get("/cart/:tableId", async (req, res) => {
       }
     }
 
-    // 🔥 Fetch order-level discount from RestaurantOrderCur (applied by QR customer)
+    // 🔥 Fetch order-level discount and customer info from RestaurantOrderCur and TableMaster
     let orderDiscount = null;
+    let orderCustomerId = null;
+    let orderCustomerName = tableRow?.CustomerName || null;
+    let orderMobileNo = null;
     try {
       const discRes = await pool
         .request()
         .input("tableNo", sql.VarChar(20), String(tableNumber || ""))
         .input("tid", sql.VarChar(50), cleanId)
         .query(`
-          SELECT TOP 1 DiscountAmount, DiscountRemarks 
+          SELECT TOP 1 DiscountAmount, DiscountRemarks, CustomerId, CustomerName, MobileNo 
           FROM RestaurantOrderCur 
           WHERE (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid)))
             AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
           ORDER BY CreatedOn DESC
         `);
       const discRow = discRes.recordset[0];
-      if (discRow && Number(discRow.DiscountAmount) > 0) {
-        orderDiscount = {
-          amount: Number(discRow.DiscountAmount),
-          remarks: discRow.DiscountRemarks || ""
-        };
+      if (discRow) {
+        if (Number(discRow.DiscountAmount) > 0) {
+          orderDiscount = {
+            amount: Number(discRow.DiscountAmount),
+            remarks: discRow.DiscountRemarks || ""
+          };
+        }
+        orderCustomerId = discRow.CustomerId || null;
+        orderCustomerName = discRow.CustomerName || tableRow?.CustomerName || null;
+        orderMobileNo = discRow.MobileNo || null;
       }
     } catch (_) { }
 
@@ -1898,6 +1958,9 @@ router.get("/cart/:tableId", async (req, res) => {
       currentOrderId: isRealOrderId ? currentOrderId : null,
       orderNumber: isRealOrderId ? currentOrderId : null,
       orderDiscount,
+      customerId: orderCustomerId,
+      customerName: orderCustomerName,
+      mobileNo: orderMobileNo,
       paymentStatus,
       isPaid: Boolean(isPaid)
     });
@@ -2643,7 +2706,8 @@ router.get("/active-kitchen", async (req, res) => {
         ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
         ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
         pm.PrinterPath as PrinterIP,
-        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status
+        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status,
+        h.CustomerId, ISNULL(NULLIF(tm.CustomerName, 'Guest'), h.CustomerName) as CustomerName, h.MobileNo
       FROM RestaurantOrderDetailCur d 
       JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
       LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
@@ -2689,6 +2753,9 @@ router.get("/active-kitchen", async (req, res) => {
 
         orders[row.orderId] = {
           orderId: row.orderId,
+          customerId: row.CustomerId || null,
+          customerName: row.CustomerName || null,
+          mobileNo: row.MobileNo || null,
           context: {
             orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
             tableId: row.TableId
@@ -2744,7 +2811,8 @@ router.get("/active-sessions", async (req, res) => {
         ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
         ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
         pm.PrinterPath as PrinterIP,
-        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status
+        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status,
+        h.CustomerId, ISNULL(NULLIF(tm.CustomerName, 'Guest'), h.CustomerName) as CustomerName, h.MobileNo
       FROM RestaurantOrderDetailCur d 
       JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
       LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
@@ -2786,6 +2854,9 @@ router.get("/active-sessions", async (req, res) => {
 
         orders[row.orderId] = {
           orderId: row.orderId,
+          customerId: row.CustomerId || null,
+          customerName: row.CustomerName || null,
+          mobileNo: row.MobileNo || null,
           context: {
             orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
             tableId: row.TableId

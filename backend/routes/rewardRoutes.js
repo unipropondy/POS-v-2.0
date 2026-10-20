@@ -4,8 +4,12 @@ const sql = require("mssql");
 const { poolPromise } = require("../config/db");
 const { authenticateToken } = require("../middleware/auth");
 
-// All routes require auth
-router.use(authenticateToken);
+router.use((req, res, next) => {
+  if (req.method === "GET" && (req.path === "/members/by-id-or-phone" || req.path === "/members/search" || req.path === "/master")) {
+    return next();
+  }
+  return authenticateToken(req, res, next);
+});
 
 // ─────────────────────────────────────────────
 // REWARD MASTER CONFIG
@@ -109,6 +113,61 @@ router.get("/members/search", async (req, res) => {
   } catch (err) {
     console.error("[Rewards] member search error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/rewards/members/by-id-or-phone?id=&phone=
+ * Lookup a single active member with full reward details by MemberId or Phone
+ */
+router.get("/members/by-id-or-phone", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const { id, phone } = req.query;
+    const rawId = (id || "").trim();
+    const rawPhone = (phone || "").trim();
+
+    if (!rawId && !rawPhone) {
+      return res.status(400).json({ success: false, error: "Missing id or phone" });
+    }
+
+    const reqDb = pool.request();
+    const conditions = [];
+
+    if (rawId) {
+      reqDb.input("MemberId", sql.VarChar(50), rawId);
+      conditions.push("(TRY_CAST(@MemberId AS UNIQUEIDENTIFIER) IS NOT NULL AND MemberId = TRY_CAST(@MemberId AS UNIQUEIDENTIFIER))");
+    }
+
+    if (rawPhone) {
+      reqDb.input("Phone", sql.NVarChar(50), rawPhone);
+      conditions.push(`(
+        Phone = @Phone 
+        OR REPLACE(REPLACE(Phone, ' ', ''), '-', '') = REPLACE(REPLACE(@Phone, ' ', ''), '-', '')
+        OR (LEN(REPLACE(REPLACE(@Phone, ' ', ''), '-', '')) >= 8 AND Phone LIKE '%' + REPLACE(REPLACE(@Phone, ' ', ''), '-', ''))
+        OR (LEN(REPLACE(REPLACE(@Phone, ' ', ''), '-', '')) >= 8 AND REPLACE(REPLACE(@Phone, ' ', ''), '-', '') LIKE '%' + REPLACE(REPLACE(Phone, ' ', ''), '-', ''))
+      )`);
+    }
+
+    const query = `
+      SELECT TOP 1
+        MemberId, Name, Phone, Email,
+        ISNULL(RewardCredit, 0) AS RewardCredit,
+        AvailableCredit,
+        CreditLimit, CurrentBalance, IsActive
+      FROM MemberMaster
+      WHERE IsActive = 1
+        AND (${conditions.join(" OR ")})
+    `;
+
+    const result = await reqDb.query(query);
+    if (result.recordset.length > 0) {
+      return res.json({ success: true, member: result.recordset[0] });
+    }
+    return res.json({ success: false, member: null });
+  } catch (err) {
+    console.error("[Rewards] member by-id-or-phone error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

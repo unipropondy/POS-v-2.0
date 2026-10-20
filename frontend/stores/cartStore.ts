@@ -363,6 +363,7 @@ type CartState = {
   discounts: Record<string, DiscountInfo>;
   tableOrderIds: Record<string, string | null>;
   tablePaymentStatus: Record<string, { isPaid: boolean; paymentStatus: string }>;
+  orderCustomers: Record<string, { customerId?: string; customerName?: string; mobileNo?: string }>;
 
   currentContextId: string | null;
   pendingSync: boolean;
@@ -445,6 +446,7 @@ export const useCartStore = create<CartState>()(
       discounts: {},
       tableOrderIds: {},
       tablePaymentStatus: {},
+      orderCustomers: {},
       currentContextId: null,
       pendingSync: false,
       lastLocalUpdate: {},
@@ -1459,6 +1461,23 @@ export const useCartStore = create<CartState>()(
               if (tableStatus?.section && tableStatus?.tableNo) {
                 resolvedContextId = getContextId({ orderType: "DINE_IN", section: tableStatus.section, tableNo: tableStatus.tableNo });
               }
+            }
+
+            const serverCustomerId = data.customerId || null;
+            const serverCustomerName = data.customerName || null;
+            const serverMobileNo = data.mobileNo || null;
+
+            if (resolvedContextId && (serverCustomerId || serverMobileNo || serverCustomerName)) {
+              set((state) => ({
+                orderCustomers: {
+                  ...state.orderCustomers,
+                  [resolvedContextId!]: {
+                    customerId: serverCustomerId,
+                    customerName: serverCustomerName,
+                    mobileNo: serverMobileNo,
+                  }
+                }
+              }));
             }
 
             if (resolvedContextId && (!state.currentContextId || state.currentContextId !== resolvedContextId)) {

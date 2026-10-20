@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { usePathname } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -173,14 +173,18 @@ export default function SummaryScreen() {
   const [rewardSearchResults, setRewardSearchResults] = useState<any[]>([]);
   const [isSearchingRewards, setIsSearchingRewards] = useState(false);
 
-  const tableState = context?.tableId
-    ? useTableStatusStore.getState().tableMap[context.tableId.toLowerCase()]
-    : null;
+  const tableState = useTableStatusStore((s: any) => {
+    if (!context?.tableId) return null;
+    const cleanId = String(context.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+    return s.tableMap[cleanId] || (s.tables || []).find((t: any) => String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanId) || null;
+  });
 
-  const handleLoyaltyLookup = async (phoneToSearch?: string) => {
+  const handleLoyaltyLookup = useCallback(async (phoneToSearch?: string, silent: boolean = false) => {
     let targetPhone = phoneToSearch || loyaltyPhone;
     if (!targetPhone || targetPhone.trim() === "") {
-      showToast({ type: "warning", message: "Enter Phone", subtitle: "Please input a valid phone number" });
+      if (!silent) {
+        showToast({ type: "warning", message: "Enter Phone", subtitle: "Please input a valid phone number" });
+      }
       return;
     }
     if (!phoneToSearch) {
@@ -200,29 +204,33 @@ export default function SummaryScreen() {
         if (data.customer.Name) {
           setLoyaltyName(data.customer.Name);
         }
-        showToast({
-          type: "success",
-          message: data.exists ? "Customer Found" : "New Customer Enrolled",
-          subtitle: data.exists ? `Visits: ${data.customer.VisitCount} (Lifetime: ${data.customer.TotalVisits || 0})` : "First visit recorded upon checkout"
-        });
+        if (!silent) {
+          showToast({
+            type: "success",
+            message: data.exists ? "Customer Found" : "New Customer Enrolled",
+            subtitle: data.exists ? `Visits: ${data.customer.VisitCount} (Lifetime: ${data.customer.TotalVisits || 0})` : "First visit recorded upon checkout"
+          });
 
-        if (data.customer.RewardPending === 1 || data.customer.VisitCount === 9) {
-          Alert.alert(
-            "Loyalty Reward",
-            "🎉 Customer is eligible for a free food reward.",
-            [{ text: "OK" }]
-          );
+          if (data.customer.RewardPending === 1 || data.customer.VisitCount === 9) {
+            Alert.alert(
+              "Loyalty Reward",
+              "🎉 Customer is eligible for a free food reward.",
+              [{ text: "OK" }]
+            );
+          }
         }
-      } else {
+      } else if (!silent) {
         showToast({ type: "error", message: "Lookup Failed", subtitle: data.error || "Failed to search customer" });
       }
     } catch (err: any) {
       console.error("Loyalty lookup error:", err);
-      showToast({ type: "error", message: "Error connecting to server" });
+      if (!silent) {
+        showToast({ type: "error", message: "Error connecting to server" });
+      }
     } finally {
       setIsSearchingLoyalty(false);
     }
-  };
+  }, [loyaltyPhone, selectedCountry, showToast]);
 
   const handleSearchPhone = async (text: string) => {
     setLoyaltyPhone(text);
@@ -386,33 +394,6 @@ export default function SummaryScreen() {
     }
   }, [showLoyaltyModal]);
 
-  useEffect(() => {
-    const phone = (activeOrder as any)?.mobileNo || (activeOrder as any)?.MobileNo || (tableState as any)?.mobileNo || (tableState as any)?.MobileNo || "";
-    const name = (activeOrder as any)?.customerName || (activeOrder as any)?.CustomerName || (tableState as any)?.customerName || (tableState as any)?.CustomerName || "";
-    if (phone && phone.trim() !== "") {
-      const parsed = parsePhone(phone);
-      setSelectedCountry(parsed.country);
-      setLoyaltyPhone(parsed.rest);
-      handleLoyaltyLookup(phone);
-    }
-    if (name && name.trim() !== "") {
-      setLoyaltyName(name);
-    }
-  }, [activeOrder, tableState]);
-
-  useEffect(() => {
-    if (params.autoPay === "true" && context) {
-      router.setParams({ autoPay: undefined });
-      router.push({
-        pathname: "/payment",
-        params: {
-          mobileNo: loyaltyPhone ? `${selectedCountry.code} ${loyaltyPhone.trim()}` : "",
-          customerName: loyaltyName || "",
-        },
-      });
-    }
-  }, [params.autoPay, context, loyaltyPhone, selectedCountry, loyaltyName]);
-
   const settings = useCompanySettingsStore((state: any) => state.settings);
   const currencySymbol = settings.currencySymbol || "$";
   const gstRate = (settings.gstPercentage || 0) / 100;
@@ -426,8 +407,192 @@ export default function SummaryScreen() {
   const showRewardPoints = useGeneralSettingsStore((s: any) => s.settings.showRewardPoints !== false);
   const showPromoCode = useGeneralSettingsStore((s: any) => s.settings.showPromoCode !== false);
 
+  // Re-fetch General Settings whenever screen is focused to ensure toggle state is fresh
+  useEffect(() => {
+    if (isFocused) {
+      useGeneralSettingsStore.getState().fetchSettings().catch(() => {});
+    }
+  }, [isFocused]);
+
+  // 🎯 UNIFIED CUSTOMER AUTO-SELECTION FOR QR & REGISTERED ORDERS
+  const lastAutoSelectedRef = useRef<string>("");
+
+  const autoSelectCustomer = useCallback(
+    async (cust: {
+      customerId?: string;
+      mobileNo?: string;
+      customerName?: string;
+    }) => {
+      // 1. Read General Settings toggle: When Loyalty Feature is OFF, auto-selection must not run
+      const genSettings = useGeneralSettingsStore.getState().settings;
+      const isLoyaltyEnabled = genSettings.showLoyalty !== false;
+      const isRewardEnabled = genSettings.showRewardPoints !== false;
+
+      if (!isLoyaltyEnabled) {
+        console.log("🎯 [Summary] Auto-selection skipped: Loyalty Feature is turned OFF in General Settings");
+        return;
+      }
+
+      const id = (cust.customerId || "").trim();
+      const phone = (cust.mobileNo || "").trim();
+      const name = (cust.customerName || "").trim();
+
+      // If both ID and phone are empty, or explicitly anonymous guest with no ID/phone, preserve guest/manual flow
+      if (!id && !phone) return;
+      if (!id && !phone && (!name || name.toLowerCase() === "guest")) return;
+
+      const key = `${id}__${phone}`;
+      if (lastAutoSelectedRef.current === key) return;
+      lastAutoSelectedRef.current = key;
+
+      console.log("🎯 [Summary] Auto-selecting customer (Loyalty Feature is ON):", { id, phone, name });
+
+      try {
+        const token = useAuthStore.getState().token;
+        let effectivePhone = phone;
+        let effectiveName = name && name.toLowerCase() !== "guest" ? name : "";
+
+        // Fetch Member for Reward Points & Member Info (only if Reward Points Feature is enabled)
+        if (isRewardEnabled) {
+          const lookupUrl = `${API_URL}/api/rewards/members/by-id-or-phone?id=${encodeURIComponent(id)}&phone=${encodeURIComponent(phone)}`;
+          const res = await fetch(lookupUrl, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          const data = await res.json();
+
+          if (data.success && data.member) {
+            setRewardMember(data.member);
+            if (data.member.Phone) effectivePhone = data.member.Phone;
+            if (data.member.Name) effectiveName = data.member.Name;
+          }
+        }
+
+        // Select Loyalty and load visits & reward eligibility silently
+        if (effectivePhone) {
+          const parsed = parsePhone(effectivePhone);
+          setSelectedCountry(parsed.country);
+          setLoyaltyPhone(parsed.rest);
+          handleLoyaltyLookup(effectivePhone, true);
+        }
+
+        if (effectiveName) {
+          setLoyaltyName(effectiveName);
+        }
+      } catch (err) {
+        console.error("🎯 [Summary] autoSelectCustomer error:", err);
+      }
+    },
+    [handleLoyaltyLookup],
+  );
+
+  // If Loyalty Feature toggle is turned OFF, clear auto-selected customer to preserve manual/empty flow
+  useEffect(() => {
+    if (!showLoyalty) {
+      lastAutoSelectedRef.current = "";
+      setLoyaltyCustomer(null);
+      setRewardMember(null);
+      setLoyaltyPhone("");
+      setLoyaltyName("");
+    }
+  }, [showLoyalty]);
+
+  // If Reward Points toggle is turned OFF, unlink rewardMember
+  useEffect(() => {
+    if (!showRewardPoints && rewardMember) {
+      setRewardMember(null);
+    }
+  }, [showRewardPoints]);
+
   const currentContextId = useCartStore((s: any) => s.currentContextId);
   const cart = useCartStore((s: any) => (currentContextId ? s.carts[currentContextId] : undefined) || EMPTY_ARRAY);
+  const orderCustomer = useCartStore((s: any) => (currentContextId ? s.orderCustomers?.[currentContextId] : undefined));
+
+  // Trigger customer auto-selection whenever activeOrder, tableState, or orderCustomer is available (if toggle is ON)
+  useEffect(() => {
+    if (!showLoyalty) return; // Skip auto-selection when toggle is OFF
+    const custId =
+      (activeOrder as any)?.customerId ||
+      (activeOrder as any)?.CustomerId ||
+      orderCustomer?.customerId ||
+      "";
+    const phone =
+      (activeOrder as any)?.mobileNo ||
+      (activeOrder as any)?.MobileNo ||
+      orderCustomer?.mobileNo ||
+      (tableState as any)?.mobileNo ||
+      (tableState as any)?.MobileNo ||
+      "";
+    const name =
+      (activeOrder as any)?.customerName ||
+      (activeOrder as any)?.CustomerName ||
+      orderCustomer?.customerName ||
+      (tableState as any)?.customerName ||
+      (tableState as any)?.CustomerName ||
+      "";
+
+    if (custId || (phone && phone.trim() !== "")) {
+      autoSelectCustomer({ customerId: custId, mobileNo: phone, customerName: name });
+    } else if (name && name.trim() !== "" && name.toLowerCase() !== "guest") {
+      setLoyaltyName(name);
+    }
+  }, [activeOrder, tableState, orderCustomer, showLoyalty, autoSelectCustomer]);
+
+  // Unified customer name for summary header and bill summary
+  const effectiveCustomerName =
+    loyaltyCustomer?.Name ||
+    loyaltyName ||
+    rewardMember?.Name ||
+    (activeOrder as any)?.customerName ||
+    (activeOrder as any)?.CustomerName ||
+    orderCustomer?.customerName ||
+    (tableState as any)?.customerName ||
+    (tableState as any)?.CustomerName ||
+    "";
+
+  // QR Session Matcher for same-device web testing (if toggle is ON)
+  useEffect(() => {
+    if (!showLoyalty) return; // Skip auto-selection when toggle is OFF
+    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage && !rewardMember) {
+      try {
+        const savedUserStr = localStorage.getItem("qr_pos_user");
+        if (savedUserStr) {
+          const savedUser = JSON.parse(savedUserStr);
+          const savedTableId = localStorage.getItem("qr_pos_table_id");
+          const savedTableNo = localStorage.getItem("qr_pos_table_no");
+          const currentTableId = context?.tableId;
+          const currentTableNo = context?.tableNo;
+
+          const matchesTable =
+            (currentTableId && savedTableId && currentTableId.toLowerCase() === savedTableId.toLowerCase()) ||
+            (currentTableNo && savedTableNo && String(currentTableNo).toLowerCase() === String(savedTableNo).toLowerCase());
+
+          if (matchesTable && (savedUser.MemberId || savedUser.CustomerId || savedUser.phone)) {
+            autoSelectCustomer({
+              customerId: savedUser.CustomerId || savedUser.MemberId || savedUser.UserId,
+              mobileNo: savedUser.phone || savedUser.Phone || savedUser.mobileNo,
+              customerName: savedUser.name || savedUser.Name || savedUser.customerName,
+            });
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [context?.tableId, context?.tableNo, rewardMember, showLoyalty, autoSelectCustomer]);
+
+  useEffect(() => {
+    if (params.autoPay === "true" && context) {
+      router.setParams({ autoPay: undefined });
+      router.push({
+        pathname: "/payment",
+        params: {
+          mobileNo: loyaltyPhone ? `${selectedCountry.code} ${loyaltyPhone.trim()}` : "",
+          customerName: loyaltyName || "",
+          rewardMemberId: rewardMember?.MemberId || "",
+        },
+      });
+    }
+  }, [params.autoPay, context, loyaltyPhone, selectedCountry, loyaltyName, rewardMember]);
   
   const currentTableOrderId = useCartStore((s: any) => context?.tableId ? s.tableOrderIds[context.tableId] : undefined);
   const displayOrderId = currentTableOrderId || activeOrder?.orderId;
@@ -447,7 +612,7 @@ export default function SummaryScreen() {
   }, []);
 
   useEffect(() => {
-    // 1. Sync official Order ID from DB
+    // 1. Sync official Order ID and customer from DB
     if (context?.tableId) {
       fetch(`${API_URL}/api/tables/${context.tableId}`)
         .then((res) => res.json())
@@ -458,10 +623,18 @@ export default function SummaryScreen() {
               .getState()
               .setTableOrderId(context.tableId!, oid);
           }
+          if (data.success && data.table) {
+            const custId = data.table.customerId || data.table.CustomerId;
+            const phone = data.table.mobileNo || data.table.MobileNo;
+            const name = data.table.customerName || data.table.CustomerName;
+            if (showLoyalty && (custId || (phone && String(phone).trim() !== ""))) {
+              autoSelectCustomer({ customerId: custId, mobileNo: phone, customerName: name });
+            }
+          }
         })
         .catch((err) => console.error("Summary ID sync error:", err));
     }
-  }, [activeOrder]);
+  }, [activeOrder, context?.tableId, showLoyalty, autoSelectCustomer]);
 
   // Load saved SC override and takeaway charge for this order whenever focused
   useEffect(() => {
@@ -1721,6 +1894,14 @@ export default function SummaryScreen() {
                       </Text>
                     </View>
                   )}
+                  {effectiveCustomerName && effectiveCustomerName.toLowerCase() !== "guest" && (
+                    <View style={[styles.tableBadge, { backgroundColor: "#FFF7ED", borderColor: "#F97316", borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 4 }]}>
+                      <Ionicons name="person" size={12} color="#EA580C" />
+                      <Text style={[styles.tableBadgeText, { color: "#EA580C", fontFamily: Fonts.bold }]}>
+                        {effectiveCustomerName}
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Scrollable Action Buttons */}
@@ -1787,6 +1968,14 @@ export default function SummaryScreen() {
                         <Text style={styles.tableBadgeText}>
                           {formatSection(context.section || "")} • T
                           {context.tableNo}
+                        </Text>
+                      </View>
+                    )}
+                    {effectiveCustomerName && effectiveCustomerName.toLowerCase() !== "guest" && (
+                      <View style={[styles.tableBadge, { backgroundColor: "#FFF7ED", borderColor: "#F97316", borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 4 }]}>
+                        <Ionicons name="person" size={12} color="#EA580C" />
+                        <Text style={[styles.tableBadgeText, { color: "#EA580C", fontFamily: Fonts.bold }]}>
+                          {effectiveCustomerName}
                         </Text>
                       </View>
                     )}
@@ -2214,6 +2403,31 @@ export default function SummaryScreen() {
                     </View>
                   );
                 })()}
+
+                {/* 👤 CUSTOMER INFO DISPLAY (for guest / QR / non-member diners) */}
+                {!loyaltyCustomer && !rewardMember && effectiveCustomerName && effectiveCustomerName.toLowerCase() !== "guest" && (
+                  <View
+                    style={{
+                      backgroundColor: "#FFF7ED",
+                      borderColor: "#FDBA74",
+                      borderWidth: 1,
+                      borderRadius: 10,
+                      padding: 12,
+                      marginBottom: 12,
+                      gap: 4,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="person-circle" size={18} color="#EA580C" />
+                      <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary, flex: 1 }}>
+                        Customer: {effectiveCustomerName}
+                      </Text>
+                      <View style={{ backgroundColor: "#FFEDD5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: "#EA580C" }}>QR Diner</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
 
                 <View
                   style={[

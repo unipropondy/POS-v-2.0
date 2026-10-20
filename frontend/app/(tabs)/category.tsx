@@ -1,8 +1,9 @@
 import CalendarPicker from "@/components/CalendarPicker";
-import { socket } from "@/constants/socket";
+import { FloorPlanTable } from "@/components/FloorPlanTable";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
+import { socket } from "@/constants/socket";
 import { Theme } from "@/constants/theme";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -10,8 +11,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   FlatList,
   Modal,
   Platform,
@@ -23,10 +25,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   useWindowDimensions,
-  View,
-  Animated,
-  Easing,
-  ImageBackground,
+  View
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import {
@@ -35,7 +34,6 @@ import {
 } from "react-native-safe-area-context";
 import { useToast } from "../../components/Toast";
 import WindowControls from "../../components/WindowControls";
-import { FloorPlanTable } from "@/components/FloorPlanTable";
 import {
   formatToSingaporeTime,
   getSingaporeDateString,
@@ -54,10 +52,10 @@ import {
   setCurrentContext,
   useCartStore,
 } from "@/stores/cartStore";
+import { useCompanySettingsStore } from "@/stores/companySettingsStore";
 import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 import { getHeldOrders } from "@/stores/heldOrdersStore";
 import { useNotificationStore } from "@/stores/notificationStore";
-import { useCompanySettingsStore } from "@/stores/companySettingsStore";
 import { clearOrderContext, OrderContext, setOrderContext, useOrderContextStore } from "@/stores/orderContextStore";
 import { usePaymentSettingsStore } from "@/stores/paymentSettingsStore";
 import { Image } from "expo-image";
@@ -72,6 +70,26 @@ const getSectionFromDiningSection = (ds: number) => {
   if (ds === 2) return "SECTION_2";
   if (ds === 3) return "SECTION_3";
   return "TAKEAWAY";
+};
+
+const isTWTable = (t: any) => {
+  if (!t) return false;
+  const lbl = String(t.label || t.TableNumber || t.tableNo || "").trim().toUpperCase();
+  return lbl.startsWith("TW");
+};
+
+const getSectionTables = (section: string, list: any[]) => {
+  if (!Array.isArray(list)) return [];
+  if (section === "TAKEAWAY") {
+    return list.filter((t: any) => t.DiningSection === 4 || isTWTable(t));
+  } else if (section === "SECTION_1") {
+    return list.filter((t: any) => t.DiningSection === 1 && !isTWTable(t));
+  } else if (section === "SECTION_2") {
+    return list.filter((t: any) => t.DiningSection === 2 && !isTWTable(t));
+  } else if (section === "SECTION_3") {
+    return list.filter((t: any) => t.DiningSection === 3 && !isTWTable(t));
+  }
+  return [];
 };
 
 // --- MOBILE SOLID COLORS ---
@@ -506,8 +524,8 @@ const TableItemComponent = React.memo(
   }) => {
     // 🚀 O(1) Store Subscription: Only re-renders when THIS table changes
     const cleanId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
-    const tableData = useTableStatusStore((state) => 
-      state.tableMap[cleanId] || 
+    const tableData = useTableStatusStore((state) =>
+      state.tableMap[cleanId] ||
       state.tables.find(t => String(t.tableNo) === String(item.label) && t.section === getSectionFromDiningSection(item.DiningSection))
     );
 
@@ -533,18 +551,18 @@ const TableItemComponent = React.memo(
       status === 0 || tableData?.status === "EMPTY"
         ? 0
         : (tableData?.totalAmount !== undefined
-            ? tableData.totalAmount
-            : Number(item.totalAmount) || 0);
+          ? tableData.totalAmount
+          : Number(item.totalAmount) || 0);
 
     const rawStartTime =
       status === 0 || tableData?.status === "EMPTY"
         ? 0
         : (tableData?.startTime ||
-            (item.StartTime
-              ? typeof item.StartTime === "string"
-                ? parseDatabaseDate(item.StartTime).getTime()
-                : item.StartTime
-              : 0));
+          (item.StartTime
+            ? typeof item.StartTime === "string"
+              ? parseDatabaseDate(item.StartTime).getTime()
+              : item.StartTime
+            : 0));
 
     const isOvertime =
       status !== 0 &&
@@ -643,7 +661,7 @@ const TableItemComponent = React.memo(
     }
 
     const offset = 5; // gap between table edge and chair
-    
+
     // Override AVAILABLE colors for premium beige look matching reference
     let activeColor = status === 0 ? "#D1C7BD" : ui.color;
     let activeBg = status === 0 ? "#FAF8F5" : ui.lightBg;
@@ -681,7 +699,7 @@ const TableItemComponent = React.memo(
         }
       }
     }
-    
+
     // Label color mapping for high-readability text
     if (backgroundTheme === "light") {
       labelColor = "#000000";
@@ -715,12 +733,12 @@ const TableItemComponent = React.memo(
           const angle = (i * 2 * Math.PI) / seatsCount - Math.PI / 2; // start from top
           const x = cx + (rx + radiusOffset) * Math.cos(angle) - chairSize / 2;
           const y = cy + (ry + radiusOffset) * Math.sin(angle) - chairSize / 2;
-          
+
           // Rotation so backrest (top border) faces outwards
           const rotationAngle = angle + Math.PI / 2;
-          chairPositions.push({ 
-            x, 
-            y, 
+          chairPositions.push({
+            x,
+            y,
             rotate: `${rotationAngle}rad`,
             backrestStyle: { top: 0, left: 0, right: 0, height: 2.2, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 }
           });
@@ -907,9 +925,9 @@ const TableItemComponent = React.memo(
           <Text
             style={[
               styles.tableNumber,
-              { 
-                fontSize: numberFont, 
-                color: "#000000", 
+              {
+                fontSize: numberFont,
+                color: "#000000",
                 fontWeight: "900"
               },
             ]}
@@ -922,8 +940,8 @@ const TableItemComponent = React.memo(
               <View
                 style={[
                   styles.statusChip,
-                  { 
-                    backgroundColor: activeBg, 
+                  {
+                    backgroundColor: activeBg,
                     borderColor: activeColor,
                     paddingHorizontal: 4,
                     paddingVertical: 2,
@@ -1032,26 +1050,26 @@ const TableItemComponent = React.memo(
         />
 
 
-          {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
-          {terminalStatus && terminalStatus !== "idle" && (
-            <TouchableOpacity
-              style={[
-                styles.terminalProcessingBadge,
-                (terminalStatus === "cancelled" || terminalStatus === "failed") &&
-                  styles.terminalErrorBadge,
-              ]}
-              onPress={(e) => {
-                e.stopPropagation();
-                useTerminalPaymentStore.getState().clearSession(tableId);
-              }}
-            >
-              {terminalStatus === "processing" ? (
-                <RotatingSyncIcon size={20} color="#3b82f6" />
-              ) : (
-                <Ionicons name="alert" size={16} color="#ffffff" />
-              )}
-            </TouchableOpacity>
-          )}
+        {/* 🟢 LIVE TERMINAL INDICATOR: top-left spinner for processing, circular red error badge when cancelled/failed */}
+        {terminalStatus && terminalStatus !== "idle" && (
+          <TouchableOpacity
+            style={[
+              styles.terminalProcessingBadge,
+              (terminalStatus === "cancelled" || terminalStatus === "failed") &&
+              styles.terminalErrorBadge,
+            ]}
+            onPress={(e) => {
+              e.stopPropagation();
+              useTerminalPaymentStore.getState().clearSession(tableId);
+            }}
+          >
+            {terminalStatus === "processing" ? (
+              <RotatingSyncIcon size={20} color="#3b82f6" />
+            ) : (
+              <Ionicons name="alert" size={16} color="#ffffff" />
+            )}
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   },
@@ -1164,35 +1182,48 @@ export default function Category() {
 
   const [backgroundTheme, setBackgroundTheme] = useState("champagne_fizz");
 
-  const [activeTab, setActiveTab] = useState<string>("SECTION_1");
-
+  const { section: urlSection } = useLocalSearchParams<{ section?: string }>();
   const orderContext = useOrderContextStore((state) => state.currentOrder);
+  const serviceModeStore = useOrderContextStore((state) => state.serviceMode);
+  const activeSectionStore = useOrderContextStore((state) => state.activeSection);
+  const setActiveSectionStore = useOrderContextStore((state) => state.setActiveSection);
+
+  const effectiveMode = useMemo(() => {
+    if (orderContext?.orderType === "TAKEAWAY" || urlSection === "TAKEAWAY") return "TAKEAWAY";
+    if (orderContext?.orderType === "DINE_IN" || (urlSection && urlSection.startsWith("SECTION_"))) return "DINE_IN";
+    if (serviceModeStore) return serviceModeStore;
+    if (activeSectionStore === "TAKEAWAY") return "TAKEAWAY";
+    return "DINE_IN";
+  }, [orderContext?.orderType, urlSection, serviceModeStore, activeSectionStore]);
+
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (urlSection && SECTIONS.includes(urlSection)) return urlSection;
+    if (activeSectionStore && SECTIONS.includes(activeSectionStore)) return activeSectionStore;
+    return effectiveMode === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1";
+  });
 
   const visibleSections = useMemo(() => {
     if (settings?.enableQuickServe === false) {
       return SECTIONS;
     }
-    if (orderContext?.orderType === "TAKEAWAY") {
+    if (effectiveMode === "TAKEAWAY") {
       return ["TAKEAWAY"];
     }
-    if (orderContext?.orderType === "DINE_IN") {
-      return ["SECTION_1", "SECTION_2", "SECTION_3"];
-    }
-    return SECTIONS;
-  }, [orderContext?.orderType, settings?.enableQuickServe]);
+    return ["SECTION_1", "SECTION_2", "SECTION_3"];
+  }, [effectiveMode, settings?.enableQuickServe]);
 
   useEffect(() => {
     if (settings?.enableQuickServe === false) {
       return;
     }
-    if (orderContext?.orderType === "TAKEAWAY") {
+    if (effectiveMode === "TAKEAWAY") {
       setActiveTab("TAKEAWAY");
-    } else if (orderContext?.orderType === "DINE_IN") {
+    } else {
       if (activeTab === "TAKEAWAY") {
         setActiveTab("SECTION_1");
       }
     }
-  }, [orderContext?.orderType, settings?.enableQuickServe]);
+  }, [effectiveMode, settings?.enableQuickServe]);
 
   const getSectionNum = (tab: string) => {
     if (tab === "TAKEAWAY") return "4";
@@ -1221,7 +1252,6 @@ export default function Category() {
   }, [activeTab]);
 
   const { showToast } = useToast();
-  const { section: urlSection } = useLocalSearchParams<{ section?: string }>();
   const isWindows = Platform.OS === "windows" || (Platform.OS === "web" && typeof navigator !== "undefined" && /win/i.test(navigator.platform || navigator.userAgent));
   const [allTables, setAllTables] = useState<TableItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1914,13 +1944,7 @@ export default function Category() {
   // Individual TableItemComponents now subscribe to their own status.
 
   const currentTables = useMemo(() => {
-    const filtered = allTables.filter((table: TableItem) => {
-      if (activeTab === "TAKEAWAY") return table.DiningSection === 4;
-      else if (activeTab === "SECTION_1") return table.DiningSection === 1;
-      else if (activeTab === "SECTION_2") return table.DiningSection === 2;
-      else if (activeTab === "SECTION_3") return table.DiningSection === 3;
-      return false;
-    });
+    const filtered = getSectionTables(activeTab, allTables);
 
     return [...filtered].sort((a, b) => {
       const aLocked = a.Status === 5;
@@ -2055,15 +2079,23 @@ export default function Category() {
         // fetchTables();
         const targetTable = allTables.find((t) => t.id === id);
         if (targetTable) {
-          const section = getSectionFromDiningSection(
-            targetTable.DiningSection,
+          const isTakeaway = isTWTable(targetTable) || targetTable.DiningSection === 4 || activeTab === "TAKEAWAY";
+          const section = isTakeaway ? "TAKEAWAY" : getSectionFromDiningSection(targetTable.DiningSection);
+          setOrderContext(
+            isTakeaway
+              ? {
+                  orderType: "TAKEAWAY",
+                  section: "TAKEAWAY",
+                  takeawayNo: targetTable.label,
+                  tableId: id,
+                }
+              : {
+                  orderType: "DINE_IN",
+                  section: section,
+                  tableNo: targetTable.label,
+                  tableId: id,
+                }
           );
-          setOrderContext({
-            orderType: "DINE_IN",
-            section: section,
-            tableNo: targetTable.label,
-            tableId: id,
-          });
           if (checkoutFlowEnabled) {
             const checkoutSection = section; // section is already computed above
             clearOrderContext();
@@ -2194,6 +2226,8 @@ export default function Category() {
         return;
       }
 
+      const isTakeawayTable = isTWTable(item) || item.DiningSection === 4 || activeTab === "TAKEAWAY";
+
       // 🚀 RESTORE FLOW: If there is a live terminal session for this table, bypass all
       // popups and route directly to /payment so staff can monitor the ongoing transaction.
       const activeTerminalSession = useTerminalPaymentStore.getState().getSession(item.id);
@@ -2203,13 +2237,22 @@ export default function Category() {
         (activeTerminalSession && (activeTerminalSession.status === "processing" || activeTerminalSession.status === "cancelled" || activeTerminalSession.status === "failed")) ||
         isSplitPersisted
       ) {
-        const section = getSectionFromDiningSection(item.DiningSection);
-        setOrderContext({
-          orderType: "DINE_IN",
-          section,
-          tableNo: item.label,
-          tableId: item.id,
-        });
+        const section = isTakeawayTable ? "TAKEAWAY" : getSectionFromDiningSection(item.DiningSection);
+        setOrderContext(
+          isTakeawayTable
+            ? {
+                orderType: "TAKEAWAY",
+                section: "TAKEAWAY",
+                takeawayNo: item.label,
+                tableId: item.id,
+              }
+            : {
+                orderType: "DINE_IN",
+                section,
+                tableNo: item.label,
+                tableId: item.id,
+              }
+        );
         router.push({
           pathname: "/payment",
           params: isSplitPersisted ? { isSplit: "true" } : {},
@@ -2242,13 +2285,22 @@ export default function Category() {
 
       if (status === 1 || status === 2 || status === 3 || status === 4) {
         // For occupied tables, set context and go to summary/menu
-        const section = getSectionFromDiningSection(item.DiningSection);
-        const existingContext: OrderContext = {
-          orderType: "DINE_IN",
-          section: section,
-          tableNo: item.label,
-          tableId: item.id,
-        };
+        const section = isTakeawayTable ? "TAKEAWAY" : getSectionFromDiningSection(item.DiningSection);
+        const existingContext: OrderContext = isTakeawayTable
+          ? {
+              orderType: "TAKEAWAY",
+              section: "TAKEAWAY",
+              takeawayNo: item.label,
+              tableId: item.id,
+              status: status === 2 ? "BILL_REQUESTED" : status === 3 ? "HOLD" : status === 1 ? "SENT" : undefined,
+            }
+          : {
+              orderType: "DINE_IN",
+              section: section,
+              tableNo: item.label,
+              tableId: item.id,
+              status: status === 2 ? "BILL_REQUESTED" : status === 3 ? "HOLD" : status === 1 ? "SENT" : undefined,
+            };
         setOrderContext(existingContext);
         const contextId = getContextId(existingContext);
         if (contextId) {
@@ -2353,19 +2405,23 @@ export default function Category() {
     const status = effectiveStatus;
 
     let newContext: any;
-    if (activeTab !== "TAKEAWAY") {
+    const computedStatus = status === 2 ? "BILL_REQUESTED" : status === 3 ? "HOLD" : status === 1 ? "SENT" : undefined;
+    const isTakeaway = isTWTable(item) || item.DiningSection === 4 || activeTab === "TAKEAWAY";
+    if (!isTakeaway) {
       newContext = {
         orderType: "DINE_IN" as const,
         section: activeTab,
         tableNo: item.label,
         tableId: item.id,
+        status: computedStatus,
       };
     } else {
       newContext = {
         orderType: "TAKEAWAY" as const,
-        section: "TAKEAWAY", // 🐛 FIX: section must be set so payment_success can navigate back to TAKEAWAY tab
+        section: "TAKEAWAY",
         takeawayNo: item.label,
         tableId: item.id,
+        status: computedStatus,
       };
     }
 
@@ -2925,13 +2981,7 @@ export default function Category() {
                 )}
                 {visibleSections.map((section) => {
                   const isActive = activeTab === section;
-                  const sectionTables = allTables.filter((t: TableItem) => {
-                    if (section === "TAKEAWAY") return t.DiningSection === 4;
-                    if (section === "SECTION_1") return t.DiningSection === 1;
-                    if (section === "SECTION_2") return t.DiningSection === 2;
-                    if (section === "SECTION_3") return t.DiningSection === 3;
-                    return false;
-                  });
+                  const sectionTables = getSectionTables(section, allTables);
                   const occupied = sectionTables.filter((t: TableItem) => {
                     const tableData = tableMap[t.id];
                     const status = tableData
@@ -2951,7 +3001,10 @@ export default function Category() {
                   return (
                     <TouchableOpacity
                       key={section}
-                      onPress={() => setActiveTab(section)}
+                      onPress={() => {
+                        setActiveTab(section);
+                        setActiveSectionStore(section);
+                      }}
                       activeOpacity={0.75}
                       style={[
                         styles.tabBtn,
@@ -3238,13 +3291,7 @@ export default function Category() {
                 )}
                 {visibleSections.map((section) => {
                   const isActive = activeTab === section;
-                  const sectionTables = allTables.filter((t: TableItem) => {
-                    if (section === "TAKEAWAY") return t.DiningSection === 4;
-                    if (section === "SECTION_1") return t.DiningSection === 1;
-                    if (section === "SECTION_2") return t.DiningSection === 2;
-                    if (section === "SECTION_3") return t.DiningSection === 3;
-                    return false;
-                  });
+                  const sectionTables = getSectionTables(section, allTables);
                   const occupied = sectionTables.filter((t: TableItem) => {
                     const tableData = tableMap[t.id];
                     const status = tableData
@@ -3264,7 +3311,10 @@ export default function Category() {
                   return (
                     <TouchableOpacity
                       key={section}
-                      onPress={() => setActiveTab(section)}
+                      onPress={() => {
+                        setActiveTab(section);
+                        setActiveSectionStore(section);
+                      }}
                       activeOpacity={0.75}
                       style={[
                         styles.tabBtn,
@@ -3548,13 +3598,7 @@ export default function Category() {
               )}
               {visibleSections.map((section) => {
                 const isActive = activeTab === section;
-                const sectionTables = allTables.filter((t: TableItem) => {
-                  if (section === "TAKEAWAY") return t.DiningSection === 4;
-                  if (section === "SECTION_1") return t.DiningSection === 1;
-                  if (section === "SECTION_2") return t.DiningSection === 2;
-                  if (section === "SECTION_3") return t.DiningSection === 3;
-                  return false;
-                });
+                const sectionTables = getSectionTables(section, allTables);
                 const occupied = sectionTables.filter((t: TableItem) => {
                   const tableData = tableMap[t.id];
                   const status = tableData
@@ -3574,7 +3618,10 @@ export default function Category() {
                 return (
                   <TouchableOpacity
                     key={section}
-                    onPress={() => setActiveTab(section)}
+                    onPress={() => {
+                      setActiveTab(section);
+                      setActiveSectionStore(section);
+                    }}
                     activeOpacity={0.75}
                     style={[
                       styles.tabBtn,
@@ -4889,7 +4936,7 @@ export default function Category() {
             </View>
           ) : (
             <View style={{ flex: 1 }} onLayout={onContainerLayout}>
-              <ScrollView 
+              <ScrollView
                 contentContainerStyle={{ padding: 16, paddingBottom: 80 }}
                 showsVerticalScrollIndicator={false}
                 style={{ flex: 1 }}
@@ -4942,9 +4989,9 @@ export default function Category() {
                 </CanvasBackground>
               </ScrollView>
             </View>
-        )}
-      </View>
-    )}
+          )}
+        </View>
+      )}
       {/* 〰〰〰〰〰〰〰〰〰〰〰 CUSTOMER GUEST & PAX MODAL 〰〰〰〰〰〰〰〰〰〰〰 */}
       <Modal
         visible={guestModalVisible}
@@ -5364,19 +5411,8 @@ export default function Category() {
                 );
               } else {
                 // Show only available tables in selected section
-                const secNum =
-                  moveActiveSection === "TAKEAWAY"
-                    ? 4
-                    : moveActiveSection === "SECTION_1"
-                      ? 1
-                      : moveActiveSection === "SECTION_2"
-                        ? 2
-                        : 3;
-                let list = realTimeTables.filter(
-                  (t) =>
-                    t.DiningSection === secNum &&
-                    Number(t.Status) === 0 &&
-                    t.id !== moveSourceTable?.id,
+                let list = getSectionTables(moveActiveSection, realTimeTables).filter(
+                  (t) => Number(t.Status) === 0 && t.id !== moveSourceTable?.id,
                 );
                 if (q)
                   list = list.filter((t) => t.label.toLowerCase().includes(q));

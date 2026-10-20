@@ -388,7 +388,7 @@ export default function CustomerWelcomeScreen() {
     }
   };
 
-  const proceedToMenu = (user: { userName: string; fullName?: string; phone?: string; email?: string; promoCode?: string; promoAmount?: number }) => {
+  const proceedToMenu = (user: { customerId?: string; memberId?: string; userId?: string; userName: string; fullName?: string; phone?: string; email?: string; promoCode?: string; promoAmount?: number }) => {
     if (!scannedTable) {
       Alert.alert("No Table", "Please scan a table QR code first.");
       return;
@@ -396,6 +396,9 @@ export default function CustomerWelcomeScreen() {
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("qr_pos_user", JSON.stringify({
+        CustomerId: user.customerId || user.memberId || user.userId || "",
+        MemberId: user.memberId || user.customerId || user.userId || "",
+        UserId: user.userId || user.memberId || user.customerId || "",
         UserName: user.userName,
         FullName: user.fullName || user.userName,
         Phone: user.phone || "",
@@ -469,7 +472,11 @@ export default function CustomerWelcomeScreen() {
         setTransitioning(true);
         setTimeout(() => {
           const loggedInUser = {
+            customerId: data.user.memberId || data.user.userId || data.user.id || "",
+            memberId: data.user.memberId || data.user.userId || data.user.id || "",
+            userId: data.user.userId || data.user.memberId || data.user.id || "",
             userName: data.user.userName,
+            fullName: data.user.fullName || data.user.userName,
             phone: data.user.phone,
             email: data.user.email,
             promoCode: data.user.Promocode,
@@ -523,7 +530,18 @@ export default function CustomerWelcomeScreen() {
       if (data.success) {
         setTransitioning(true);
         setTimeout(() => {
-          const registeredUser = { userName: regUsername.trim(), phone: regCountryCode + regPhone.trim(), email: regEmail.trim() };
+          const newMemberId = data.user?.MemberId || data.user?.memberId || data.user?.id || "";
+          const registeredUser = { 
+            customerId: newMemberId,
+            memberId: newMemberId,
+            userId: newMemberId,
+            userName: regUsername.trim(), 
+            fullName: regUsername.trim(),
+            phone: regCountryCode + regPhone.trim(), 
+            email: regEmail.trim(),
+            promoCode: data.user?.Promocode || "",
+            promoAmount: data.user?.Promoamount || 0,
+          };
           setTempUser(registeredUser);
           setTransitioning(false);
           proceedToMenu(registeredUser);

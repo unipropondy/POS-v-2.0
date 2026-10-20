@@ -233,19 +233,31 @@ export default function OrderTypeSelectionScreen() {
 
   // Handlers for Order Types
   const handleDineIn = () => {
+    useOrderContextStore.getState().setServiceMode("DINE_IN");
+    useOrderContextStore.getState().setActiveSection("SECTION_1");
     useOrderContextStore.getState().setOrderContext({
       orderType: "DINE_IN",
+      section: "SECTION_1",
     });
-    router.push("/(tabs)/category");
+    router.push({
+      pathname: "/(tabs)/category",
+      params: { section: "SECTION_1" },
+    });
   };
 
   const handleTakeAway = () => {
     const takeawayNo = `TW-${Math.floor(1000 + Math.random() * 9000)}`;
+    useOrderContextStore.getState().setServiceMode("TAKEAWAY");
+    useOrderContextStore.getState().setActiveSection("TAKEAWAY");
     useOrderContextStore.getState().setOrderContext({
       orderType: "TAKEAWAY",
+      section: "TAKEAWAY",
       takeawayNo,
     });
-    router.push("/(tabs)/category");
+    router.push({
+      pathname: "/(tabs)/category",
+      params: { section: "TAKEAWAY" },
+    });
   };
 
   const handleQuickServe = () => {

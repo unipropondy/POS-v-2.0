@@ -87,13 +87,26 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       let existingIndex = -1;
       let existingTable: TableStatus | undefined = cleanTableId ? state.tableMap[cleanTableId] : undefined;
 
-      if (existingTable) {
-        existingIndex = state.tables.findIndex((t) => t.tableId === cleanTableId);
-      } else {
-        existingIndex = state.tables.findIndex((t) => t.section === section && t.tableNo === tableNo);
-        if (existingIndex > -1) {
-          existingTable = state.tables[existingIndex];
-        }
+      const normTableNo = String(tableNo ?? "").trim().toLowerCase();
+      const normSection = String(section ?? "").trim().toLowerCase();
+
+      if (cleanTableId) {
+        existingIndex = state.tables.findIndex((t) => {
+          const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+          return tId === cleanTableId;
+        });
+      }
+      if (existingIndex === -1 && normTableNo) {
+        existingIndex = state.tables.findIndex((t) => {
+          const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+          if (cleanTableId && tId === cleanTableId) return true;
+          const tNo = String(t.tableNo ?? "").trim().toLowerCase();
+          const tSec = String(t.section ?? "").trim().toLowerCase();
+          return tNo === normTableNo && (!normSection || tSec === normSection || tSec.replace(/[-_]/g, "") === normSection.replace(/[-_]/g, ""));
+        });
+      }
+      if (existingIndex > -1 && !existingTable) {
+        existingTable = state.tables[existingIndex];
       }
 
       const updateTimestamp = isExternal ? state.lastLocalUpdate[key] : now;
