@@ -622,10 +622,6 @@ export default function CustomerMenuScreen() {
         storedTableNo = localStorage.getItem("qr_takeaway_tableNo");
       }
 
-      // Check if table in memory was already marked paid
-      const paymentStatus = storedTableId ? useCartStore.getState().tablePaymentStatus[storedTableId] : null;
-      const isAlreadyPaid = paymentStatus?.isPaid || paymentStatus?.paymentStatus === "PAID";
-
       // 🛡️ If table is already assigned and valid, DO NOT re-assign another table!
       if (storedTableId && storedTableNo && String(storedTableNo).startsWith("TW")) {
         if (orderContext?.tableId !== storedTableId) {
@@ -641,11 +637,10 @@ export default function CustomerMenuScreen() {
         return;
       }
 
-
       let sessId: string | null = null;
       if (typeof window !== "undefined" && window.sessionStorage) {
         sessId = window.sessionStorage.getItem("tw_session_token");
-        if (!sessId || isAlreadyPaid) {
+        if (!sessId) {
           sessId = "tw_sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
           window.sessionStorage.setItem("tw_session_token", sessId);
         }
