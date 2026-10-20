@@ -2065,8 +2065,9 @@ export default function Category() {
             tableId: id,
           });
           if (checkoutFlowEnabled) {
+            const checkoutSection = section; // section is already computed above
             clearOrderContext();
-            router.replace("/(tabs)/category");
+            router.replace({ pathname: "/(tabs)/category", params: { section: checkoutSection } });
           } else {
             router.push("/payment");
           }
@@ -2362,6 +2363,7 @@ export default function Category() {
     } else {
       newContext = {
         orderType: "TAKEAWAY" as const,
+        section: "TAKEAWAY", // 🐛 FIX: section must be set so payment_success can navigate back to TAKEAWAY tab
         takeawayNo: item.label,
         tableId: item.id,
       };

@@ -1791,7 +1791,7 @@ export default function PaymentScreen() {
             payments: payments ? JSON.stringify(payments) : "[]",
             orderId: result.billNo || result.orderId || displayOrderId || "",
             tableNo: context?.tableNo ?? "",
-            section: context?.section ?? "",
+            section: context?.section || (context?.orderType === "TAKEAWAY" ? "TAKEAWAY" : ""),
             orderType: context?.orderType ?? "",
             discountInfo: JSON.stringify(
               effectiveFocAmount > 0

@@ -68,7 +68,12 @@ const NavRail = () => {
             key={item.id}
             style={[styles.railItem, item.active && styles.railItemActive]}
             onPress={() => {
-              if (item.id === "home") router.replace("/(tabs)/category");
+              if (item.id === "home") {
+                const { getOrderContext } = require("../../stores/orderContextStore");
+                const ctx = getOrderContext();
+                const targetSection = ctx?.section || (ctx?.orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
+                router.replace({ pathname: "/(tabs)/category", params: { section: targetSection } });
+              }
             }}
           >
             <Ionicons
@@ -618,7 +623,10 @@ export default function MenuScreen() {
     >
       <TouchableOpacity
         onPress={() => {
-          router.replace("/(tabs)/category");
+          const { getOrderContext } = require("../../stores/orderContextStore");
+          const ctx = getOrderContext();
+          const targetSection = ctx?.section || (ctx?.orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
+          router.replace({ pathname: "/(tabs)/category", params: { section: targetSection } });
         }}
         style={[
           styles.backBtn,

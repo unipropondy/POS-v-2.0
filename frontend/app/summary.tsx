@@ -893,6 +893,8 @@ export default function SummaryScreen() {
       setCustomCancelReason("");
       setCancelPassword("");
 
+      // 🐛 FIX: Capture section BEFORE clearing context so we can navigate back to correct tab
+      const cancelTargetSection = context?.section || (context?.orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
       setTimeout(() => {
         // Local State cleanup
         if (context && activeOrder) {
@@ -918,7 +920,7 @@ export default function SummaryScreen() {
             );
           }
         }
-        router.replace("/(tabs)/category");
+        router.replace({ pathname: "/(tabs)/category", params: { section: cancelTargetSection } });
       }, 500);
     } catch (error: any) {
       console.error("Cancel error:", error);

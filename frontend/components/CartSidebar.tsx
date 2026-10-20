@@ -1463,8 +1463,11 @@ export default React.memo(function CartSidebar({ width = 400 }: CartSidebarProps
 
       if (enableCheckoutFlow !== false) {
         // 🚀 INSTANT REDIRECT: Go back to Floor Plan immediately for hyper-speed UX
+        // 🐛 FIX: Capture section BEFORE clearing context so we navigate to correct tab
+        const checkoutCtx = useOrderContextStore.getState().currentOrder;
+        const checkoutTargetSection = checkoutCtx?.section || (checkoutCtx?.orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
         useOrderContextStore.getState().clearOrderContext();
-        router.replace("/(tabs)/category");
+        router.replace({ pathname: "/(tabs)/category", params: { section: checkoutTargetSection } });
 
         // Fire API call and sync in background
         (async () => {

@@ -180,9 +180,13 @@ export default function PaymentSuccess() {
     } else if (params.isSplit === "true") {
       setShowSplitConfirmModal(true);
     } else {
+      // 🐛 FIX: Use section param if set; fall back to orderType to decide TAKEAWAY vs Dining section
+      const effectiveSection = (section && section.trim() !== "")
+        ? section
+        : (orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
       router.replace({
         pathname: "/(tabs)/category",
-        params: { section },
+        params: { section: effectiveSection },
       });
     }
   };
