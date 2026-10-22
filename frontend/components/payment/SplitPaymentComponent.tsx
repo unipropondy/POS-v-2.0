@@ -26,6 +26,7 @@ import { useOrderContextStore } from "../../stores/orderContextStore";
 import { usePaymentSettingsStore } from "../../stores/paymentSettingsStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useTerminalPaymentStore } from "../../stores/terminalPaymentStore";
+import { initiateNetsSale, isNetsPayMode } from "../../services/netsService";
 
 // Module-level map: persists split terminal sessions across component unmounts.
 // Keyed by tableId (same key used in useTerminalPaymentStore).
@@ -132,10 +133,13 @@ const isYeahPayCard = (modeName: string): boolean =>
 const isYeahPayTerminal = (modeName: string): boolean =>
   isYeahPayPayNow(modeName) || isYeahPayCard(modeName);
 
-/** Modes that trigger a terminal call (Device SN required).
- *  ONLY the two YeahPay modes qualify — "Card", "QR", "GPay" etc. do NOT. */
+/** true for NETS ECR3 LAN terminal modes */
+const isNetsTerminal = (modeName: string): boolean =>
+  isNetsPayMode(modeName);
+
+/** Modes that trigger a terminal call (YeahPay or NETS). */
 const needsTerminalCall = (modeName: string): boolean =>
-  isYeahPayTerminal(modeName);
+  isYeahPayTerminal(modeName) || isNetsTerminal(modeName);
 
 /** UPI-style modes that open the UPI QR modal */
 const isUpiMode = (modeName: string): boolean => {
@@ -578,9 +582,10 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
   }
 
   // "Yeahpay Paynow" or "Yeahpay Card" → YeahPay terminal (SN required)
+  // "NETS" → NETS ECR3 LAN terminal
   // All other modes should not reach here because needsTerminalCall guards them,
   // but we guard explicitly here too.
-  if (!isYeahPayTerminal(row.payMode)) {
+  if (!isYeahPayTerminal(row.payMode) && !isNetsTerminal(row.payMode)) {
     // Safety net: non-terminal mode somehow called handleGenerateQR.
     // Just mark as paid without a terminal call (shouldn't happen with correct needsTerminalCall).
     console.warn('[SplitPayment] handleGenerateQR called for non-terminal mode:', row.payMode);
@@ -600,6 +605,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       )
     );
 
+    const isNets = isNetsTerminal(row.payMode);
     const selectedMethod = paymentMethods.find(m => 
       m.payMode.trim().toUpperCase() === row.payMode.trim().toUpperCase() ||
       normalizeMode(m.payMode) === normalizeMode(row.payMode)
@@ -607,12 +613,10 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
     const deviceSn = (selectedMethod?.deviceSn || (selectedMethod as any)?.DeviceSN || '').trim();
     const salt = (selectedMethod?.deviceSalt || (selectedMethod as any)?.DeviceSalt || '').trim();
 
-    console.log('🔄 [SplitPayment] Calling YeahPay terminal for:', row.payMode);
+    console.log(`🔄 [SplitPayment] Calling ${isNets ? 'NETS' : 'YeahPay'} terminal for:`, row.payMode);
     console.log('   Amount:', amt);
-    console.log('   DeviceSN:', deviceSn);
-    console.log('   Salt:', salt ? 'Yes' : 'No');
 
-    if (!deviceSn) {
+    if (!isNets && !deviceSn) {
       setRows(prevRows =>
         prevRows.map(r =>
           r.id === row.id
@@ -638,7 +642,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       useTerminalPaymentStore.getState().setSession(tableId, {
         tableId,
         status: "processing",
-        message: "Processing split payment...",
+        message: isNets ? "Processing on NETS terminal..." : "Processing split payment...",
         method: row.payMode,
         total: amt,
         splitRowId: row.id,
@@ -646,28 +650,37 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       });
     }
 
-    // Endpoint: "Yeahpay Card" → card-payment, "Yeahpay Paynow" → paynow-payment
-    const endpoint = isYeahPayCard(row.payMode)
-      ? '/api/yeahpay/card-payment'
-      : '/api/yeahpay/paynow-payment';
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(useAuthStore.getState().token ? { 'Authorization': `Bearer ${useAuthStore.getState().token}` } : {}),
-      },
-      body: JSON.stringify({
+    let result: any;
+    if (isNets) {
+      result = await initiateNetsSale({
         amount: amt,
-        deviceSn: deviceSn,
-        salt: salt || '',
         tableId: tableId || '',
-        isSplit: true,
-        splitRowId: row.id
-      })
-    });
+        orderId: context?.orderId || '',
+      });
+    } else {
+      // Endpoint: "Yeahpay Card" → card-payment, "Yeahpay Paynow" → paynow-payment
+      const endpoint = isYeahPayCard(row.payMode)
+        ? '/api/yeahpay/card-payment'
+        : '/api/yeahpay/paynow-payment';
 
-    const result = await response.json();
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(useAuthStore.getState().token ? { 'Authorization': `Bearer ${useAuthStore.getState().token}` } : {}),
+        },
+        body: JSON.stringify({
+          amount: amt,
+          deviceSn: deviceSn,
+          salt: salt || '',
+          tableId: tableId || '',
+          isSplit: true,
+          splitRowId: row.id
+        })
+      });
+
+      result = await response.json();
+    }
     console.log('✅ [SplitPayment] Terminal response:', result);
 
     const responseCode = result.code;
@@ -675,7 +688,11 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
     const ctx = useOrderContextStore.getState().currentOrder;
     const tblId = ctx?.tableId?.toString();
 
-    if (result.success || responseCode === 0) {
+    const isSuccess = result.success || responseCode === 0 || responseCode === "00";
+    const isCancelled = responseCode === -1027 || responseCode === "02";
+    const isTimeout = responseCode === -1028 || responseCode === -1008 || responseCode === "03" || responseCode === "SOCKET_ERR";
+
+    if (isSuccess) {
       if (tblId && ongoingSplitSessions[tblId]) {
         ongoingSplitSessions[tblId].status = "success";
         ongoingSplitSessions[tblId].onUpdate?.("success");
@@ -697,7 +714,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
 
       showToast({
         type: 'success',
-        message: `✅ ${isCardMode ? 'Card' : 'PayNow'} Payment Successful`,
+        message: `✅ ${isNets ? 'NETS' : isCardMode ? 'Card' : 'PayNow'} Payment Successful`,
         subtitle: `$${amt.toFixed(2)} paid via ${row.payMode}`
       });
 
@@ -705,7 +722,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       setQrModalType(null);
       setActiveQrRowId(null);
 
-    } else if (responseCode === -1027) {
+    } else if (isCancelled) {
       if (tblId && ongoingSplitSessions[tblId]) {
         ongoingSplitSessions[tblId].status = "cancelled";
         ongoingSplitSessions[tblId].onUpdate?.("cancelled", '❌ Transaction cancelled on terminal');
@@ -727,7 +744,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
 
       Alert.alert(
         'Transaction Cancelled',
-        `${isCardMode ? 'Card' : 'Payment'} was cancelled on the terminal.`,
+        `${isNets ? 'NETS' : isCardMode ? 'Card' : 'Payment'} was cancelled on the terminal.`,
         [{ text: 'OK' }]
       );
 
@@ -735,7 +752,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
       setQrModalType(null);
       setActiveQrRowId(null);
 
-    } else if (responseCode === -1028 || responseCode === -1008) {
+    } else if (isTimeout) {
       if (tblId && ongoingSplitSessions[tblId]) {
         ongoingSplitSessions[tblId].status = "failed";
         ongoingSplitSessions[tblId].onUpdate?.("failed", '⏰ Transaction timeout');
@@ -756,7 +773,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
 
       Alert.alert(
         'Transaction Timeout',
-        `${isCardMode ? 'Card' : 'Payment'} read timed out. Please try again.`,
+        `${isNets ? 'NETS' : isCardMode ? 'Card' : 'Payment'} read timed out. Please try again.`,
         [{ text: 'OK' }]
       );
 

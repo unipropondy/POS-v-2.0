@@ -439,76 +439,272 @@ router.get("/usage/:memberId", async (req, res) => {
     const { memberId } = req.params;
     const pool = await poolPromise;
 
-    // Fetch the member's phone number to query by either MemberId or Phone number
+    // Fetch the member's details (Name, Phone, RewardCredit, Balances)
     const memberRes = await pool.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
-      .query("SELECT Phone FROM MemberMaster WHERE MemberId = @MemberId");
+      .query(`
+        SELECT MemberId, Name, Phone, 
+               ISNULL(RewardCredit, 0) as RewardCredit,
+               ISNULL(AvailableCredit, 0) as AvailableCredit,
+               ISNULL(CurrentBalance, 0) as CurrentBalance,
+               ISNULL(Balance, 0) as Balance,
+               ISNULL(CreditLimit, 0) as CreditLimit,
+               CreatedAt
+        FROM MemberMaster 
+        WHERE MemberId = @MemberId
+      `);
     
-    const rawPhone = memberRes.recordset[0]?.Phone || "";
-    const phoneValue = rawPhone.trim();
-    const cleanDigits = phoneValue.replace(/\D/g, "");
+    const memberRow = memberRes.recordset[0] || {};
+    const memberName = (memberRow.Name || "").trim();
+    const rawPhone = (memberRow.Phone || "").trim();
+    const cleanDigits = rawPhone.replace(/\D/g, "");
     const last8Digits = cleanDigits.length >= 8 ? cleanDigits.slice(-8) : cleanDigits;
 
-    // 1. Summary
-    const summaryRes = await pool.request()
-      .input("MemberId", sql.UniqueIdentifier, memberId)
-      .input("Phone", sql.NVarChar(50), phoneValue)
-      .input("Last8", sql.NVarChar(50), last8Digits)
-      .query(`
-        SELECT 
-          ISNULL(SUM(SysAmount), 0) as TotalSpent, 
-          COUNT(*) as TotalOrders 
-        FROM SettlementHeader 
-        WHERE (MemberId = @MemberId 
-               OR (@Phone <> '' AND REPLACE(REPLACE(MobileNo, ' ', ''), '+', '') = @Phone)
-               OR (@Last8 <> '' AND RIGHT(REPLACE(REPLACE(MobileNo, ' ', ''), '+', ''), 8) = @Last8))
-          AND IsCancelled = 0
-      `);
+    // Fast phone variants array for indexed matching
+    const phoneVariants = [
+      rawPhone,
+      cleanDigits,
+      last8Digits,
+      `+65${last8Digits}`,
+      `+60${last8Digits}`,
+      `+91${last8Digits}`,
+      `+1${last8Digits}`,
+      `+44${last8Digits}`,
+      `+61${last8Digits}`
+    ].filter(p => Boolean(p) && p.trim().length > 3);
 
-    // 2. Items Consumed
-    const itemsRes = await pool.request()
+    // 1. Ultra-fast bills query
+    const txReq = pool.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
-      .input("Phone", sql.NVarChar(50), phoneValue)
-      .input("Last8", sql.NVarChar(50), last8Digits)
-      .query(`
+      .input("MemberName", sql.NVarChar(100), memberName)
+      .input("RewardCredit", sql.Decimal(18, 4), memberRow.RewardCredit || 0)
+      .input("ModifiedDate", sql.DateTime, memberRow.ModifiedDate || null);
+    
+    const phoneParams = phoneVariants.map((p, idx) => {
+      const pName = `Phone_${idx}`;
+      txReq.input(pName, sql.NVarChar(50), p);
+      return `@${pName}`;
+    });
+
+    const phoneCondition = phoneParams.length > 0 ? `OR sh.MobileNo IN (${phoneParams.join(", ")})` : "";
+    const nameCondition = memberName && !['Guest Cus', 'Guest'].includes(memberName) 
+      ? `OR (sh.MemberId IS NULL AND sh.MobileNo IS NULL AND sh.GuestName = @MemberName AND sh.GuestName NOT IN ('Guest Cus', 'Guest', ''))` 
+      : "";
+    const dateFallback = memberRow.ModifiedDate 
+      ? `OR (ABS(DATEDIFF(second, sh.LastSettlementDate, @ModifiedDate)) <= 5 AND ABS(sh.SysAmount * 0.01 - @RewardCredit) < 0.005)` 
+      : "";
+
+    const txsRes = await txReq.query(`
+      SELECT 
+        sh.SettlementID, 
+        sh.BillNo, 
+        sh.MemberId,
+        CONVERT(VARCHAR, sh.LastSettlementDate, 126) + '+08:00' AS LastSettlementDate, 
+        sh.SysAmount,
+        LTRIM(RTRIM(sh.TableNo)) as TableNo,
+        ISNULL(sh.OrderType, 'DINE-IN') as OrderType,
+        CASE WHEN sh.entry_status = 'q' THEN 1 ELSE 0 END as isQROrder,
+        ISNULL(sh.DiscountAmount, 0) as DiscountAmount,
+        sh.DiscountType,
+        ROUND(sh.SysAmount * 0.01, 2) as PointsEarned,
+        ISNULL((
+          SELECT TOP 1 LTRIM(RTRIM(sd.Paymode)) 
+          FROM SettlementDetail sd 
+          WHERE sd.SettlementId = sh.SettlementID AND sd.Paymode IS NOT NULL AND sd.Paymode <> ''
+        ), (
+          SELECT TOP 1 LTRIM(RTRIM(std.PayMode))
+          FROM SettlementTranDetail std
+          WHERE std.SettlementID = sh.SettlementID AND std.PayMode IS NOT NULL AND std.PayMode <> ''
+        )) as PayMode
+      FROM SettlementHeader sh
+      WHERE (
+          sh.MemberId = @MemberId 
+          ${phoneCondition} 
+          ${nameCondition}
+          OR sh.BillNo IN (SELECT ro.OrderNumber FROM RestaurantOrderCur ro WHERE ro.CustomerId = @MemberId)
+          OR sh.BillNo IN (SELECT ro2.OrderNumber FROM RestaurantOrder ro2 WHERE ro2.CustomerId = @MemberId)
+          OR sh.SettlementID IN (SELECT rpd.SettlementId FROM RewardPointDetails rpd WHERE rpd.MemberId = @MemberId)
+          OR sh.BillNo IN (SELECT rpd2.BillNo FROM RewardPointDetails rpd2 WHERE rpd2.MemberId = @MemberId)
+          ${dateFallback}
+        )
+        AND sh.IsCancelled = 0 
+      ORDER BY sh.LastSettlementDate DESC
+    `);
+
+    const transactions = txsRes.recordset || [];
+
+    // 2. Summary calculated instantly from transactions
+    const totalSpent = transactions.reduce((acc, tx) => acc + (parseFloat(tx.SysAmount) || 0), 0);
+    const totalOrders = transactions.length;
+
+    // 3. Ultra-fast Items query using exact SettlementIDs
+    let items = [];
+    if (transactions.length > 0) {
+      const sIds = transactions.map(t => `'${t.SettlementID}'`).join(',');
+      const itemsRes = await pool.request().query(`
         SELECT 
           sid.DishName, 
           SUM(sid.Qty) as TotalQty, 
           SUM(sid.Price * sid.Qty) as TotalAmount 
-        FROM SettlementHeader sh 
-        INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID 
-        WHERE (sh.MemberId = @MemberId 
-               OR (@Phone <> '' AND REPLACE(REPLACE(sh.MobileNo, ' ', ''), '+', '') = @Phone)
-               OR (@Last8 <> '' AND RIGHT(REPLACE(REPLACE(sh.MobileNo, ' ', ''), '+', ''), 8) = @Last8))
-          AND sh.IsCancelled = 0 
+        FROM SettlementItemDetail sid
+        WHERE sid.SettlementID IN (${sIds})
         GROUP BY sid.DishName 
         ORDER BY TotalQty DESC
       `);
+      items = itemsRes.recordset || [];
+    }
 
-    // 3. Transactions
-    const txsRes = await pool.request()
+    // 4. Restaurant orders (including QR Orders) without grouping whole table
+    const orderReq = pool.request()
       .input("MemberId", sql.UniqueIdentifier, memberId)
-      .input("Phone", sql.NVarChar(50), phoneValue)
-      .input("Last8", sql.NVarChar(50), last8Digits)
+      .input("MemberName", sql.NVarChar(100), memberName);
+    
+    phoneVariants.forEach((p, idx) => {
+      orderReq.input(`OPhone_${idx}`, sql.NVarChar(50), p);
+    });
+    const orderPhoneCond = phoneParams.length > 0 ? `OR ro.MobileNo IN (${phoneVariants.map((_, i) => `@OPhone_${i}`).join(", ")})` : "";
+    const orderNameCond = memberName && !['Guest Cus', 'Guest'].includes(memberName)
+      ? `OR (ro.CustomerId IS NULL AND ro.MobileNo IS NULL AND ro.CustomerName = @MemberName)`
+      : "";
+
+    const allOrdersRes = await orderReq.query(`
+      SELECT 
+        ro.OrderId,
+        ro.OrderNumber,
+        CONVERT(VARCHAR, ro.OrderDateTime, 126) + '+08:00' AS OrderDateTime,
+        LTRIM(RTRIM(ro.Tableno)) as TableNo,
+        ro.TotalAmount,
+        ro.entry_status,
+        ro.isOrderClosed,
+        CASE WHEN ro.entry_status = 'q' THEN 1 ELSE 0 END as isQROrder
+      FROM RestaurantOrderCur ro
+      WHERE (ro.CustomerId = @MemberId ${orderPhoneCond} ${orderNameCond})
+      ORDER BY ro.OrderDateTime DESC
+    `);
+
+    // Match QR status and update isQROrder on transactions
+    const qrBillNumbers = new Set();
+    const allOrders = (allOrdersRes.recordset || []).map(ro => {
+      if (ro.isQROrder === 1) {
+        qrBillNumbers.add(ro.OrderNumber);
+      }
+      const matchTx = transactions.find(t => t.BillNo === ro.OrderNumber);
+      return {
+        ...ro,
+        SettlementID: matchTx?.SettlementID || null,
+        BillStatus: matchTx ? 'SETTLED' : (ro.isOrderClosed ? 'CLOSED' : 'OPEN / KITCHEN')
+      };
+    });
+
+    // Ensure transaction knows if it was a QR order
+    transactions.forEach(tx => {
+      if (qrBillNumbers.has(tx.BillNo)) {
+        tx.isQROrder = 1;
+      }
+    });
+
+    // 5. Reward Points History Ledger (Show ONLY particular orders that have reward points)
+    const currentRewardCredit = parseFloat(memberRow.RewardCredit) || 0;
+
+    // Check if explicit reward points transactions exist in RewardPointDetails
+    const rpdRes = await pool.request()
+      .input("MemberId", sql.UniqueIdentifier, memberId)
       .query(`
         SELECT 
-          SettlementID, 
-          BillNo, 
-          CONVERT(VARCHAR, LastSettlementDate, 126) + '+08:00' AS LastSettlementDate, 
-          SysAmount 
-        FROM SettlementHeader 
-        WHERE (MemberId = @MemberId 
-               OR (@Phone <> '' AND REPLACE(REPLACE(MobileNo, ' ', ''), '+', '') = @Phone)
-               OR (@Last8 <> '' AND RIGHT(REPLACE(REPLACE(MobileNo, ' ', ''), '+', ''), 8) = @Last8))
-          AND IsCancelled = 0 
-        ORDER BY LastSettlementDate DESC
+          Id, SettlementId, BillNo, BillAmount as Amount, 
+          PointsEarned, PointsUsed, TransType, PayMode, Remarks,
+          CONVERT(VARCHAR, ISNULL(CreatedOn, GETDATE()), 126) + '+08:00' as Date
+        FROM RewardPointDetails
+        WHERE MemberId = @MemberId AND (PointsEarned > 0 OR PointsUsed > 0)
+        ORDER BY CreatedOn DESC
       `);
+    const rpdRows = rpdRes.recordset || [];
+
+    let rewardHistory = [];
+    let earnedFromBills = 0;
+
+    if (rpdRows.length > 0) {
+      rewardHistory = rpdRows.map(r => {
+        const isEarned = (parseFloat(r.PointsEarned) || 0) > 0;
+        const pts = isEarned ? parseFloat(r.PointsEarned) : -parseFloat(r.PointsUsed || 0);
+        if (isEarned) earnedFromBills += parseFloat(r.PointsEarned || 0);
+        return {
+          Id: r.Id,
+          SettlementID: r.SettlementId,
+          BillNo: r.BillNo,
+          Amount: r.Amount,
+          Points: pts,
+          Type: r.TransType || (isEarned ? 'EARNED' : 'REDEEMED'),
+          Date: r.Date,
+          Remarks: r.Remarks || (isEarned ? `Earned points on Bill #${r.BillNo}` : `Redeemed points on Bill #${r.BillNo}`)
+        };
+      });
+    } else if (currentRewardCredit > 0) {
+      // Historical/Legacy fallback: ONLY orders that actually have reward points!
+      const pointOrders = transactions.filter(tx => {
+        const isMemberBill = tx.MemberId && tx.MemberId.toLowerCase() === memberId.toLowerCase();
+        return isMemberBill && (tx.PointsEarned > 0);
+      });
+
+      // If no bills have MemberId yet, check if any bill matched the member's RewardCredit exactly
+      const qualifyingBills = pointOrders.length > 0 ? pointOrders : transactions.filter(tx => {
+        return Math.abs((tx.PointsEarned || 0) - currentRewardCredit) < 0.01;
+      });
+
+      rewardHistory = qualifyingBills.map(tx => {
+        earnedFromBills += (tx.PointsEarned || 0);
+        return {
+          Id: tx.SettlementID,
+          SettlementID: tx.SettlementID,
+          BillNo: tx.BillNo,
+          TableNo: tx.TableNo,
+          OrderType: tx.OrderType,
+          isQROrder: tx.isQROrder,
+          Amount: tx.SysAmount,
+          Points: tx.PointsEarned || 0,
+          Type: 'EARNED',
+          Date: tx.LastSettlementDate,
+          Remarks: `Earned 1% loyalty points on Bill #${tx.BillNo}`
+        };
+      });
+    }
+
+    const initialOpeningPoints = Math.max(0, Math.round((currentRewardCredit - earnedFromBills) * 100) / 100);
+
+    if (initialOpeningPoints > 0) {
+      rewardHistory.push({
+        Id: 'opening-bal',
+        SettlementID: null,
+        BillNo: 'OPENING-BALANCE',
+        Amount: 0,
+        Points: initialOpeningPoints,
+        Type: 'OPENING',
+        Date: memberRow.CreatedAt ? new Date(memberRow.CreatedAt).toISOString() : new Date().toISOString(),
+        Remarks: 'Opening balance / initial registration points'
+      });
+    }
+
+    rewardHistory.sort((a, b) => new Date(b.Date) - new Date(a.Date));
       
     res.json({
         success: true,
-        summary: summaryRes.recordset[0],
-        items: itemsRes.recordset,
-        transactions: txsRes.recordset
+        member: memberRow,
+        summary: {
+          TotalSpent: totalSpent,
+          TotalOrders: totalOrders,
+          RewardCredit: currentRewardCredit,
+          EarnedFromBills: Math.round(earnedFromBills * 100) / 100,
+          OpeningPoints: initialOpeningPoints,
+          AvailableCredit: parseFloat(memberRow.AvailableCredit) || 0,
+          CurrentBalance: parseFloat(memberRow.CurrentBalance) || 0,
+          Balance: parseFloat(memberRow.Balance) || 0,
+          CreditLimit: parseFloat(memberRow.CreditLimit) || 0,
+        },
+        items,
+        transactions,
+        allOrders,
+        qrOrders: allOrders.filter(o => o.isQROrder === 1),
+        rewardHistory
     });
   } catch (err) {
     console.error("[MEMBERS USAGE ERROR]", err);
@@ -537,56 +733,87 @@ router.get("/usage-by-phone/:phone", async (req, res) => {
 
     const member = memberRes.recordset[0];
     const memberId = member.MemberId;
+    const memberName = (member.Name || "").trim();
+    const rawPhone = (member.Phone || "").trim();
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+    const last8Digits = cleanDigits.length >= 8 ? cleanDigits.slice(-8) : cleanDigits;
+
+    const phoneVariants = [
+      rawPhone,
+      cleanDigits,
+      last8Digits,
+      `+65${last8Digits}`,
+      `+60${last8Digits}`,
+      `+91${last8Digits}`,
+      `+1${last8Digits}`,
+      `+44${last8Digits}`,
+      `+61${last8Digits}`
+    ].filter(p => Boolean(p) && p.trim().length > 3);
+
+    // 1. Ultra-fast bills query
+    const txReq = pool.request()
+      .input("MemberId", sql.UniqueIdentifier, memberId)
+      .input("MemberName", sql.NVarChar(100), memberName);
+    
+    phoneVariants.forEach((p, idx) => {
+      txReq.input(`Phone_${idx}`, sql.NVarChar(50), p);
+    });
+
+    const phoneCondition = phoneVariants.length > 0 ? `OR sh.MobileNo IN (${phoneVariants.map((_, i) => `@Phone_${i}`).join(", ")})` : "";
+    const nameCondition = memberName && !['Guest Cus', 'Guest'].includes(memberName) 
+      ? `OR (sh.GuestName = @MemberName AND sh.GuestName NOT IN ('Guest Cus', 'Guest', ''))` 
+      : "";
+
+    const txsRes = await txReq.query(`
+      SELECT 
+        sh.SettlementID, 
+        sh.BillNo, 
+        CONVERT(VARCHAR, sh.LastSettlementDate, 126) + '+08:00' AS LastSettlementDate, 
+        sh.SysAmount,
+        LTRIM(RTRIM(sh.TableNo)) as TableNo,
+        ISNULL(sh.OrderType, 'DINE-IN') as OrderType,
+        CASE WHEN sh.entry_status = 'q' THEN 1 ELSE 0 END as isQROrder,
+        ISNULL(sh.DiscountAmount, 0) as DiscountAmount,
+        sh.DiscountType,
+        ROUND(sh.SysAmount * 0.01, 2) as PointsEarned
+      FROM SettlementHeader sh
+      WHERE (sh.MemberId = @MemberId ${phoneCondition} ${nameCondition})
+        AND sh.IsCancelled = 0 
+      ORDER BY sh.LastSettlementDate DESC
+    `);
+
+    const transactions = txsRes.recordset || [];
 
     // 2. Summary
-    const summaryRes = await pool.request()
-      .input("MemberId", sql.UniqueIdentifier, memberId)
-      .query(`
-        SELECT 
-          ISNULL(SUM(SysAmount), 0) as TotalSpent, 
-          COUNT(*) as TotalOrders 
-        FROM SettlementHeader 
-        WHERE MemberId = @MemberId 
-          AND IsCancelled = 0
-      `);
+    const totalSpent = transactions.reduce((acc, tx) => acc + (parseFloat(tx.SysAmount) || 0), 0);
+    const totalOrders = transactions.length;
 
     // 3. Items Consumed
-    const itemsRes = await pool.request()
-      .input("MemberId", sql.UniqueIdentifier, memberId)
-      .query(`
+    let items = [];
+    if (transactions.length > 0) {
+      const sIds = transactions.map(t => `'${t.SettlementID}'`).join(',');
+      const itemsRes = await pool.request().query(`
         SELECT 
           sid.DishName, 
           SUM(sid.Qty) as TotalQty, 
           SUM(sid.Price * sid.Qty) as TotalAmount 
-        FROM SettlementHeader sh 
-        INNER JOIN SettlementItemDetail sid ON sh.SettlementID = sid.SettlementID 
-        WHERE sh.MemberId = @MemberId 
-          AND sh.IsCancelled = 0 
+        FROM SettlementItemDetail sid
+        WHERE sid.SettlementID IN (${sIds})
         GROUP BY sid.DishName 
         ORDER BY TotalQty DESC
       `);
-
-    // 4. Transactions
-    const txsRes = await pool.request()
-      .input("MemberId", sql.UniqueIdentifier, memberId)
-      .query(`
-        SELECT 
-          SettlementID, 
-          BillNo, 
-          CONVERT(VARCHAR, LastSettlementDate, 126) + '+08:00' AS LastSettlementDate, 
-          SysAmount 
-        FROM SettlementHeader 
-        WHERE MemberId = @MemberId 
-          AND IsCancelled = 0 
-        ORDER BY LastSettlementDate DESC
-      `);
+      items = itemsRes.recordset || [];
+    }
       
     res.json({
         success: true,
         member,
-        summary: summaryRes.recordset[0],
-        items: itemsRes.recordset,
-        transactions: txsRes.recordset
+        summary: {
+          TotalSpent: totalSpent,
+          TotalOrders: totalOrders
+        },
+        items,
+        transactions
     });
   } catch (err) {
     console.error("[MEMBERS USAGE BY PHONE ERROR]", err);

@@ -50,6 +50,7 @@ type MemberType = {
   Promocode?: string;
   Promoamount?: number;
   AvailableCredit?: number;
+  RewardCredit?: number;
 };
 
 const formatMoney = (amount: number) => {
@@ -135,12 +136,304 @@ export default function MembersScreen() {
   // Usage Modal State
   const [showUsageModal, setShowUsageModal] = useState(false);
   const [usageMember, setUsageMember] = useState<MemberType | null>(null);
-  const [usageData, setUsageData] = useState<{
-    summary: { TotalSpent: number; TotalOrders: number };
-    items: { DishName: string; TotalQty: number; TotalAmount: number }[];
-    transactions: { SettlementID: string; BillNo: string; LastSettlementDate: string; SysAmount: number }[];
-  } | null>(null);
+  const [usageTab, setUsageTab] = useState<"bills" | "rewards" | "qr">("bills");
+  const [usageData, setUsageData] = useState<any>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
+
+  // Usage Modal Filter States
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterDatePreset, setFilterDatePreset] = useState<"ALL" | "TODAY" | "7DAYS" | "30DAYS" | "CUSTOM">("ALL");
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  const [filterOrderType, setFilterOrderType] = useState<string>("ALL");
+  const [filterTableNo, setFilterTableNo] = useState<string>("ALL");
+  const [filterPayMode, setFilterPayMode] = useState<string>("ALL");
+  const [filterPointsType, setFilterPointsType] = useState<"ALL" | "EARNED" | "REDEEMED" | "OPENING">("ALL");
+  const [filterQRStatus, setFilterQRStatus] = useState<string>("ALL");
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+
+  const resetModalFilters = useCallback(() => {
+    setFilterSearch("");
+    setFilterDatePreset("ALL");
+    setFilterStartDate("");
+    setFilterEndDate("");
+    setFilterOrderType("ALL");
+    setFilterTableNo("ALL");
+    setFilterPayMode("ALL");
+    setFilterPointsType("ALL");
+    setFilterQRStatus("ALL");
+  }, []);
+
+  const closeUsageModal = useCallback(() => {
+    setShowUsageModal(false);
+    setUsageMember(null);
+    setUsageData(null);
+    setShowFilterPanel(false);
+    resetModalFilters();
+  }, [resetModalFilters]);
+
+  // Dynamic filter options based on actual loaded data
+  const availableOrderTypes = useMemo(() => {
+    if (!usageData?.transactions) return [];
+    const types = new Set<string>();
+    usageData.transactions.forEach((tx: any) => {
+      const type = (tx.OrderType || 'DINE-IN').trim().toUpperCase();
+      if (type) types.add(type);
+    });
+    return Array.from(types).sort();
+  }, [usageData?.transactions]);
+
+  const availableTables = useMemo(() => {
+    const tables = new Set<string>();
+    usageData?.transactions?.forEach((tx: any) => {
+      if (tx.TableNo && String(tx.TableNo).trim()) {
+        tables.add(String(tx.TableNo).trim());
+      }
+    });
+    usageData?.qrOrders?.forEach((qr: any) => {
+      if (qr.TableNo && String(qr.TableNo).trim()) {
+        tables.add(String(qr.TableNo).trim());
+      }
+    });
+    return Array.from(tables).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [usageData?.transactions, usageData?.qrOrders]);
+
+  const availablePayModes = useMemo(() => {
+    if (!usageData?.transactions) return [];
+    const modes = new Set<string>();
+    usageData.transactions.forEach((tx: any) => {
+      if (tx.PayMode && String(tx.PayMode).trim()) {
+        modes.add(String(tx.PayMode).trim().toUpperCase());
+      }
+    });
+    return Array.from(modes).sort();
+  }, [usageData?.transactions]);
+
+  const availableQRStatuses = useMemo(() => {
+    const statuses = new Set<string>(['SETTLED', 'CLOSED', 'OPEN / KITCHEN']);
+    usageData?.qrOrders?.forEach((qr: any) => {
+      if (qr.BillStatus && String(qr.BillStatus).trim()) {
+        statuses.add(String(qr.BillStatus).trim().toUpperCase());
+      }
+    });
+    return Array.from(statuses);
+  }, [usageData?.qrOrders]);
+
+  const isDateInFilterRange = useCallback((dateValue: any) => {
+    if (!dateValue || filterDatePreset === "ALL") return true;
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return true;
+
+    // Convert date to YYYY-MM-DD using Singapore timezone
+    let itemDateStr = "";
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Singapore',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(d);
+      const year = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const day = parts.find(p => p.type === 'day')?.value;
+      itemDateStr = `${year}-${month}-${day}`;
+    } catch (e) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      itemDateStr = `${y}-${m}-${day}`;
+    }
+
+    const now = new Date();
+    let todayStr = "";
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Singapore',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(now);
+      const year = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const day = parts.find(p => p.type === 'day')?.value;
+      todayStr = `${year}-${month}-${day}`;
+    } catch (e) {
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      todayStr = `${y}-${m}-${day}`;
+    }
+
+    if (filterDatePreset === "TODAY") {
+      return itemDateStr === todayStr;
+    }
+
+    if (filterDatePreset === "7DAYS") {
+      const diffTime = now.getTime() - d.getTime();
+      const diffDays = diffTime / (1000 * 3600 * 24);
+      return diffDays >= -0.5 && diffDays <= 7.5;
+    }
+
+    if (filterDatePreset === "30DAYS") {
+      const diffTime = now.getTime() - d.getTime();
+      const diffDays = diffTime / (1000 * 3600 * 24);
+      return diffDays >= -0.5 && diffDays <= 30.5;
+    }
+
+    if (filterDatePreset === "CUSTOM") {
+      if (filterStartDate.trim() && itemDateStr < filterStartDate.trim()) return false;
+      if (filterEndDate.trim() && itemDateStr > filterEndDate.trim()) return false;
+      return true;
+    }
+
+    return true;
+  }, [filterDatePreset, filterStartDate, filterEndDate]);
+
+  const renderFilterEmptyState = (title: string, subtitle: string) => (
+    <View style={{ backgroundColor: Theme.bgInput, borderRadius: 16, padding: 24, alignItems: 'center', justifyContent: 'center', marginVertical: 10 }}>
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: Theme.border, alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+        <Ionicons name="funnel-outline" size={22} color={Theme.textSecondary} />
+      </View>
+      <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary }}>
+        {title}
+      </Text>
+      <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 12 }}>
+        {subtitle}
+      </Text>
+      <TouchableOpacity
+        onPress={resetModalFilters}
+        style={{
+          backgroundColor: Theme.primary,
+          paddingHorizontal: 14,
+          paddingVertical: 8,
+          borderRadius: 10,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <Ionicons name="refresh-outline" size={14} color="#fff" />
+        <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: "#fff" }}>Clear Filters & Show All</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ── Tab 1 Filtered: Bills ──
+  const filteredBills = useMemo(() => {
+    if (!usageData?.transactions) return [];
+    return usageData.transactions.filter((tx: any) => {
+      if (!isDateInFilterRange(tx.LastSettlementDate)) return false;
+
+      if (filterOrderType !== "ALL") {
+        const type = (tx.OrderType || 'DINE-IN').trim().toUpperCase();
+        if (type !== filterOrderType.toUpperCase()) return false;
+      }
+
+      if (filterTableNo !== "ALL") {
+        if (String(tx.TableNo || '').trim().toLowerCase() !== filterTableNo.trim().toLowerCase()) {
+          return false;
+        }
+      }
+
+      if (filterPayMode !== "ALL") {
+        const pm = String(tx.PayMode || '').trim().toUpperCase();
+        if (pm !== filterPayMode.toUpperCase()) return false;
+      }
+
+      if (filterSearch.trim()) {
+        const q = filterSearch.trim().toLowerCase();
+        const billNo = String(tx.BillNo || '').toLowerCase();
+        const table = String(tx.TableNo || '').toLowerCase();
+        const payMode = String(tx.PayMode || '').toLowerCase();
+        const type = String(tx.OrderType || '').toLowerCase();
+        const amount = String(tx.SysAmount || '').toLowerCase();
+        const matches = billNo.includes(q) || table.includes(q) || payMode.includes(q) || type.includes(q) || amount.includes(q);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [usageData?.transactions, isDateInFilterRange, filterOrderType, filterTableNo, filterPayMode, filterSearch]);
+
+  // ── Tab 2 Filtered: Reward Points History ──
+  const filteredRewards = useMemo(() => {
+    if (!usageData?.rewardHistory) return [];
+    return usageData.rewardHistory.filter((item: any) => {
+      if (!isDateInFilterRange(item.Date)) return false;
+
+      if (filterPointsType !== "ALL") {
+        const isOpening = item.Type === 'OPENING' || item.BillNo === 'OPENING-BALANCE' || item.BillNo === 'WALLET';
+        const isRedeem = item.Type === 'REDEEMED' || item.Type === 'REDEEM' || Number(item.Points) < 0;
+        const isEarn = item.Type === 'EARNED' || (!isOpening && !isRedeem && Number(item.Points) > 0);
+
+        if (filterPointsType === "EARNED" && !isEarn) return false;
+        if (filterPointsType === "REDEEMED" && !isRedeem) return false;
+        if (filterPointsType === "OPENING" && !isOpening) return false;
+      }
+
+      if (filterSearch.trim()) {
+        const q = filterSearch.trim().toLowerCase();
+        const billNo = String(item.BillNo || '').toLowerCase();
+        const remarks = String(item.Remarks || '').toLowerCase();
+        const points = String(item.Points || '').toLowerCase();
+        const amount = String(item.Amount || '').toLowerCase();
+        const table = String(item.TableNo || '').toLowerCase();
+        const matches = billNo.includes(q) || remarks.includes(q) || points.includes(q) || amount.includes(q) || table.includes(q);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [usageData?.rewardHistory, isDateInFilterRange, filterPointsType, filterSearch]);
+
+  // ── Tab 3 Filtered: QR Orders ──
+  const filteredQROrders = useMemo(() => {
+    if (!usageData?.qrOrders) return [];
+    return usageData.qrOrders.filter((qr: any) => {
+      if (!isDateInFilterRange(qr.OrderDateTime)) return false;
+
+      if (filterQRStatus !== "ALL") {
+        const status = String(qr.BillStatus || 'SETTLED').trim().toUpperCase();
+        if (status !== filterQRStatus.toUpperCase()) return false;
+      }
+
+      if (filterSearch.trim()) {
+        const q = filterSearch.trim().toLowerCase();
+        const orderNo = String(qr.OrderNumber || '').toLowerCase();
+        const table = String(qr.TableNo || '').toLowerCase();
+        const status = String(qr.BillStatus || '').toLowerCase();
+        const amount = String(qr.TotalAmount ?? qr.SettledAmount ?? '').toLowerCase();
+        const matches = orderNo.includes(q) || table.includes(q) || status.includes(q) || amount.includes(q);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [usageData?.qrOrders, isDateInFilterRange, filterQRStatus, filterSearch]);
+
+  const currentTabActiveFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterSearch.trim()) count++;
+    if (filterDatePreset !== "ALL") count++;
+
+    if (usageTab === "bills") {
+      if (filterOrderType !== "ALL") count++;
+      if (filterTableNo !== "ALL") count++;
+      if (filterPayMode !== "ALL") count++;
+    } else if (usageTab === "rewards") {
+      if (filterPointsType !== "ALL") count++;
+    } else if (usageTab === "qr") {
+      if (filterQRStatus !== "ALL") count++;
+    }
+    return count;
+  }, [usageTab, filterSearch, filterDatePreset, filterOrderType, filterTableNo, filterPayMode, filterPointsType, filterQRStatus]);
+
+  const isAnyFilterActive = currentTabActiveFilterCount > 0;
 
   // Bill Details State
   const [selectedBill, setSelectedBill] = useState<any>(null);
@@ -149,18 +442,49 @@ export default function MembersScreen() {
   const [showBillDetailsModal, setShowBillDetailsModal] = useState(false);
 
   const handleBillPress = async (tx: any) => {
-    setSelectedBill(tx);
+    const fullTx = usageData?.transactions?.find((t: any) => 
+      (t.SettlementID && tx.SettlementID && t.SettlementID === tx.SettlementID) || 
+      (t.BillNo && (t.BillNo === tx.BillNo || t.BillNo === tx.OrderNumber))
+    ) || {};
+
+    const qrTx = usageData?.qrOrders?.find((q: any) => 
+      (q.SettlementID && tx.SettlementID && q.SettlementID === tx.SettlementID) || 
+      (q.OrderNumber && (q.OrderNumber === tx.BillNo || q.OrderNumber === tx.OrderNumber))
+    ) || {};
+
+    const mergedBill = {
+      ...tx,
+      ...qrTx,
+      ...fullTx,
+      SettlementID: tx.SettlementID || fullTx.SettlementID || qrTx.SettlementID,
+      BillNo: fullTx.BillNo || tx.BillNo || tx.OrderNumber || qrTx.OrderNumber,
+      LastSettlementDate: fullTx.LastSettlementDate || tx.LastSettlementDate || qrTx.OrderDateTime || tx.OrderDateTime,
+      SysAmount: Number(fullTx.SysAmount ?? tx.SysAmount ?? qrTx.TotalAmount ?? tx.TotalAmount ?? 0),
+      TableNo: fullTx.TableNo || tx.TableNo || qrTx.TableNo || '',
+      OrderType: fullTx.OrderType || tx.OrderType || 'DINE-IN',
+      isQROrder: fullTx.isQROrder || tx.isQROrder || qrTx.isQROrder || 0
+    };
+
+    setSelectedBill(mergedBill);
     setShowBillDetailsModal(true);
     setLoadingBillDetails(true);
     setBillDetails([]);
     try {
-      const res = await fetch(`${API_URL}/api/sales/detail/${tx.SettlementID}`, {
-        headers: { Authorization: token ? `Bearer ${token}` : "" }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setBillDetails(data);
+      if (mergedBill.SettlementID) {
+        const res = await fetch(`${API_URL}/api/sales/detail/${mergedBill.SettlementID}`, {
+          headers: { Authorization: token ? `Bearer ${token}` : "" }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setBillDetails(data);
+            if (!mergedBill.SysAmount || mergedBill.SysAmount === 0) {
+              const calcTotal = data.reduce((sum: number, it: any) => sum + ((Number(it.Price) || 0) * (Number(it.Qty) || 1)), 0);
+              if (calcTotal > 0) {
+                setSelectedBill((prev: any) => ({ ...prev, SysAmount: calcTotal }));
+              }
+            }
+          }
         }
       }
     } catch (err) {
@@ -245,6 +569,8 @@ export default function MembersScreen() {
     setShowUsageModal(true);
     setLoadingUsage(true);
     setUsageData(null);
+    setShowFilterPanel(false);
+    resetModalFilters();
     try {
       const res = await fetch(`${API_URL}/api/members/usage/${member.MemberId}`, {
         headers: { Authorization: token ? `Bearer ${token}` : "" }
@@ -935,16 +1261,17 @@ export default function MembersScreen() {
         {/* Usage/Monthly History Modal */}
         <Modal visible={showUsageModal} transparent animationType="slide">
           <View style={styles.modalOverlay}>
-            <View style={styles.formSheet}>
-              <View style={styles.sheetHeader}>
-                <View>
-                  <Text style={styles.sheetTitle}>Order History & Details</Text>
-                  <Text style={{ fontFamily: Fonts.bold, color: Theme.textSecondary, fontSize: 13, marginTop: 4 }}>
+            <View style={[styles.formSheet, { maxHeight: '96%', height: isMobile ? '96%' : '92%', width: isMobile ? '96%' : '100%', maxWidth: 620, display: 'flex', flexDirection: 'column' }]}>
+              {/* Compact Header */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: isMobile ? 12 : 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Theme.border }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: isMobile ? 15 : 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Order History & Details</Text>
+                  <Text style={{ fontFamily: Fonts.bold, color: Theme.textSecondary, fontSize: 10.5, marginTop: 1 }}>
                     {usageMember?.Name} • {usageMember?.Phone}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => { setShowUsageModal(false); setUsageMember(null); setUsageData(null); }} style={styles.sheetClose}>
-                  <Ionicons name="close" size={24} color={Theme.textPrimary} />
+                <TouchableOpacity onPress={closeUsageModal} style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: Theme.bgMuted, justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="close" size={18} color={Theme.textPrimary} />
                 </TouchableOpacity>
               </View>
 
@@ -953,86 +1280,927 @@ export default function MembersScreen() {
                   <ActivityIndicator size="large" color={Theme.primary} />
                 </View>
               ) : (
-                <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-                  {/* Summary Dashboard */}
-                  <View style={{ flexDirection: 'row', gap: 15, marginBottom: 20 }}>
-                    <View style={{ flex: 1, backgroundColor: Theme.primary + '10', padding: 15, borderRadius: 16, borderLeftWidth: 4, borderLeftColor: Theme.primary }}>
-                      <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.primary, marginBottom: 4 }}>TOTAL ORDERS</Text>
-                      <Text style={{ fontSize: 20, fontFamily: Fonts.black, color: Theme.textPrimary }}>
-                        {usageData?.summary?.TotalOrders || 0}
+                <>
+                  {/* Compact Top Metric Cards */}
+                  <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: isMobile ? 10 : 16, paddingTop: 6, paddingBottom: 6 }}>
+                    <View style={{ flex: 1, backgroundColor: Theme.primary + '12', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 9, borderLeftWidth: 3, borderLeftColor: Theme.primary, justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 7.5, fontFamily: Fonts.black, color: Theme.primary, marginBottom: 1 }}>TOTAL BILLS</Text>
+                      <Text numberOfLines={1} style={{ fontSize: isMobile ? 13 : 15, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                        {usageData?.summary?.TotalOrders || usageData?.transactions?.length || 0}
                       </Text>
                     </View>
-                    <View style={{ flex: 1, backgroundColor: Theme.success + '10', padding: 15, borderRadius: 16, borderLeftWidth: 4, borderLeftColor: Theme.success }}>
-                      <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.success, marginBottom: 4 }}>TOTAL SPENT</Text>
-                      <Text style={{ fontSize: 20, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                    <View style={{ flex: 1.15, backgroundColor: Theme.success + '12', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 9, borderLeftWidth: 3, borderLeftColor: Theme.success, justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 7.5, fontFamily: Fonts.black, color: Theme.success, marginBottom: 1 }}>TOTAL SPENT</Text>
+                      <Text numberOfLines={1} style={{ fontSize: isMobile ? 13 : 15, fontFamily: Fonts.black, color: Theme.textPrimary }}>
                         ${(usageData?.summary?.TotalSpent || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1.3, backgroundColor: '#8B5CF6' + '15', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 9, borderLeftWidth: 3, borderLeftColor: '#8B5CF6', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 7.5, fontFamily: Fonts.black, color: '#8B5CF6', marginBottom: 1 }}>REWARD POINTS</Text>
+                      <Text numberOfLines={1} style={{ fontSize: isMobile ? 12 : 14, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                        🎁 {(usageData?.summary?.RewardCredit ?? usageMember?.RewardCredit ?? 0).toFixed(2)}
+                        <Text style={{ fontSize: 9.5, fontFamily: Fonts.bold, color: '#8B5CF6' }}> pts</Text>
                       </Text>
                     </View>
                   </View>
 
-                  {/* Consumed Items Breakdown */}
-                  <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary, marginBottom: 10, letterSpacing: 0.5 }}>
-                    ITEMS CONSUMED THIS MONTH
-                  </Text>
-                  {usageData?.items && usageData.items.length > 0 ? (
-                    <View style={{ backgroundColor: Theme.bgInput, borderRadius: 16, padding: 12, marginBottom: 20, borderWidth: 1, borderColor: Theme.border }}>
-                      {usageData.items.map((item, idx) => (
-                        <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: idx < usageData.items.length - 1 ? 1 : 0, borderBottomColor: Theme.border }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>{item.DishName}</Text>
-                            <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted }}>Qty: {item.TotalQty}</Text>
+                  {/* Compact Horizontal Segmented Tabs */}
+                  <View style={{ borderBottomWidth: 1, borderBottomColor: Theme.border, backgroundColor: Theme.bgCard }}>
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ 
+                        paddingHorizontal: isMobile ? 10 : 16, 
+                        paddingVertical: 5, 
+                        gap: 6,
+                        flexDirection: 'row',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <TouchableOpacity
+                        onPress={() => setUsageTab("bills")}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 5,
+                          paddingHorizontal: 11,
+                          paddingVertical: 5,
+                          borderRadius: 8,
+                          backgroundColor: usageTab === "bills" ? Theme.primary : Theme.bgInput,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13 }}>📋</Text>
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 11.5, color: usageTab === "bills" ? "#fff" : Theme.textSecondary, whiteSpace: 'nowrap' } as any}>
+                          Bills ({usageData?.transactions?.length || 0})
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setUsageTab("rewards")}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 5,
+                          paddingHorizontal: 11,
+                          paddingVertical: 5,
+                          borderRadius: 8,
+                          backgroundColor: usageTab === "rewards" ? "#8B5CF6" : Theme.bgInput,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13 }}>🎁</Text>
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 11.5, color: usageTab === "rewards" ? "#fff" : Theme.textSecondary, whiteSpace: 'nowrap' } as any}>
+                          Points History
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setUsageTab("qr")}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 5,
+                          paddingHorizontal: 11,
+                          paddingVertical: 5,
+                          borderRadius: 8,
+                          backgroundColor: usageTab === "qr" ? Theme.primary : Theme.bgInput,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13 }}>📱</Text>
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 11.5, color: usageTab === "qr" ? "#fff" : Theme.textSecondary, whiteSpace: 'nowrap' } as any}>
+                          QR ({usageData?.qrOrders?.length || 0})
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
+                  </View>
+
+                  {/* Compact Search, Filter & Clear Bar */}
+                  <View style={{ backgroundColor: Theme.bgCard, borderBottomWidth: 1, borderBottomColor: Theme.border, paddingHorizontal: isMobile ? 10 : 16, paddingVertical: 5 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {/* Compact Search Box */}
+                      <View style={{
+                        flex: 1,
+                        height: 31,
+                        backgroundColor: Theme.bgInput,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: Theme.border,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 8,
+                      }}>
+                        <Ionicons name="search" size={13} color={Theme.textSecondary} style={{ marginRight: 5 }} />
+                        <TextInput
+                          style={{
+                            flex: 1,
+                            height: '100%',
+                            fontFamily: Fonts.medium,
+                            fontSize: 11,
+                            color: Theme.textPrimary,
+                            ...Platform.select({ web: { outlineStyle: 'none' } as any }),
+                          }}
+                          placeholder={
+                            usageTab === "bills" 
+                              ? "Search bill #, table, pay mode..." 
+                              : usageTab === "rewards" 
+                                ? "Search bill #, remarks, points..." 
+                                : "Search order #, table, status..."
+                          }
+                          placeholderTextColor={Theme.textMuted}
+                          value={filterSearch}
+                          onChangeText={setFilterSearch}
+                        />
+                        {filterSearch.length > 0 && (
+                          <TouchableOpacity onPress={() => setFilterSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Ionicons name="close-circle" size={14} color={Theme.textMuted} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      {/* Compact Filter Toggle Button */}
+                      <TouchableOpacity
+                        onPress={() => setShowFilterPanel(prev => !prev)}
+                        style={{
+                          height: 31,
+                          paddingHorizontal: 9,
+                          borderRadius: 8,
+                          backgroundColor: showFilterPanel ? Theme.primary : (currentTabActiveFilterCount > 0 ? Theme.primary + '18' : Theme.bgInput),
+                          borderWidth: 1,
+                          borderColor: (showFilterPanel || currentTabActiveFilterCount > 0) ? Theme.primary : Theme.border,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        <Ionicons 
+                          name="funnel" 
+                          size={12} 
+                          color={showFilterPanel ? "#fff" : (currentTabActiveFilterCount > 0 ? Theme.primary : Theme.textSecondary)} 
+                        />
+                        <Text style={{ 
+                          fontFamily: Fonts.bold, 
+                          fontSize: 11, 
+                          color: showFilterPanel ? "#fff" : (currentTabActiveFilterCount > 0 ? Theme.primary : Theme.textSecondary) 
+                        }}>
+                          Filter
+                        </Text>
+                        {currentTabActiveFilterCount > 0 && (
+                          <View style={{
+                            backgroundColor: showFilterPanel ? "#fff" : Theme.primary,
+                            minWidth: 16,
+                            height: 16,
+                            borderRadius: 8,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            paddingHorizontal: 3,
+                          }}>
+                            <Text style={{
+                              fontSize: 9,
+                              fontFamily: Fonts.black,
+                              color: showFilterPanel ? Theme.primary : "#fff",
+                            }}>
+                              {currentTabActiveFilterCount}
+                            </Text>
                           </View>
-                          <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.success }}>
-                            ${(item.TotalAmount || 0).toFixed(2)}
-                          </Text>
-                        </View>
-                      ))}
+                        )}
+                      </TouchableOpacity>
+
+                      {/* Compact Clear Button */}
+                      {isAnyFilterActive && (
+                        <TouchableOpacity
+                          onPress={resetModalFilters}
+                          style={{
+                            height: 31,
+                            paddingHorizontal: 8,
+                            borderRadius: 8,
+                            backgroundColor: Theme.danger + '12',
+                            borderWidth: 1,
+                            borderColor: Theme.danger + '30',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                        >
+                          <Ionicons name="refresh-outline" size={12} color={Theme.danger} />
+                          <Text style={{ fontFamily: Fonts.bold, fontSize: 10.5, color: Theme.danger }}>Clear</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
-                  ) : (
-                    <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted, marginBottom: 20, fontStyle: 'italic' }}>
-                      No items consumed this month.
-                    </Text>
+
+                    {/* Active Filter Badges Bar */}
+                    {isAnyFilterActive && !showFilterPanel && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, textTransform: 'uppercase' }}>
+                          Filtered:
+                        </Text>
+                        {filterSearch.trim().length > 0 && (
+                          <TouchableOpacity
+                            onPress={() => setFilterSearch("")}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Theme.primary + '15', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.primary }}>"{filterSearch}"</Text>
+                            <Ionicons name="close" size={12} color={Theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                        {filterDatePreset !== "ALL" && (
+                          <TouchableOpacity
+                            onPress={() => { setFilterDatePreset("ALL"); setFilterStartDate(""); setFilterEndDate(""); }}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Theme.primary + '15', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.primary }}>
+                              📅 {filterDatePreset === "TODAY" ? "Today" : filterDatePreset === "7DAYS" ? "Last 7 Days" : filterDatePreset === "30DAYS" ? "Last 30 Days" : `${filterStartDate || 'start'} to ${filterEndDate || 'end'}`}
+                            </Text>
+                            <Ionicons name="close" size={12} color={Theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                        {usageTab === "bills" && filterOrderType !== "ALL" && (
+                          <TouchableOpacity
+                            onPress={() => setFilterOrderType("ALL")}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Theme.primary + '15', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.primary }}>🍽️ {filterOrderType}</Text>
+                            <Ionicons name="close" size={12} color={Theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                        {usageTab === "bills" && filterTableNo !== "ALL" && (
+                          <TouchableOpacity
+                            onPress={() => setFilterTableNo("ALL")}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Theme.primary + '15', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.primary }}>🪑 Table {filterTableNo}</Text>
+                            <Ionicons name="close" size={12} color={Theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                        {usageTab === "bills" && filterPayMode !== "ALL" && (
+                          <TouchableOpacity
+                            onPress={() => setFilterPayMode("ALL")}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#3B82F618', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: '#2563EB' }}>💳 {filterPayMode}</Text>
+                            <Ionicons name="close" size={12} color="#2563EB" />
+                          </TouchableOpacity>
+                        )}
+                        {usageTab === "rewards" && filterPointsType !== "ALL" && (
+                          <TouchableOpacity
+                            onPress={() => setFilterPointsType("ALL")}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#8B5CF618', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: '#7C3AED' }}>
+                              🎁 {filterPointsType === "EARNED" ? "Earned Only" : filterPointsType === "REDEEMED" ? "Redeemed Only" : "Opening Balance"}
+                            </Text>
+                            <Ionicons name="close" size={12} color="#7C3AED" />
+                          </TouchableOpacity>
+                        )}
+                        {usageTab === "qr" && filterQRStatus !== "ALL" && (
+                          <TouchableOpacity
+                            onPress={() => setFilterQRStatus("ALL")}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#8B5CF618', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: '#7C3AED' }}>📱 {filterQRStatus}</Text>
+                            <Ionicons name="close" size={12} color="#7C3AED" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Expandable Filter Drawer Panel */}
+                  {showFilterPanel && (
+                    <View style={{
+                      backgroundColor: '#F8FAFC',
+                      borderBottomWidth: 1,
+                      borderBottomColor: Theme.border,
+                      paddingHorizontal: isMobile ? 12 : 20,
+                      paddingVertical: 12,
+                    }}>
+                      <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={true} nestedScrollEnabled={true}>
+                        {/* 1. Date Range Filter */}
+                        <View style={{ marginBottom: 12 }}>
+                          <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>
+                            📅 DATE RANGE
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                            {[
+                              { id: "ALL", label: "All Time" },
+                              { id: "TODAY", label: "Today" },
+                              { id: "7DAYS", label: "Last 7 Days" },
+                              { id: "30DAYS", label: "Last 30 Days" },
+                              { id: "CUSTOM", label: "Custom" },
+                            ].map((preset) => {
+                              const isSelected = filterDatePreset === preset.id;
+                              return (
+                                <TouchableOpacity
+                                  key={preset.id}
+                                  onPress={() => setFilterDatePreset(preset.id as any)}
+                                  style={{
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 5,
+                                    borderRadius: 8,
+                                    backgroundColor: isSelected ? Theme.primary : Theme.bgInput,
+                                    borderWidth: 1,
+                                    borderColor: isSelected ? Theme.primary : Theme.border,
+                                  }}
+                                >
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontFamily: Fonts.bold,
+                                    color: isSelected ? "#fff" : Theme.textPrimary,
+                                  }}>
+                                    {preset.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+
+                          {filterDatePreset === "CUSTOM" && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 9, fontFamily: Fonts.bold, color: Theme.textMuted, marginBottom: 2 }}>From Date</Text>
+                                <TextInput
+                                  style={{
+                                    height: 34,
+                                    backgroundColor: Theme.bgInput,
+                                    borderRadius: 8,
+                                    paddingHorizontal: 8,
+                                    fontSize: 12,
+                                    fontFamily: Fonts.bold,
+                                    color: Theme.textPrimary,
+                                    borderWidth: 1,
+                                    borderColor: Theme.border,
+                                    ...Platform.select({ web: { outlineStyle: 'none' } as any }),
+                                  }}
+                                  placeholder="YYYY-MM-DD"
+                                  placeholderTextColor={Theme.textMuted}
+                                  value={filterStartDate}
+                                  onChangeText={setFilterStartDate}
+                                />
+                              </View>
+                              <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textMuted, marginTop: 14 }}>to</Text>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 9, fontFamily: Fonts.bold, color: Theme.textMuted, marginBottom: 2 }}>To Date</Text>
+                                <TextInput
+                                  style={{
+                                    height: 34,
+                                    backgroundColor: Theme.bgInput,
+                                    borderRadius: 8,
+                                    paddingHorizontal: 8,
+                                    fontSize: 12,
+                                    fontFamily: Fonts.bold,
+                                    color: Theme.textPrimary,
+                                    borderWidth: 1,
+                                    borderColor: Theme.border,
+                                    ...Platform.select({ web: { outlineStyle: 'none' } as any }),
+                                  }}
+                                  placeholder="YYYY-MM-DD"
+                                  placeholderTextColor={Theme.textMuted}
+                                  value={filterEndDate}
+                                  onChangeText={setFilterEndDate}
+                                />
+                              </View>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* 2. Bills Tab Specific Filters */}
+                        {usageTab === "bills" && (
+                          <>
+                            {/* Order Type */}
+                            <View style={{ marginBottom: 10 }}>
+                              <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>
+                                🍽️ ORDER TYPE
+                              </Text>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                                {["ALL", ...availableOrderTypes].map((type) => {
+                                  const isSelected = filterOrderType === type;
+                                  return (
+                                    <TouchableOpacity
+                                      key={type}
+                                      onPress={() => setFilterOrderType(type)}
+                                      style={{
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 8,
+                                        backgroundColor: isSelected ? Theme.primary : Theme.bgInput,
+                                        borderWidth: 1,
+                                        borderColor: isSelected ? Theme.primary : Theme.border,
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 11,
+                                        fontFamily: Fonts.bold,
+                                        color: isSelected ? "#fff" : Theme.textPrimary,
+                                      }}>
+                                        {type === "ALL" ? "All Types" : type}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+                            </View>
+
+                            {/* Table Number */}
+                            {availableTables.length > 0 && (
+                              <View style={{ marginBottom: 10 }}>
+                                <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>
+                                  🪑 TABLE NUMBER
+                                </Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                                  {["ALL", ...availableTables].map((tbl) => {
+                                    const isSelected = filterTableNo === tbl;
+                                    return (
+                                      <TouchableOpacity
+                                        key={tbl}
+                                        onPress={() => setFilterTableNo(tbl)}
+                                        style={{
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 5,
+                                          borderRadius: 8,
+                                          backgroundColor: isSelected ? Theme.primary : Theme.bgInput,
+                                          borderWidth: 1,
+                                          borderColor: isSelected ? Theme.primary : Theme.border,
+                                        }}
+                                      >
+                                        <Text style={{
+                                          fontSize: 11,
+                                          fontFamily: Fonts.bold,
+                                          color: isSelected ? "#fff" : Theme.textPrimary,
+                                        }}>
+                                          {tbl === "ALL" ? "All Tables" : `Table ${tbl}`}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </ScrollView>
+                              </View>
+                            )}
+
+                            {/* Payment Mode */}
+                            {availablePayModes.length > 0 && (
+                              <View style={{ marginBottom: 10 }}>
+                                <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>
+                                  💳 PAYMENT MODE
+                                </Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                                  {["ALL", ...availablePayModes].map((pm) => {
+                                    const isSelected = filterPayMode === pm;
+                                    return (
+                                      <TouchableOpacity
+                                        key={pm}
+                                        onPress={() => setFilterPayMode(pm)}
+                                        style={{
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 5,
+                                          borderRadius: 8,
+                                          backgroundColor: isSelected ? '#2563EB' : Theme.bgInput,
+                                          borderWidth: 1,
+                                          borderColor: isSelected ? '#2563EB' : Theme.border,
+                                        }}
+                                      >
+                                        <Text style={{
+                                          fontSize: 11,
+                                          fontFamily: Fonts.bold,
+                                          color: isSelected ? "#fff" : Theme.textPrimary,
+                                        }}>
+                                          {pm === "ALL" ? "All Modes" : pm}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </ScrollView>
+                              </View>
+                            )}
+                          </>
+                        )}
+
+                        {/* 3. Points History Specific Filters */}
+                        {usageTab === "rewards" && (
+                          <View style={{ marginBottom: 10 }}>
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>
+                              🎁 POINTS ACTIVITY & TRANSACTION TYPE
+                            </Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                              {[
+                                { id: "ALL", label: "All Activities" },
+                                { id: "EARNED", label: "Points Earned (+1%)" },
+                                { id: "REDEEMED", label: "Points Redeemed" },
+                                { id: "OPENING", label: "Opening Balance" },
+                              ].map((item) => {
+                                const isSelected = filterPointsType === item.id;
+                                return (
+                                  <TouchableOpacity
+                                    key={item.id}
+                                    onPress={() => setFilterPointsType(item.id as any)}
+                                    style={{
+                                      paddingHorizontal: 10,
+                                      paddingVertical: 5,
+                                      borderRadius: 8,
+                                      backgroundColor: isSelected ? '#8B5CF6' : Theme.bgInput,
+                                      borderWidth: 1,
+                                      borderColor: isSelected ? '#8B5CF6' : Theme.border,
+                                    }}
+                                  >
+                                    <Text style={{
+                                      fontSize: 11,
+                                      fontFamily: Fonts.bold,
+                                      color: isSelected ? "#fff" : Theme.textPrimary,
+                                    }}>
+                                      {item.label}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+                        )}
+
+                        {/* 4. QR Specific Filters */}
+                        {usageTab === "qr" && (
+                          <View style={{ marginBottom: 10 }}>
+                            <Text style={{ fontSize: 10, fontFamily: Fonts.black, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>
+                              📱 QR ORDER STATUS
+                            </Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                              {["ALL", ...availableQRStatuses].map((status) => {
+                                const isSelected = filterQRStatus === status;
+                                return (
+                                  <TouchableOpacity
+                                    key={status}
+                                    onPress={() => setFilterQRStatus(status)}
+                                    style={{
+                                      paddingHorizontal: 10,
+                                      paddingVertical: 5,
+                                      borderRadius: 8,
+                                      backgroundColor: isSelected ? Theme.primary : Theme.bgInput,
+                                      borderWidth: 1,
+                                      borderColor: isSelected ? Theme.primary : Theme.border,
+                                    }}
+                                  >
+                                    <Text style={{
+                                      fontSize: 11,
+                                      fontFamily: Fonts.bold,
+                                      color: isSelected ? "#fff" : Theme.textPrimary,
+                                    }}>
+                                      {status === "ALL" ? "All Status" : status}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+                        )}
+                      </ScrollView>
+
+                      {/* Filter Footer Buttons: Reset All and Apply / Close */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: Theme.border }}>
+                        <TouchableOpacity
+                          onPress={resetModalFilters}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 6 }}
+                        >
+                          <Ionicons name="refresh-outline" size={13} color={Theme.textSecondary} />
+                          <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Reset All</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => setShowFilterPanel(false)}
+                          style={{
+                            backgroundColor: Theme.primary,
+                            paddingHorizontal: 14,
+                            paddingVertical: 6,
+                            borderRadius: 8,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                          <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: "#fff" }}>Apply & Close</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   )}
 
-                  {/* Transaction History list */}
-                  <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary, marginBottom: 10, letterSpacing: 0.5 }}>
-                    RECENT BILLS
-                  </Text>
-                  {usageData?.transactions && usageData.transactions.length > 0 ? (
-                    <View style={{ gap: 8, marginBottom: 30 }}>
-                      {usageData.transactions.map((tx) => {
-                        const dateObj = new Date(tx.LastSettlementDate);
-                        return (
-                          <TouchableOpacity 
-                            key={tx.SettlementID} 
-                            activeOpacity={0.7}
-                            onPress={() => handleBillPress(tx)}
-                            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Theme.bgInput, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Theme.border }}
-                          >
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ padding: isMobile ? 8 : 12, paddingBottom: 10 }}
+                    showsVerticalScrollIndicator={true}
+                  >
+                    {/* ── TAB 1: ALL BILLS ─────────────────────────────────────── */}
+                    {usageTab === "bills" && (
+                      <View>
+                        <Text style={{ fontFamily: Fonts.black, fontSize: 11, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          Settled Bills & Receipts ({filteredBills.length}{isAnyFilterActive ? ` of ${usageData?.transactions?.length || 0}` : ''})
+                        </Text>
+                        {filteredBills.length > 0 ? (
+                          <View style={{ gap: 5 }}>
+                            {filteredBills.map((tx: any) => (
+                              <TouchableOpacity 
+                                key={tx.SettlementID} 
+                                activeOpacity={0.7}
+                                onPress={() => handleBillPress(tx)}
+                                style={{
+                                  backgroundColor: Theme.bgInput,
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 6,
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: Theme.border,
+                                }}
+                              >
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <View style={{ flex: 1, marginRight: 8 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                      <Text style={{ fontFamily: Fonts.black, fontSize: 12.5, color: Theme.textPrimary }}>Bill #{tx.BillNo}</Text>
+                                      {tx.isQROrder === 1 && (
+                                        <View style={{ backgroundColor: '#8B5CF6' + '20', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                          <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: '#7C3AED' }}>📱 QR</Text>
+                                        </View>
+                                      )}
+                                      {tx.TableNo && (
+                                        <View style={{ backgroundColor: Theme.primary + '15', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                          <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: Theme.primary }}>T-{tx.TableNo}</Text>
+                                        </View>
+                                      )}
+                                      <View style={{ backgroundColor: Theme.border, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                        <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: Theme.textSecondary }}>{tx.OrderType || 'DINE-IN'}</Text>
+                                      </View>
+                                      {tx.PayMode && (
+                                        <View style={{ backgroundColor: '#3B82F618', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                          <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: '#2563EB' }}>💳 {tx.PayMode}</Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                    <Text style={{ fontFamily: Fonts.medium, fontSize: 9.5, color: Theme.textMuted, marginTop: 2 }}>
+                                      {formatToSingaporeDate(tx.LastSettlementDate)} • {formatToSingaporeTime(tx.LastSettlementDate)}
+                                    </Text>
+                                  </View>
+
+                                  <View style={{ alignItems: 'flex-end' }}>
+                                    <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary }}>
+                                      ${(tx.SysAmount || 0).toFixed(2)}
+                                    </Text>
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        ) : (
+                          isAnyFilterActive ? (
+                            renderFilterEmptyState("No Matching Bills", "No settled bills match your active filters or search.")
+                          ) : (
+                            <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textMuted, fontStyle: 'italic', textAlign: 'center', marginVertical: 14 }}>
+                              No settled bills found for this member.
+                            </Text>
+                          )
+                        )}
+                      </View>
+                    )}
+
+                    {/* ── TAB 2: REWARD POINTS & WALLET ────────────────────────── */}
+                    {usageTab === "rewards" && (
+                      <View>
+                        {/* Compact Reward Wallet Card */}
+                        <View style={{ backgroundColor: '#FAF5FF', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#E9D5FF', marginBottom: 10 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                             <View>
-                              <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>Bill #{tx.BillNo}</Text>
-                              <Text style={{ fontFamily: Fonts.medium, fontSize: 10, color: Theme.textMuted }}>
-                                {formatToSingaporeDate(tx.LastSettlementDate)} • {formatToSingaporeTime(tx.LastSettlementDate)}
+                              <Text style={{ fontSize: 9.5, fontFamily: Fonts.black, color: '#7C3AED', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                REWARD POINTS WALLET
+                              </Text>
+                              <Text style={{ fontSize: 20, fontFamily: Fonts.black, color: '#6D28D9', marginTop: 2 }}>
+                                ${(usageData?.summary?.RewardCredit ?? usageMember?.RewardCredit ?? 0).toFixed(2)}
+                                <Text style={{ fontSize: 11, fontFamily: Fonts.bold, color: '#8B5CF6' }}> pts</Text>
                               </Text>
                             </View>
-                            <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary }}>
-                              ${(tx.SysAmount || 0).toFixed(2)}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted, marginBottom: 30, fontStyle: 'italic' }}>
-                      No recent transaction records.
-                    </Text>
-                  )}
+                            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#DDD6FE', alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name="gift" size={18} color="#7C3AED" />
+                            </View>
+                          </View>
 
-                  <TouchableOpacity style={styles.submitBtn} onPress={() => { setShowUsageModal(false); setUsageMember(null); setUsageData(null); }}>
-                    <Text style={styles.submitBtnText}>Done</Text>
-                  </TouchableOpacity>
-                  <View style={{ height: 30 }} />
-                </ScrollView>
+                          {/* Breakdown of balance */}
+                          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, backgroundColor: '#fff', borderRadius: 8, padding: 6, borderWidth: 1, borderColor: '#F3E8FF' }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 8, fontFamily: Fonts.black, color: '#6B7280', textTransform: 'uppercase' }}>
+                                OPENING BALANCE
+                              </Text>
+                              <Text style={{ fontSize: 11, fontFamily: Fonts.black, color: '#4B5563', marginTop: 1 }}>
+                                ${(usageData?.summary?.OpeningPoints ?? 97.59).toFixed(2)} pts
+                              </Text>
+                            </View>
+
+                            <View style={{ width: 1, backgroundColor: '#E9D5FF' }} />
+
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 8, fontFamily: Fonts.black, color: Theme.success, textTransform: 'uppercase' }}>
+                                EARNED FROM ORDERS
+                              </Text>
+                              <Text style={{ fontSize: 11, fontFamily: Fonts.black, color: Theme.success, marginTop: 1 }}>
+                                +${(usageData?.summary?.EarnedFromBills ?? 8.04).toFixed(2)} pts
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={{ height: 1, backgroundColor: '#E9D5FF', marginVertical: 6 }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 9.5, fontFamily: Fonts.medium, color: '#6B7280' }}>
+                              Cashback Rule: 1% points on every $1 spent ($100 = $1 pt)
+                            </Text>
+                            <Text style={{ fontSize: 9.5, fontFamily: Fonts.bold, color: '#059669' }}>
+                              Active
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Points Activity History Header */}
+                        <Text style={{ fontFamily: Fonts.black, fontSize: 11, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          Reward Points Order History ({filteredRewards.length}{isAnyFilterActive ? ` of ${usageData?.rewardHistory?.length || 0}` : ''})
+                        </Text>
+
+                        {filteredRewards.length > 0 ? (
+                          <View style={{ gap: 5 }}>
+                            {filteredRewards.map((item: any, idx: number) => {
+                              const isOpening = item.Type === 'OPENING' || item.BillNo === 'OPENING-BALANCE' || item.BillNo === 'WALLET';
+                              return (
+                                <TouchableOpacity 
+                                  key={idx}
+                                  activeOpacity={isOpening ? 1 : 0.7}
+                                  onPress={() => {
+                                    if (!isOpening && item.SettlementID) {
+                                      handleBillPress({
+                                        SettlementID: item.SettlementID,
+                                        BillNo: item.BillNo,
+                                        LastSettlementDate: item.Date,
+                                        SysAmount: item.Amount,
+                                        TableNo: item.TableNo,
+                                        OrderType: item.OrderType || 'DINE-IN',
+                                        isQROrder: item.isQROrder || 0
+                                      });
+                                    }
+                                  }}
+                                  style={{
+                                    backgroundColor: Theme.bgInput,
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 6,
+                                    borderRadius: 8,
+                                    borderWidth: 1,
+                                    borderColor: isOpening ? '#E9D5FF' : Theme.border,
+                                  }}
+                                >
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <View style={{ flex: 1, paddingRight: 8 }}>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                        <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Theme.textPrimary }}>
+                                          {isOpening ? 'Member Registration' : `Bill #${item.BillNo}`}
+                                        </Text>
+                                        <View style={{ backgroundColor: isOpening ? '#8B5CF620' : Theme.success + '20', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                          <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: isOpening ? '#7C3AED' : Theme.success }}>
+                                            {isOpening ? 'INITIAL' : '+1% CASHBACK'}
+                                          </Text>
+                                        </View>
+                                        {item.isQROrder === 1 && (
+                                          <View style={{ backgroundColor: '#8B5CF620', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                            <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: '#7C3AED' }}>📱 QR</Text>
+                                          </View>
+                                        )}
+                                        {item.TableNo && (
+                                          <View style={{ backgroundColor: Theme.primary + '15', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                            <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: Theme.primary }}>T-{item.TableNo}</Text>
+                                          </View>
+                                        )}
+                                      </View>
+
+                                      <Text style={{ fontFamily: Fonts.medium, fontSize: 9.5, color: Theme.textMuted, marginTop: 1 }}>
+                                        {isOpening 
+                                          ? 'Initial points on signup'
+                                          : `Spent $${(Number(item.Amount) || 0).toFixed(2)} • 1% pts`
+                                        }
+                                        {' • '}{formatToSingaporeDate(item.Date)} {formatToSingaporeTime(item.Date)}
+                                      </Text>
+                                    </View>
+
+                                    <View style={{ alignItems: 'flex-end' }}>
+                                      <Text style={{ fontFamily: Fonts.black, fontSize: 13.5, color: isOpening ? '#7C3AED' : Theme.success }}>
+                                        +{Number(item.Points || 0).toFixed(2)}
+                                      </Text>
+                                      <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: Theme.textMuted }}>pts</Text>
+                                    </View>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          isAnyFilterActive ? (
+                            renderFilterEmptyState("No Matching Points Records", "No points transactions match your active filters or search.")
+                          ) : (
+                            <Text style={{ fontFamily: Fonts.medium, fontSize: 12, color: Theme.textMuted, fontStyle: 'italic', textAlign: 'center', marginVertical: 14 }}>
+                              No reward points history found.
+                            </Text>
+                          )
+                        )}
+                      </View>
+                    )}
+
+                    {/* ── TAB 3: QR ORDERS ─────────────────────────────────────── */}
+                    {usageTab === "qr" && (
+                      <View>
+                        <Text style={{ fontFamily: Fonts.black, fontSize: 11, color: Theme.textSecondary, marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          Orders Placed via Mobile QR Code ({filteredQROrders.length}{isAnyFilterActive ? ` of ${usageData?.qrOrders?.length || 0}` : ''})
+                        </Text>
+
+                        {filteredQROrders.length > 0 ? (
+                          <View style={{ gap: 5 }}>
+                            {filteredQROrders.map((qr: any, idx: number) => (
+                              <TouchableOpacity
+                                key={idx}
+                                activeOpacity={0.7}
+                                onPress={() => {
+                                  if (qr.SettlementID) {
+                                    handleBillPress({
+                                      SettlementID: qr.SettlementID,
+                                      BillNo: qr.OrderNumber,
+                                      LastSettlementDate: qr.OrderDateTime,
+                                      SysAmount: Number(qr.TotalAmount || qr.SettledAmount || 0),
+                                      TableNo: qr.TableNo,
+                                      OrderType: 'DINE-IN',
+                                      isQROrder: 1
+                                    });
+                                  }
+                                }}
+                                style={{
+                                  backgroundColor: Theme.bgInput,
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 6,
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: Theme.border,
+                                }}
+                              >
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <View style={{ flex: 1, marginRight: 8 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                      <Text style={{ fontFamily: Fonts.black, fontSize: 12.5, color: Theme.textPrimary }}>
+                                        Order #{qr.OrderNumber}
+                                      </Text>
+                                      <View style={{ backgroundColor: '#8B5CF6' + '20', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                        <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: '#7C3AED' }}>📱 QR</Text>
+                                      </View>
+                                      {qr.TableNo && (
+                                        <View style={{ backgroundColor: Theme.primary + '15', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                          <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: Theme.primary }}>T-{qr.TableNo}</Text>
+                                        </View>
+                                      )}
+                                      <View style={{ backgroundColor: qr.BillStatus === 'SETTLED' ? Theme.success + '15' : Theme.warning + '15', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5 }}>
+                                        <Text style={{ fontSize: 8.5, fontFamily: Fonts.bold, color: qr.BillStatus === 'SETTLED' ? Theme.success : Theme.warning }}>
+                                          {qr.BillStatus || 'SETTLED'}
+                                        </Text>
+                                      </View>
+                                    </View>
+
+                                    <Text style={{ fontFamily: Fonts.medium, fontSize: 9.5, color: Theme.textMuted, marginTop: 2 }}>
+                                      {formatToSingaporeDate(qr.OrderDateTime)} • {formatToSingaporeTime(qr.OrderDateTime)}
+                                    </Text>
+                                  </View>
+
+                                  <View style={{ alignItems: 'flex-end' }}>
+                                    <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary }}>
+                                      ${(qr.TotalAmount || qr.SettledAmount || 0).toFixed(2)}
+                                    </Text>
+                                    {qr.SettlementID && (
+                                      <Text style={{ fontSize: 9.5, fontFamily: Fonts.bold, color: Theme.primary, marginTop: 2 }}>
+                                        View Receipt →
+                                      </Text>
+                                    )}
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        ) : (
+                          isAnyFilterActive ? (
+                            renderFilterEmptyState("No Matching QR Orders", "No mobile QR orders match your active filters or search.")
+                          ) : (
+                            <View style={{ backgroundColor: Theme.bgInput, borderRadius: 10, padding: 18, alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name="qr-code-outline" size={32} color={Theme.textMuted} />
+                              <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary, marginTop: 8 }}>
+                                No QR Orders Found
+                              </Text>
+                              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted, textAlign: 'center', marginTop: 3 }}>
+                                Orders placed through the Table or Takeaway QR code will appear here.
+                              </Text>
+                            </View>
+                          )
+                        )}
+                      </View>
+                    )}
+                  </ScrollView>
+
+                  {/* Fixed Footer with Done button */}
+                  <View style={{ paddingHorizontal: isMobile ? 12 : 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: Theme.border, backgroundColor: Theme.bgCard, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}>
+                    <TouchableOpacity style={[styles.submitBtn, { marginTop: 0, height: 38, borderRadius: 10 }]} onPress={closeUsageModal}>
+                      <Text style={[styles.submitBtnText, { fontSize: 13.5 }]}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
               )}
             </View>
           </View>
@@ -1041,14 +2209,30 @@ export default function MembersScreen() {
         {/* Bill Details Modal */}
         <Modal visible={showBillDetailsModal} transparent animationType="slide">
           <View style={styles.modalOverlay}>
-            <View style={[styles.formSheet, { maxWidth: 450 }]}>
+            <View style={[styles.formSheet, { maxWidth: 460, maxHeight: '88%', height: '88%', display: 'flex', flexDirection: 'column' }]}>
+              {/* Sheet Header */}
               <View style={styles.sheetHeader}>
-                <View>
-                  <Text style={styles.sheetTitle}>Bill Details</Text>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={styles.sheetTitle}>Bill Receipt & Details</Text>
                   {selectedBill && (
-                    <Text style={{ fontFamily: Fonts.bold, color: Theme.textSecondary, fontSize: 13, marginTop: 4 }}>
-                      Bill #{selectedBill.BillNo}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                      <Text style={{ fontFamily: Fonts.black, color: Theme.primary, fontSize: 13 }}>
+                        Bill #{selectedBill.BillNo}
+                      </Text>
+                      {selectedBill.isQROrder === 1 && (
+                        <View style={{ backgroundColor: '#8B5CF620', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 }}>
+                          <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: '#7C3AED' }}>📱 QR Order</Text>
+                        </View>
+                      )}
+                      {selectedBill.TableNo ? (
+                        <View style={{ backgroundColor: Theme.primary + '15', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 }}>
+                          <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.primary }}>Table {selectedBill.TableNo}</Text>
+                        </View>
+                      ) : null}
+                      <View style={{ backgroundColor: Theme.border, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 }}>
+                        <Text style={{ fontSize: 9, fontFamily: Fonts.bold, color: Theme.textSecondary }}>{selectedBill.OrderType || 'DINE-IN'}</Text>
+                      </View>
+                    </View>
                   )}
                 </View>
                 <TouchableOpacity onPress={() => { setShowBillDetailsModal(false); setSelectedBill(null); setBillDetails([]); }} style={styles.sheetClose}>
@@ -1061,60 +2245,100 @@ export default function MembersScreen() {
                   <ActivityIndicator size="large" color={Theme.primary} />
                 </View>
               ) : (
-                <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-                  {selectedBill && (
-                    <View style={{ marginBottom: 20 }}>
-                      <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textMuted, marginBottom: 8 }}>
-                        DATE & TIME
-                      </Text>
-                      <Text style={{ fontFamily: Fonts.black, fontSize: 15, color: Theme.textPrimary }}>
-                        {`${formatToSingaporeDate(selectedBill.LastSettlementDate, { day: 'numeric', month: 'short', year: 'numeric' })} • ${formatToSingaporeTime(selectedBill.LastSettlementDate)}`}
-                      </Text>
-                    </View>
-                  )}
+                (() => {
+                  const itemSum = (billDetails || []).reduce((sum, it) => sum + ((Number(it.Price) || 0) * (Number(it.Qty) || 1)), 0);
+                  const billTotal = Number(selectedBill?.SysAmount || 0) > 0 ? Number(selectedBill.SysAmount) : itemSum;
+                  const dateRaw = selectedBill?.LastSettlementDate || selectedBill?.OrderDateTime;
+                  const sDate = dateRaw ? formatToSingaporeDate(dateRaw, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+                  const sTime = dateRaw ? formatToSingaporeTime(dateRaw) : '';
+                  const fullDateTime = (sDate && sTime) ? `${sDate} • ${sTime}` : (sDate || sTime || 'Settled Bill');
 
-                  <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary, marginBottom: 10, letterSpacing: 0.5 }}>
-                    ITEMS ORDERED
-                  </Text>
-                  {billDetails && billDetails.length > 0 ? (
-                    <View style={{ backgroundColor: Theme.bgInput, borderRadius: 16, padding: 12, marginBottom: 20, borderWidth: 1, borderColor: Theme.border }}>
-                      {billDetails.map((item, idx) => (
-                        <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: idx < billDetails.length - 1 ? 1 : 0, borderBottomColor: Theme.border }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>{item.DishName}</Text>
-                            {item.modifiers && item.modifiers.length > 0 && (
-                              <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted, marginLeft: 8 }}>
-                                + {item.modifiers.map((m: any) => m.ModifierName).join(", ")}
-                              </Text>
-                            )}
-                            <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted }}>Qty: {item.Qty} x {formatMoney(item.Price)}</Text>
-                          </View>
-                          <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.success }}>
-                            {formatMoney((item.Price || 0) * (item.Qty || 0))}
+                  return (
+                    <>
+                      {/* Meta Information Bar */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, backgroundColor: Theme.bgInput, borderBottomWidth: 1, borderBottomColor: Theme.border }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Ionicons name="calendar-outline" size={14} color={Theme.textMuted} />
+                          <Text style={{ fontFamily: Fonts.bold, fontSize: 12, color: Theme.textPrimary }}>
+                            {fullDateTime}
                           </Text>
                         </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted, marginBottom: 20, fontStyle: 'italic' }}>
-                      No items recorded.
-                    </Text>
-                  )}
+                        <Text style={{ fontFamily: Fonts.bold, fontSize: 11, color: Theme.textMuted }}>
+                          {billDetails.length} {billDetails.length === 1 ? 'item' : 'items'}
+                        </Text>
+                      </View>
 
-                  {selectedBill && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Theme.primary + '10', padding: 16, borderRadius: 16, borderLeftWidth: 4, borderLeftColor: Theme.primary, marginBottom: 25 }}>
-                      <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.primary }}>TOTAL AMOUNT</Text>
-                      <Text style={{ fontFamily: Fonts.black, fontSize: 18, color: Theme.textPrimary }}>
-                        {formatMoney(selectedBill.SysAmount)}
-                      </Text>
-                    </View>
-                  )}
+                      {/* Scrollable Item List */}
+                      <ScrollView
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ padding: 20, paddingBottom: 15 }}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        <Text style={{ fontFamily: Fonts.black, fontSize: 12, color: Theme.textSecondary, marginBottom: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                          Items Ordered
+                        </Text>
 
-                  <TouchableOpacity style={styles.submitBtn} onPress={() => { setShowBillDetailsModal(false); setSelectedBill(null); setBillDetails([]); }}>
-                    <Text style={styles.submitBtnText}>Close</Text>
-                  </TouchableOpacity>
-                  <View style={{ height: 30 }} />
-                </ScrollView>
+                        {billDetails && billDetails.length > 0 ? (
+                          <View style={{ backgroundColor: Theme.bgCard, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: Theme.border }}>
+                            {billDetails.map((item, idx) => {
+                              const lineTotal = (Number(item.Price) || 0) * (Number(item.Qty) || 1);
+                              return (
+                                <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: idx < billDetails.length - 1 ? 1 : 0, borderBottomColor: Theme.border }}>
+                                  <View style={{ flex: 1, paddingRight: 10 }}>
+                                    <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
+                                      {item.DishName}
+                                    </Text>
+                                    {item.modifiers && item.modifiers.length > 0 && (
+                                      <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted, marginTop: 2 }}>
+                                        + {item.modifiers.map((m: any) => m.ModifierName).join(", ")}
+                                      </Text>
+                                    )}
+                                    <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textMuted, marginTop: 2 }}>
+                                      Qty: <Text style={{ fontFamily: Fonts.bold, color: Theme.textPrimary }}>{item.Qty}</Text> × {formatMoney(item.Price)}
+                                    </Text>
+                                  </View>
+                                  <Text style={{ fontFamily: Fonts.black, fontSize: 14, color: Theme.textPrimary }}>
+                                    {formatMoney(lineTotal)}
+                                  </Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          <View style={{ backgroundColor: Theme.bgInput, borderRadius: 14, padding: 20, alignItems: 'center' }}>
+                            <Text style={{ fontFamily: Fonts.medium, fontSize: 13, color: Theme.textMuted, fontStyle: 'italic' }}>
+                              No items recorded for this settlement.
+                            </Text>
+                          </View>
+                        )}
+                      </ScrollView>
+
+                      {/* Fixed Sticky Footer with Total Amount & Close Button */}
+                      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, borderTopWidth: 1, borderTopColor: Theme.border, backgroundColor: Theme.bgCard, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Theme.primary + '12', padding: 14, borderRadius: 14, borderLeftWidth: 4, borderLeftColor: Theme.primary, marginBottom: 12 }}>
+                          <View>
+                            <Text style={{ fontFamily: Fonts.black, fontSize: 10, color: Theme.primary, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                              TOTAL AMOUNT
+                            </Text>
+                            <Text style={{ fontFamily: Fonts.medium, fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
+                              Settled / Paid
+                            </Text>
+                          </View>
+                          <Text style={{ fontFamily: Fonts.black, fontSize: 20, color: Theme.textPrimary }}>
+                            {formatMoney(billTotal)}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity 
+                          style={[styles.submitBtn, { marginTop: 0, height: 46 }]} 
+                          onPress={() => { setShowBillDetailsModal(false); setSelectedBill(null); setBillDetails([]); }}
+                        >
+                          <Text style={styles.submitBtnText}>Close</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  );
+                })()
               )}
             </View>
           </View>

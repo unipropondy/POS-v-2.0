@@ -2144,12 +2144,13 @@ router.post("/save", async (req, res) => {
         // 🚀 SYNC SYIELD: Fetch Master GUID OrderId, Pax, CustomerName and MobileNo for Relation Integrity
         const guidRes = await transaction.request()
             .input("orderNo", sql.NVarChar(100), displayOrderId)
-            .query("SELECT TOP 1 OrderId, Pax, CustomerName, MobileNo FROM RestaurantOrderCur WITH (UPDLOCK) WHERE OrderNumber = @orderNo");
+            .query("SELECT TOP 1 OrderId, Pax, CustomerName, MobileNo, CustomerId FROM RestaurantOrderCur WITH (UPDLOCK) WHERE OrderNumber = @orderNo");
         const guidOrderId = guidRes.recordset[0]?.OrderId || settlementId;
         orderPax = guidRes.recordset[0]?.Pax;
         orderCustomerName = guidRes.recordset[0]?.CustomerName;
         orderMobileNo = guidRes.recordset[0]?.MobileNo;
-        console.log(`[SAVE SALE] Master Sync -> GUID OrderId: ${guidOrderId}, orderPax: ${orderPax}, orderCustomerName: ${orderCustomerName}, orderMobileNo: ${orderMobileNo}`);
+        const orderCustomerId = guidRes.recordset[0]?.CustomerId;
+        console.log(`[SAVE SALE] Master Sync -> GUID OrderId: ${guidOrderId}, orderPax: ${orderPax}, orderCustomerName: ${orderCustomerName}, orderMobileNo: ${orderMobileNo}, orderCustomerId: ${orderCustomerId}`);
 
      // Split Bill unique bill/invoice suffix generator
     finalBillNo = displayOrderId;
@@ -2175,6 +2176,45 @@ router.post("/save", async (req, res) => {
     const normalizedPayMode = normalizePayMode(paymentMethod);
     const payModeCode = normalizedPayMode === "CASH" ? 1 : normalizedPayMode === "CARD" ? 2 : 3;
 
+    let finalMemberGuid = toGuidOrNull(memberId) || toGuidOrNull(rewardMemberId) || toGuidOrNull(orderCustomerId);
+    let effectiveMobile = req.body.mobileNo || req.body.MobileNo || orderMobileNo || null;
+    let effectiveGuestName = req.body.customerName ? req.body.customerName.trim().substring(0, 100) : (orderCustomerName || tableCustomerName || null);
+
+    if (!finalMemberGuid && effectiveMobile) {
+      try {
+        const cleanP = String(effectiveMobile).replace(/\D/g, "");
+        const l8 = cleanP.length >= 8 ? cleanP.slice(-8) : cleanP;
+        if (l8) {
+          const mLookup = await transaction.request()
+            .input("l8", sql.NVarChar(50), l8)
+            .query("SELECT TOP 1 MemberId FROM MemberMaster WHERE RIGHT(REPLACE(REPLACE(REPLACE(Phone, ' ', ''), '+', ''), '-', ''), 8) = @l8");
+          if (mLookup.recordset.length > 0) {
+            finalMemberGuid = mLookup.recordset[0].MemberId;
+          }
+        }
+      } catch (mErr) {
+        console.warn("[SAVE SALE] Auto member resolution skipped:", mErr.message);
+      }
+    }
+
+    if (finalMemberGuid && (!effectiveMobile || !effectiveGuestName || effectiveGuestName === "Guest")) {
+      try {
+        const mInfo = await transaction.request()
+          .input("mId", sql.UniqueIdentifier, finalMemberGuid)
+          .query("SELECT TOP 1 Name, Phone FROM MemberMaster WHERE MemberId = @mId");
+        if (mInfo.recordset.length > 0) {
+          if (!effectiveGuestName || effectiveGuestName === "Guest") {
+            effectiveGuestName = mInfo.recordset[0].Name || effectiveGuestName;
+          }
+          if (!effectiveMobile) {
+            effectiveMobile = mInfo.recordset[0].Phone || effectiveMobile;
+          }
+        }
+      } catch (mInfoErr) {
+        console.warn("[SAVE SALE] Member info auto-lookup error:", mInfoErr.message);
+      }
+    }
+
     const headerResult = await transaction.request()
       .input("SettlementID", sql.UniqueIdentifier, settlementId)
       .input("LastSettlementDate", sql.DateTime, now)
@@ -2186,7 +2226,7 @@ router.post("/save", async (req, res) => {
       .input("OrderType", sql.NVarChar(50), orderType || "DINE-IN")
       .input("TableNo", sql.NVarChar(50), tableNo || null)
       .input("Section", sql.NVarChar(100), section || null)
-      .input("MemberId", sql.UniqueIdentifier, toGuidOrNull(memberId))
+      .input("MemberId", sql.UniqueIdentifier, finalMemberGuid)
       .input("CashierID", sql.UniqueIdentifier, validCashierGuid)
       .input("BusinessUnitId", sql.UniqueIdentifier, sanitizeGuid(businessUnitId))
       .input("SysAmount", sql.Money, totalAmount || 0)
@@ -2194,7 +2234,7 @@ router.post("/save", async (req, res) => {
       .input("CreatedBy", sql.UniqueIdentifier, validCashierGuid)
       .input("CreatedOn", sql.DateTime, now)
       .input("SER_NAME", sql.NVarChar(255), req.body.serverName || null)
-      .input("MobileNo", sql.NVarChar(50), req.body.mobileNo || req.body.MobileNo || orderMobileNo || null)
+      .input("MobileNo", sql.NVarChar(50), effectiveMobile)
       .input("VoidItemQty", sql.Int, voidQty)
       .input("VoidItemAmount", sql.Money, voidAmount)
       .input("RoundedBy", sql.Money, roundOff || 0)
@@ -2210,7 +2250,7 @@ router.post("/save", async (req, res) => {
       .input("TotalLineItemDiscountAmount", sql.Decimal(18, 2), itemDiscountAmount || 0)
       .input("MergeCount", sql.Numeric, mergeCount)
       .input("SplitCount", sql.Numeric, splitIndexValue)
-      .input("GuestName", sql.NVarChar(100), req.body.customerName ? req.body.customerName.trim().substring(0, 100) : (orderCustomerName || tableCustomerName || null))
+      .input("GuestName", sql.NVarChar(100), effectiveGuestName)
       .input("Pax", sql.Int, req.body.pax ? parseInt(req.body.pax) : (orderPax || tablePax || null))
       .input("startDate", sql.Date, formattedStartDate)
       .query(`
@@ -3180,8 +3220,8 @@ router.post("/save", async (req, res) => {
              .input("PayMode", sql.NVarChar(50), paymentMethod || "CASH")
              .input("Remarks", sql.NVarChar(255), `Redeemed as discount on bill ${finalBillNo || displayOrderId}`)
              .query(`
-               INSERT INTO RewardPointDetails (MemberId, SettlementId, BillNo, BillAmount, PointsEarned, PointsUsed, TransType, PayMode, Remarks)
-               VALUES (@MemberId, @SettlementId, @BillNo, @BillAmount, 0, @PointsUsed, 'REDEEM', @PayMode, @Remarks)
+               INSERT INTO RewardPointDetails (Id, MemberId, SettlementId, BillNo, BillAmount, PointsEarned, PointsUsed, TransType, PayMode, Remarks, CreatedOn)
+               VALUES (NEWID(), @MemberId, @SettlementId, @BillNo, @BillAmount, 0, @PointsUsed, 'REDEEM', @PayMode, @Remarks, GETDATE())
              `);
          }
  
@@ -3196,8 +3236,8 @@ router.post("/save", async (req, res) => {
              .input("PayMode", sql.NVarChar(50), paymentMethod || "CASH")
              .input("Remarks", sql.NVarChar(255), `Earned on bill ${finalBillNo || displayOrderId}`)
              .query(`
-               INSERT INTO RewardPointDetails (MemberId, SettlementId, BillNo, BillAmount, PointsEarned, PointsUsed, TransType, PayMode, Remarks)
-               VALUES (@MemberId, @SettlementId, @BillNo, @BillAmount, @PointsEarned, 0, 'EARN', @PayMode, @Remarks)
+               INSERT INTO RewardPointDetails (Id, MemberId, SettlementId, BillNo, BillAmount, PointsEarned, PointsUsed, TransType, PayMode, Remarks, CreatedOn)
+               VALUES (NEWID(), @MemberId, @SettlementId, @BillNo, @BillAmount, @PointsEarned, 0, 'EARN', @PayMode, @Remarks, GETDATE())
              `);
          }
  

@@ -1265,6 +1265,7 @@ export default function Category() {
   const [isStaffExpanded, setIsStaffExpanded] = useState(false);
   const [isCustomerExpanded, setIsCustomerExpanded] = useState(false);
   const [isReportsExpanded, setIsReportsExpanded] = useState(false);
+  const [isQrExpanded, setIsQrExpanded] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
@@ -1298,7 +1299,7 @@ export default function Category() {
         }
       })
       .catch((err) => console.log("Error fetching company settings for license:", err));
-  }, []);
+  }, [isMenuVisible]);
 
 
 
@@ -2751,176 +2752,118 @@ export default function Category() {
       </SafeAreaView>
     );
   }
+  const renderLicenseSection = () => {
+    const fromDateStr = user?.licenseFromDate || companyInfo?.LicenseFromDate;
+    const toDateStr = user?.licenseToDate || companyInfo?.LicenseToDate;
+    const fromDate = fromDateStr ? String(fromDateStr).split("T")[0] : "2026-06-01";
+    const toDate = toDateStr ? String(toDateStr).split("T")[0] : "2028-07-28";
+    const isExpired = toDateStr ? new Date(toDateStr).getTime() < Date.now() : false;
 
-  const renderLicenseView = (isFloating: boolean) => {
-    if (!companyInfo) return null;
-    if (user?.role === "WAITER" || (typeof isWaiter === "function" && isWaiter())) return null;
-
-    const fromDate = (user?.licenseFromDate || companyInfo.LicenseFromDate)
-      ? (user?.licenseFromDate || companyInfo.LicenseFromDate).split("T")[0]
-      : "N/A";
-    const toDate = (user?.licenseToDate || companyInfo.LicenseToDate)
-      ? (user?.licenseToDate || companyInfo.LicenseToDate).split("T")[0]
-      : "N/A";
-
-    const hasLicense = (user?.licenseFromDate || user?.licenseToDate || companyInfo.LicenseFromDate || companyInfo.LicenseToDate);
+    const companyName = companyInfo?.CompanyName || "My Restaurant";
+    const address = companyInfo?.Address || "123 ABC SINGAPORE";
 
     return (
-      <View style={isFloating ? {
-        position: "absolute",
-        bottom: isWindows ? 16 : Math.max(insets.bottom, 16) + 24,
-        left: Math.max(insets.left, 16) + 8,
-        backgroundColor: "transparent",
-        pointerEvents: "none",
-        zIndex: 9999,
-      } : {
-        paddingHorizontal: PADDING,
-        paddingTop: 16,
-        paddingBottom: Math.max(insets.bottom + 24, 36),
-        alignItems: "flex-start",
-        justifyContent: "center",
-        marginTop: 12,
-      }}>
-        <LinearGradient
-          colors={["#FFFFFF", "#F8FAFC"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            borderRadius: 16,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: "#E2E8F0",
-            maxWidth: 380,
-            width: isFloating ? 320 : "100%",
-            gap: 12,
-            shadowColor: "#6366F1",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.04,
-            shadowRadius: 6,
-            elevation: 1,
-          }}
-        >
-          {companyInfo.CompanyLogoUrl ? (
-            <View style={{
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              padding: 2,
-              backgroundColor: "#FFFFFF",
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.03,
-              shadowRadius: 1,
-              elevation: 1,
-            }}>
-              <Image
-                source={{ uri: companyInfo.CompanyLogoUrl }}
-                style={{ width: 46, height: 46, borderRadius: 8 }}
-                contentFit="contain"
-              />
-            </View>
-          ) : (
-            <LinearGradient
-              colors={["#EEF2FF", "#E0E7FF"]}
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 10,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: "#E0E7FF",
-              }}
-            >
-              <Ionicons name="storefront" size={22} color="#4F46E5" />
-            </LinearGradient>
-          )}
+      <LinearGradient
+        colors={["#FF7A00", "#FFA959", "#FED7AA", "#FF7A00"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.licCardWrapperGradient}
+      >
+        <View style={styles.licCardInnerWhite}>
+          {/* Subtle warm tint wave in top corner */}
+          <LinearGradient
+            colors={["rgba(255, 122, 0, 0.12)", "rgba(255, 169, 89, 0.04)", "transparent"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0.6, y: 0.6 }}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
 
-          <View style={{ flex: 1, gap: 2 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-              <Text style={{
-                fontFamily: Fonts.bold,
-                fontSize: 14,
-                color: "#1E293B",
-                letterSpacing: 0.1,
-              }}>
-                {companyInfo.CompanyName || "Smart POS"}
-              </Text>
-
-              {hasLicense && (
-                <View style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  backgroundColor: "#DCFCE7",
-                  paddingHorizontal: 7,
-                  paddingVertical: 3,
-                  borderRadius: 8,
-                  gap: 3,
-                }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#15803D" }} />
-                  <Text style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 10,
-                    color: "#166534",
-                    textTransform: "uppercase",
-                    letterSpacing: 0.2,
-                  }}>
-                    Active
-                  </Text>
-                </View>
+          {/* Top Row: Logo + Restaurant Info + ACTIVE Badge */}
+          <View style={styles.licTopRow}>
+            <View style={styles.licLogoContainer}>
+              {companyInfo?.CompanyLogoUrl ? (
+                <Image
+                  source={{ uri: companyInfo.CompanyLogoUrl }}
+                  style={styles.licLogoImage}
+                  contentFit="contain"
+                />
+              ) : (
+                <Image
+                  source={require("../../assets/images/logo_pos.png")}
+                  style={styles.licLogoImage}
+                  contentFit="contain"
+                />
               )}
             </View>
 
-            {companyInfo.Address ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                <Ionicons name="location-outline" size={12} color="#64748B" />
-                <Text style={{
-                  fontFamily: Fonts.medium,
-                  fontSize: 11.5,
-                  color: "#64748B",
-                  flex: 1,
-                }} numberOfLines={1}>
-                  {companyInfo.Address}
+            <View style={styles.licInfoGroup}>
+              <Text style={styles.licTitleText} numberOfLines={1}>
+                {companyName}
+              </Text>
+              <View style={styles.licAddressGroup}>
+                <Ionicons name="location-sharp" size={10} color="#64748B" />
+                <Text style={styles.licAddressText} numberOfLines={1}>
+                  {address}
                 </Text>
               </View>
-            ) : null}
+            </View>
 
-            {hasLicense ? (
-              <View style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 4,
-                marginTop: 2,
-                backgroundColor: "#F1F5F9",
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 6,
-                alignSelf: "flex-start"
-              }}>
-                <Ionicons name="shield-checkmark" size={13} color="#10B981" />
-                <Text style={{
-                  fontFamily: Fonts.semiBold,
-                  fontSize: 10.5,
-                  color: "#475569",
-                }}>
-                  Valid: <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{fromDate}</Text> to <Text style={{ color: "#0F172A", fontFamily: Fonts.bold }}>{toDate}</Text>
-                </Text>
+            <View
+              style={[
+                styles.licActiveBadge,
+                {
+                  backgroundColor: isExpired ? "#FEE2E2" : "#E8FDF0",
+                  borderColor: isExpired ? "#FCA5A5" : "#A7F3D0",
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.licActiveDot,
+                  { backgroundColor: isExpired ? "#DC2626" : "#16A34A" },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.licActiveText,
+                  { color: isExpired ? "#DC2626" : "#16A34A" },
+                ]}
+              >
+                {isExpired ? "EXPIRED" : "ACTIVE"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Middle Row: Compact Validity Capsule */}
+          <View style={styles.licMiddleCapsule}>
+            <View style={styles.licCapsuleCol}>
+              <Ionicons name="calendar-outline" size={12} color="#FF7A00" />
+              <View>
+                <Text style={styles.licCapsuleSub}>Valid From</Text>
+                <Text style={styles.licCapsuleDate}>{fromDate}</Text>
               </View>
-            ) : null}
+            </View>
 
-            <Text style={{
-              fontFamily: Fonts.medium,
-              fontSize: 9.5,
-              color: "#94A3B8",
-              marginTop: 2,
-            }}>
-              © 2026 UNIPRO. All rights reserved.
+            <Ionicons name="arrow-forward" size={10} color="#CBD5E1" />
+
+            <View style={styles.licCapsuleCol}>
+              <Ionicons name="calendar" size={12} color="#16A34A" />
+              <View>
+                <Text style={styles.licCapsuleSub}>Valid Until</Text>
+                <Text style={styles.licCapsuleDate}>{toDate}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Footer: Copyright */}
+          <View style={styles.licFooterRow}>
+            <Text style={styles.licFooterCopyright} numberOfLines={1}>
+              © {new Date().getFullYear()} UNIPRO POS. All rights reserved.
             </Text>
           </View>
-        </LinearGradient>
-      </View>
+        </View>
+      </LinearGradient>
     );
   };
 
@@ -3960,13 +3903,13 @@ export default function Category() {
             style={[
               styles.menuContent,
               isTablet && { width: 300, right: 20 },
-              { maxHeight: height * 0.8 },
+              { maxHeight: height * 0.9 },
             ]}
           >
             {/* User Info Header */}
             {user && (
               <LinearGradient
-                colors={[Theme.primary, "#E05A10"]}
+                colors={["#FFF8F3", "#FFF0E6"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.menuUserSectionGradient}
@@ -3974,21 +3917,34 @@ export default function Category() {
                 <TouchableOpacity
                   activeOpacity={0.7}
                   onPress={() => setIsAvatarModalVisible(true)}
-                  style={[styles.menuAvatarPremium, { overflow: "hidden" }]}
+                  style={styles.menuAvatarWrapper}
                 >
-                  {avatarUrl ? (
-                    <Image
-                      source={getAvatarSource(avatarUrl)}
-                      style={{ width: "100%", height: "100%" }}
-                      placeholder={require("../../assets/images/logo_pos.png")}
-                    />
-                  ) : (
-                    <Ionicons name="person" size={20} color="#9CA3AF" />
-                  )}
+                  <View style={styles.menuAvatarContainer}>
+                    {avatarUrl ? (
+                      <Image
+                        source={getAvatarSource(avatarUrl)}
+                        style={{ width: "100%", height: "100%" }}
+                        placeholder={require("../../assets/images/logo_pos.png")}
+                      />
+                    ) : (
+                      <Ionicons name="person" size={22} color={Theme.primary} />
+                    )}
+                  </View>
+                  <View style={styles.menuAvatarEditBadge}>
+                    <Ionicons name="camera" size={9} color="#FFFFFF" />
+                  </View>
                 </TouchableOpacity>
-                <View>
-                  <Text style={styles.menuUserNamePremium}>{user.fullName}</Text>
-                  <Text style={styles.menuUserRolePremium}>{user.roleName}</Text>
+
+                <View style={styles.menuUserInfo}>
+                  <Text style={styles.menuUserNamePremium} numberOfLines={1}>
+                    {user.fullName || user.userName || "UNIPRO"}
+                  </Text>
+                  <View style={styles.menuRoleBadge}>
+                    <Ionicons name="shield-checkmark" size={11} color={Theme.primary} />
+                    <Text style={styles.menuUserRolePremium}>
+                      {user.roleName || user.role || "ADMIN"}
+                    </Text>
+                  </View>
                 </View>
               </LinearGradient>
             )}
@@ -3996,7 +3952,11 @@ export default function Category() {
             <View style={styles.menuDivider} />
 
             {/* Menu Options */}
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: 6 }}
+              showsVerticalScrollIndicator={true}
+            >
               {/* 1. Tables Dropdown */}
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -4492,6 +4452,88 @@ export default function Category() {
                 </>
               )}
 
+              {/* QR Codes Dropdown */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[
+                  styles.menuItem,
+                  isQrExpanded && {
+                    backgroundColor: "#F3F4F6",
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                    borderBottomWidth: 0,
+                  },
+                ]}
+                onPress={() => setIsQrExpanded(!isQrExpanded)}
+              >
+                <View
+                  style={[
+                    styles.menuIconContainer,
+                    { backgroundColor: "#f9731615" },
+                  ]}
+                >
+                  <Ionicons
+                    name="qr-code-outline"
+                    size={18}
+                    color="#f97316"
+                  />
+                </View>
+                <Text style={[styles.menuItemText, { flex: 1 }]}>
+                  QR Codes
+                </Text>
+                <Ionicons
+                  name={
+                    isQrExpanded ? "chevron-down" : "chevron-forward"
+                  }
+                  size={18}
+                  color={Theme.textSecondary}
+                />
+              </TouchableOpacity>
+
+              {isQrExpanded && (
+                <View style={styles.subMenuContainer}>
+                  {/* Table QR Code */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.subMenuItem}
+                    onPress={() => {
+                      setIsMenuVisible(false);
+                      router.push("/qr-generator" as any);
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.menuIconContainer,
+                        { backgroundColor: "#f9731615" },
+                      ]}
+                    >
+                      <Ionicons name="grid-outline" size={18} color="#f97316" />
+                    </View>
+                    <Text style={styles.subMenuItemText}>Table QR Code</Text>
+                  </TouchableOpacity>
+
+                  {/* Qr for Takeaway */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.subMenuItem}
+                    onPress={() => {
+                      setIsMenuVisible(false);
+                      router.push("/takeaway-qr" as any);
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.menuIconContainer,
+                        { backgroundColor: "#ea580c15" },
+                      ]}
+                    >
+                      <Ionicons name="bag-handle-outline" size={18} color="#ea580c" />
+                    </View>
+                    <Text style={styles.subMenuItemText}>Qr for Takeaway</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* 6. Settings Dropdown */}
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -4659,45 +4701,7 @@ export default function Category() {
                     <Text style={styles.subMenuItemText}>Cash Drawer</Text>
                   </TouchableOpacity>
 
-                  {/* Table QR Codes */}
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.subMenuItem}
-                    onPress={() => {
-                      setIsMenuVisible(false);
-                      router.push("/qr-generator" as any);
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.menuIconContainer,
-                        { backgroundColor: "#f97316" + "15" },
-                      ]}
-                    >
-                      <Ionicons name="qr-code-outline" size={18} color="#f97316" />
-                    </View>
-                    <Text style={styles.subMenuItemText}>Table QR Codes</Text>
-                  </TouchableOpacity>
 
-                  {/* QR for Takeaway */}
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.subMenuItem}
-                    onPress={() => {
-                      setIsMenuVisible(false);
-                      router.push("/takeaway-qr" as any);
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.menuIconContainer,
-                        { backgroundColor: "#ea580c" + "15" },
-                      ]}
-                    >
-                      <Ionicons name="bag-handle-outline" size={18} color="#ea580c" />
-                    </View>
-                    <Text style={styles.subMenuItemText}>QR for Takeaway</Text>
-                  </TouchableOpacity>
 
                   <TouchableOpacity
                     activeOpacity={0.7}
@@ -4794,6 +4798,11 @@ export default function Category() {
                 </Text>
               </TouchableOpacity>
             </ScrollView>
+
+            <View style={[styles.menuDivider, { marginVertical: 6 }]} />
+
+            {/* License Details Section */}
+            {renderLicenseSection()}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -5949,7 +5958,7 @@ export default function Category() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {renderLicenseView(true)}
+
     </SafeAreaView>
   );
 }
@@ -6276,9 +6285,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 16,
-    borderRadius: 14,
-    margin: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 94, 26, 0.2)",
+    marginBottom: 4,
+    shadowColor: Theme.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  menuAvatarWrapper: {
+    position: "relative",
+  },
+  menuAvatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#FFF",
+    borderWidth: 2,
+    borderColor: "rgba(255, 94, 26, 0.3)",
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  menuAvatarEditBadge: {
+    position: "absolute",
+    bottom: -1,
+    right: -1,
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: Theme.primary,
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  menuUserInfo: {
+    flex: 1,
+    justifyContent: "center",
   },
   menuAvatar: {
     width: 40,
@@ -6293,21 +6346,35 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: "#FFF",
-    borderWidth: 2.5,
-    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 94, 26, 0.3)",
     justifyContent: "center",
     alignItems: "center",
     ...Theme.shadowMd,
   },
   menuUserName: {
     fontSize: 15,
-    fontFamily: Fonts.black,
-    color: Theme.textPrimary,
+    fontFamily: Fonts.bold,
+    color: "#1E293B",
   },
   menuUserNamePremium: {
-    fontSize: 16,
-    fontFamily: Fonts.black,
-    color: "#FFF",
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: "#1E293B",
+    letterSpacing: 0.2,
+  },
+  menuRoleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 94, 26, 0.25)",
+    gap: 4,
+    alignSelf: "flex-start",
+    marginTop: 4,
   },
   menuUserRole: {
     fontSize: 11,
@@ -6316,9 +6383,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   menuUserRolePremium: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: Fonts.bold,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: Theme.primaryDark || "#E04D10",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -6370,6 +6437,128 @@ const styles = StyleSheet.create({
   },
   logoutMenuItem: {
     marginTop: 4,
+  },
+
+  /* ———— Premium License Card Reference UI ———— */
+  /* ———— Compact Premium License Card ———— */
+  licCardWrapperGradient: {
+    borderRadius: 14,
+    padding: 1.2,
+    shadowColor: "#FF7A00",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  licCardInnerWhite: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 13,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    gap: 5,
+    overflow: "hidden",
+  },
+  licTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  licLogoContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  licLogoImage: {
+    width: "100%",
+    height: "100%",
+  },
+  licInfoGroup: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  licTitleText: {
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+    lineHeight: 15,
+  },
+  licAddressGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2.5,
+    marginTop: 0.5,
+  },
+  licAddressText: {
+    fontSize: 9,
+    fontFamily: Fonts.medium,
+    color: "#64748B",
+  },
+
+  licActiveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 0.8,
+    gap: 4,
+  },
+  licActiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  licActiveText: {
+    fontSize: 9,
+    fontFamily: Fonts.bold,
+    letterSpacing: 0.2,
+  },
+  licMiddleCapsule: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF9F4",
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#FEEAD9",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    gap: 12,
+  },
+  licCapsuleCol: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  licCapsuleSub: {
+    fontSize: 7.5,
+    fontFamily: Fonts.medium,
+    color: "#94A3B8",
+    lineHeight: 9,
+  },
+  licCapsuleDate: {
+    fontSize: 9.5,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+    lineHeight: 12,
+  },
+  licFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 1,
+  },
+  licFooterCopyright: {
+    fontSize: 7.8,
+    fontFamily: Fonts.medium,
+    color: "#94A3B8",
+    textAlign: "center",
   },
   inlineCheckoutBtn: {
     position: "absolute",

@@ -154,6 +154,14 @@ async function initDB(pool) {
     // 🏆 REWARD POINTS: Add RewardPointDetails columns for backward compat if table already existed
     await runQuery("RewardPointDetails - PointsUsed", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'PointsUsed') ALTER TABLE [dbo].[RewardPointDetails] ADD PointsUsed DECIMAL(18,4) NOT NULL DEFAULT 0");
     await runQuery("RewardPointDetails - TransType", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'TransType') ALTER TABLE [dbo].[RewardPointDetails] ADD TransType NVARCHAR(20) NOT NULL DEFAULT 'EARN'");
+    await runQuery("RewardPointDetails - MemberId", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'MemberId') ALTER TABLE [dbo].[RewardPointDetails] ADD MemberId UNIQUEIDENTIFIER NULL");
+    await runQuery("RewardPointDetails - SettlementId", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'SettlementId') ALTER TABLE [dbo].[RewardPointDetails] ADD SettlementId UNIQUEIDENTIFIER NULL");
+    await runQuery("RewardPointDetails - BillNo", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'BillNo') ALTER TABLE [dbo].[RewardPointDetails] ADD BillNo NVARCHAR(50) NULL");
+    await runQuery("RewardPointDetails - BillAmount", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'BillAmount') ALTER TABLE [dbo].[RewardPointDetails] ADD BillAmount DECIMAL(18,2) NOT NULL DEFAULT 0");
+    await runQuery("RewardPointDetails - PointsEarned", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'PointsEarned') ALTER TABLE [dbo].[RewardPointDetails] ADD PointsEarned DECIMAL(18,4) NOT NULL DEFAULT 0");
+    await runQuery("RewardPointDetails - PayMode", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'PayMode') ALTER TABLE [dbo].[RewardPointDetails] ADD PayMode NVARCHAR(50) NULL");
+    await runQuery("RewardPointDetails - Remarks", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'Remarks') ALTER TABLE [dbo].[RewardPointDetails] ADD Remarks NVARCHAR(255) NULL");
+    await runQuery("RewardPointDetails - CreatedOn", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RewardPointDetails]') AND name = 'CreatedOn') ALTER TABLE [dbo].[RewardPointDetails] ADD CreatedOn DATETIME DEFAULT GETDATE()");
 
 
     // 2.1 CreditCustomerMaster (Dedicated Credit Accounts table separate from Members)
@@ -1290,6 +1298,49 @@ async function initDB(pool) {
               [CreatedOn] [datetime] DEFAULT GETDATE()
           );
           CREATE NONCLUSTERED INDEX IX_ComboGroupDishMapping_ComboGroupId ON [dbo].[ComboGroupDishMapping](ComboGroupId);
+      END
+    `);
+
+    // NETS ECR3 LAN: Audit table for all NETS terminal transactions
+    await runQuery("Create NetsTransactions table", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[NetsTransactions]') AND type = 'U')
+      BEGIN
+          CREATE TABLE [dbo].[NetsTransactions] (
+              [NetsTransId]     UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(),
+              [SettlementId]    UNIQUEIDENTIFIER NULL,
+              [OrderId]         UNIQUEIDENTIFIER NULL,
+              [Amount]          DECIMAL(18, 2)   NOT NULL,
+              [AmountCents]     BIGINT           NOT NULL,
+              [Status]          NVARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+              [ResponseCode]    NVARCHAR(10)     NULL,
+              [ApprovalCode]    NVARCHAR(20)     NULL,
+              [CardType]        NVARCHAR(50)     NULL,
+              [CardNo]          NVARCHAR(20)     NULL,
+              [TransactionRef]  NVARCHAR(50)     NULL,
+              [BatchNo]         NVARCHAR(20)     NULL,
+              [TerminalId]      NVARCHAR(20)     NULL,
+              [RequestPayload]  NVARCHAR(MAX)    NULL,
+              [ResponsePayload] NVARCHAR(MAX)    NULL,
+              [CreatedAt]       DATETIME         NOT NULL DEFAULT GETDATE(),
+              [UpdatedAt]       DATETIME         NULL,
+              [IdempotencyKey]  NVARCHAR(100)    NULL,
+              [SessionId]       NVARCHAR(100)    NULL
+          );
+          CREATE INDEX IX_NetsTransactions_SettlementId ON [dbo].[NetsTransactions](SettlementId);
+          CREATE INDEX IX_NetsTransactions_Status       ON [dbo].[NetsTransactions](Status, CreatedAt);
+      END
+    `);
+
+    await runQuery("NetsTransactions - unique idempotency index", `
+      IF NOT EXISTS (
+        SELECT * FROM sys.indexes
+        WHERE name = 'UQ_NetsTransactions_IdempotencyKey'
+          AND object_id = OBJECT_ID('NetsTransactions')
+      )
+      BEGIN
+        CREATE UNIQUE INDEX UQ_NetsTransactions_IdempotencyKey
+        ON [dbo].[NetsTransactions](IdempotencyKey)
+        WHERE IdempotencyKey IS NOT NULL;
       END
     `);
 

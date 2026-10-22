@@ -1,0 +1,5 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Config>
+  <IP_PortSettings IP_ipAddress="192.168.10.103" IP_Port="9742" />
+  <IP_CommunicationControl IP_ACKTimeOut="3000" IP_SendReTries="3" IP_DelaySendReTries="1000" IP_receivingTimeout="120000" />
+</Config>

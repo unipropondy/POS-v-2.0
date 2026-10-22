@@ -1,0 +1,12 @@
+{
+  "port": 5050,
+  "host": "127.0.0.1",
+  "authKey": "unipro_nets_bridge_secure_key_2026",
+  "terminalIp": "192.168.10.103",
+  "terminalPort": 9742,
+  "terminalId": "UNIPRO01",
+  "dllDirectory": "./bin",
+  "preferredDll": "ECR3_API.dll",
+  "connectTimeoutMs": 5000,
+  "paymentTimeoutMs": 120000
+}
