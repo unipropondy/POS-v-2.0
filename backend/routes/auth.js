@@ -536,7 +536,6 @@ router.post("/login", async (req, res) => {
 
     const dbPassword = (user.UserPassword || "").trim();
     let isValid = false;
-    let needsRehash = false;
 
     // 1. Try bcrypt check
     try {
@@ -555,14 +554,12 @@ router.post("/login", async (req, res) => {
       for (const cand of candidates) {
         if (cand === password) {
           isValid = true;
-          needsRehash = true;
           break;
         }
         try {
           const decoded = Buffer.from(cand, "base64").toString("utf-8").trim();
           if (decoded === password) {
             isValid = true;
-            needsRehash = true;
             break;
           }
         } catch (e) {}
@@ -576,28 +573,6 @@ router.post("/login", async (req, res) => {
       return res
         .status(401)
         .json({ success: false, message: "Invalid User ID or Password." });
-    }
-
-    // Auto-migrate legacy password to bcrypt
-    if (needsRehash) {
-      try {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await pool
-          .request()
-          .input("UserId", user.UserId)
-          .input("HashedPassword", hashedPassword)
-          .query(
-            "UPDATE [dbo].[UserMaster] SET UserPassword = @HashedPassword WHERE UserId = @UserId",
-          );
-        console.log(
-          `[AUTH] Successfully migrated password to bcrypt for user "${user.UserName}".`,
-        );
-      } catch (e) {
-        console.error(
-          `[AUTH] Failed to migrate password to bcrypt for user "${user.UserName}":`,
-          e,
-        );
-      }
     }
 
     // ✅ VALIDATE USER-SPECIFIC LICENSE WINDOW
@@ -728,7 +703,6 @@ router.post("/verify", async (req, res) => {
 
     let isValid = false;
     let matchedUser = null;
-    let needsRehash = false;
 
     for (const u of result.recordset) {
       const dbPassword = (u.UserPassword || "").trim();
@@ -754,33 +728,10 @@ router.post("/verify", async (req, res) => {
           ) {
             isValid = true;
             matchedUser = u;
-            needsRehash = true;
             break;
           }
         }
         if (isValid) break;
-      }
-    }
-
-    // Auto-migrate legacy password to bcrypt during verification
-    if (isValid && needsRehash && matchedUser) {
-      try {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await pool
-          .request()
-          .input("UserId", matchedUser.UserId)
-          .input("HashedPassword", hashedPassword)
-          .query(
-            "UPDATE [dbo].[UserMaster] SET UserPassword = @HashedPassword WHERE UserId = @UserId",
-          );
-        console.log(
-          `[AUTH] Successfully migrated password to bcrypt for user "${matchedUser.UserName}" during verification.`,
-        );
-      } catch (e) {
-        console.error(
-          `[AUTH] Failed to migrate password to bcrypt during verification:`,
-          e,
-        );
       }
     }
 

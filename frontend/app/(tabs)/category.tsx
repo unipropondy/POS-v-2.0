@@ -3190,26 +3190,35 @@ export default function Category() {
             </View>
           </View>
         </View>
-      ) : width < 1024 ? (
-        // --- TABLET HEADER (TWO ROWS FOR SPACING) ---
-        <View style={{ backgroundColor: Theme.bgNav, borderBottomWidth: 1, borderBottomColor: Theme.border, ...Theme.shadowSm }}>
+      ) : (width < 1280 || Platform.OS === "android" || Platform.OS === "ios" || !isWindows) ? (
+        // --- TABLET / TOUCH HEADER (TWO ROWS MATCHING MOBILE LAYOUT) ---
+        <View
+          style={{
+            backgroundColor: Theme.bgNav,
+            borderBottomWidth: 1,
+            borderBottomColor: Theme.border,
+            paddingBottom: 6,
+            ...Theme.shadowSm,
+          }}
+        >
+          {/* Row 1: Section Tabs (Full Width Scrollable: Section 1, Section 2, Section 3...) */}
           <View
-            style={[
-              styles.topNavContainer,
-              { paddingHorizontal: isTablet ? 20 : 12, borderBottomWidth: 0, shadowColor: 'transparent', elevation: 0 },
-              !isTablet &&
-              isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
-            ]}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: isTablet ? 16 : 12,
+              paddingVertical: 8,
+              gap: 8,
+            }}
           >
-            {/* CENTER — Section Tabs */}
             <ScrollView
               ref={sectionScrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.tabsScrollContent}
-              style={styles.tabsScrollView}
+              contentContainerStyle={{ alignItems: "center" }}
+              style={{ flex: 1 }}
             >
-              <View style={[styles.tabsWrapper, { gap: isTablet ? 8 : 6 }]}>
+              <View style={[styles.tabsWrapper, { gap: 8 }]}>
                 {settings?.enableQuickServe === true && (
                   <TouchableOpacity
                     onPress={() => router.push("/order-type")}
@@ -3220,14 +3229,28 @@ export default function Category() {
                         backgroundColor: "#F1F5F9",
                         borderColor: "#CBD5E1",
                         borderWidth: 1,
-                        paddingVertical: 6,
-                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        paddingHorizontal: 14,
                         marginRight: 4,
                       },
                     ]}
                   >
-                    <Ionicons name="arrow-back" size={16} color="#0F172A" style={{ marginRight: 5 }} />
-                    <Text style={[styles.tabText, { color: "#0F172A", fontSize: isTablet ? 15 : 13, fontFamily: Fonts.bold }]}>
+                    <Ionicons
+                      name="arrow-back"
+                      size={15}
+                      color="#0F172A"
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.tabText,
+                        {
+                          color: "#0F172A",
+                          fontSize: 14,
+                          fontFamily: Fonts.bold,
+                        },
+                      ]}
+                    >
                       Order Type
                     </Text>
                   </TouchableOpacity>
@@ -3238,7 +3261,7 @@ export default function Category() {
                   const occupied = sectionTables.filter((t: TableItem) => {
                     const tableData = tableMap[t.id];
                     const status = tableData
-                      ? (tableData.status === "SENT"
+                      ? tableData.status === "SENT"
                         ? 1
                         : tableData.status === "BILL_REQUESTED"
                           ? 2
@@ -3246,7 +3269,7 @@ export default function Category() {
                             ? 3
                             : tableData.status === "LOCKED"
                               ? 5
-                              : 0)
+                              : 0
                       : Number(t.Status);
                     return status !== 0;
                   }).length;
@@ -3262,16 +3285,12 @@ export default function Category() {
                       style={[
                         styles.tabBtn,
                         isActive && styles.activeTabBtn,
-                        !isTablet &&
-                        isLandscape && {
-                          paddingVertical: 6,
-                          paddingHorizontal: 12,
-                        },
+                        { paddingVertical: 8, paddingHorizontal: 16 },
                       ]}
                     >
                       <Ionicons
                         name={SECTION_ICONS[section] as any}
-                        size={14}
+                        size={15}
                         color={isActive ? "#fff" : Theme.textSecondary}
                         style={{ marginRight: 5 }}
                       />
@@ -3279,27 +3298,24 @@ export default function Category() {
                         style={[
                           styles.tabText,
                           isActive && styles.activeTabText,
-                          { fontSize: isTablet ? 16 : 13 },
+                          { fontSize: 14, fontFamily: Fonts.bold },
                         ]}
                       >
-                        {!isTablet && !isLandscape
-                          ? formatSectionGlobal(SECTION_LABELS[section]).replace(
-                            "Section ",
-                            "Sec-",
-                          )
-                          : formatSectionGlobal(SECTION_LABELS[section])}
+                        {formatSectionGlobal(SECTION_LABELS[section])}
                       </Text>
                       {occupied > 0 && (
                         <View
                           style={[
                             styles.tabBadge,
                             isActive && styles.activeTabBadge,
+                            { marginLeft: 6, height: 18, minWidth: 18, paddingHorizontal: 4, borderRadius: 9 },
                           ]}
                         >
                           <Text
                             style={[
                               styles.tabBadgeText,
                               isActive && styles.activeTabBadgeText,
+                              { fontSize: 10 },
                             ]}
                           >
                             {occupied}
@@ -3311,51 +3327,125 @@ export default function Category() {
                 })}
               </View>
             </ScrollView>
+          </View>
 
-            {/* RIGHT — Action Buttons */}
-            <View style={[styles.navRightGroup, { gap: isTablet ? 8 : 6, flexDirection: "row", alignItems: "center" }]}>
-              {/* Kitchen Status */}
+          {/* Row 2: Date Picker, Day Start, and Status/Action Buttons */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: isTablet ? 16 : 12,
+              paddingTop: 6,
+            }}
+          >
+            {/* Left: Date & Day Start */}
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "#f5eee6",
+                  borderWidth: 1,
+                  borderColor: "#e5dec9",
+                  borderRadius: 18,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  gap: 8,
+                  opacity: isDayStarted ? 0.7 : 1,
+                }}
+                disabled={isDayStarted}
+                onPress={() => setShowBusinessCalendar(true)}
+              >
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 13,
+                    color: "#1c2d42",
+                  }}
+                >
+                  {selectedBusinessDate
+                    ? formatDateToDMY(selectedBusinessDate)
+                    : "dd-mm-yyyy"}
+                </Text>
+                <Ionicons name="calendar-outline" size={16} color="#556e8a" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: isDayStarted
+                    ? "#22c55e"
+                    : Theme.primary || "#fd7e14",
+                  borderRadius: 18,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  opacity: isStartingDay ? 0.7 : 1,
+                }}
+                disabled={isDayStarted || isStartingDay}
+                onPress={handleStartDay}
+              >
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 13,
+                    color: "#fff",
+                  }}
+                >
+                  {isDayStarted ? "Day Started" : "Start Day"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Right: Kitchen Status, KDS, Notifications, WindowControls, Menu */}
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              {/* Kitchen Status / Serve */}
               {enableKDS && (
                 <TouchableOpacity
-                  style={[styles.headerActionBtn, { position: "relative" }]}
+                  style={[
+                    styles.headerActionBtn,
+                    {
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      position: "relative",
+                    },
+                  ]}
                   onPress={() => router.push("/kitchen-status")}
                   activeOpacity={0.75}
                 >
                   <Ionicons
                     name="restaurant-outline"
-                    size={20}
+                    size={18}
                     color={Theme.success}
                   />
-                  {isTablet && isLandscape && (
-                    <Text
-                      style={[styles.headerActionText, { color: Theme.success }]}
-                    >
-                      Status
-                    </Text>
-                  )}
                   {readyItemsCount > 0 && (
                     <View
                       style={{
                         position: "absolute",
-                        top: -6,
-                        right: -6,
+                        top: -4,
+                        right: -4,
                         backgroundColor: Theme.danger || "#ef4444",
-                        borderRadius: 9,
-                        minWidth: 18,
-                        height: 18,
+                        borderRadius: 8,
+                        minWidth: 16,
+                        height: 16,
                         justifyContent: "center",
                         alignItems: "center",
-                        paddingHorizontal: 4,
-                        borderWidth: 1.5,
+                        paddingHorizontal: 3,
+                        borderWidth: 1,
                         borderColor: "#FFF",
                       }}
                     >
                       <Text
                         style={{
                           color: "#fff",
-                          fontSize: 9,
+                          fontSize: 8,
                           fontFamily: Fonts.black || "System",
-                          lineHeight: 11,
+                          lineHeight: 10,
                           textAlign: "center",
                         }}
                       >
@@ -3369,46 +3459,67 @@ export default function Category() {
               {/* KDS */}
               {canAccessKDS() && enableKDS && (
                 <TouchableOpacity
-                  style={styles.headerActionBtn}
+                  style={[
+                    styles.headerActionBtn,
+                    { paddingHorizontal: 10, paddingVertical: 6 },
+                  ]}
                   onPress={() => router.push("/kds" as any)}
                   activeOpacity={0.75}
                 >
-                  <Ionicons name="tv-outline" size={20} color={Theme.info} />
-                  {isTablet && isLandscape && (
-                    <Text
-                      style={[styles.headerActionText, { color: Theme.info }]}
-                    >
-                      KDS
-                    </Text>
-                  )}
+                  <Ionicons name="tv-outline" size={18} color={Theme.info} />
                 </TouchableOpacity>
               )}
 
-              {/* Alerts/Notifications */}
+              {/* Notifications */}
               <TouchableOpacity
-                style={[styles.headerActionBtn, { width: 40, height: 40, justifyContent: "center", paddingHorizontal: 0 }]}
+                style={[
+                  styles.headerActionBtn,
+                  { paddingHorizontal: 10, paddingVertical: 6 },
+                ]}
                 onPress={() => setIsNotifModalVisible(true)}
                 activeOpacity={0.75}
               >
-                <Ionicons name="notifications-outline" size={20} color={Theme.primary} />
-                {unreadCount > 0 && (
-                  <View style={{
-                    position: "absolute",
-                    top: 2,
-                    right: 2,
-                    backgroundColor: Theme.danger || "#ef4444",
-                    borderRadius: 6,
-                    minWidth: 12,
-                    height: 12,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    borderWidth: 1,
-                    borderColor: "#FFF",
-                  }} />
-                )}
+                <View style={{ position: "relative" }}>
+                  <Ionicons
+                    name="notifications-outline"
+                    size={18}
+                    color={Theme.primary}
+                  />
+                  {unreadCount > 0 && (
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: -6,
+                        right: -6,
+                        backgroundColor: Theme.danger || "#ef4444",
+                        borderRadius: 7,
+                        minWidth: 14,
+                        height: 14,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderWidth: 1,
+                        borderColor: "#FFF",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontSize: 8,
+                          fontFamily: Fonts.bold,
+                        }}
+                      >
+                        {unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </TouchableOpacity>
 
-              <WindowControls buttonStyle={[styles.headerActionBtn, { width: 40, height: 40, justifyContent: "center", paddingHorizontal: 0 }]} iconSize={20} hideHome={true} />
+              <WindowControls
+                buttonStyle={{ height: 32, width: 32, borderRadius: 8 }}
+                iconSize={16}
+                hideHome={true}
+              />
 
               {/* Menu */}
               <TouchableOpacity
@@ -3417,85 +3528,20 @@ export default function Category() {
                   {
                     backgroundColor: Theme.primaryLight,
                     borderColor: Theme.primaryBorder,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
                   },
                 ]}
                 onPress={() => setIsMenuVisible(true)}
                 activeOpacity={0.75}
               >
-                <Ionicons name="menu-outline" size={24} color={Theme.primary} />
-                {isTablet && (
-                  <Text
-                    style={[styles.headerActionText, { color: Theme.primary }]}
-                  >
-                    Menu
-                  </Text>
-                )}
+                <Ionicons
+                  name="menu-outline"
+                  size={20}
+                  color={Theme.primary}
+                />
               </TouchableOpacity>
             </View>
-          </View>
-
-          {/* ROW 2 — Date & Day Start Buttons */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              paddingHorizontal: isTablet ? 20 : 12,
-              paddingBottom: 12,
-              gap: 8,
-              marginTop: -2,
-            }}
-          >
-            <TouchableOpacity
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: "#f5eee6",
-                borderWidth: 1,
-                borderColor: "#e5dec9",
-                borderRadius: 20,
-                paddingHorizontal: 16,
-                paddingVertical: 7,
-                gap: 10,
-                opacity: isDayStarted ? 0.7 : 1,
-              }}
-              disabled={isDayStarted}
-              onPress={() => setShowBusinessCalendar(true)}
-            >
-              <Text
-                style={{
-                  fontFamily: Fonts.bold,
-                  fontSize: 15,
-                  color: "#1c2d42",
-                }}
-              >
-                {selectedBusinessDate
-                  ? formatDateToDMY(selectedBusinessDate)
-                  : "dd-mm-yyyy"}
-              </Text>
-              <Ionicons name="calendar-outline" size={18} color="#556e8a" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={{
-                backgroundColor: isDayStarted
-                  ? "#22c55e"
-                  : Theme.primary || "#fd7e14",
-                borderRadius: 20,
-                paddingHorizontal: 14,
-                paddingVertical: 7,
-                justifyContent: "center",
-                alignItems: "center",
-                opacity: isStartingDay ? 0.7 : 1,
-              }}
-              disabled={isDayStarted || isStartingDay}
-              onPress={handleStartDay}
-            >
-              <Text
-                style={{ fontFamily: Fonts.bold, fontSize: 14, color: "#fff" }}
-              >
-                {isDayStarted ? "Day Started" : "Start Day"}
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
       ) : (
