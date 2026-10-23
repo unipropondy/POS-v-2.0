@@ -51,7 +51,6 @@ import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
 import { useTableNavigationStore } from "../stores/tableNavigationStore";
 import { CustomerDisplaySync } from "../utils/CustomerDisplaySync";
 import CashDrawerService from "../services/CashDrawerService";
-import { initiateNetsSale, isNetsPayMode } from "../services/netsService";
 
 // --- ROTATING SYNC ICON COMPONENT ---
 const RotatingSyncIcon = ({ size = 16, color = "#3b82f6" }: { size?: number; color?: string }) => {
@@ -1428,116 +1427,6 @@ export default function PaymentScreen() {
 
       return;
     }
-
-    const isNets = isNetsPayMode(method);
-
-    // ✅ NETS ECR3 LAN - Direct DESK5000 terminal call
-    if (isNets && total > 0 && cacheKey) {
-      setPaymentStatus("processing");
-      setPaymentMessage("Processing on NETS terminal...");
-      setProcessing(true);
-
-      console.log('🔄 [MainPayment] Calling NETS terminal for:', method, 'Amount:', total);
-
-      const fetchPromise = (async () => {
-        try {
-          const result = await initiateNetsSale({
-            amount: total,
-            tableId: context?.tableId ? String(context.tableId) : undefined,
-            orderId: context?.orderId || undefined,
-            sessionId: checkoutSessionId || undefined,
-          });
-
-          console.log('✅ [MainPayment] NETS response:', result);
-          const responseCode = result.code;
-          let status: "success" | "cancelled" | "failed" = "failed";
-          let message = "";
-
-          if (result.success || responseCode === "00") {
-            status = "success";
-            message = `✅ ${currencySymbol}${total.toFixed(2)} paid successfully via NETS`;
-          } else if (responseCode === "02") {
-            status = "cancelled";
-            message = `❌ Transaction cancelled on terminal`;
-          } else if (responseCode === "03" || responseCode === "SOCKET_ERR") {
-            status = "failed";
-            message = `⏰ Transaction timeout`;
-          } else {
-            status = "failed";
-            message = `❌ ${result.msg || "Payment declined"}`;
-          }
-
-          if (ongoingPayments[cacheKey]) {
-            ongoingPayments[cacheKey].status = status;
-            ongoingPayments[cacheKey].message = message;
-          }
-
-          if (context?.tableId) {
-            useTerminalPaymentStore.getState().updateSession(context.tableId, { status, message });
-          }
-
-          if (status === "success") {
-            handleTerminalPaymentSuccess(method, total, message);
-          } else if (status === "cancelled") {
-            setPaymentMessage(message);
-            Alert.alert('❌ Transaction Cancelled', 'Payment was cancelled on the terminal. Please try again.');
-            if (context?.tableId) {
-              useTerminalPaymentStore.getState().clearSession(String(context.tableId));
-            }
-            delete ongoingPayments[cacheKey];
-          } else {
-            setProcessing(false);
-            setPaymentStatus("failed");
-            setPaymentMessage(message);
-            Alert.alert('❌ Payment Failed', message || 'Failed to connect to NETS terminal');
-            if (context?.tableId) {
-              useTerminalPaymentStore.getState().clearSession(String(context.tableId));
-            }
-            delete ongoingPayments[cacheKey];
-          }
-          return result;
-        } catch (error: any) {
-          console.error('❌ [MainPayment] NETS error:', error);
-          const status = "failed";
-          const message = `❌ ${error.message}`;
-
-          if (ongoingPayments[cacheKey]) {
-            ongoingPayments[cacheKey].status = status;
-            ongoingPayments[cacheKey].message = message;
-          }
-
-          if (context?.tableId) {
-            useTerminalPaymentStore.getState().updateSession(context.tableId, { status: "failed", message });
-          }
-          setProcessing(false);
-          setPaymentStatus("failed");
-          setPaymentMessage(message);
-          Alert.alert('❌ Payment Failed', message);
-          delete ongoingPayments[cacheKey];
-          return { success: false, code: "-1", msg: error.message };
-        }
-      })();
-
-      ongoingPayments[cacheKey] = {
-        status: "processing",
-        message: "Processing on NETS terminal...",
-        method: method,
-        total: total,
-        promise: fetchPromise,
-      };
-
-      if (context?.tableId) {
-        useTerminalPaymentStore.getState().setSession(context.tableId, {
-          tableId: context.tableId,
-          status: "processing",
-          message: "Processing on NETS terminal...",
-          method: method,
-          total: total,
-        });
-      }
-
-      return;
-    }
     // ============================================================
     // REST OF EXISTING CODE
     // ============================================================
@@ -1804,15 +1693,15 @@ export default function PaymentScreen() {
               referenceNo: ""
             });
           }
-          // Terminal-based payment: already called directly, mark as pre-processed
+          // YeahPay: terminal was already called directly, mark as pre-processed
           const _mNorm = method.trim().toUpperCase();
-          const _isTerminalProcessed = _mNorm === "YEAHPAY PAYNOW" || _mNorm === "YEAHPAY CARD" || isNetsPayMode(method);
+          const _isYeahPayFinal = _mNorm === "YEAHPAY PAYNOW" || _mNorm === "YEAHPAY CARD";
           finalPayments.push({
             payModeId,
             payMode: method,
             amount: total,
             referenceNo: "",
-            isTerminalAlreadyProcessed: _isTerminalProcessed,
+            isTerminalAlreadyProcessed: _isYeahPayFinal,
           });
           finalTotalAmount = total + totalFocAmount;
         }

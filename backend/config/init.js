@@ -1301,49 +1301,6 @@ async function initDB(pool) {
       END
     `);
 
-    // NETS ECR3 LAN: Audit table for all NETS terminal transactions
-    await runQuery("Create NetsTransactions table", `
-      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[NetsTransactions]') AND type = 'U')
-      BEGIN
-          CREATE TABLE [dbo].[NetsTransactions] (
-              [NetsTransId]     UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(),
-              [SettlementId]    UNIQUEIDENTIFIER NULL,
-              [OrderId]         UNIQUEIDENTIFIER NULL,
-              [Amount]          DECIMAL(18, 2)   NOT NULL,
-              [AmountCents]     BIGINT           NOT NULL,
-              [Status]          NVARCHAR(20)     NOT NULL DEFAULT 'PENDING',
-              [ResponseCode]    NVARCHAR(10)     NULL,
-              [ApprovalCode]    NVARCHAR(20)     NULL,
-              [CardType]        NVARCHAR(50)     NULL,
-              [CardNo]          NVARCHAR(20)     NULL,
-              [TransactionRef]  NVARCHAR(50)     NULL,
-              [BatchNo]         NVARCHAR(20)     NULL,
-              [TerminalId]      NVARCHAR(20)     NULL,
-              [RequestPayload]  NVARCHAR(MAX)    NULL,
-              [ResponsePayload] NVARCHAR(MAX)    NULL,
-              [CreatedAt]       DATETIME         NOT NULL DEFAULT GETDATE(),
-              [UpdatedAt]       DATETIME         NULL,
-              [IdempotencyKey]  NVARCHAR(100)    NULL,
-              [SessionId]       NVARCHAR(100)    NULL
-          );
-          CREATE INDEX IX_NetsTransactions_SettlementId ON [dbo].[NetsTransactions](SettlementId);
-          CREATE INDEX IX_NetsTransactions_Status       ON [dbo].[NetsTransactions](Status, CreatedAt);
-      END
-    `);
-
-    await runQuery("NetsTransactions - unique idempotency index", `
-      IF NOT EXISTS (
-        SELECT * FROM sys.indexes
-        WHERE name = 'UQ_NetsTransactions_IdempotencyKey'
-          AND object_id = OBJECT_ID('NetsTransactions')
-      )
-      BEGIN
-        CREATE UNIQUE INDEX UQ_NetsTransactions_IdempotencyKey
-        ON [dbo].[NetsTransactions](IdempotencyKey)
-        WHERE IdempotencyKey IS NOT NULL;
-      END
-    `);
-
     console.log("✅ Database schema and performance indexes are up to date. (Rewards system active)");
 
 

@@ -58,7 +58,6 @@ const settlementRoutes = require("./routes/settlementRoutes");
 const settlementLegacyRoutes = require("./routes/settlement");
 const config = require('./config');
 const yeahpayRoutes = require('./routes/yeahpay');
-const netsRoutes = require('./routes/nets');
 const loyaltyRoutes = require("./routes/loyalty");
 const loyaltyConfigRoutes = require("./routes/loyaltyConfig");
 const comboRoutes = require("./routes/combo");
@@ -369,10 +368,6 @@ app.use('/api/yeahpay', (req, res, next) => {
   req.io = io;
   next();
 }, yeahpayRoutes);
-app.use('/api/nets', (req, res, next) => {
-  req.io = io;
-  next();
-}, netsRoutes);
 app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/loyalty/configs", loyaltyConfigRoutes);
 app.use("/api/combo", comboRoutes);
