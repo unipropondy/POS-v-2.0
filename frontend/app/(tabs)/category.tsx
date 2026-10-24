@@ -17,6 +17,7 @@ import {
   FlatList,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -440,7 +441,7 @@ const CanvasBackground = ({ theme, children, style, isCategory = true }: { theme
 
 const formatSectionGlobal = (sec: string) => {
   if (!sec) return "";
-  if (sec === "TAKEAWAY") return "Takeaway";
+  if (sec === "TAKEAWAY" || sec === "Takeaway") return "Takeaway";
   // Convert SECTION_1 -> Section 1 or "Section-1" -> Section 1
   return sec.replace("_", " ").replace("-", " ").replace("SECTION", "Section");
 };
@@ -465,6 +466,156 @@ const getStatusUI = (status: number, diningSection?: number) => {
     default:
       return { text: "AVAILABLE", color: "#C2A580", lightBg: "#FAF6F0" }; // Tan/Beige
   }
+};
+
+// --- QS (QUICK SERVE) CIRCULAR BUTTON COMPONENT ---
+// Matches the reference design with 4 distinct states: Default, Hover, Active, Disabled
+interface QSButtonProps {
+  onPress: () => void;
+  size?: number;
+  disabled?: boolean;
+}
+
+const QSButton: React.FC<QSButtonProps> = ({
+  onPress,
+  size = 36,
+  disabled = false,
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
+
+  const radius = size / 2;
+  const fontSize = size <= 32 ? 11 : 13;
+
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+      onHoverIn={() => setIsHovered(true)}
+      onHoverOut={() => setIsHovered(false)}
+      onPressIn={() => setIsPressed(true)}
+      onPressOut={() => setIsPressed(false)}
+      accessibilityLabel="Quick Serve"
+      accessibilityRole="button"
+      style={({ hovered, pressed }: any) => {
+        const hover = !disabled && (isHovered || hovered);
+        const press = !disabled && (isPressed || pressed);
+
+        let bg = "#FF5500";
+        let borderColor = "#FFFFFF";
+        let borderWidth = 2;
+        let transformScale = 1;
+
+        let shadowStyle: any = {
+          shadowColor: "#FF5500",
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.35,
+          shadowRadius: 5,
+          elevation: 4,
+          ...(Platform.OS === "web"
+            ? {
+                boxShadow:
+                  "0 2px 8px rgba(255, 85, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.5)",
+                cursor: disabled ? "not-allowed" : "pointer",
+                transition: "all 0.18s cubic-bezier(0.4, 0, 0.2, 1)",
+              }
+            : {}),
+        };
+
+        if (disabled) {
+          // 4. Disabled State: White circular button with an orange outline and bold orange "QS" text
+          bg = "#FFFFFF";
+          borderColor = "#FF5500";
+          borderWidth = 2;
+          shadowStyle = {
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06,
+            shadowRadius: 2,
+            elevation: 1,
+            ...(Platform.OS === "web"
+              ? {
+                  boxShadow: "0 1px 4px rgba(0, 0, 0, 0.05)",
+                  cursor: "not-allowed",
+                  opacity: 0.8,
+                }
+              : { opacity: 0.8 }),
+          };
+        } else if (press) {
+          // 3. Active State: Slightly darker orange with subtle pressed scale effect
+          bg = "#D84315";
+          borderColor = "rgba(255, 255, 255, 0.95)";
+          borderWidth = 2;
+          transformScale = 0.94;
+          shadowStyle = {
+            shadowColor: "#D84315",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.25,
+            shadowRadius: 2,
+            elevation: 2,
+            ...(Platform.OS === "web"
+              ? {
+                  boxShadow:
+                    "inset 0 2px 4px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(216, 67, 21, 0.4)",
+                  cursor: "pointer",
+                }
+              : {}),
+          };
+        } else if (hover) {
+          // 2. Hover State: Orange with warm orange glow halo around border
+          bg = "#FF5500";
+          borderColor = "#FFE0B2";
+          borderWidth = 2;
+          transformScale = 1.05;
+          shadowStyle = {
+            shadowColor: "#FF6D00",
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.9,
+            shadowRadius: 12,
+            elevation: 8,
+            ...(Platform.OS === "web"
+              ? {
+                  boxShadow:
+                    "0 0 18px 5px rgba(255, 120, 0, 0.8), 0 0 0 2px rgba(255, 235, 180, 0.9), 0 4px 12px rgba(255, 85, 0, 0.4)",
+                  cursor: "pointer",
+                }
+              : {}),
+          };
+        }
+
+        return [
+          {
+            width: size,
+            height: size,
+            borderRadius: radius,
+            backgroundColor: bg,
+            borderColor,
+            borderWidth,
+            justifyContent: "center",
+            alignItems: "center",
+            transform: [{ scale: transformScale }],
+            flexShrink: 0,
+          },
+          shadowStyle,
+        ];
+      }}
+    >
+      <Text
+        style={{
+          color: disabled ? "#FF5500" : "#FFFFFF",
+          fontSize,
+          fontWeight: "900",
+          fontFamily: Fonts?.bold || undefined,
+          letterSpacing: 0.4,
+          textAlign: "center",
+          includeFontPadding: false,
+          userSelect: "none" as any,
+        }}
+      >
+        QS
+      </Text>
+    </Pressable>
+  );
 };
 
 // --- ROTATING SYNC ICON COMPONENT ---
@@ -1203,27 +1354,8 @@ export default function Category() {
   });
 
   const visibleSections = useMemo(() => {
-    if (settings?.enableQuickServe === false) {
-      return SECTIONS;
-    }
-    if (effectiveMode === "TAKEAWAY") {
-      return ["TAKEAWAY"];
-    }
-    return ["SECTION_1", "SECTION_2", "SECTION_3"];
-  }, [effectiveMode, settings?.enableQuickServe]);
-
-  useEffect(() => {
-    if (settings?.enableQuickServe === false) {
-      return;
-    }
-    if (effectiveMode === "TAKEAWAY") {
-      setActiveTab("TAKEAWAY");
-    } else {
-      if (activeTab === "TAKEAWAY") {
-        setActiveTab("SECTION_1");
-      }
-    }
-  }, [effectiveMode, settings?.enableQuickServe]);
+    return SECTIONS;
+  }, []);
 
   const getSectionNum = (tab: string) => {
     if (tab === "TAKEAWAY") return "4";
@@ -2159,9 +2291,9 @@ export default function Category() {
 
   const handleTablePress = React.useCallback(
     async (item: TableItem, tableData: any, isCheckoutAction?: boolean) => {
-      // Check if user license is expired
+      // Check if user license is expired (skip for waiter)
       const userLicenseToDate = user?.licenseToDate || companyInfo?.LicenseToDate;
-      if (userLicenseToDate) {
+      if (user?.role !== "WAITER" && userLicenseToDate) {
         const today = new Date();
         const licDate = new Date(userLicenseToDate);
         today.setHours(0, 0, 0, 0);
@@ -2753,6 +2885,9 @@ export default function Category() {
     );
   }
   const renderLicenseSection = () => {
+    if (user?.role === "WAITER") {
+      return null;
+    }
     const fromDateStr = user?.licenseFromDate || companyInfo?.LicenseFromDate;
     const toDateStr = user?.licenseToDate || companyInfo?.LicenseToDate;
     const fromDate = fromDateStr ? String(fromDateStr).split("T")[0] : "2026-06-01";
@@ -2892,6 +3027,12 @@ export default function Category() {
               gap: 8,
             }}
           >
+            {settings?.enableQuickServe !== false && user?.role !== "WAITER" && (
+              <QSButton
+                size={32}
+                onPress={() => router.push("/quick-serve" as any)}
+              />
+            )}
             <ScrollView
               ref={sectionScrollRef}
               horizontal
@@ -2900,28 +3041,6 @@ export default function Category() {
               style={{ flex: 1 }}
             >
               <View style={[styles.tabsWrapper, { gap: 6 }]}>
-                {settings?.enableQuickServe === true && (
-                  <TouchableOpacity
-                    onPress={() => router.push("/order-type")}
-                    activeOpacity={0.75}
-                    style={[
-                      styles.tabBtn,
-                      {
-                        backgroundColor: "#F1F5F9",
-                        borderColor: "#CBD5E1",
-                        borderWidth: 1,
-                        paddingVertical: 6,
-                        paddingHorizontal: 10,
-                        marginRight: 4,
-                      },
-                    ]}
-                  >
-                    <Ionicons name="arrow-back" size={14} color="#0F172A" style={{ marginRight: 4 }} />
-                    <Text style={[styles.tabText, { color: "#0F172A", fontSize: 12, fontFamily: Fonts.bold }]}>
-                      Order Type
-                    </Text>
-                  </TouchableOpacity>
-                )}
                 {visibleSections.map((section) => {
                   const isActive = activeTab === section;
                   const sectionTables = getSectionTables(section, allTables);
@@ -3211,6 +3330,12 @@ export default function Category() {
               gap: 8,
             }}
           >
+            {settings?.enableQuickServe !== false && user?.role !== "WAITER" && (
+              <QSButton
+                size={36}
+                onPress={() => router.push("/quick-serve" as any)}
+              />
+            )}
             <ScrollView
               ref={sectionScrollRef}
               horizontal
@@ -3219,42 +3344,6 @@ export default function Category() {
               style={{ flex: 1 }}
             >
               <View style={[styles.tabsWrapper, { gap: 8 }]}>
-                {settings?.enableQuickServe === true && (
-                  <TouchableOpacity
-                    onPress={() => router.push("/order-type")}
-                    activeOpacity={0.75}
-                    style={[
-                      styles.tabBtn,
-                      {
-                        backgroundColor: "#F1F5F9",
-                        borderColor: "#CBD5E1",
-                        borderWidth: 1,
-                        paddingVertical: 8,
-                        paddingHorizontal: 14,
-                        marginRight: 4,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name="arrow-back"
-                      size={15}
-                      color="#0F172A"
-                      style={{ marginRight: 5 }}
-                    />
-                    <Text
-                      style={[
-                        styles.tabText,
-                        {
-                          color: "#0F172A",
-                          fontSize: 14,
-                          fontFamily: Fonts.bold,
-                        },
-                      ]}
-                    >
-                      Order Type
-                    </Text>
-                  </TouchableOpacity>
-                )}
                 {visibleSections.map((section) => {
                   const isActive = activeTab === section;
                   const sectionTables = getSectionTables(section, allTables);
@@ -3554,6 +3643,14 @@ export default function Category() {
             isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
           ]}
         >
+          {/* LEFT CORNER — Quick Serve Button */}
+          {settings?.enableQuickServe !== false && user?.role !== "WAITER" && (
+            <QSButton
+              size={36}
+              onPress={() => router.push("/quick-serve" as any)}
+            />
+          )}
+
           {/* CENTER — Section Tabs */}
           <ScrollView
             ref={sectionScrollRef}
@@ -3563,28 +3660,6 @@ export default function Category() {
             style={styles.tabsScrollView}
           >
             <View style={[styles.tabsWrapper, { gap: isTablet ? 8 : 6 }]}>
-              {settings?.enableQuickServe === true && (
-                <TouchableOpacity
-                  onPress={() => router.push("/order-type")}
-                  activeOpacity={0.75}
-                  style={[
-                    styles.tabBtn,
-                    {
-                      backgroundColor: "#F1F5F9",
-                      borderColor: "#CBD5E1",
-                      borderWidth: 1,
-                      paddingVertical: 6,
-                      paddingHorizontal: 12,
-                      marginRight: 4,
-                    },
-                  ]}
-                >
-                  <Ionicons name="arrow-back" size={16} color="#0F172A" style={{ marginRight: 5 }} />
-                  <Text style={[styles.tabText, { color: "#0F172A", fontSize: isTablet ? 15 : 13, fontFamily: Fonts.bold }]}>
-                    Order Type
-                  </Text>
-                </TouchableOpacity>
-              )}
               {visibleSections.map((section) => {
                 const isActive = activeTab === section;
                 const sectionTables = getSectionTables(section, allTables);
@@ -4845,10 +4920,13 @@ export default function Category() {
               </TouchableOpacity>
             </ScrollView>
 
-            <View style={[styles.menuDivider, { marginVertical: 6 }]} />
-
-            {/* License Details Section */}
-            {renderLicenseSection()}
+            {user?.role !== "WAITER" && (
+              <>
+                <View style={[styles.menuDivider, { marginVertical: 6 }]} />
+                {/* License Details Section */}
+                {renderLicenseSection()}
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -6057,8 +6135,27 @@ const styles = StyleSheet.create({
 
   /* Tabs */
   tabsScrollView: { flex: 1, minWidth: 180 },
-  tabsScrollContent: { alignItems: "center", paddingLeft: 20, paddingRight: 12 },
+  tabsScrollContent: { alignItems: "center", paddingLeft: 0, paddingRight: 12 },
   tabsWrapper: { flexDirection: "row", alignItems: "center" },
+  backBtnCorner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+    borderColor: "#CBD5E1",
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  qsBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    includeFontPadding: false,
+    letterSpacing: 0.2,
+  },
   tabBtn: {
     flexDirection: "row",
     alignItems: "center",

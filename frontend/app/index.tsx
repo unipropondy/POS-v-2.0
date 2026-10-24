@@ -25,6 +25,9 @@ export default function Index() {
     if (userName === "KDS") {
       return <Redirect href="/(tabs)/kds" />;
     }
+    if (user.role === "WAITER") {
+      return <Redirect href="/(tabs)/category" />;
+    }
     if (settings && settings.enableQuickServe === false) {
       return <Redirect href="/(tabs)/category" />;
     }

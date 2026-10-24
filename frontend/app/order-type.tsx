@@ -28,7 +28,7 @@ import { useGeneralSettingsStore } from "@/stores/generalSettingsStore";
 const DINE_IN_IMG = require("../assets/images/order_type_dine_in.jpg");
 const TAKE_AWAY_IMG = require("../assets/images/order_type_takeaway.jpg");
 const QUICK_SERVE_IMG = require("../assets/images/order_type_quickserve.jpg");
-const BG_DISHES_IMG = require("../assets/images/order_type_bg.jpg");
+const BG_DISHES_IMG = require("../assets/images/order_type_bg_luxury.png");
 
 interface OrderCardProps {
   type: "DINE_IN" | "TAKEAWAY" | "QUICK_SERVE";
@@ -174,10 +174,14 @@ export default function OrderTypeSelectionScreen() {
   }, []);
 
   useEffect(() => {
+    if (user?.role === "WAITER") {
+      router.replace("/(tabs)/category" as any);
+      return;
+    }
     if (settings && settings.enableQuickServe === false) {
       router.replace("/(tabs)/category" as any);
     }
-  }, [settings?.enableQuickServe]);
+  }, [settings?.enableQuickServe, user?.role]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/company-settings/1`)
@@ -223,7 +227,7 @@ export default function OrderTypeSelectionScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  if (settings && settings.enableQuickServe === false) {
+  if (user?.role === "WAITER" || (settings && settings.enableQuickServe === false)) {
     return (
       <View style={{ flex: 1, backgroundColor: "#F8FAFC", justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color="#F97316" />
@@ -382,14 +386,19 @@ export default function OrderTypeSelectionScreen() {
         </Pressable>
       )}
 
-      {/* FULL ARTISAN GOURMET BACKGROUND WALLPAPER */}
-      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      {/* FULL LUXURY RESTAURANT AMBIENCE BACKGROUND */}
+      <View
+        style={[
+          styles.bgWallpaperContainer,
+          { top: isMobile ? 56 : 64 },
+        ]}
+        pointerEvents="none"
+      >
         <Image
           source={BG_DISHES_IMG}
           style={styles.fullBgImage}
           resizeMode="cover"
         />
-        <View style={styles.centerContrastWash} />
       </View>
 
       {/* MAIN CONTENT AREA */}
@@ -416,11 +425,11 @@ export default function OrderTypeSelectionScreen() {
 
             {/* CARDS ROW */}
             <View style={styles.cardsRow}>
-              {/* CARD 1: DINE IN */}
+              {/* CARD 1: DINING & TAKEAWAY */}
               <OrderCard
                 type="DINE_IN"
-                title="DINE IN"
-                subtitle="Serve customers at designated tables with real-time status"
+                title="DINING & TAKEAWAY"
+                subtitle="Serve dine-in tables and takeaway orders with real-time status"
                 image={DINE_IN_IMG}
                 accentColor="#EF4444"
                 accentGradient={["#FF2A42", "#DC2626"]}
@@ -429,7 +438,7 @@ export default function OrderTypeSelectionScreen() {
                   { icon: "storefront-outline", text: "Table Management" },
                   { icon: "print-outline", text: "KOT Printing" },
                 ]}
-                buttonText="Start Dine In"
+                buttonText="Start Dining & Takeaway"
                 onPress={handleDineIn}
                 isHovered={hoveredCard === 1}
                 onHoverIn={() => setHoveredCard(1)}
@@ -440,31 +449,7 @@ export default function OrderTypeSelectionScreen() {
                 isTabletPortrait={isTabletPortrait}
               />
 
-              {/* CARD 2: TAKE AWAY */}
-              <OrderCard
-                type="TAKEAWAY"
-                title="TAKE AWAY"
-                subtitle="Quick order processing for carry-out & pickup orders"
-                image={TAKE_AWAY_IMG}
-                accentColor="#F97316"
-                accentGradient={["#FB923C", "#EA580C"]}
-                iconName="bag-handle"
-                features={[
-                  { icon: "ticket-outline", text: "Auto Token No." },
-                  { icon: "flash", text: "Fast Checkout" },
-                ]}
-                buttonText="Start Take Away"
-                onPress={handleTakeAway}
-                isHovered={hoveredCard === 2}
-                onHoverIn={() => setHoveredCard(2)}
-                onHoverOut={() => setHoveredCard(null)}
-                isDesktop={isDesktop}
-                isTablet={isTablet}
-                isMobile={isMobile}
-                isTabletPortrait={isTabletPortrait}
-              />
-
-              {/* CARD 3: QUICK SERVE */}
+              {/* CARD 2: QUICK SERVE */}
               {settings.enableQuickServe !== false && (
                 <OrderCard
                   type="QUICK_SERVE"
@@ -480,8 +465,8 @@ export default function OrderTypeSelectionScreen() {
                   ]}
                   buttonText="Start Quick Serve"
                   onPress={handleQuickServe}
-                  isHovered={hoveredCard === 3}
-                  onHoverIn={() => setHoveredCard(3)}
+                  isHovered={hoveredCard === 2}
+                  onHoverIn={() => setHoveredCard(2)}
                   onHoverOut={() => setHoveredCard(null)}
                   isDesktop={isDesktop}
                   isTablet={isTablet}
@@ -528,11 +513,11 @@ export default function OrderTypeSelectionScreen() {
               isTabletPortrait && styles.cardsColumnTabletPortrait,
             ]}
           >
-            {/* CARD 1: DINE IN */}
+            {/* CARD 1: DINING & TAKEAWAY */}
             <OrderCard
               type="DINE_IN"
-              title="DINE IN"
-              subtitle="Serve customers at designated tables with real-time status"
+              title="DINING & TAKEAWAY"
+              subtitle="Serve dine-in tables and takeaway orders with real-time status"
               image={DINE_IN_IMG}
               accentColor="#EF4444"
               accentGradient={["#FF2A42", "#DC2626"]}
@@ -541,7 +526,7 @@ export default function OrderTypeSelectionScreen() {
                 { icon: "storefront-outline", text: "Table Management" },
                 { icon: "print-outline", text: "KOT Printing" },
               ]}
-              buttonText="Start Dine In"
+              buttonText="Start Dining & Takeaway"
               onPress={handleDineIn}
               isHovered={false}
               onHoverIn={() => {}}
@@ -552,31 +537,7 @@ export default function OrderTypeSelectionScreen() {
               isTabletPortrait={isTabletPortrait}
             />
 
-            {/* CARD 2: TAKE AWAY */}
-            <OrderCard
-              type="TAKEAWAY"
-              title="TAKE AWAY"
-              subtitle="Quick order processing for carry-out & pickup orders"
-              image={TAKE_AWAY_IMG}
-              accentColor="#F97316"
-              accentGradient={["#FB923C", "#EA580C"]}
-              iconName="bag-handle"
-              features={[
-                { icon: "ticket-outline", text: "Auto Token No." },
-                { icon: "flash", text: "Fast Checkout" },
-              ]}
-              buttonText="Start Take Away"
-              onPress={handleTakeAway}
-              isHovered={false}
-              onHoverIn={() => {}}
-              onHoverOut={() => {}}
-              isDesktop={isDesktop}
-              isTablet={isTablet}
-              isMobile={isMobile}
-              isTabletPortrait={isTabletPortrait}
-            />
-
-            {/* CARD 3: QUICK SERVE */}
+            {/* CARD 2: QUICK SERVE */}
             {settings.enableQuickServe !== false && (
               <OrderCard
                 type="QUICK_SERVE"
@@ -828,14 +789,17 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 
-  /* Full-bleed Gourmet Background Wallpaper */
+  /* Full-bleed Luxury Restaurant Background Wallpaper */
+  bgWallpaperContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    overflow: "hidden",
+  },
   fullBgImage: {
     width: "100%",
     height: "100%",
-  },
-  centerContrastWash: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
 
   /* Fixed Desktop Layout */
@@ -896,9 +860,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "stretch",
-    gap: 24,
+    gap: 28,
     width: "100%",
-    maxWidth: 1140,
+    maxWidth: 780,
   },
   card: {
     backgroundColor: "#FFFFFF",
@@ -925,8 +889,8 @@ const styles = StyleSheet.create({
   },
   cardDesktop: {
     flex: 1,
-    minWidth: 290,
-    maxWidth: 335,
+    minWidth: 300,
+    maxWidth: 360,
   },
   cardHovered: {
     ...Platform.select({
@@ -1012,10 +976,11 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontFamily: Fonts.extraBold || "System",
-    fontSize: 19.5,
+    fontSize: 18,
     color: "#0F172A",
-    letterSpacing: 0.7,
+    letterSpacing: 0.5,
     marginBottom: 3,
+    textAlign: "center",
   },
   titleUnderline: {
     width: 28,
@@ -1079,7 +1044,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontFamily: Fonts.bold || "System",
-    fontSize: 14.5,
+    fontSize: 13.5,
     color: "#FFFFFF",
     letterSpacing: 0.3,
   },

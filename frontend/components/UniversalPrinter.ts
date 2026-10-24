@@ -1850,18 +1850,29 @@ class UniversalPrinter {
       String(saleData.tableNo || "").toUpperCase().includes("TAKEAWAY") ||
       String(saleData.tableNo || "").toUpperCase().startsWith("TW");
 
+    const billNumber =
+      saleData.invoiceNumber ||
+      saleData.billNo ||
+      saleData.BillNo ||
+      saleData.id ||
+      saleData.orderNumber ||
+      saleData.orderNo ||
+      saleData.orderId ||
+      "";
+
     if (isReceiptTW) {
-      const shortOrderNo = (saleData.invoiceNumber || saleData.id || saleData.orderNumber ? String(saleData.invoiceNumber || saleData.id || saleData.orderNumber).slice(-4) : "");
+      const shortOrderNo = billNumber ? String(billNumber).slice(-4) : "";
       const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
-      text += this.formatTwoCols48(`<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>`, `<B>${twLabel}</B>`);
+      text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>${twLabel}</B>`);
     } else if (saleData.tableNo) {
       const cleanTableNo = String(saleData.tableNo).replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
-      text += this.formatTwoCols48(`<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>`, `<B>TABLE: ${cleanTableNo}</B>`);
+      text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>TABLE: ${cleanTableNo}</B>`);
     } else {
-      text += `[L]<B>Bill No: ${saleData.invoiceNumber || saleData.id || ""}</B>\n`;
+      text += `[L]<B>Bill No: ${billNumber}</B>\n`;
     }
     const dateFormatted = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
-    text += `[L]<B>Date: ${dateFormatted} ${formatToSingaporeTime(saleDate)}</B>\n`;
+    const timeFormatted = formatToSingaporeTime(saleDate).replace(/(am|pm)/gi, (m) => m.toUpperCase());
+    text += `[L]<B>Date: ${dateFormatted} ${timeFormatted}</B>\n`;
     if (saleData.waiterName && saleData.waiterName !== "Staff") {
       const displayWaiter = String(saleData.waiterName).replace(/\s*\(quick serve\)/gi, "").trim() || "Staff";
       text += `[L]<B>Waiter: ${displayWaiter}</B>\n`;

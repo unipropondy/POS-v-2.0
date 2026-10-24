@@ -33,6 +33,44 @@ import DiscountModal from "@/components/DiscountModal";
 import ItemDiscountModal from "@/components/ItemDiscountModal";
 import { socket } from "@/constants/socket";
 import { CustomerDisplaySync } from "@/utils/CustomerDisplaySync";
+import Svg, { Path, Rect } from "react-native-svg";
+
+// POS Cash Register Icon matching the Quick Serve reference design
+const PosCashRegisterIcon = ({ size = 23, color = "#FF5A16" }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+    {/* Monitor Screen Frame */}
+    <Rect x="4" y="4" width="15" height="11" rx="2.8" fill={color} />
+    {/* Monitor Inner Display */}
+    <Rect x="6.2" y="6.2" width="10.6" height="6.6" rx="1.2" fill="#FFE8DF" />
+    {/* Monitor Stand */}
+    <Rect x="9.5" y="14" width="4" height="4.5" fill={color} />
+
+    {/* Receipt Paper Housing / Printer Box (Right Side) */}
+    <Rect x="20" y="11.5" width="8" height="11" rx="2" fill={color} />
+    {/* Receipt Paper sticking out */}
+    <Rect x="21.5" y="13.8" width="5" height="7.8" rx="1" fill="#FFFFFF" />
+    {/* Receipt Paper text lines */}
+    <Rect x="22.5" y="16" width="3" height="1" rx="0.5" fill={color} />
+    <Rect x="22.5" y="18" width="3" height="1" rx="0.5" fill={color} />
+    <Rect x="22.5" y="20" width="3" height="1" rx="0.5" fill={color} />
+
+    {/* Base Console Body */}
+    <Path
+      d="M 5 17 C 5 16 6 15.5 7.2 15.5 L 26.8 15.5 C 28 15.5 29 16 29 17 L 30 25 C 30 26.8 28.5 28 26.8 28 L 5.2 28 C 3.5 28 2 26.8 2 25 Z"
+      fill={color}
+    />
+
+    {/* Keypad Buttons (2 rows of 3 rounded keys) */}
+    {/* Row 1 */}
+    <Rect x="5.5" y="18.8" width="3.2" height="2.2" rx="0.8" fill="#FFFFFF" />
+    <Rect x="10.2" y="18.8" width="3.2" height="2.2" rx="0.8" fill="#FFFFFF" />
+    <Rect x="14.9" y="18.8" width="3.2" height="2.2" rx="0.8" fill="#FFFFFF" />
+    {/* Row 2 */}
+    <Rect x="5.5" y="22.6" width="3.2" height="2.2" rx="0.8" fill="#FFFFFF" />
+    <Rect x="10.2" y="22.6" width="3.2" height="2.2" rx="0.8" fill="#FFFFFF" />
+    <Rect x="14.9" y="22.6" width="3.2" height="2.2" rx="0.8" fill="#FFFFFF" />
+  </Svg>
+);
 
 const getImageUrl = (imagePath: string | null | undefined) => {
   if (!imagePath) return null;
@@ -1657,8 +1695,12 @@ export default function QuickServePOSScreen() {
 
       const receiptPrintData = {
         ...saleData,
+        invoiceNumber: generatedBillNo,
+        id: generatedBillNo,
+        orderNumber: generatedBillNo,
         orderId: generatedBillNo,
         billNo: generatedBillNo,
+        BillNo: generatedBillNo,
         items: currentCartSnapshot,
         total: finalTotal,
         subtotal: subtotal,
@@ -1861,12 +1903,13 @@ export default function QuickServePOSScreen() {
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace("/order-type");
+                router.replace("/(tabs)/category" as any);
               }
             }}
             activeOpacity={0.7}
+            accessibilityLabel="Main POS"
           >
-            <Ionicons name="arrow-back" size={22} color="#1E293B" />
+            <PosCashRegisterIcon size={23} color="#FF5A16" />
           </TouchableOpacity>
 
           <View style={styles.logoWrap}>

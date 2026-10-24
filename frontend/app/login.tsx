@@ -69,6 +69,8 @@ export default function LoginScreen() {
             router.replace("/sales-report");
           } else if (userName === "KDS") {
             router.replace("/kds" as any);
+          } else if (user.role === "WAITER") {
+            router.replace("/(tabs)/category" as any);
           } else {
             router.replace("/order-type" as any);
           }
@@ -172,8 +174,10 @@ export default function LoginScreen() {
           router.replace("/sales-report");
         } else if (role === "KDS") {
           router.replace("/(tabs)/kds" as any);
+        } else if (role === "WAITER") {
+          router.replace("/(tabs)/category" as any);
         } else {
-          router.replace("/order-type" as any); // Default for Admin, Manager, Waiter, Cashier
+          router.replace("/order-type" as any); // Default for Admin, Manager, Cashier
         }
       } else {
         setError(data.message || "Login failed. Please try again.");

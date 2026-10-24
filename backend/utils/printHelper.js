@@ -283,9 +283,18 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
 
   const saleDate = saleData.date ? new Date(saleData.date) : new Date();
   const dateStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", day: "2-digit", month: "2-digit", year: "numeric" }).format(saleDate);
-  const timeStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", hour: "2-digit", minute: "2-digit", hour12: false }).format(saleDate);
+  const rawTimeStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", hour: "2-digit", minute: "2-digit", hour12: true }).format(saleDate).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+  const timeStr = rawTimeStr.replace(/(am|pm)/gi, (m) => m.toUpperCase());
 
-  const billNo = saleData.invoiceNumber || saleData.id || saleData.orderNumber || "";
+  const billNo =
+    saleData.invoiceNumber ||
+    saleData.billNo ||
+    saleData.BillNo ||
+    saleData.id ||
+    saleData.orderNumber ||
+    saleData.orderNo ||
+    saleData.orderId ||
+    "";
   const tableNo = String(saleData.tableNo || "").trim();
   const isTakeaway = saleData.orderType === "TAKEAWAY" || saleData.isTakeaway || tableNo.toUpperCase().startsWith("TW") || tableNo.toUpperCase().includes("TAKEAWAY");
 

@@ -389,7 +389,7 @@ class SunmiPrinterService {
                        saleData.date ? parseDatabaseDate(saleData.date) : 
                        new Date();
       const dateStr = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const timeStr = formatToSingaporeTime(saleDate);
+      const timeStr = formatToSingaporeTime(saleDate).replace(/(am|pm)/gi, (m) => m.toUpperCase());
 
       if (saleData.tableNo) {
         const cleanTableNo = /^\d+$/.test(String(saleData.tableNo).trim()) 

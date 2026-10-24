@@ -36,10 +36,11 @@ export function formatToSingaporeTime(
   if (!dateInput) return "";
   const date = parseDatabaseDate(dateInput);
   if (isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat('en-GB', {
+  const formatted = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Singapore',
     ...options
   }).format(date).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+  return formatted.replace(/(am|pm)/gi, (m) => m.toUpperCase());
 }
 
 export function formatToSingaporeDateTime(dateInput: Date | string | number): string {
