@@ -11,6 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Easing,
@@ -468,155 +469,109 @@ const getStatusUI = (status: number, diningSection?: number) => {
   }
 };
 
-// --- QS (QUICK SERVE) CIRCULAR BUTTON COMPONENT ---
-// Matches the reference design with 4 distinct states: Default, Hover, Active, Disabled
-interface QSButtonProps {
-  onPress: () => void;
-  size?: number;
-  disabled?: boolean;
+// --- APPROVED POS BRANDING COMPONENT (RESTAURANT BILLING SYSTEM) ---
+interface POSBrandProps {
+  onPress?: () => void;
+  compact?: boolean;
+  hideWordmark?: boolean;
 }
 
-const QSButton: React.FC<QSButtonProps> = ({
+const POSBrand: React.FC<POSBrandProps> = ({
   onPress,
-  size = 36,
-  disabled = false,
+  compact = false,
+  hideWordmark = false,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
 
-  const radius = size / 2;
-  const fontSize = size <= 32 ? 11 : 13;
+  // Exact proportions matching the flat reference logo (media_1793016426703.png):
+  // Icon: 192x180 px (~1.067 aspect ratio)
+  // Wordmark: 574x179 px (~3.207 aspect ratio)
+  const iconHeight = compact ? 30 : 36;
+  const iconWidth = Math.round(iconHeight * (192 / 180));
+  const dividerHeight = Math.round(iconHeight * (160 / 180));
+  const dividerMargin = compact ? 8 : 10;
+  const wordmarkHeight = compact ? 28 : 34;
+  const wordmarkWidth = Math.round(wordmarkHeight * (574 / 179));
 
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
-      disabled={disabled}
+      onPress={onPress}
       onHoverIn={() => setIsHovered(true)}
       onHoverOut={() => setIsHovered(false)}
       onPressIn={() => setIsPressed(true)}
       onPressOut={() => setIsPressed(false)}
-      accessibilityLabel="Quick Serve"
+      accessibilityLabel="POS - Restaurant Billing System"
       accessibilityRole="button"
       style={({ hovered, pressed }: any) => {
-        const hover = !disabled && (isHovered || hovered);
-        const press = !disabled && (isPressed || pressed);
-
-        let bg = "#FF5500";
-        let borderColor = "#FFFFFF";
-        let borderWidth = 2;
-        let transformScale = 1;
-
-        let shadowStyle: any = {
-          shadowColor: "#FF5500",
-          shadowOffset: { width: 0, height: 3 },
-          shadowOpacity: 0.35,
-          shadowRadius: 5,
-          elevation: 4,
-          ...(Platform.OS === "web"
-            ? {
-                boxShadow:
-                  "0 2px 8px rgba(255, 85, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.5)",
-                cursor: disabled ? "not-allowed" : "pointer",
-                transition: "all 0.18s cubic-bezier(0.4, 0, 0.2, 1)",
-              }
-            : {}),
-        };
-
-        if (disabled) {
-          // 4. Disabled State: White circular button with an orange outline and bold orange "QS" text
-          bg = "#FFFFFF";
-          borderColor = "#FF5500";
-          borderWidth = 2;
-          shadowStyle = {
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06,
-            shadowRadius: 2,
-            elevation: 1,
-            ...(Platform.OS === "web"
-              ? {
-                  boxShadow: "0 1px 4px rgba(0, 0, 0, 0.05)",
-                  cursor: "not-allowed",
-                  opacity: 0.8,
-                }
-              : { opacity: 0.8 }),
-          };
-        } else if (press) {
-          // 3. Active State: Slightly darker orange with subtle pressed scale effect
-          bg = "#D84315";
-          borderColor = "rgba(255, 255, 255, 0.95)";
-          borderWidth = 2;
-          transformScale = 0.94;
-          shadowStyle = {
-            shadowColor: "#D84315",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.25,
-            shadowRadius: 2,
-            elevation: 2,
-            ...(Platform.OS === "web"
-              ? {
-                  boxShadow:
-                    "inset 0 2px 4px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(216, 67, 21, 0.4)",
-                  cursor: "pointer",
-                }
-              : {}),
-          };
-        } else if (hover) {
-          // 2. Hover State: Orange with warm orange glow halo around border
-          bg = "#FF5500";
-          borderColor = "#FFE0B2";
-          borderWidth = 2;
-          transformScale = 1.05;
-          shadowStyle = {
-            shadowColor: "#FF6D00",
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.9,
-            shadowRadius: 12,
-            elevation: 8,
-            ...(Platform.OS === "web"
-              ? {
-                  boxShadow:
-                    "0 0 18px 5px rgba(255, 120, 0, 0.8), 0 0 0 2px rgba(255, 235, 180, 0.9), 0 4px 12px rgba(255, 85, 0, 0.4)",
-                  cursor: "pointer",
-                }
-              : {}),
-          };
-        }
+        const hover = isHovered || hovered;
+        const press = isPressed || pressed;
 
         return [
           {
-            width: size,
-            height: size,
-            borderRadius: radius,
-            backgroundColor: bg,
-            borderColor,
-            borderWidth,
-            justifyContent: "center",
+            flexDirection: "row",
             alignItems: "center",
-            transform: [{ scale: transformScale }],
-            flexShrink: 0,
-          },
-          shadowStyle,
+            paddingVertical: 2,
+            paddingRight: hideWordmark ? 0 : 4,
+            cursor: onPress ? "pointer" : "default",
+            opacity: press ? 0.88 : hover ? 0.94 : 1,
+            transform: [{ scale: press ? 0.98 : hover ? 1.01 : 1 }],
+            ...(Platform.OS === "web"
+              ? {
+                  transition: "opacity 0.15s ease, transform 0.15s ease",
+                  userSelect: "none",
+                }
+              : {}),
+          } as any,
         ];
       }}
     >
-      <Text
+      {/* 1. Flat Solid Orange Rounded-Square Icon with White Receipt, Fork & Spoon */}
+      <Image
+        source={require("@/assets/images/pos_flat_icon.png")}
         style={{
-          color: disabled ? "#FF5500" : "#FFFFFF",
-          fontSize,
-          fontWeight: "900",
-          fontFamily: Fonts?.bold || undefined,
-          letterSpacing: 0.4,
-          textAlign: "center",
-          includeFontPadding: false,
-          userSelect: "none" as any,
+          width: iconWidth,
+          height: iconHeight,
         }}
-      >
-        QS
-      </Text>
+        contentFit="contain"
+      />
+
+      {/* 2. Thin Light-Gray Vertical Divider & Flat Wordmark */}
+      {!hideWordmark && (
+        <>
+          {/* Thin Light-Gray Vertical Divider */}
+          <View
+            style={{
+              width: 1,
+              height: dividerHeight,
+              backgroundColor: "#CBD5E1",
+              marginHorizontal: dividerMargin,
+            }}
+          />
+
+          {/* Solid Orange POS + Dark Charcoal Restaurant Billing System */}
+          <Image
+            source={require("@/assets/images/pos_flat_wordmark.png")}
+            style={{
+              width: wordmarkWidth,
+              height: wordmarkHeight,
+            }}
+            contentFit="contain"
+          />
+        </>
+      )}
     </Pressable>
   );
 };
+
+// Backwards compatibility alias for QSButton
+const QSButton: React.FC<{
+  onPress: () => void;
+  size?: number;
+  disabled?: boolean;
+}> = ({ onPress, size = 36 }) => (
+  <POSBrand onPress={onPress} compact={size < 36} />
+);
 
 // --- ROTATING SYNC ICON COMPONENT ---
 const RotatingSyncIcon = ({ size = 16, color = "#3b82f6" }: { size?: number; color?: string }) => {
@@ -1304,6 +1259,36 @@ const SECTION_ICONS: Record<string, string> = {
   TAKEAWAY: "bag-handle-outline",
 };
 
+const getResponsiveSectionLabel = (section: string, isMobile: boolean) => {
+  if (isMobile) {
+    switch (section) {
+      case "SECTION_1":
+        return "S-1";
+      case "SECTION_2":
+        return "S-2";
+      case "SECTION_3":
+        return "S-3";
+      case "TAKEAWAY":
+        return "TW";
+      default:
+        return section.replace("SECTION_", "S-").replace("Section ", "S-");
+    }
+  } else {
+    switch (section) {
+      case "SECTION_1":
+        return "SEC-1";
+      case "SECTION_2":
+        return "SEC-2";
+      case "SECTION_3":
+        return "SEC-3";
+      case "TAKEAWAY":
+        return "TW";
+      default:
+        return section.replace("SECTION_", "SEC-").replace("Section ", "SEC-");
+    }
+  }
+};
+
 // Track the last table that was opened with guest details.
 // If the user exits the menu without sending items, we clean this guest data.
 let lastGuestOpenedTable: {
@@ -1349,9 +1334,16 @@ export default function Category() {
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (urlSection && SECTIONS.includes(urlSection)) return urlSection;
-    if (activeSectionStore && SECTIONS.includes(activeSectionStore)) return activeSectionStore;
-    return effectiveMode === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1";
+    return "SECTION_1";
   });
+
+  // Ensure SEC-1 is always default on fresh mount / page refresh
+  useEffect(() => {
+    if (!urlSection) {
+      setActiveTab("SECTION_1");
+      setActiveSectionStore("SECTION_1");
+    }
+  }, []);
 
   const visibleSections = useMemo(() => {
     return SECTIONS;
@@ -1414,6 +1406,9 @@ export default function Category() {
   const [selectedBusinessDate, setSelectedBusinessDate] = useState<
     string | null
   >(null);
+  const [modalSelectedDate, setModalSelectedDate] = useState<string>(
+    getSingaporeDateString(),
+  );
   const [showBusinessCalendar, setShowBusinessCalendar] = useState(false);
   const [isDayStarted, setIsDayStarted] = useState(false);
   const [activeBusinessDay, setActiveBusinessDay] = useState<string | null>(
@@ -1454,11 +1449,15 @@ export default function Category() {
         setIsDayStarted(true);
         setActiveBusinessDay(data.startDate);
         setSelectedBusinessDate(data.startDate);
+        setModalSelectedDate(data.startDate);
         await AsyncStorage.setItem("selected_business_date", data.startDate);
       } else {
         setIsDayStarted(false);
         setActiveBusinessDay(null);
-        setSelectedBusinessDate(null);
+        const savedDate = await AsyncStorage.getItem("selected_business_date");
+        const defaultDate = savedDate || getSingaporeDateString();
+        setSelectedBusinessDate(defaultDate);
+        setModalSelectedDate(defaultDate);
       }
     } catch (err) {
       console.error("Failed to check active business day:", err);
@@ -1469,14 +1468,25 @@ export default function Category() {
     checkActiveBusinessDay();
   }, []);
 
-  const handleStartDay = async () => {
-    if (!selectedBusinessDate) {
+  const handleStartDay = async (dateOverride?: string): Promise<boolean> => {
+    const todaySingapore = getSingaporeDateString();
+    const targetDate = dateOverride || modalSelectedDate || selectedBusinessDate || todaySingapore;
+    if (!targetDate) {
       showToast({
         type: "warning",
         message: "No Date Selected",
         subtitle: "Please select a date from the calendar first.",
       });
-      return;
+      return false;
+    }
+
+    if (targetDate !== todaySingapore) {
+      showToast({
+        type: "warning",
+        message: "Invalid Business Date",
+        subtitle: "Start Day is only allowed for the present date (today).",
+      });
+      return false;
     }
 
     setIsStartingDay(true);
@@ -1485,29 +1495,33 @@ export default function Category() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          startDate: selectedBusinessDate,
+          startDate: targetDate,
           username: user?.userName || user?.username || "admin",
         }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        setSelectedBusinessDate(targetDate);
+        setModalSelectedDate(targetDate);
         await AsyncStorage.setItem(
           "selected_business_date",
-          selectedBusinessDate,
+          targetDate,
         );
         setIsDayStarted(true);
-        setActiveBusinessDay(selectedBusinessDate);
+        setActiveBusinessDay(targetDate);
         showToast({
           type: "success",
           message: "Day Started",
-          subtitle: `Business day successfully started for ${formatDateToDMY(selectedBusinessDate)}.`,
+          subtitle: `Business day successfully started for ${formatDateToDMY(targetDate)}.`,
         });
+        return true;
       } else {
         showToast({
           type: "error",
           message: "Day Start Failed",
           subtitle: data.error || "Could not start business day.",
         });
+        return false;
       }
     } catch (err) {
       console.error("Failed to start day:", err);
@@ -1516,6 +1530,7 @@ export default function Category() {
         message: "Network Error",
         subtitle: "Failed to connect to the server.",
       });
+      return false;
     } finally {
       setIsStartingDay(false);
     }
@@ -1526,6 +1541,241 @@ export default function Category() {
     const parts = dateStr.split("-");
     if (parts.length !== 3) return dateStr;
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  };
+
+  const formatDateToDotDMY = (dateStr: string) => {
+    if (!dateStr) return "";
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return dateStr;
+    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  };
+
+  const BusinessDatePill: React.FC<{
+    date: string | null;
+    isDayStarted: boolean;
+    isStartingDay?: boolean;
+    onPress: () => void;
+    compact?: boolean;
+  }> = ({ date, isDayStarted, isStartingDay = false, onPress, compact = false }) => {
+    const displayDate = date
+      ? formatDateToDotDMY(date)
+      : formatDateToDotDMY(getSingaporeDateString());
+
+    return (
+      <TouchableOpacity
+        activeOpacity={isDayStarted ? 0.9 : 0.75}
+        onPress={onPress}
+        style={[
+          {
+            backgroundColor: "#FFFFFF",
+            borderRadius: 24,
+            borderWidth: 1,
+            borderColor: "#E5E9F0",
+            flexDirection: "row",
+            alignItems: "center",
+            paddingLeft: compact ? 4 : 6,
+            paddingRight: compact ? 6 : 10,
+            paddingVertical: compact ? 3.5 : 5,
+            marginHorizontal: compact ? 0 : 6,
+            shadowColor: "#94A3B8",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.16,
+            shadowRadius: 5,
+            elevation: 3,
+            ...(Platform.OS === "web"
+              ? {
+                  boxShadow:
+                    "0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.8)",
+                  cursor: isDayStarted ? "default" : "pointer",
+                  transition: "all 0.15s ease",
+                }
+              : {}),
+          } as any,
+        ]}
+      >
+        {/* Left: Neumorphic Inset Well with Centered Orange Gradient Square */}
+        <View
+          style={{
+            width: compact ? 34 : 40,
+            height: compact ? 34 : 40,
+            borderRadius: compact ? 12 : 14,
+            backgroundColor: "#F1F4F9",
+            justifyContent: "center",
+            alignItems: "center",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.08,
+            shadowRadius: 3,
+            elevation: 1,
+            ...(Platform.OS === "web"
+              ? {
+                  boxShadow:
+                    "inset 0 2px 4px rgba(0, 0, 0, 0.08), inset 0 -1px 2px rgba(255, 255, 255, 0.9), 0 1px 2px rgba(0,0,0,0.03)",
+                }
+              : {}),
+          } as any}
+        >
+          <View
+            style={{
+              shadowColor: "#FF5900",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.35,
+              shadowRadius: 5,
+              elevation: 4,
+              borderRadius: compact ? 8 : 10,
+              overflow: "hidden",
+              ...(Platform.OS === "web"
+                ? {
+                    boxShadow: "0 3px 8px rgba(255, 89, 0, 0.38)",
+                  }
+                : {}),
+            } as any}
+          >
+            <LinearGradient
+              colors={["#FF9526", "#FF5900"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{
+                width: compact ? 26 : 30,
+                height: compact ? 26 : 30,
+                borderRadius: compact ? 8 : 10,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Ionicons
+                name="calendar"
+                size={compact ? 15 : 17}
+                color="#FFFFFF"
+              />
+            </LinearGradient>
+          </View>
+        </View>
+
+        {/* Middle: Business Date in Bold Dark Navy Text (shown only when day is started) */}
+        {isDayStarted ? (
+          <>
+            <Text
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: compact ? 12 : 14.5,
+                color: "#0F172A",
+                letterSpacing: 0.2,
+                marginLeft: compact ? 5 : 8,
+                marginRight: compact ? 5 : 9,
+              }}
+            >
+              {displayDate}
+            </Text>
+
+            {/* Thin, Light-Grey Vertical Divider */}
+            <View
+              style={{
+                width: 1,
+                height: compact ? 14 : 19,
+                backgroundColor: "#E2E8F0",
+                marginRight: compact ? 5 : 9,
+              }}
+            />
+          </>
+        ) : (
+          <View style={{ width: compact ? 6 : 8 }} />
+        )}
+
+        {/* Right: Status Badge */}
+        {isStartingDay ? (
+          <View
+            style={{
+              backgroundColor: "#E8FDF0",
+              borderWidth: 1,
+              borderColor: "#A7F3D0",
+              borderRadius: compact ? 12 : 14,
+              paddingHorizontal: compact ? 5 : 9,
+              paddingVertical: compact ? 2 : 3.5,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: compact ? 3 : 4,
+            }}
+          >
+            <ActivityIndicator
+              size="small"
+              color="#059669"
+              style={{ transform: [{ scale: compact ? 0.6 : 0.65 }] }}
+            />
+            <Text
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: compact ? 9.5 : 11.5,
+                color: "#059669",
+                letterSpacing: 0.1,
+              }}
+            >
+              Starting...
+            </Text>
+          </View>
+        ) : isDayStarted ? (
+          <View
+            style={{
+              backgroundColor: "#E8FDF0",
+              borderWidth: 1,
+              borderColor: "#A7F3D0",
+              borderRadius: compact ? 12 : 14,
+              paddingHorizontal: compact ? 5 : 9,
+              paddingVertical: compact ? 2 : 3.5,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: compact ? 3 : 4,
+            }}
+          >
+            <Ionicons
+              name="checkmark-circle"
+              size={compact ? 12.5 : 16}
+              color="#10B981"
+            />
+            <Text
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: compact ? 9.5 : 12,
+                color: "#059669",
+                letterSpacing: 0.1,
+              }}
+            >
+              Day Started
+            </Text>
+          </View>
+        ) : (
+          <View
+            style={{
+              backgroundColor: "#FFF7ED",
+              borderWidth: 1,
+              borderColor: "#FED7AA",
+              borderRadius: compact ? 12 : 14,
+              paddingHorizontal: compact ? 5 : 9,
+              paddingVertical: compact ? 2 : 3.5,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: compact ? 3 : 4,
+            }}
+          >
+            <Ionicons
+              name="play-circle"
+              size={compact ? 12.5 : 16}
+              color="#EA580C"
+            />
+            <Text
+              style={{
+                fontFamily: Fonts.bold,
+                fontSize: compact ? 9.5 : 12,
+                color: "#EA580C",
+                letterSpacing: 0.1,
+              }}
+            >
+              Start Day
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
   };
 
   // Removed global 'tables' selector for performance
@@ -1867,16 +2117,22 @@ export default function Category() {
       fetchTables();
     };
 
+    const handleSettlementUpdate = () => {
+      checkActiveBusinessDay();
+    };
+
     socket.on("table_config_updated", handleTableConfigUpdated);
     socket.on("table_status_updated", handleTableStatusUpdated);
     socket.on("qr_payment_confirmed", handleQrPaymentConfirmed);
     socket.on("tables_updated", handleTablesUpdated);
+    socket.on("settlement_updated", handleSettlementUpdate);
 
     return () => {
       socket.off("table_config_updated", handleTableConfigUpdated);
       socket.off("table_status_updated", handleTableStatusUpdated);
       socket.off("qr_payment_confirmed", handleQrPaymentConfirmed);
       socket.off("tables_updated", handleTablesUpdated);
+      socket.off("settlement_updated", handleSettlementUpdate);
     };
   }, []);
 
@@ -3027,10 +3283,20 @@ export default function Category() {
               gap: 8,
             }}
           >
-            {settings?.enableQuickServe !== false && user?.role !== "WAITER" && (
+            {settings?.enableQuickServe !== false && (
               <QSButton
                 size={32}
-                onPress={() => router.push("/quick-serve" as any)}
+                onPress={() => {
+                  if (user?.role === "WAITER") {
+                    showToast({
+                      type: "warning",
+                      message: "Access Restricted",
+                      subtitle: "Quick Serve is not allowed for Waiters.",
+                    });
+                    return;
+                  }
+                  router.push("/quick-serve" as any);
+                }}
               />
             )}
             <ScrollView
@@ -3040,7 +3306,7 @@ export default function Category() {
               contentContainerStyle={{ alignItems: "center" }}
               style={{ flex: 1 }}
             >
-              <View style={[styles.tabsWrapper, { gap: 6 }]}>
+              <View style={[styles.tabsWrapper, { gap: width < 380 ? 4 : 5 }]}>
                 {visibleSections.map((section) => {
                   const isActive = activeTab === section;
                   const sectionTables = getSectionTables(section, allTables);
@@ -3071,7 +3337,10 @@ export default function Category() {
                       style={[
                         styles.tabBtn,
                         isActive && styles.activeTabBtn,
-                        { paddingVertical: 6, paddingHorizontal: 12 },
+                        {
+                          paddingVertical: 5,
+                          paddingHorizontal: width < 380 ? 8 : 10,
+                        },
                       ]}
                     >
                       <Ionicons
@@ -3084,13 +3353,10 @@ export default function Category() {
                         style={[
                           styles.tabText,
                           isActive && styles.activeTabText,
-                          { fontSize: 12 },
+                          { fontSize: 12, fontFamily: Fonts.bold },
                         ]}
                       >
-                        {formatSectionGlobal(SECTION_LABELS[section]).replace(
-                          "Section ",
-                          "Sec-",
-                        )}
+                        {getResponsiveSectionLabel(section, true)}
                       </Text>
                       {occupied > 0 && (
                         <View
@@ -3128,66 +3394,19 @@ export default function Category() {
               paddingTop: 4,
             }}
           >
-            {/* Date & Day Start */}
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-            >
-              <TouchableOpacity
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  backgroundColor: "#f5eee6",
-                  borderWidth: 1,
-                  borderColor: "#e5dec9",
-                  borderRadius: 16,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  gap: 6,
-                  opacity: isDayStarted ? 0.7 : 1,
-                }}
-                disabled={isDayStarted}
-                onPress={() => setShowBusinessCalendar(true)}
-              >
-                <Text
-                  style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 12,
-                    color: "#1c2d42",
-                  }}
-                >
-                  {selectedBusinessDate
-                    ? formatDateToDMY(selectedBusinessDate)
-                    : "dd-mm-yyyy"}
-                </Text>
-                <Ionicons name="calendar-outline" size={14} color="#556e8a" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  backgroundColor: isDayStarted
-                    ? "#22c55e"
-                    : Theme.primary || "#fd7e14",
-                  borderRadius: 16,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  opacity: isStartingDay ? 0.7 : 1,
-                }}
-                disabled={isDayStarted || isStartingDay}
-                onPress={handleStartDay}
-              >
-                <Text
-                  style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 11,
-                    color: "#fff",
-                  }}
-                >
-                  {isDayStarted ? "Day Started" : "Start Day"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* Date & Day Start Unified Button (Design 1 - Modern Green) */}
+            <BusinessDatePill
+              date={selectedBusinessDate}
+              isDayStarted={isDayStarted}
+              isStartingDay={isStartingDay}
+              onPress={() => {
+                if (!isDayStarted) {
+                  setModalSelectedDate(getSingaporeDateString());
+                  setShowBusinessCalendar(true);
+                }
+              }}
+              compact
+            />
 
             {/* Right side status icons */}
             <View
@@ -3310,40 +3529,75 @@ export default function Category() {
           </View>
         </View>
       ) : (width < 1280 || Platform.OS === "android" || Platform.OS === "ios" || !isWindows) ? (
-        // --- TABLET / TOUCH HEADER (TWO ROWS MATCHING MOBILE LAYOUT) ---
+        // --- TABLET / TOUCH HEADER (TWO ROWS MATCHING REFERENCE DESIGN) ---
         <View
           style={{
             backgroundColor: Theme.bgNav,
             borderBottomWidth: 1,
             borderBottomColor: Theme.border,
-            paddingBottom: 6,
+            paddingBottom: 8,
             ...Theme.shadowSm,
           }}
         >
-          {/* Row 1: Section Tabs (Full Width Scrollable: Section 1, Section 2, Section 3...) */}
+          {/* Row 1: Left = POS Logo & Wordmark, Right = Date & Day Started */}
           <View
             style={{
               flexDirection: "row",
               alignItems: "center",
+              justifyContent: "space-between",
               paddingHorizontal: isTablet ? 16 : 12,
-              paddingVertical: 8,
-              gap: 8,
+              paddingTop: 8,
+              paddingBottom: 6,
             }}
           >
-            {settings?.enableQuickServe !== false && user?.role !== "WAITER" && (
-              <QSButton
-                size={36}
-                onPress={() => router.push("/quick-serve" as any)}
-              />
-            )}
+            {/* Left: POS Logo + Wordmark */}
+            <POSBrand
+              onPress={() => {
+                if (user?.role === "WAITER") {
+                  showToast({
+                    type: "warning",
+                    message: "Access Restricted",
+                    subtitle: "Quick Serve is not allowed for Waiters.",
+                  });
+                  return;
+                }
+                router.push("/quick-serve" as any);
+              }}
+            />
+
+            {/* Right: Date & Day Start Unified Button (Design 1 - Modern Green) */}
+            <BusinessDatePill
+              date={selectedBusinessDate}
+              isDayStarted={isDayStarted}
+              isStartingDay={isStartingDay}
+              onPress={() => {
+                if (!isDayStarted) {
+                  setModalSelectedDate(getSingaporeDateString());
+                  setShowBusinessCalendar(true);
+                }
+              }}
+            />
+          </View>
+
+          {/* Row 2: Left = Section Tabs (SEC-1, SEC-2, SEC-3, TW), Right = Action Icons */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: isTablet ? 16 : 12,
+              paddingTop: 4,
+            }}
+          >
+            {/* Left: Section Tabs */}
             <ScrollView
               ref={sectionScrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ alignItems: "center" }}
-              style={{ flex: 1 }}
+              style={{ flex: 1, marginRight: 8 }}
             >
-              <View style={[styles.tabsWrapper, { gap: 8 }]}>
+              <View style={[styles.tabsWrapper, { gap: 6 }]}>
                 {visibleSections.map((section) => {
                   const isActive = activeTab === section;
                   const sectionTables = getSectionTables(section, allTables);
@@ -3374,12 +3628,12 @@ export default function Category() {
                       style={[
                         styles.tabBtn,
                         isActive && styles.activeTabBtn,
-                        { paddingVertical: 8, paddingHorizontal: 16 },
+                        { paddingVertical: 6, paddingHorizontal: 12 },
                       ]}
                     >
                       <Ionicons
                         name={SECTION_ICONS[section] as any}
-                        size={15}
+                        size={14}
                         color={isActive ? "#fff" : Theme.textSecondary}
                         style={{ marginRight: 5 }}
                       />
@@ -3387,10 +3641,10 @@ export default function Category() {
                         style={[
                           styles.tabText,
                           isActive && styles.activeTabText,
-                          { fontSize: 14, fontFamily: Fonts.bold },
+                          { fontSize: 13, fontFamily: Fonts.bold },
                         ]}
                       >
-                        {formatSectionGlobal(SECTION_LABELS[section])}
+                        {getResponsiveSectionLabel(section, false)}
                       </Text>
                       {occupied > 0 && (
                         <View
@@ -3416,82 +3670,10 @@ export default function Category() {
                 })}
               </View>
             </ScrollView>
-          </View>
-
-          {/* Row 2: Date Picker, Day Start, and Status/Action Buttons */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingHorizontal: isTablet ? 16 : 12,
-              paddingTop: 6,
-            }}
-          >
-            {/* Left: Date & Day Start */}
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-            >
-              <TouchableOpacity
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  backgroundColor: "#f5eee6",
-                  borderWidth: 1,
-                  borderColor: "#e5dec9",
-                  borderRadius: 18,
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                  gap: 8,
-                  opacity: isDayStarted ? 0.7 : 1,
-                }}
-                disabled={isDayStarted}
-                onPress={() => setShowBusinessCalendar(true)}
-              >
-                <Text
-                  style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 13,
-                    color: "#1c2d42",
-                  }}
-                >
-                  {selectedBusinessDate
-                    ? formatDateToDMY(selectedBusinessDate)
-                    : "dd-mm-yyyy"}
-                </Text>
-                <Ionicons name="calendar-outline" size={16} color="#556e8a" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  backgroundColor: isDayStarted
-                    ? "#22c55e"
-                    : Theme.primary || "#fd7e14",
-                  borderRadius: 18,
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  opacity: isStartingDay ? 0.7 : 1,
-                }}
-                disabled={isDayStarted || isStartingDay}
-                onPress={handleStartDay}
-              >
-                <Text
-                  style={{
-                    fontFamily: Fonts.bold,
-                    fontSize: 13,
-                    color: "#fff",
-                  }}
-                >
-                  {isDayStarted ? "Day Started" : "Start Day"}
-                </Text>
-              </TouchableOpacity>
-            </View>
 
             {/* Right: Kitchen Status, KDS, Notifications, WindowControls, Menu */}
             <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }}
             >
               {/* Kitchen Status / Serve */}
               {enableKDS && (
@@ -3644,10 +3826,20 @@ export default function Category() {
           ]}
         >
           {/* LEFT CORNER — Quick Serve Button */}
-          {settings?.enableQuickServe !== false && user?.role !== "WAITER" && (
+          {settings?.enableQuickServe !== false && (
             <QSButton
               size={36}
-              onPress={() => router.push("/quick-serve" as any)}
+              onPress={() => {
+                if (user?.role === "WAITER") {
+                  showToast({
+                    type: "warning",
+                    message: "Access Restricted",
+                    subtitle: "Quick Serve is not allowed for Waiters.",
+                  });
+                  return;
+                }
+                router.push("/quick-serve" as any);
+              }}
             />
           )}
 
@@ -3659,7 +3851,7 @@ export default function Category() {
             contentContainerStyle={styles.tabsScrollContent}
             style={styles.tabsScrollView}
           >
-            <View style={[styles.tabsWrapper, { gap: isTablet ? 8 : 6 }]}>
+            <View style={[styles.tabsWrapper, { gap: 6 }]}>
               {visibleSections.map((section) => {
                 const isActive = activeTab === section;
                 const sectionTables = getSectionTables(section, allTables);
@@ -3690,8 +3882,7 @@ export default function Category() {
                     style={[
                       styles.tabBtn,
                       isActive && styles.activeTabBtn,
-                      !isTablet &&
-                      isLandscape && {
+                      {
                         paddingVertical: 6,
                         paddingHorizontal: 12,
                       },
@@ -3707,15 +3898,10 @@ export default function Category() {
                       style={[
                         styles.tabText,
                         isActive && styles.activeTabText,
-                        { fontSize: isTablet ? 16 : 13 },
+                        { fontSize: 13, fontFamily: Fonts.bold },
                       ]}
                     >
-                      {!isTablet && !isLandscape
-                        ? formatSectionGlobal(SECTION_LABELS[section]).replace(
-                          "Section ",
-                          "Sec-",
-                        )
-                        : formatSectionGlobal(SECTION_LABELS[section])}
+                      {getResponsiveSectionLabel(section, width < 600)}
                     </Text>
                     {occupied > 0 && (
                       <View
@@ -3740,67 +3926,18 @@ export default function Category() {
             </View>
           </ScrollView>
 
-          {/* DATE PICKER & DAY START BUTTON */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginHorizontal: 8,
+          {/* DATE PICKER & DAY START UNIFIED BUTTON (Design 1 - Modern Green) */}
+          <BusinessDatePill
+            date={selectedBusinessDate}
+            isDayStarted={isDayStarted}
+            isStartingDay={isStartingDay}
+            onPress={() => {
+              if (!isDayStarted) {
+                setModalSelectedDate(getSingaporeDateString());
+                setShowBusinessCalendar(true);
+              }
             }}
-          >
-            <TouchableOpacity
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: "#f5eee6",
-                borderWidth: 1,
-                borderColor: "#e5dec9",
-                borderRadius: 20,
-                paddingHorizontal: 16,
-                paddingVertical: 7,
-                gap: 10,
-                opacity: isDayStarted ? 0.7 : 1,
-              }}
-              disabled={isDayStarted}
-              onPress={() => setShowBusinessCalendar(true)}
-            >
-              <Text
-                style={{
-                  fontFamily: Fonts.bold,
-                  fontSize: 15,
-                  color: "#1c2d42",
-                }}
-              >
-                {selectedBusinessDate
-                  ? formatDateToDMY(selectedBusinessDate)
-                  : "dd-mm-yyyy"}
-              </Text>
-              <Ionicons name="calendar-outline" size={18} color="#556e8a" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={{
-                backgroundColor: isDayStarted
-                  ? "#22c55e"
-                  : Theme.primary || "#fd7e14",
-                borderRadius: 20,
-                paddingHorizontal: 14,
-                paddingVertical: 7,
-                justifyContent: "center",
-                alignItems: "center",
-                opacity: isStartingDay ? 0.7 : 1,
-              }}
-              disabled={isDayStarted || isStartingDay}
-              onPress={handleStartDay}
-            >
-              <Text
-                style={{ fontFamily: Fonts.bold, fontSize: 14, color: "#fff" }}
-              >
-                {isDayStarted ? "Day Started" : "Start Day"}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          />
 
           {/* RIGHT — Action Buttons */}
           <View style={[styles.navRightGroup, { gap: isTablet ? 8 : 6 }]}>
@@ -6055,27 +6192,55 @@ export default function Category() {
                 </View>
                 <CalendarPicker
                   selectedDate={
-                    selectedBusinessDate || getSingaporeDateString()
+                    modalSelectedDate || selectedBusinessDate || getSingaporeDateString()
                   }
-                  onDateChange={async (date) => {
-                    setSelectedBusinessDate(date);
-                    setShowBusinessCalendar(false);
-                    try {
-                      await AsyncStorage.setItem(
-                        "selected_business_date",
-                        date,
-                      );
-                      showToast({
-                        type: "success",
-                        message: "Date Saved",
-                        subtitle: `Business date set to ${formatDateToDMY(date)}.`,
-                      });
-                    } catch (err) {
-                      console.error("Failed to auto-save date:", err);
-                    }
+                  onDateChange={(date) => {
+                    setModalSelectedDate(date);
                   }}
                   onlyAllowToday={true}
                 />
+
+                {/* Orange Start Day Button */}
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: Theme.primary || "#fd7e14",
+                    borderRadius: 12,
+                    paddingVertical: 13,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginTop: 16,
+                    opacity: isStartingDay ? 0.7 : 1,
+                    shadowColor: Theme.primary || "#fd7e14",
+                    shadowOffset: { width: 0, height: 3 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 6,
+                    elevation: 4,
+                  }}
+                  activeOpacity={0.8}
+                  disabled={isStartingDay || isDayStarted}
+                  onPress={async () => {
+                    const dateToStart = modalSelectedDate || selectedBusinessDate || getSingaporeDateString();
+                    const success = await handleStartDay(dateToStart);
+                    if (success) {
+                      setShowBusinessCalendar(false);
+                    }
+                  }}
+                >
+                  {isStartingDay ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontFamily: Fonts.bold,
+                        fontSize: 15,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {isDayStarted ? "Day Already Started" : "Start Day"}
+                    </Text>
+                  )}
+                </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
           </View>

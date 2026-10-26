@@ -522,10 +522,8 @@ export default function RootLayout() {
 
         if (userName === "KDS") {
           router.replace("/kds" as any);
-        } else if (role === "WAITER") {
-          router.replace("/(tabs)/category" as any);
         } else {
-          router.replace("/order-type" as any);
+          router.replace("/(tabs)/category" as any);
         }
       }
     }
@@ -552,7 +550,6 @@ export default function RootLayout() {
         <CustomerDisplayManager isPOSReady={isPOSReady} />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="login" options={{ gestureEnabled: false }} />
-          <Stack.Screen name="order-type" />
           <Stack.Screen name="table-selection" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="menu" />

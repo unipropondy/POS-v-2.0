@@ -15,6 +15,8 @@ interface CalendarPickerProps {
   isRangeMode?: boolean;
   onModeChange?: (isRange: boolean) => void;
   onlyAllowToday?: boolean;
+  maxDate?: string | Date;
+  disableFutureDates?: boolean;
 }
 
 type ViewMode = "calendar" | "month" | "year";
@@ -39,10 +41,26 @@ export default function CalendarPicker({
   onRangeChange,
   isRangeMode = false,
   onModeChange,
-  onlyAllowToday = false
+  onlyAllowToday = false,
+  maxDate,
+  disableFutureDates = false,
 }: CalendarPickerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [viewDate, setViewDate] = useState(() => parseLocalDate(selectedDate));
+
+  const isFutureDate = (d: Date) => {
+    if (disableFutureDates) {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      return isAfter(d, today);
+    }
+    if (maxDate) {
+      const max = maxDate instanceof Date ? new Date(maxDate) : parseLocalDate(maxDate);
+      max.setHours(23, 59, 59, 999);
+      return isAfter(d, max);
+    }
+    return false;
+  };
 
   useEffect(() => {
     setViewDate(parseLocalDate(selectedDate));
@@ -60,8 +78,15 @@ export default function CalendarPicker({
     return result;
   }, [viewDate]);
 
+  const isDateToday = (d: Date) => {
+    return isSameDay(d, new Date()) || (Boolean(selectedDate) && isSameDay(d, parseLocalDate(selectedDate)));
+  };
+
   const handleDatePress = (date: Date) => {
-    if (onlyAllowToday && !isSameDay(date, new Date())) {
+    if (onlyAllowToday && !isDateToday(date)) {
+      return;
+    }
+    if (isFutureDate(date)) {
       return;
     }
     if (Platform.OS !== "web") {
@@ -102,10 +127,11 @@ export default function CalendarPicker({
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const years = useMemo(() => {
     const currentYear = new Date().getFullYear();
+    const maxYear = (disableFutureDates || maxDate) ? currentYear : currentYear + 1;
     const res = [];
-    for (let i = currentYear - 10; i <= currentYear + 1; i++) res.push(i);
+    for (let i = currentYear - 10; i <= maxYear; i++) res.push(i);
     return res;
-  }, []);
+  }, [disableFutureDates, maxDate]);
 
   if (viewMode === "year") {
     return (
@@ -143,15 +169,24 @@ export default function CalendarPicker({
           </TouchableOpacity>
         </View>
         <View style={styles.grid}>
-          {months.map((m, i) => (
-            <TouchableOpacity 
-              key={m} 
-              onPress={() => selectMonth(i)}
-              style={[styles.pickerItem, viewDate.getMonth() === i && styles.selectedPickerItem]}
-            >
-              <Text style={[styles.pickerItemText, viewDate.getMonth() === i && styles.selectedPickerItemText]}>{m}</Text>
-            </TouchableOpacity>
-          ))}
+          {months.map((m, i) => {
+            const now = new Date();
+            const isFutureMonth = Boolean((disableFutureDates || maxDate) && viewDate.getFullYear() === now.getFullYear() && i > now.getMonth());
+            return (
+              <TouchableOpacity 
+                key={m} 
+                disabled={isFutureMonth}
+                onPress={() => selectMonth(i)}
+                style={[
+                  styles.pickerItem, 
+                  viewDate.getMonth() === i && styles.selectedPickerItem,
+                  isFutureMonth && { opacity: 0.25 }
+                ]}
+              >
+                <Text style={[styles.pickerItemText, viewDate.getMonth() === i && styles.selectedPickerItemText]}>{m}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
     );
@@ -178,13 +213,25 @@ export default function CalendarPicker({
       )}
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navBtn}>
+        <TouchableOpacity
+          onPress={() => changeMonth(-1)}
+          style={[styles.navBtn, onlyAllowToday && { opacity: 0.25 }]}
+          disabled={onlyAllowToday}
+        >
           <Ionicons name="chevron-back" size={22} color={Theme.textPrimary} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setViewMode("month")} style={styles.monthTitleBtn}>
+        <TouchableOpacity
+          onPress={() => !onlyAllowToday && setViewMode("month")}
+          style={styles.monthTitleBtn}
+          disabled={onlyAllowToday}
+        >
           <Text style={styles.monthText}>{format(viewDate, "MMMM yyyy")}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navBtn}>
+        <TouchableOpacity
+          onPress={() => changeMonth(1)}
+          style={[styles.navBtn, onlyAllowToday && { opacity: 0.25 }]}
+          disabled={onlyAllowToday}
+        >
           <Ionicons name="chevron-forward" size={22} color={Theme.textPrimary} />
         </TouchableOpacity>
       </View>
@@ -208,8 +255,9 @@ export default function CalendarPicker({
             }
           }
           const isRangePoint = isRangeStart || isRangeEnd;
-          const isToday = isSameDay(day, new Date());
-          const isDisabled = onlyAllowToday && !isToday;
+          const isToday = isDateToday(day);
+          const isFuture = isFutureDate(day);
+          const isDisabled = (onlyAllowToday && !isToday) || isFuture;
 
           return (
             <TouchableOpacity
@@ -223,7 +271,10 @@ export default function CalendarPicker({
                 isRangeMode && isRangeStart && rangeEnd && { borderTopRightRadius: 0, borderBottomRightRadius: 0 },
                 isRangeMode && isRangeEnd && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
                 !isCurrentMonth && styles.otherMonthDay,
-                isDisabled && { opacity: 0.25 }
+                isDisabled && {
+                  opacity: 0.18,
+                  ...(Platform.OS === "web" ? ({ cursor: "not-allowed" } as any) : {}),
+                },
               ]}
               onPress={() => handleDatePress(day)}
             >

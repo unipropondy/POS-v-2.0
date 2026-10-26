@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Pressable,
   StatusBar,
   useWindowDimensions,
 } from "react-native";
@@ -16,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Fonts } from "@/constants/Fonts";
 import { API_URL } from "@/constants/Config";
@@ -104,6 +106,18 @@ export default function QuickServePOSScreen() {
   const [mobileActiveTab, setMobileActiveTab] = useState<"order" | "groups" | "dishes">("dishes");
   const toast = useToast();
   const { user } = useAuthStore();
+
+  // Guard: Restrict Waiter access to Quick Serve
+  useEffect(() => {
+    if (user?.role === "WAITER") {
+      toast.showToast({
+        type: "warning",
+        message: "Access Restricted",
+        subtitle: "Quick Serve is not allowed for Waiters.",
+      });
+      router.replace("/(tabs)/category" as any);
+    }
+  }, [user?.role]);
 
   // Quick Serve UI Mode Toggle (ON / OFF)
   const [quickServeModeEnabled, setQuickServeModeEnabled] = useState<boolean>(true);
@@ -1895,10 +1909,9 @@ export default function QuickServePOSScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* TOP HEADER */}
-      <View style={styles.topNavbar}>
+      <View style={[styles.topNavbar, isMobile && styles.topNavbarMobile]}>
         <View style={styles.navLeft}>
-          <TouchableOpacity
-            style={styles.hamburgerBtn}
+          <Pressable
             onPress={() => {
               if (router.canGoBack()) {
                 router.back();
@@ -1906,18 +1919,27 @@ export default function QuickServePOSScreen() {
                 router.replace("/(tabs)/category" as any);
               }
             }}
-            activeOpacity={0.7}
             accessibilityLabel="Main POS"
+            accessibilityRole="button"
+            style={({ pressed }: any) => [
+              styles.neonLogoBtn,
+              isMobile && styles.neonLogoBtnMobile,
+              {
+                transform: [{ scale: pressed ? 0.93 : 1 }],
+                opacity: pressed ? 0.9 : 1,
+              },
+            ]}
           >
-            <PosCashRegisterIcon size={23} color="#FF5A16" />
-          </TouchableOpacity>
+            <Image
+              source={require("../assets/images/quick_serve_neon_icon_cropped.png")}
+              style={[styles.neonLogoImage, isMobile && styles.neonLogoImageMobile]}
+              contentFit="contain"
+            />
+          </Pressable>
 
-          <View style={styles.logoWrap}>
-            <Ionicons name="flash" size={22} color="#FF5A16" style={{ marginRight: 6 }} />
-            <Text style={styles.logoTitle}>
-              Quick Serve <Text style={{ color: "#FF5A16" }}>POS</Text>
-            </Text>
-          </View>
+          <Text style={[styles.logoTitle, isMobile && styles.logoTitleMobile]}>
+            Quick Serve <Text style={styles.logoTitlePos}>POS</Text>
+          </Text>
         </View>
 
         {/* SEARCH BAR (Hidden on tiny mobile or compacted) */}
@@ -4035,41 +4057,83 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   topNavbar: {
-    height: 56,
+    height: 66,
     flexShrink: 0,
     backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomWidth: 3,
+    borderBottomColor: "#FDD5C1",
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
+    position: "relative",
     zIndex: 10,
+    shadowColor: "#E28350",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 6,
+    ...(Platform.OS === "web"
+      ? ({
+          boxShadow: "0 6px 20px rgba(235, 130, 80, 0.16)",
+        } as any)
+      : {}),
+  },
+  topNavbarMobile: {
+    height: 58,
+    paddingHorizontal: 12,
   },
   navLeft: {
     flexDirection: "row",
     alignItems: "center",
+    zIndex: 1,
   },
-  hamburgerBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    alignItems: "center",
+  neonLogoBtn: {
+    width: 50,
+    height: 50,
     justifyContent: "center",
-    marginRight: 12,
+    alignItems: "center",
+    marginRight: 10,
+    ...(Platform.OS === "web"
+      ? ({
+          cursor: "pointer",
+          transition: "all 0.15s ease",
+        } as any)
+      : {}),
+  },
+  neonLogoBtnMobile: {
+    width: 40,
+    height: 40,
+    marginRight: 6,
+  },
+  neonLogoImage: {
+    width: 48,
+    height: 48,
+  },
+  neonLogoImageMobile: {
+    width: 38,
+    height: 38,
   },
   logoWrap: {
     flexDirection: "row",
     alignItems: "center",
   },
   logoTitle: {
-    fontSize: 17,
+    fontSize: 22,
     fontFamily: Fonts.extraBold || Fonts.bold,
-    color: "#0F172A",
-    letterSpacing: -0.3,
+    fontWeight: "900",
+    color: "#0B1A2E",
+    letterSpacing: -0.4,
+  },
+  logoTitleMobile: {
+    fontSize: 17,
+    letterSpacing: -0.2,
+  },
+  logoTitlePos: {
+    color: "#FF5500",
+    fontWeight: "900",
   },
 
   searchContainer: {

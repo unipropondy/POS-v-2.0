@@ -1,7 +1,7 @@
 import { API_URL } from "@/constants/Config";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { BlurView } from "expo-blur";
 import * as FileSystemLegacy from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
@@ -46,6 +46,87 @@ type EmailValidationResult = {
   isValid: boolean;
   error?: string;
   suggestion?: string;
+};
+
+const parseLocalDate = (dateStr: string | null | undefined): Date => {
+  if (!dateStr) return new Date();
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  }
+  return new Date(dateStr);
+};
+
+const formatDateDMY = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+};
+
+const getTodayDateStr = (): string => getSingaporeDateString(new Date());
+
+const calculatePeriodRange = (
+  filter: FilterType,
+  refDateStr: string,
+  maxAllowedDateStr?: string
+): { startDate: string; endDate: string } => {
+  const maxDateStr = maxAllowedDateStr || getTodayDateStr();
+  const ref = parseLocalDate(refDateStr);
+
+  if (filter === "DAILY") {
+    const clampedDate = refDateStr > maxDateStr ? maxDateStr : refDateStr;
+    return { startDate: clampedDate, endDate: clampedDate };
+  }
+
+  if (filter === "WEEKLY") {
+    const startObj = startOfWeek(ref, { weekStartsOn: 1 });
+    const endObj = endOfWeek(ref, { weekStartsOn: 1 });
+    const startStr = format(startObj, "yyyy-MM-dd");
+    let endStr = format(endObj, "yyyy-MM-dd");
+
+    if (endStr > maxDateStr) {
+      endStr = maxDateStr;
+    }
+    const finalStart = startStr > maxDateStr ? maxDateStr : startStr;
+    const finalEnd = endStr < finalStart ? finalStart : endStr;
+    return { startDate: finalStart, endDate: finalEnd };
+  }
+
+  if (filter === "MONTHLY") {
+    const startObj = startOfMonth(ref);
+    const endObj = endOfMonth(ref);
+    const startStr = format(startObj, "yyyy-MM-dd");
+    let endStr = format(endObj, "yyyy-MM-dd");
+
+    if (endStr > maxDateStr) {
+      endStr = maxDateStr;
+    }
+    const finalStart = startStr > maxDateStr ? maxDateStr : startStr;
+    const finalEnd = endStr < finalStart ? finalStart : endStr;
+    return { startDate: finalStart, endDate: finalEnd };
+  }
+
+  if (filter === "YEARLY") {
+    const startObj = startOfYear(ref);
+    const endObj = endOfYear(ref);
+    const startStr = format(startObj, "yyyy-MM-dd");
+    let endStr = format(endObj, "yyyy-MM-dd");
+
+    if (endStr > maxDateStr) {
+      endStr = maxDateStr;
+    }
+    const finalStart = startStr > maxDateStr ? maxDateStr : startStr;
+    const finalEnd = endStr < finalStart ? finalStart : endStr;
+    return { startDate: finalStart, endDate: finalEnd };
+  }
+
+  return { startDate: refDateStr, endDate: refDateStr };
 };
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -242,6 +323,41 @@ export default function SalesReport() {
   );
   const [showCancelledOrders, setShowCancelledOrders] = useState(true);
 
+  // Computes the active start and end dates based on current filter & selected date
+  const effectiveDateRange = useMemo(() => {
+    const maxDateStr = activeBusinessDate || getTodayDateStr();
+    if (selectedFilter === "DAILY") {
+      const d = selectedDate > maxDateStr ? maxDateStr : selectedDate;
+      return {
+        startDate: d,
+        endDate: d,
+      };
+    }
+    if (rangeStart && rangeEnd) {
+      const clampedEnd = rangeEnd > maxDateStr ? maxDateStr : rangeEnd;
+      return {
+        startDate: rangeStart,
+        endDate: clampedEnd,
+      };
+    }
+    return calculatePeriodRange(selectedFilter, selectedDate, maxDateStr);
+  }, [selectedFilter, selectedDate, rangeStart, rangeEnd, activeBusinessDate]);
+
+  const isAtLatestPeriod = useMemo(() => {
+    const maxDateStr = activeBusinessDate || getTodayDateStr();
+    if (selectedFilter === "DAILY") {
+      return selectedDate >= maxDateStr;
+    }
+    return effectiveDateRange.endDate >= maxDateStr;
+  }, [selectedFilter, selectedDate, effectiveDateRange, activeBusinessDate]);
+
+  useEffect(() => {
+    const maxDateStr = activeBusinessDate || getTodayDateStr();
+    const { startDate, endDate } = calculatePeriodRange(selectedFilter, selectedDate, maxDateStr);
+    setRangeStart(startDate);
+    setRangeEnd(endDate);
+  }, [selectedFilter, selectedDate, activeBusinessDate]);
+
   // --- ORDER SETTINGS & DIALOG STATES ---
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showChangePaymentModal, setShowChangePaymentModal] = useState(false);
@@ -361,12 +477,21 @@ export default function SalesReport() {
           setActiveBusinessDate(savedBusinessDate);
         }
 
-        if (
-          savedFilter &&
-          ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(savedFilter)
-        ) {
+        if (savedFilter && ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(savedFilter)) {
           setSelectedFilter(savedFilter as FilterType);
         }
+        const savedDate = await AsyncStorage.getItem("sales_selected_date");
+        if (savedDate) {
+          setSelectedDate(savedDate);
+        }
+        const savedRangeStart = await AsyncStorage.getItem("sales_range_start");
+        const savedRangeEnd = await AsyncStorage.getItem("sales_range_end");
+        if (savedRangeStart) setRangeStart(savedRangeStart);
+        if (savedRangeEnd) setRangeEnd(savedRangeEnd);
+
+        const savedCashier = await AsyncStorage.getItem("sales_cashier_id");
+        if (savedCashier) setSelectedCashierId(savedCashier);
+
         if (
           savedDownloadFilter &&
           ["DAILY", "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"].includes(savedDownloadFilter)
@@ -381,8 +506,10 @@ export default function SalesReport() {
           const res = await fetch(`${API_URL}/api/settlement/active-day`);
           const data = await res.json();
           if (data.success && data.active && data.startDate) {
-            setSelectedDate(data.startDate);
             setActiveBusinessDate(data.startDate);
+            if (!savedDate) {
+              setSelectedDate(data.startDate);
+            }
             await AsyncStorage.setItem("selected_business_date", data.startDate);
           } else {
             setActiveBusinessDate(null);
@@ -399,7 +526,7 @@ export default function SalesReport() {
   }, []);
 
   useEffect(() => {
-    if (activeBusinessDate) {
+    if (activeBusinessDate && !selectedDate) {
       setSelectedDate(activeBusinessDate);
     }
   }, [activeBusinessDate]);
@@ -421,6 +548,10 @@ export default function SalesReport() {
     const saveState = async () => {
       try {
         await AsyncStorage.setItem("sales_selected_filter", selectedFilter);
+        await AsyncStorage.setItem("sales_selected_date", selectedDate);
+        if (rangeStart) await AsyncStorage.setItem("sales_range_start", rangeStart);
+        if (rangeEnd) await AsyncStorage.setItem("sales_range_end", rangeEnd);
+        await AsyncStorage.setItem("sales_cashier_id", selectedCashierId);
         await AsyncStorage.setItem("sales_download_filter", downloadFilter);
         await AsyncStorage.setItem("sales_payment_modes", JSON.stringify(activePaymentModes));
         await AsyncStorage.setItem("sales_order_types", JSON.stringify(activeOrderTypes));
@@ -430,7 +561,7 @@ export default function SalesReport() {
       }
     };
     saveState();
-  }, [selectedFilter, downloadFilter, activePaymentModes, activeOrderTypes, sortOrder]);
+  }, [selectedFilter, selectedDate, rangeStart, rangeEnd, selectedCashierId, downloadFilter, activePaymentModes, activeOrderTypes, sortOrder]);
 
   useFocusEffect(
     useCallback(() => {
@@ -479,8 +610,9 @@ export default function SalesReport() {
 
   const fetchOperators = async () => {
     try {
+      const { startDate: startStr, endDate: endStr } = effectiveDateRange;
       const res = await fetch(
-        `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${selectedDate}`
+        `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${selectedDate}&startDate=${startStr}&endDate=${endStr}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -533,15 +665,14 @@ export default function SalesReport() {
       try {
         setLoadingReport(true);
         const reportFilter = filterType.toLowerCase();
+        const { startDate: startStr, endDate: endStr } = effectiveDateRange;
         const params = new URLSearchParams({
           filter: reportFilter,
           date: selectedDate,
+          startDate: startStr,
+          endDate: endStr,
           t: Date.now().toString(),
         });
-        if (filterType === "CUSTOM" && rangeStart && rangeEnd) {
-          params.append("startDate", rangeStart);
-          params.append("endDate", rangeEnd);
-        }
 
         const endpoint =
           reportType === "CATEGORY"
@@ -656,7 +787,7 @@ export default function SalesReport() {
         setLoadingReport(false);
       }
     },
-    [selectedFilter, selectedDate],
+    [selectedFilter, selectedDate, effectiveDateRange],
   );
 
   const handleReportPress = (reportType: DetailReportType) => {
@@ -678,36 +809,7 @@ export default function SalesReport() {
 
   const fetchSales = async () => {
     try {
-      let startStr = selectedDate;
-      let endStr = selectedDate;
-
-      if (selectedFilter === "WEEKLY") {
-        const start = new Date(selectedDate);
-        start.setDate(start.getDate() - 6);
-        startStr = getSingaporeDateString(start);
-      } else if (selectedFilter === "MONTHLY") {
-        const start = new Date(selectedDate);
-        start.setDate(1);
-        startStr = getSingaporeDateString(start);
-        
-        const end = new Date(selectedDate);
-        const today = new Date();
-        const endOfMonth = new Date(end.getFullYear(), end.getMonth() + 1, 0);
-        if (endOfMonth > today) {
-          end.setTime(today.getTime());
-        } else {
-          end.setTime(endOfMonth.getTime());
-        }
-        endStr = getSingaporeDateString(end);
-      } else if (selectedFilter === "YEARLY") {
-        const start = new Date(selectedDate);
-        start.setFullYear(start.getFullYear() - 1);
-        startStr = getSingaporeDateString(start);
-      } else if (selectedFilter === "CUSTOM" && rangeStart && rangeEnd) {
-        startStr = rangeStart;
-        endStr = rangeEnd;
-      }
-
+      const { startDate: startStr, endDate: endStr } = effectiveDateRange;
       const token = useAuthStore.getState().token;
       const response = await fetch(`${API_URL}/api/sales/all?startDate=${startStr}&endDate=${endStr}`, {
         headers: {
@@ -730,35 +832,7 @@ export default function SalesReport() {
 
   const fetchSummary = async () => {
     try {
-      let startStr = selectedDate;
-      let endStr = selectedDate;
-
-      if (selectedFilter === "WEEKLY") {
-        const start = new Date(selectedDate);
-        start.setDate(start.getDate() - 6);
-        startStr = getSingaporeDateString(start);
-      } else if (selectedFilter === "MONTHLY") {
-        const start = new Date(selectedDate);
-        start.setDate(1);
-        startStr = getSingaporeDateString(start);
-        
-        const end = new Date(selectedDate);
-        const today = new Date();
-        const endOfMonth = new Date(end.getFullYear(), end.getMonth() + 1, 0);
-        if (endOfMonth > today) {
-          end.setTime(today.getTime());
-        } else {
-          end.setTime(endOfMonth.getTime());
-        }
-        endStr = getSingaporeDateString(end);
-      } else if (selectedFilter === "YEARLY") {
-        const start = new Date(selectedDate);
-        start.setFullYear(start.getFullYear() - 1);
-        startStr = getSingaporeDateString(start);
-      } else if (selectedFilter === "CUSTOM" && rangeStart && rangeEnd) {
-        startStr = rangeStart;
-        endStr = rangeEnd;
-      }
+      const { startDate: startStr, endDate: endStr } = effectiveDateRange;
       const token = useAuthStore.getState().token;
       const url = `${API_URL}/api/sales/range?startDate=${startStr}&endDate=${endStr}`;
       const response = await fetch(url, {
@@ -1114,11 +1188,36 @@ export default function SalesReport() {
     return `$${rounded.toFixed(2)}`;
   };
 
-  const changeDate = (days: number) => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() + days);
-    // Preserve the local date without converting to UTC
-    setSelectedDate(getSingaporeDateString(newDate));
+  const changeDate = (direction: number) => {
+    const maxDateStr = activeBusinessDate || getTodayDateStr();
+    const current = parseLocalDate(selectedDate);
+    let newRef = new Date(current);
+
+    if (direction > 0) {
+      if (selectedFilter === "DAILY" && selectedDate >= maxDateStr) return;
+      const curRange = calculatePeriodRange(selectedFilter, selectedDate, maxDateStr);
+      if (curRange.endDate >= maxDateStr) return;
+    }
+
+    if (selectedFilter === "DAILY") {
+      newRef.setDate(newRef.getDate() + direction);
+    } else if (selectedFilter === "WEEKLY") {
+      newRef.setDate(newRef.getDate() + (direction * 7));
+    } else if (selectedFilter === "MONTHLY") {
+      newRef.setMonth(newRef.getMonth() + direction);
+    } else if (selectedFilter === "YEARLY") {
+      newRef.setFullYear(newRef.getFullYear() + direction);
+    }
+
+    let newDateStr = format(newRef, "yyyy-MM-dd");
+    if (newDateStr > maxDateStr) {
+      newDateStr = maxDateStr;
+    }
+
+    const { startDate, endDate } = calculatePeriodRange(selectedFilter, newDateStr, maxDateStr);
+    setSelectedDate(newDateStr);
+    setRangeStart(startDate);
+    setRangeEnd(endDate);
   };
 
 
@@ -1134,73 +1233,17 @@ export default function SalesReport() {
       return getSingaporeDateString(parseDatabaseDate(dateVal));
     };
 
-    if (selectedFilter === "DAILY") {
-      result = sales.filter((s) => {
-        const dateToUse = s.BusinessDate || s.SettlementDate;
-        if (!dateToUse) return false;
-        const itemDate = extractYYYYMMDD(dateToUse);
-        return itemDate === selectedDate;
-      });
-    } else if (selectedFilter === "WEEKLY") {
-      const parts = selectedDate.split("-");
-      // Use local date values to calculate weekly range bound
-      const end = new Date(
-        Number(parts[0]),
-        Number(parts[1]) - 1,
-        Number(parts[2])
-      );
-      const start = new Date(end);
-      start.setDate(start.getDate() - 6);
-      
-      const startStr = getSingaporeDateString(start);
-      const endStr = selectedDate;
+    const { startDate, endDate } = effectiveDateRange;
 
-      result = sales.filter((s) => {
-        const dateToUse = s.BusinessDate || s.SettlementDate;
-        if (!dateToUse) return false;
-        const saleDateStr = extractYYYYMMDD(dateToUse);
-        return saleDateStr >= startStr && saleDateStr <= endStr;
-      });
-    } else if (selectedFilter === "MONTHLY") {
-      const parts = selectedDate.split("-");
-      const yearNum = Number(parts[0]);
-      const monthNum = Number(parts[1]);
-      const lastDay = new Date(yearNum, monthNum, 0).getDate();
-      
-      const startStr = `${parts[0]}-${parts[1]}-01`;
-      const endStr = `${parts[0]}-${parts[1]}-${String(lastDay).padStart(2, "0")}`;
-
-      result = sales.filter((s) => {
-        const dateToUse = s.BusinessDate || s.SettlementDate;
-        if (!dateToUse) return false;
-        const saleDateStr = extractYYYYMMDD(dateToUse);
-        return saleDateStr >= startStr && saleDateStr <= endStr;
-      });
-    } else if (selectedFilter === "YEARLY") {
-      const parts = selectedDate.split("-");
-      const year = Number(parts[0]);
-      const month = Number(parts[1]);
-      const day = Number(parts[2]);
-      const startStr = `${year - 1}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const endStr = selectedDate;
-
-      result = sales.filter((s) => {
-        const dateToUse = s.BusinessDate || s.SettlementDate;
-        if (!dateToUse) return false;
-        const saleDateStr = extractYYYYMMDD(dateToUse);
-        return saleDateStr >= startStr && saleDateStr <= endStr;
-      });
-    } else if (selectedFilter === "CUSTOM" && rangeStart && rangeEnd) {
-      result = sales.filter((s) => {
-        const dateToUse = s.BusinessDate || s.SettlementDate;
-        if (!dateToUse) return false;
-        const saleDateStr = extractYYYYMMDD(dateToUse);
-        return saleDateStr >= rangeStart && saleDateStr <= rangeEnd;
-      });
-    }
+    result = sales.filter((s) => {
+      const dateToUse = s.BusinessDate || s.SettlementDate;
+      if (!dateToUse) return false;
+      const saleDateStr = extractYYYYMMDD(dateToUse);
+      return saleDateStr >= startDate && saleDateStr <= endDate;
+    });
 
     return result;
-  }, [sales, selectedFilter, selectedDate, rangeStart, rangeEnd]);
+  }, [sales, effectiveDateRange]);
 
   const groupedSales = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -1998,6 +2041,7 @@ export default function SalesReport() {
     color: string,
     fullWidth?: boolean,
     subtitle?: string,
+    onPress?: () => void,
   ) => {
     const isMobile = SCREEN_W < 600;
     const isTablet = SCREEN_W >= 600 && SCREEN_W < 1024;
@@ -2010,8 +2054,12 @@ export default function SalesReport() {
     const labelFontSize = isMobile ? 10 : isTablet ? 11 : 12;
     const valueFontSize = isMobile ? 16 : isTablet ? 18 : 22;
 
+    const TileWrapper = onPress ? TouchableOpacity : View;
+
     return (
-      <View
+      <TileWrapper
+        onPress={onPress}
+        activeOpacity={onPress ? 0.75 : 1}
         style={[
           styles.metricTile,
           {
@@ -2026,6 +2074,7 @@ export default function SalesReport() {
               ? "31.5%"
               : undefined,
             flex: fullWidth ? undefined : SCREEN_W >= 600 ? undefined : 1,
+            cursor: onPress ? "pointer" : undefined,
           },
         ]}
       >
@@ -2071,7 +2120,7 @@ export default function SalesReport() {
             </Text>
           ) : null}
         </View>
-      </View>
+      </TileWrapper>
     );
   };
 
@@ -2698,8 +2747,13 @@ export default function SalesReport() {
             <Pressable
               key={f}
               onPress={() => {
-                setSelectedFilter(f as FilterType);
+                const nextFilter = f as FilterType;
+                setSelectedFilter(nextFilter);
                 setPickerMode('SINGLE');
+                const maxDateStr = activeBusinessDate || getTodayDateStr();
+                const { startDate, endDate } = calculatePeriodRange(nextFilter, selectedDate, maxDateStr);
+                setRangeStart(startDate);
+                setRangeEnd(endDate);
               }}
               style={({ pressed }) => [
                 styles.filterBtn,
@@ -2721,11 +2775,12 @@ export default function SalesReport() {
       </View>
 
       {/* Date Navigation */}
-      {selectedFilter !== "CUSTOM" ? (
-        <View style={styles.dateControl}>
-          <TouchableOpacity onPress={() => changeDate(-1)} style={styles.navBtn}>
-            <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
-          </TouchableOpacity>
+      <View style={styles.dateControl}>
+        <TouchableOpacity onPress={() => changeDate(-1)} style={styles.navBtn}>
+          <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
+        </TouchableOpacity>
+
+        {selectedFilter === "DAILY" ? (
           <TouchableOpacity
             onPress={() => {
               setPickerMode("SINGLE");
@@ -2733,7 +2788,7 @@ export default function SalesReport() {
             }}
             style={styles.dateDisplay}
           >
-            <Text style={styles.dateText}>{selectedDate}</Text>
+            <Text style={styles.dateText}>{formatDateDMY(selectedDate)}</Text>
             <Ionicons
               name="calendar-outline"
               size={16}
@@ -2741,55 +2796,58 @@ export default function SalesReport() {
               style={{ marginLeft: 8 }}
             />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => changeDate(1)} style={styles.navBtn}>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Theme.textPrimary}
-            />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.dateControl}>
-          <TouchableOpacity
-            onPress={() => {
-              setPickerMode("START");
-              setShowDatePicker(true);
-            }}
-            style={[
-              styles.dateDisplay,
-              { flex: 1 },
-              pickerMode === "START" && { borderColor: Theme.primary },
-            ]}
-          >
-            <View>
+        ) : (
+          <View style={{ flex: 1, flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => {
+                setPickerMode("START");
+                setShowDatePicker(true);
+              }}
+              style={[
+                styles.dateDisplay,
+                { flexDirection: "column", justifyContent: "center", paddingVertical: 2 },
+                pickerMode === "START" && showDatePicker && { borderColor: Theme.primary },
+              ]}
+            >
               <Text style={styles.rangeLabel}>FROM DATE</Text>
-              <Text style={styles.dateText}>
-                {rangeStart ? format(new Date(rangeStart), "dd-MM-yy") : "Select"}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          <View style={{ width: 10 }} />
-          <TouchableOpacity
-            onPress={() => {
-              setPickerMode("END");
-              setShowDatePicker(true);
-            }}
-            style={[
-              styles.dateDisplay,
-              { flex: 1 },
-              pickerMode === "END" && { borderColor: Theme.primary },
-            ]}
-          >
-            <View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
+                <Text style={[styles.dateText, { fontSize: 14 }]}>{formatDateDMY(effectiveDateRange.startDate)}</Text>
+                <Ionicons name="calendar-outline" size={14} color={Theme.primary} />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setPickerMode("END");
+                setShowDatePicker(true);
+              }}
+              style={[
+                styles.dateDisplay,
+                { flexDirection: "column", justifyContent: "center", paddingVertical: 2 },
+                pickerMode === "END" && showDatePicker && { borderColor: Theme.primary },
+              ]}
+            >
               <Text style={styles.rangeLabel}>TO DATE</Text>
-              <Text style={styles.dateText}>
-                {rangeEnd ? format(new Date(rangeEnd), "dd-MM-yy") : "Select"}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
+                <Text style={[styles.dateText, { fontSize: 14 }]}>{formatDateDMY(effectiveDateRange.endDate)}</Text>
+                <Ionicons name="calendar-outline" size={14} color={Theme.primary} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity
+          onPress={() => changeDate(1)}
+          disabled={isAtLatestPeriod}
+          style={[styles.navBtn, isAtLatestPeriod && { opacity: 0.35 }]}
+        >
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={Theme.textPrimary}
+          />
+        </TouchableOpacity>
+      </View>
 
 
 
@@ -3019,7 +3077,15 @@ export default function SalesReport() {
             {/* Row 3 */}
             <View style={styles.metricsRow}>
               {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
-              {renderMetricTile("Credit Collections", formatCurrency(filteredMetrics.CreditPaymentsCollected), "cash-outline", Theme.warning)}
+              {renderMetricTile(
+                "Credit Collections",
+                formatCurrency(filteredMetrics.CreditPaymentsCollected),
+                "cash-outline",
+                Theme.warning,
+                false,
+                undefined,
+                () => router.push({ pathname: "/receivables", params: { from: "sales-report" } } as any)
+              )}
               {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
             </View>
 
@@ -3064,7 +3130,15 @@ export default function SalesReport() {
 
             <View style={styles.metricsRow}>
               {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
-              {renderMetricTile("Credit Collections", formatCurrency(filteredMetrics.CreditPaymentsCollected), "cash-outline", Theme.warning)}
+              {renderMetricTile(
+                "Credit Collections",
+                formatCurrency(filteredMetrics.CreditPaymentsCollected),
+                "cash-outline",
+                Theme.warning,
+                false,
+                undefined,
+                () => router.push({ pathname: "/receivables", params: { from: "sales-report" } } as any)
+              )}
             </View>
 
             <View style={styles.metricsRow}>
@@ -5664,9 +5738,15 @@ export default function SalesReport() {
                 >
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>
-                      {selectedFilter === "CUSTOM"
-                        ? (rangeStart && !rangeEnd ? "Select End Date" : "Select Start Date")
-                        : "Select Date"}
+                      {selectedFilter === "DAILY"
+                        ? "Select Date"
+                        : selectedFilter === "WEEKLY"
+                          ? "Select Week"
+                          : selectedFilter === "MONTHLY"
+                            ? "Select Month"
+                            : selectedFilter === "YEARLY"
+                              ? "Select Year"
+                              : "Select Date"}
                     </Text>
                     <TouchableOpacity onPress={() => setShowDatePicker(false)}>
                       <Ionicons name="close" size={24} color={Theme.danger} />
@@ -5680,44 +5760,28 @@ export default function SalesReport() {
                           ? rangeEnd
                           : selectedDate
                     }
-                    rangeStart={rangeStart}
-                    rangeEnd={rangeEnd}
-                    isRangeMode={selectedFilter === "CUSTOM"}
-                    onModeChange={(isRange) => {
-                      if (isRange) {
-                        setSelectedFilter("CUSTOM");
-                        setPickerMode("START");
-                        if (!rangeStart) {
-                          setRangeStart(selectedDate);
-                          setRangeEnd(selectedDate);
-                        }
-                      } else {
-                        setSelectedFilter("DAILY");
-                        setPickerMode("SINGLE");
-                      }
-                    }}
-                    onRangeChange={(start, end) => {
-                      setRangeStart(start);
-                      setRangeEnd(end);
-                      if (start && end) {
-                        setShowDatePicker(false);
-                      }
-                    }}
+                    rangeStart={selectedFilter === "DAILY" ? null : effectiveDateRange.startDate}
+                    rangeEnd={selectedFilter === "DAILY" ? null : effectiveDateRange.endDate}
+                    isRangeMode={false}
+                    disableFutureDates={true}
+                    maxDate={activeBusinessDate || undefined}
                     onDateChange={(date) => {
-                      setSelectedDate(date);
+                      const maxDateStr = activeBusinessDate || getTodayDateStr();
+                      const clampedDate = date > maxDateStr ? maxDateStr : date;
+                      setSelectedDate(clampedDate);
+                      const { startDate, endDate } = calculatePeriodRange(selectedFilter, clampedDate, maxDateStr);
+                      setRangeStart(startDate);
+                      setRangeEnd(endDate);
                       setShowDatePicker(false);
                     }}
                   />
                   <TouchableOpacity
                     onPress={() => {
-                      const defaultDate = activeBusinessDate || new Date().toISOString().split("T")[0];
-                      if (pickerMode === "SINGLE") {
-                        setSelectedDate(defaultDate);
-                      } else if (pickerMode === "START") {
-                        setRangeStart(defaultDate);
-                      } else {
-                        setRangeEnd(defaultDate);
-                      }
+                      const maxDateStr = activeBusinessDate || getTodayDateStr();
+                      setSelectedDate(maxDateStr);
+                      const { startDate, endDate } = calculatePeriodRange(selectedFilter, maxDateStr, maxDateStr);
+                      setRangeStart(startDate);
+                      setRangeEnd(endDate);
                       setShowDatePicker(false);
                     }}
                     style={{ alignSelf: "center", marginTop: 15, paddingBottom: 5 }}

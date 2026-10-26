@@ -20,8 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { usePathname } from "expo-router";
+import { useRouter, usePathname, useLocalSearchParams } from "expo-router";
 import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
 import { Theme } from "@/constants/theme";
@@ -105,6 +104,8 @@ type BillSettlementType = {
 
 export default function ReceivablesScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ from?: string }>();
+  const fromScreen = params?.from;
   const { user, token } = useAuthStore();
   const pathname = usePathname();
   const isFocused = pathname === "/receivables";
@@ -112,6 +113,22 @@ export default function ReceivablesScreen() {
   const currencySymbol = settingsStore?.currencySymbol || "$";
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isMobile = screenWidth < 768;
+
+  const handleBackPress = useCallback(() => {
+    if (fromScreen === "sales-report") {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/sales-report" as any);
+      }
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/category" as any);
+    }
+  }, [fromScreen, router]);
 
   // Diagnostics states
   const [sheetDiagHeight, setSheetDiagHeight] = useState<number>(0);
@@ -392,13 +409,13 @@ export default function ReceivablesScreen() {
         setBillSettlements({});
         return true;
       }
-      router.replace("/(tabs)/category" as any);
+      handleBackPress();
       return true;
     };
 
     const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
     return () => backHandler.remove();
-  }, [showLedgerModal]);
+  }, [showLedgerModal, handleBackPress]);
 
   const handleToggleBillExpansion = async (invoiceTransactionId: string) => {
     if (expandedBillId === invoiceTransactionId) {
@@ -543,7 +560,7 @@ export default function ReceivablesScreen() {
         {/* --- Header --- */}
         <View style={styles.headerBar}>
           <TouchableOpacity
-            onPress={() => router.replace("/(tabs)/category" as any)}
+            onPress={handleBackPress}
             style={styles.circularBack}
           >
             <Ionicons name="chevron-back" size={24} color={Theme.textPrimary} />

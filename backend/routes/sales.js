@@ -133,7 +133,7 @@ const resolveBusinessDateColumn = (col) => {
 };
 
 const getReportDateWhereSql = (filter = "daily", saleDateColumn = "sh.LastSettlementDate", date = null, startDate = null, endDate = null) => {
-  if (String(filter).toLowerCase() === "custom" && startDate && endDate) {
+  if (startDate && endDate) {
     return getReportDateWhereSqlForRange(startDate, endDate, saleDateColumn);
   }
 
@@ -685,16 +685,22 @@ router.get("/range", async (req, res) => {
   try {
     const pool = await poolPromise;
     const { startDate, endDate } = req.query;
-    const result = await pool.request()
-      .input("Start", sql.DateTime, startDate)
-      .input("End", sql.DateTime, endDate)
-      .query(`
+    const isDateStr = (str) => typeof str === "string" && /^\d{4}-\d{2}-\d{2}$/.test(str);
+    let whereClause = "";
+    const reqQuery = pool.request();
+    if (isDateStr(startDate) && isDateStr(endDate)) {
+      whereClause = getReportDateWhereSqlForRange(startDate, endDate, "sh.LastSettlementDate");
+    } else {
+      reqQuery.input("Start", sql.DateTime, startDate);
+      reqQuery.input("End", sql.DateTime, endDate);
+      whereClause = `sh.LastSettlementDate >= DATEADD(hour, -12, CAST(@Start AS DATETIME)) AND sh.LastSettlementDate <= DATEADD(hour, 36, CAST(@End AS DATETIME))`;
+    }
+    const result = await reqQuery.query(`
         SELECT ISNULL(SUM(sts.SysAmount), 0) AS TotalSales, 
         COUNT(sh.SettlementID) AS TransactionCount
         FROM SettlementHeader sh
         INNER JOIN SettlementTotalSales sts ON sh.SettlementID = sts.SettlementID
-        WHERE sh.LastSettlementDate >= DATEADD(hour, -12, CAST(@Start AS DATETIME))
-        AND sh.LastSettlementDate <= DATEADD(hour, 36, CAST(@End AS DATETIME))
+        WHERE ${whereClause}
       `);
     res.json(result.recordset[0]);
   } catch (err) {
