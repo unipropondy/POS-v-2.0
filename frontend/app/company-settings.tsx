@@ -716,9 +716,27 @@ export default function CompanySettingsScreen() {
                   style={styles.input}
                   value={settings.email}
                   onChangeText={(val) => { updateSettings({ email: val }); }}
+                  placeholder="Enter shop email"
+                  placeholderTextColor={Theme.textMuted}
                   keyboardType="email-address"
                 />
               </View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
+                <Text style={styles.inputLabel}>Report Email</Text>
+                <TextInput 
+                  style={styles.input}
+                  value={settings.reportEmail || ''}
+                  onChangeText={(val) => { updateSettings({ reportEmail: val }); }}
+                  placeholder="e.g. reports@company.com"
+                  placeholderTextColor={Theme.textMuted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+              <View style={{ flex: 1 }} />
             </View>
 
             <View style={{ marginTop: 20 }}>

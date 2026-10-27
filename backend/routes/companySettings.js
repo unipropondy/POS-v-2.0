@@ -70,6 +70,7 @@ router.post("/:id", async (req, res) => {
         .input("SVCIdentification", sql.Bit, s.SVCIdentification !== undefined && s.SVCIdentification !== null ? (s.SVCIdentification ? 1 : 0) : 1)
         .input("TakeawayCharges", sql.Decimal(18, 2), s.TakeawayCharges !== undefined && s.TakeawayCharges !== null ? s.TakeawayCharges : 0)
         .input("UpiId", sql.NVarChar, s.UpiId || "")
+        .input("ReportEmail", sql.NVarChar, s.ReportEmail ?? s.reportEmail ?? "")
         .query(`
           IF EXISTS (SELECT 1 FROM CompanySettings WHERE Id = '1')
           BEGIN
@@ -96,13 +97,14 @@ router.post("/:id", async (req, res) => {
               SVCIdentification = @SVCIdentification,
               TakeawayCharges = @TakeawayCharges,
               UpiId = @UpiId,
+              ReportEmail = @ReportEmail,
               UpdatedOn = GETDATE()
             WHERE Id = '1'
           END
           ELSE
           BEGIN
-            INSERT INTO CompanySettings (Id, CompanyName, Address, GSTNo, GSTPercentage, Phone, Email, CashierName, Currency, CurrencySymbol, CompanyLogoUrl, HalalLogoUrl, PrinterIP, ShowCompanyLogo, ShowHalalLogo, TaxMode, WaiterRequired, HoldOvertimeMinutes, ServiceChargePercentage, TWServiceChargePercentage, SVCIdentification, TakeawayCharges, UpiId, UpdatedOn)
-            VALUES ('1', @CompanyName, @Address, @GSTNo, @GSTPercentage, @Phone, @Email, @CashierName, @Currency, @CurrencySymbol, @CompanyLogoUrl, @HalalLogoUrl, @PrinterIP, @ShowCompanyLogo, @ShowHalalLogo, @TaxMode, @WaiterRequired, @HoldOvertimeMinutes, @ServiceChargePercentage, @TWServiceChargePercentage, @SVCIdentification, @TakeawayCharges, @UpiId, GETDATE())
+            INSERT INTO CompanySettings (Id, CompanyName, Address, GSTNo, GSTPercentage, Phone, Email, CashierName, Currency, CurrencySymbol, CompanyLogoUrl, HalalLogoUrl, PrinterIP, ShowCompanyLogo, ShowHalalLogo, TaxMode, WaiterRequired, HoldOvertimeMinutes, ServiceChargePercentage, TWServiceChargePercentage, SVCIdentification, TakeawayCharges, UpiId, ReportEmail, UpdatedOn)
+            VALUES ('1', @CompanyName, @Address, @GSTNo, @GSTPercentage, @Phone, @Email, @CashierName, @Currency, @CurrencySymbol, @CompanyLogoUrl, @HalalLogoUrl, @PrinterIP, @ShowCompanyLogo, @ShowHalalLogo, @TaxMode, @WaiterRequired, @HoldOvertimeMinutes, @ServiceChargePercentage, @TWServiceChargePercentage, @SVCIdentification, @TakeawayCharges, @UpiId, @ReportEmail, GETDATE())
           END
         `);
     } catch (fullQueryErr) {
@@ -123,6 +125,7 @@ router.post("/:id", async (req, res) => {
         .input("ServiceChargePercentage", sql.Decimal(18, 2), s.ServiceChargePercentage ?? s.serviceChargePercentage ?? 0)
         .input("TWServiceChargePercentage", sql.Decimal(10, 2), s.TWServiceChargePercentage ?? s.twServiceChargePercentage ?? 0)
         .input("TakeawayCharges", sql.Decimal(18, 2), s.TakeawayCharges || 0)
+        .input("ReportEmail", sql.NVarChar, s.ReportEmail ?? s.reportEmail ?? "")
         .query(`
           UPDATE CompanySettings SET
             CompanyName = @CompanyName,
@@ -139,7 +142,8 @@ router.post("/:id", async (req, res) => {
             ShowHalalLogo = @ShowHalalLogo,
             ServiceChargePercentage = @ServiceChargePercentage,
             TWServiceChargePercentage = @TWServiceChargePercentage,
-            TakeawayCharges = @TakeawayCharges
+            TakeawayCharges = @TakeawayCharges,
+            ReportEmail = @ReportEmail
           WHERE Id = '1'
         `);
     }

@@ -55,9 +55,8 @@ export default function LoginScreen() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 960;
 
-  const [companyCode, setCompanyCode] = useState("UCS111");
+  const [companyCode, setCompanyCode] = useState("");
   const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
-  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
   const [isCompanyFocused, setIsCompanyFocused] = useState(false);
 
   const [userName, setUserName] = useState("");
@@ -147,10 +146,12 @@ export default function LoginScreen() {
           const saved = await AsyncStorage.getItem("remembered_creds");
           if (saved) {
             const { c, u, p } = JSON.parse(saved);
-            if (c) setCompanyCode(c);
-            if (u) setUserName(u);
-            if (p) setPassword(p);
-            setRememberMe(true);
+            if (u && p) {
+              if (c) setCompanyCode(c);
+              setUserName(u);
+              setPassword(p);
+              setRememberMe(true);
+            }
           }
         } catch (e) {}
       };
@@ -183,7 +184,6 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (loading) return;
-    setShowCompanyDropdown(false);
 
     if (!companyCode.trim()) {
       setError("Please enter Company Code");
@@ -315,7 +315,7 @@ export default function LoginScreen() {
                     <View style={styles.brandLogoAura} />
                     <View style={[styles.brandLogoBox, !isDesktop && styles.brandLogoBoxMobile]}>
                       <Image
-                        source={require("@/assets/images/unipro_official_logo.jpg")}
+                        source={require("@/assets/images/logo_pos.png")}
                         style={[styles.brandLogoImage, !isDesktop && styles.brandLogoImageMobile]}
                         resizeMode="contain"
                       />
@@ -323,11 +323,11 @@ export default function LoginScreen() {
                   </View>
                 </View>
 
-                {/* 2. Smart POS Headings with sleek category pill */}
+                {/* 2. Smart Cafe Headings with sleek category pill */}
                 <View style={[styles.brandTitleWrap, !isDesktop && styles.brandTitleWrapMobile]}>
                   
                   <Text style={[styles.brandTitle, !isDesktop && styles.brandTitleMobile]}>
-                    Smart <Text style={{ color: "#FF5900" }}>POS</Text>
+                    Smart <Text style={{ color: "#FF5900" }}>Cafe</Text>
                   </Text>
                   <Text style={[styles.brandSubtitle, !isDesktop && styles.brandSubtitleMobile]}>Point of Sale System</Text>
                 </View>
@@ -398,15 +398,14 @@ export default function LoginScreen() {
                 )}
 
                 {/* 1. Company Code (Orange Border) */}
-                <View style={[styles.inputGroup, { zIndex: 100 }]}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>COMPANY CODE</Text>
-                  <Pressable
+                  <View
                     style={[
                       styles.inputFieldContainer,
                       styles.companyFieldContainer,
                       isCompanyFocused && styles.inputFocused,
                     ]}
-                    onPress={() => setShowCompanyDropdown((prev) => !prev)}
                   >
                     <Ionicons
                       name="business-outline"
@@ -416,87 +415,20 @@ export default function LoginScreen() {
                     />
                     <TextInput
                       style={[styles.textInput, { color: "#111827", fontWeight: "600" }]}
-                      placeholder="UCS111"
+                      placeholder="Enter Company Code"
                       placeholderTextColor="#9CA3AF"
                       value={companyCode}
                       onChangeText={(t) => {
                         setCompanyCode(t);
                         setError("");
-                        setShowCompanyDropdown(true);
                       }}
-                      onFocus={() => {
-                        setIsCompanyFocused(true);
-                        setShowCompanyDropdown(true);
-                      }}
-                      onBlur={() => {
-                        setIsCompanyFocused(false);
-                      }}
+                      onFocus={() => setIsCompanyFocused(true)}
+                      onBlur={() => setIsCompanyFocused(false)}
                       autoCapitalize="characters"
                       autoCorrect={false}
                       returnKeyType="next"
                     />
-                    <TouchableOpacity
-                      style={styles.dropdownToggleBtn}
-                      onPress={() => setShowCompanyDropdown((prev) => !prev)}
-                    >
-                      <Ionicons
-                        name={showCompanyDropdown ? "chevron-up" : "chevron-down"}
-                        size={17}
-                        color="#1E2530"
-                      />
-                    </TouchableOpacity>
-                  </Pressable>
-
-                  {/* Company Dropdown Autocomplete */}
-                  {showCompanyDropdown && filteredCompanies.length > 0 && (
-                    <View style={styles.companyDropdown}>
-                      <ScrollView
-                        nestedScrollEnabled
-                        keyboardShouldPersistTaps="handled"
-                        style={{ maxHeight: 150 }}
-                      >
-                        {filteredCompanies.map((item, idx) => (
-                          <TouchableOpacity
-                            key={`${item}-${idx}`}
-                            style={[
-                              styles.dropdownItem,
-                              item.toUpperCase() === companyCode.trim().toUpperCase() &&
-                                styles.dropdownItemSelected,
-                            ]}
-                            onPress={() => {
-                              setCompanyCode(item);
-                              setShowCompanyDropdown(false);
-                              setError("");
-                            }}
-                          >
-                            <View style={styles.dropdownItemContent}>
-                              <Ionicons
-                                name="business"
-                                size={14}
-                                color={
-                                  item.toUpperCase() === companyCode.trim().toUpperCase()
-                                    ? "#FF5E14"
-                                    : "#6B7280"
-                                }
-                              />
-                              <Text
-                                style={[
-                                  styles.dropdownItemText,
-                                  item.toUpperCase() === companyCode.trim().toUpperCase() &&
-                                    styles.dropdownItemTextSelected,
-                                ]}
-                              >
-                                {item}
-                              </Text>
-                            </View>
-                            {item.toUpperCase() === companyCode.trim().toUpperCase() && (
-                              <Ionicons name="checkmark-circle" size={15} color="#FF5E14" />
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
+                  </View>
                 </View>
 
                 {/* 2. User ID */}
@@ -516,7 +448,7 @@ export default function LoginScreen() {
                     />
                     <TextInput
                       style={styles.textInput}
-                      placeholder="123"
+                      placeholder="Enter User Name"
                       placeholderTextColor="#9CA3AF"
                       value={userName}
                       onChangeText={(t) => {
@@ -549,7 +481,7 @@ export default function LoginScreen() {
                     />
                     <TextInput
                       style={[styles.textInput, { flex: 1 }]}
-                      placeholder="••••"
+                      placeholder="Enter Password"
                       placeholderTextColor="#9CA3AF"
                       value={password}
                       onChangeText={(t) => {

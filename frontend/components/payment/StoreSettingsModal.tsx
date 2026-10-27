@@ -30,7 +30,6 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   const { settings, fetchSettings, updateSettings } = usePaymentSettingsStore();
   const { user } = useAuthStore();
 
-  const [upiId, setUpiId] = useState(settings.upiId || "");
   const [shopName, setShopName] = useState(settings.shopName || "");
   const [qrCodeUrl, setQrCodeUrl] = useState(settings.payNowQrUrl || "");
 
@@ -41,7 +40,6 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      setUpiId(settings.upiId || "");
       setShopName(settings.shopName || "");
       setQrCodeUrl(settings.payNowQrUrl || "");
       setPassword("");
@@ -124,7 +122,6 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          upiId: upiId.trim(),
           shopName: shopName.trim(),
           qrCodeUrl: qrCodeUrl,
           enableKOT: currentData.EnableKOT !== undefined ? currentData.EnableKOT : 1,
@@ -146,7 +143,7 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
 
       const data = await response.json();
       if (data.success) {
-        updateSettings({ upiId, shopName, payNowQrUrl: qrCodeUrl });
+        updateSettings({ shopName, payNowQrUrl: qrCodeUrl });
         Alert.alert("Success", "Settings updated successfully!");
         onClose();
       } else {
@@ -222,23 +219,6 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
                 />
               </View>
 
-              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
-                UPI Configuration
-              </Text>
-              <View style={styles.field}>
-                <Text style={styles.label}>UPI ID (Dynamic QR)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={upiId}
-                  onChangeText={setUpiId}
-                  placeholder="e.g. shopname@okaxis"
-                  placeholderTextColor="#A0AEC0"
-                  autoCapitalize="none"
-                />
-                <Text style={styles.helper}>
-                  Used to generate dynamic QR codes with exact amounts.
-                </Text>
-              </View>
 
               <View
                 style={{

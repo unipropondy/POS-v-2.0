@@ -17,6 +17,7 @@ interface CompanySettings {
   serviceChargePercentage?: number;
   phone: string;
   email: string;
+  reportEmail?: string;
   cashierName: string;
   currency: string;
   currencySymbol: string;
@@ -141,6 +142,7 @@ static async loadSettings(userId?: string | number): Promise<CompanySettings> {
                 serviceChargePercentage: parseFloat(settings.ServiceChargePercentage) || 0,
                 phone: settings.Phone || '',
                 email: settings.Email || '',
+                reportEmail: settings.ReportEmail || '',
                 cashierName: settings.CashierName || '',
                 currency: settings.Currency || 'SGD',
                 currencySymbol: settings.CurrencySymbol || '$',
@@ -174,6 +176,7 @@ static async loadSettings(userId?: string | number): Promise<CompanySettings> {
       gstPercentage: 0,
       phone: '',
       email: '',
+      reportEmail: '',
       cashierName: '',
       currency: 'SGD',
       currencySymbol: '$',
@@ -201,6 +204,7 @@ static async loadSettings(userId?: string | number): Promise<CompanySettings> {
             GSTPercentage: settings.gstPercentage,
             Phone: settings.phone,
             Email: settings.email,
+            ReportEmail: settings.reportEmail || (settings as any).ReportEmail || '',
             CashierName: settings.cashierName,
             Currency: settings.currency,
             CurrencySymbol: settings.currencySymbol,

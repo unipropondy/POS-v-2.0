@@ -31,6 +31,7 @@ export interface CompanySettings {
   gstPercentage: number;
   phone: string;
   email: string;
+  reportEmail: string;
   cashierName: string;
   currency: string;
   currencySymbol: string;
@@ -61,6 +62,7 @@ const DEFAULT_SETTINGS: CompanySettings = {
   gstPercentage: 0,
   phone: '',
   email: '',
+  reportEmail: '',
   cashierName: '',
   currency: 'SGD',
   currencySymbol: '$',
@@ -99,6 +101,7 @@ export const useCompanySettingsStore = create<CompanySettingsState>()(
                 gstPercentage: parseFloat(s.GSTPercentage) || 0,
                 phone: s.Phone || '',
                 email: s.Email || '',
+                reportEmail: s.ReportEmail || '',
                 cashierName: s.CashierName || '',
                 currency: s.Currency || 'SGD',
                 currencySymbol: s.CurrencySymbol || '$',
@@ -141,6 +144,7 @@ export const useCompanySettingsStore = create<CompanySettingsState>()(
               GSTPercentage: updated.gstPercentage,
               Phone: updated.phone,
               Email: updated.email,
+              ReportEmail: updated.reportEmail,
               CashierName: updated.cashierName,
               Currency: updated.currency,
               CurrencySymbol: updated.currencySymbol,
