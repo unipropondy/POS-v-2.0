@@ -512,7 +512,8 @@ export default function RootLayout() {
       router.replace("/login");
     } else if (user) {
       if (user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
-        if (rootSegment !== "sales-report") {
+        const allowedOwnerSegments = ["sales-report", "receivables"];
+        if (!allowedOwnerSegments.includes(rootSegment)) {
           router.replace("/sales-report");
         }
       } else if (!rootSegment || rootSegment === "login") {

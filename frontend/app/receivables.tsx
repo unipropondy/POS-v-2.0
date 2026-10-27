@@ -115,7 +115,7 @@ export default function ReceivablesScreen() {
   const isMobile = screenWidth < 768;
 
   const handleBackPress = useCallback(() => {
-    if (fromScreen === "sales-report") {
+    if (fromScreen === "sales-report" || user?.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
       if (router.canGoBack()) {
         router.back();
       } else {
@@ -128,7 +128,7 @@ export default function ReceivablesScreen() {
     } else {
       router.replace("/(tabs)/category" as any);
     }
-  }, [fromScreen, router]);
+  }, [fromScreen, router, user?.userGroupId]);
 
   // Diagnostics states
   const [sheetDiagHeight, setSheetDiagHeight] = useState<number>(0);

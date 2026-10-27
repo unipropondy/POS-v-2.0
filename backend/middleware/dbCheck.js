@@ -6,7 +6,7 @@ const dbCheck = (req, res, next) => {
     return next();
   }
 
-  const pool = getPool();
+  const pool = req.pool || getPool();
   if (!pool) {
     return res.status(503).json({
       error: "Database Connection Unavailable",

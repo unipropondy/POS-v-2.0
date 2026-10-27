@@ -7,19 +7,23 @@ const sharp = require("sharp");
 const cache = new Map();
 const CACHE_TTL = 300000; // 5 minutes
 
-function getCached(key) {
-  const item = cache.get(key);
+function getCached(key, req) {
+  const scope = req?.databaseName || "default";
+  const fullKey = `${scope}:${key}`;
+  const item = cache.get(fullKey);
   if (item && (Date.now() - item.time < CACHE_TTL)) {
-    console.log(`⚡ [MenuCache] Cache HIT: ${key}`);
+    console.log(`⚡ [MenuCache] Cache HIT: ${fullKey}`);
     return item.data;
   }
-  console.log(`⚡ [MenuCache] Cache MISS: ${key}`);
+  console.log(`⚡ [MenuCache] Cache MISS: ${fullKey}`);
   return null;
 }
 
-function setCache(key, data) {
-  cache.set(key, { data, time: Date.now() });
-  console.log(`⚡ [MenuCache] Cache STORED: ${key}`);
+function setCache(key, data, req) {
+  const scope = req?.databaseName || "default";
+  const fullKey = `${scope}:${key}`;
+  cache.set(fullKey, { data, time: Date.now() });
+  console.log(`⚡ [MenuCache] Cache STORED: ${fullKey}`);
 }
 
 /* ================= KITCHENS / CATEGORIES ================= */

@@ -21,7 +21,9 @@ const authenticateToken = (req, res, next) => {
       ...decoded,
       id: decoded.userId || decoded.id,
       username: decoded.userName || decoded.username || "Admin",
-      userName: decoded.userName || decoded.username || "Admin"
+      userName: decoded.userName || decoded.username || "Admin",
+      companyCode: decoded.companyCode || null,
+      databaseName: decoded.databaseName || null,
     };
     next();
   });

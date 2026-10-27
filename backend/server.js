@@ -34,6 +34,7 @@ if (!process.env.JWT_SECRET) {
 
 const { poolPromise } = require("./config/db");
 const { initDB, syncKitchensToPrintMaster } = require("./config/init");
+const tenancyMiddleware = require("./middleware/tenancy");
 const dbCheck = require("./middleware/dbCheck");
 const idempotencyMiddleware = require("./middleware/idempotency");
 const { getHoldOvertimeMinutes } = require("./utils/settingsCache");
@@ -341,6 +342,9 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads"), {
   immutable: true
 }));
 app.use(express.static(path.join(__dirname, "dist")));
+
+// 🏢 Dynamic Tenancy Context Middleware (resolves company database per request)
+app.use("/api", tenancyMiddleware);
 
 // 🔄 Database Connection Check (for all API routes)
 app.use("/api", dbCheck);

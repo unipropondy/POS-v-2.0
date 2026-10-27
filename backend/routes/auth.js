@@ -1,6 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const { poolPromise, sql } = require("../config/db");
+const {
+  poolPromise,
+  sql,
+  getBranchDatabaseList,
+  lookupBranchDatabase,
+  getPoolForDatabase,
+} = require("../config/db");
 const jwt = require("jsonwebtoken");
 const { createMailTransporter } = require("../utils/mailTransporter");
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -379,33 +385,96 @@ Unsubscribe: https://pos-v-20-production.up.railway.app/customer/unsubscribe
   }
 }
 
+/* ================= AUTH - GET COMPANY CODES ================= */
+router.get(["/companies", "/company-codes"], async (req, res) => {
+  try {
+    const list = await getBranchDatabaseList();
+    const companies = list.map((item) => ({
+      companyCode: item.branchCode,
+      branchCode: item.branchCode,
+    }));
+    return res.json({
+      success: true,
+      companies,
+      data: companies,
+    });
+  } catch (err) {
+    console.error("❌ [AUTH] Error fetching company codes from SQL Server:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch company codes. Please try again.",
+    });
+  }
+});
+
 /* ================= AUTH - LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
-    const pool = await poolPromise;
-    if (!pool) {
-      return res
-        .status(503)
-        .json({
-          success: false,
-          message: "Database connection busy or unavailable.",
-        });
-    }
-
-    const { userName: rawUserName, password: rawPassword } = req.body;
+    const {
+      companyCode: rawCompanyCode,
+      userName: rawUserName,
+      password: rawPassword,
+    } = req.body;
+    const companyCode = (rawCompanyCode || "").trim();
     const userName = (rawUserName || "").trim();
     const password = (rawPassword || "").trim();
 
-    if (!userName || !password) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Email ID/Mobile Number and Password are required.",
-        });
+    // 1. Validate empty company code
+    if (!companyCode) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter Company Code",
+      });
     }
 
-    console.log(`[AUTH] Attempting login for UserName: "${userName}"`);
+    // 2. Validate empty credentials
+    if (!userName || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter both User ID and Password.",
+      });
+    }
+
+    // 3. Validate company code against UNIPRO.dbo.BranchDatabaseMaster
+    let branchMapping = null;
+    try {
+      branchMapping = await lookupBranchDatabase(companyCode);
+    } catch (e) {
+      console.error("[AUTH] Error looking up company code:", e.message);
+      return res.status(503).json({
+        success: false,
+        message: "Database connection busy or unavailable.",
+      });
+    }
+
+    if (!branchMapping || !branchMapping.databaseName) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Company Code",
+      });
+    }
+
+    const targetDb = branchMapping.databaseName.trim();
+    console.log(`[AUTH] Attempting login for Company "${companyCode}" (DB: "${targetDb}"), UserName: "${userName}"`);
+
+    // 4. Obtain connection pool for the resolved company database
+    let pool = null;
+    try {
+      pool = await getPoolForDatabase(targetDb);
+    } catch (e) {
+      console.error(`[AUTH] Failed to connect to company database "${targetDb}":`, e.message);
+      return res.status(503).json({
+        success: false,
+        message: "Database connection busy or unavailable.",
+      });
+    }
+
+    if (!pool || !pool.connected) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection busy or unavailable.",
+      });
+    }
 
     const result = await pool.request().input("UserName", userName).query(`
         SELECT 
@@ -454,15 +523,17 @@ router.post("/login", async (req, res) => {
 
       if (memberResult.recordset.length > 0) {
         const memberUser = memberResult.recordset[0];
-        console.log(`[AUTH] Member Login Success: "${memberUser.UserName}"`);
+        console.log(`[AUTH] Member Login Success: "${memberUser.UserName}" for company ${companyCode}`);
 
-        // Generate JWT token for member using MemberId
+        // Generate JWT token for member using MemberId, embedding company context
         const token = jwt.sign(
           {
             userId: memberUser.MemberId,
             username: memberUser.UserName,
             memberId: memberUser.MemberId,
             role: "MEMBER",
+            companyCode: branchMapping.branchCode,
+            databaseName: targetDb,
           },
           JWT_SECRET,
           { expiresIn: "24h" },
@@ -483,12 +554,13 @@ router.post("/login", async (req, res) => {
             Promocode: memberUser.Promocode,
             Promoamount: memberUser.Promoamount,
             AvailableCredit: memberUser.AvailableCredit,
+            companyCode: branchMapping.branchCode,
           },
         });
       }
 
       console.log(
-        `[AUTH] Login failed: UserName "${userName}" not found in UserMaster or MemberMaster.`,
+        `[AUTH] Login failed: UserName "${userName}" not found in UserMaster or MemberMaster in DB "${targetDb}".`,
       );
       return res
         .status(401)
@@ -622,14 +694,19 @@ router.post("/login", async (req, res) => {
     const finalUserId = String(user.UserId).trim();
     const roleCode = (user.RoleCode || "CASHIER").toUpperCase().trim();
 
-    // 1. Generate Security Token (JWT)
+    // 1. Generate Security Token (JWT) with authenticated company and database context
     const token = jwt.sign(
-      { userId: finalUserId, role: roleCode },
+      {
+        userId: finalUserId,
+        role: roleCode,
+        companyCode: branchMapping.branchCode,
+        databaseName: targetDb,
+      },
       JWT_SECRET,
       { expiresIn: "24h" },
     );
 
-    console.log(`✅ Login Success: ${user.FullName} | Role: ${roleCode}`);
+    console.log(`✅ Login Success: ${user.FullName} | Role: ${roleCode} | Company: ${branchMapping.branchCode} (DB: ${targetDb})`);
 
     // 2. Return Comprehensive Auth Response
     return res.json({
@@ -646,6 +723,7 @@ router.post("/login", async (req, res) => {
         userGroupId: user.UserGroupid,
         licenseFromDate: user.FromDate,
         licenseToDate: user.ToDate,
+        companyCode: branchMapping.branchCode,
       },
     });
   } catch (err) {
