@@ -24,7 +24,7 @@ router.post('/download-pdf', async (req, res) => {
     const { reportData } = req.body;
     if (!reportData) return res.status(400).json({ error: 'Report data is required' });
 
-    const pool = await poolPromise;
+    const pool = req.pool || req.db || (await poolPromise);
     let startDateStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Singapore' });
     try {
       const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
@@ -197,7 +197,7 @@ function isInvalidRecipientError(mailErr) {
 
 router.post('/email-pdf', async (req, res) => {
   let pdfBuffer;
-  const pool = await poolPromise;
+  const pool = req.pool || req.db || (await poolPromise);
   let startDateStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Singapore' });
   try {
     const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");

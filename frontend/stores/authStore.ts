@@ -110,17 +110,83 @@ export const useAuthStore = create<AuthState>()(
       permissionsLoaded: false,
       token: null,
 
-      setUser: (user, token, loginDate) =>
+      setUser: (user, token, loginDate) => {
+        const previousUser = get().user;
+        const isCompanyChange = !previousUser || previousUser.companyCode !== user.companyCode;
+
+        // Clear in-memory caches
+        try {
+          const { useMenuStore } = require("./menuStore");
+          useMenuStore.getState().clearCache();
+        } catch (e) {}
+
+        try {
+          const { useActiveOrdersStore } = require("./activeOrdersStore");
+          useActiveOrdersStore.setState({ activeOrders: [] });
+        } catch (e) {}
+
+        try {
+          const { useCartStore } = require("./cartStore");
+          useCartStore.getState().clearAllCarts();
+        } catch (e) {}
+
+        const salesKeys = [
+          "selected_business_date",
+          "sales_selected_date",
+          "sales_selected_filter",
+          "sales_cashier_id",
+          "sales_range_start",
+          "sales_range_end",
+          "sales_payment_modes",
+          "sales_order_types",
+          "sales_download_filter",
+          "sales_sort_order",
+        ];
+
+        if (isCompanyChange) {
+          salesKeys.forEach((k) => AsyncStorage.removeItem(k).catch(() => {}));
+        }
+
         set({
           user,
           token: token || null,
           isLoggedIn: true,
           loginDate: loginDate || new Date().toISOString().split("T")[0],
-        }),
+        });
+      },
 
       setPermissions: (permissions) => set({ permissions, permissionsLoaded: true }),
 
-      logout: () =>
+      logout: () => {
+        try {
+          const { useMenuStore } = require("./menuStore");
+          useMenuStore.getState().clearCache();
+        } catch (e) {}
+
+        try {
+          const { useActiveOrdersStore } = require("./activeOrdersStore");
+          useActiveOrdersStore.setState({ activeOrders: [] });
+        } catch (e) {}
+
+        try {
+          const { useCartStore } = require("./cartStore");
+          useCartStore.getState().clearAllCarts();
+        } catch (e) {}
+
+        const salesKeys = [
+          "selected_business_date",
+          "sales_selected_date",
+          "sales_selected_filter",
+          "sales_cashier_id",
+          "sales_range_start",
+          "sales_range_end",
+          "sales_payment_modes",
+          "sales_order_types",
+          "sales_download_filter",
+          "sales_sort_order",
+        ];
+        salesKeys.forEach((k) => AsyncStorage.removeItem(k).catch(() => {}));
+
         set({
           user: null,
           token: null,
@@ -128,7 +194,8 @@ export const useAuthStore = create<AuthState>()(
           permissions: {},
           permissionsLoaded: false,
           loginDate: null,
-        }),
+        });
+      },
 
       /* ─── Low-level: check if user can READ a given FormCode ─── */
       can: (formCode) => {

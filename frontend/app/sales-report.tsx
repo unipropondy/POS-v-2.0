@@ -299,10 +299,11 @@ export default function SalesReport() {
     if (operatorsList.length > 0) return operatorsList;
     const map = new Map();
     sales.forEach((s) => {
-      if (s.CashierId && !map.has(String(s.CashierId))) {
-        map.set(String(s.CashierId), {
-          CashierId: String(s.CashierId),
-          CashierName: s.UserName || s.CashierName || `User ${s.CashierId}`,
+      const key = String(s.CashierId || s.UserLogin || s.CashierName || "").trim();
+      if (key && !map.has(key)) {
+        map.set(key, {
+          CashierId: String(s.CashierId || key),
+          CashierName: s.CashierName || s.UserName || `User ${key}`,
           UserLogin: s.UserLogin || "-",
           RoleName: s.RoleName || "Cashier",
           TotalSales: 0,
@@ -311,6 +312,7 @@ export default function SalesReport() {
     });
     return Array.from(map.values());
   }, [operatorsList, sales]);
+
 
   const [loadingReport, setLoadingReport] = useState(false);
   const [showPrintPrompt, setShowPrintPrompt] = useState(false);
@@ -392,7 +394,9 @@ export default function SalesReport() {
       const url = isMemberType
         ? `${API_URL}/api/members/search?query=${encodeURIComponent(q)}`
         : `${API_URL}/api/credit-customers/search?query=${encodeURIComponent(q)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: getTenantHeaders(),
+      });
       const data = await res.json();
       setMembersList(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -462,68 +466,102 @@ export default function SalesReport() {
   const showEmailValidationError =
     emailFieldTouched && !!emailAddress && !emailValidation.isValid;
 
-  useEffect(() => {
-    const loadState = async () => {
-      try {
-        const savedFilter = await AsyncStorage.getItem("sales_selected_filter");
-        const savedModes = await AsyncStorage.getItem("sales_payment_modes");
-        const savedTypes = await AsyncStorage.getItem("sales_order_types");
-        const savedSort = await AsyncStorage.getItem("sales_sort_order");
-        const savedDownloadFilter = await AsyncStorage.getItem("sales_download_filter");
-        const savedBusinessDate = await AsyncStorage.getItem("selected_business_date");
+  const companyCode = user?.companyCode;
+  const prevCompanyRef = React.useRef<string | undefined>(companyCode);
 
-        if (savedBusinessDate) {
-          setSelectedDate(savedBusinessDate);
-          setActiveBusinessDate(savedBusinessDate);
-        }
-
-        if (savedFilter && ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(savedFilter)) {
-          setSelectedFilter(savedFilter as FilterType);
-        }
-        const savedDate = await AsyncStorage.getItem("sales_selected_date");
-        if (savedDate) {
-          setSelectedDate(savedDate);
-        }
-        const savedRangeStart = await AsyncStorage.getItem("sales_range_start");
-        const savedRangeEnd = await AsyncStorage.getItem("sales_range_end");
-        if (savedRangeStart) setRangeStart(savedRangeStart);
-        if (savedRangeEnd) setRangeEnd(savedRangeEnd);
-
-        const savedCashier = await AsyncStorage.getItem("sales_cashier_id");
-        if (savedCashier) setSelectedCashierId(savedCashier);
-
-        if (
-          savedDownloadFilter &&
-          ["DAILY", "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"].includes(savedDownloadFilter)
-        ) {
-          setDownloadFilter(savedDownloadFilter as FilterType);
-        }
-        if (savedModes) setActivePaymentModes(JSON.parse(savedModes));
-        if (savedTypes) setActiveOrderTypes(JSON.parse(savedTypes));
-        if (savedSort) setSortOrder(savedSort as "NEWEST" | "HIGHEST");
-
-        try {
-          const res = await fetch(`${API_URL}/api/settlement/active-day`);
-          const data = await res.json();
-          if (data.success && data.active && data.startDate) {
-            setActiveBusinessDate(data.startDate);
-            if (!savedDate) {
-              setSelectedDate(data.startDate);
-            }
-            await AsyncStorage.setItem("selected_business_date", data.startDate);
-          } else {
-            setActiveBusinessDate(null);
-            await AsyncStorage.removeItem("selected_business_date");
-          }
-        } catch (err) {
-          console.error("Failed to fetch active business day:", err);
-        }
-      } catch (e) {
-        console.error("Load state error:", e);
-      }
+  const getTenantHeaders = useCallback((): Record<string, string> => {
+    const s = useAuthStore.getState();
+    const token = s.token;
+    const cCode = s.user?.companyCode;
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(cCode ? { "X-Company-Code": cCode } : {}),
     };
-    loadState();
   }, []);
+
+  const loadState = useCallback(async () => {
+    try {
+      const savedFilter = await AsyncStorage.getItem("sales_selected_filter");
+      const savedModes = await AsyncStorage.getItem("sales_payment_modes");
+      const savedTypes = await AsyncStorage.getItem("sales_order_types");
+      const savedSort = await AsyncStorage.getItem("sales_sort_order");
+      const savedDownloadFilter = await AsyncStorage.getItem("sales_download_filter");
+      const savedBusinessDate = await AsyncStorage.getItem("selected_business_date");
+
+      if (savedBusinessDate) {
+        setSelectedDate(savedBusinessDate);
+        setActiveBusinessDate(savedBusinessDate);
+      }
+
+      if (savedFilter && ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(savedFilter)) {
+        setSelectedFilter(savedFilter as FilterType);
+      }
+      const savedDate = await AsyncStorage.getItem("sales_selected_date");
+      if (savedDate) {
+        setSelectedDate(savedDate);
+      }
+      const savedRangeStart = await AsyncStorage.getItem("sales_range_start");
+      const savedRangeEnd = await AsyncStorage.getItem("sales_range_end");
+      if (savedRangeStart) setRangeStart(savedRangeStart);
+      if (savedRangeEnd) setRangeEnd(savedRangeEnd);
+
+      const savedCashier = await AsyncStorage.getItem("sales_cashier_id");
+      if (savedCashier) setSelectedCashierId(savedCashier);
+
+      if (
+        savedDownloadFilter &&
+        ["DAILY", "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"].includes(savedDownloadFilter)
+      ) {
+        setDownloadFilter(savedDownloadFilter as FilterType);
+      }
+      if (savedModes) setActivePaymentModes(JSON.parse(savedModes));
+      if (savedTypes) setActiveOrderTypes(JSON.parse(savedTypes));
+      if (savedSort) setSortOrder(savedSort as "NEWEST" | "HIGHEST");
+
+      try {
+        const res = await fetch(`${API_URL}/api/settlement/active-day`, {
+          headers: getTenantHeaders(),
+        });
+        const data = await res.json();
+        if (data.success && data.startDate) {
+          setActiveBusinessDate(data.startDate);
+          setSelectedDate(data.startDate);
+          await AsyncStorage.setItem("selected_business_date", data.startDate);
+          await AsyncStorage.setItem("sales_selected_date", data.startDate);
+        } else {
+          setActiveBusinessDate(null);
+          await AsyncStorage.removeItem("selected_business_date");
+        }
+      } catch (err) {
+        console.error("Failed to fetch active business day:", err);
+      }
+    } catch (e) {
+      console.error("Load state error:", e);
+    }
+  }, [getTenantHeaders]);
+
+  useEffect(() => {
+    loadState();
+  }, [loadState]);
+
+  useEffect(() => {
+    if (prevCompanyRef.current !== companyCode) {
+      prevCompanyRef.current = companyCode;
+      setSales([]);
+      setSummary(null);
+      setCategoryReport([]);
+      setDishReport([]);
+      setSettlementReport([]);
+      setArtistTargetReport([]);
+      setSelectedCashierId("ALL");
+      setOperatorsList([]);
+      AsyncStorage.removeItem("sales_selected_date");
+      AsyncStorage.removeItem("selected_business_date");
+      loadState();
+    }
+  }, [companyCode, loadState]);
+
 
   useEffect(() => {
     if (activeBusinessDate && !selectedDate) {
@@ -566,12 +604,14 @@ export default function SalesReport() {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [selectedDate, selectedFilter, rangeStart, rangeEnd])
+    }, [selectedDate, selectedFilter, rangeStart, rangeEnd, user?.companyCode])
   );
 
   const fetchPaymentMethods = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/sales/payment-methods`);
+      const res = await fetch(`${API_URL}/api/sales/payment-methods`, {
+        headers: getTenantHeaders(),
+      });
       const data = await res.json();
       if (Array.isArray(data)) {
         setDbPaymentModes(data);
@@ -608,11 +648,15 @@ export default function SalesReport() {
     }
   };
 
-  const fetchOperators = async () => {
+  const fetchOperators = async (overrideRange?: { startDate: string; endDate: string }) => {
     try {
-      const { startDate: startStr, endDate: endStr } = effectiveDateRange;
+      const { startDate: startStr, endDate: endStr } = overrideRange || effectiveDateRange;
+      const dateParam = overrideRange?.startDate || selectedDate;
       const res = await fetch(
-        `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${selectedDate}&startDate=${startStr}&endDate=${endStr}`
+        `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${dateParam}&startDate=${startStr}&endDate=${endStr}`,
+        {
+          headers: getTenantHeaders(),
+        }
       );
       if (res.ok) {
         const data = await res.json();
@@ -629,27 +673,28 @@ export default function SalesReport() {
     try {
       if (sales.length === 0) setLoading(true);
 
+      let rangeOverride: { startDate: string; endDate: string } | undefined = undefined;
       try {
-        const res = await fetch(`${API_URL}/api/settlement/active-day`);
+        const res = await fetch(`${API_URL}/api/settlement/active-day`, {
+          headers: getTenantHeaders(),
+        });
         const data = await res.json();
-        if (data.success && data.active && data.startDate) {
+        if (data.success && data.startDate) {
           setActiveBusinessDate(data.startDate);
           if (selectedDate === todayDate && selectedDate !== data.startDate) {
             setSelectedDate(data.startDate);
-            return;
+            rangeOverride = { startDate: data.startDate, endDate: data.startDate };
           }
-        } else {
-          setActiveBusinessDate(null);
         }
       } catch (err) {
         console.error("Failed to fetch active business day in fetchData:", err);
       }
 
       await Promise.all([
-        fetchSales(), 
-        fetchSummary(), 
+        fetchSales(rangeOverride), 
+        fetchSummary(rangeOverride), 
         fetchPaymentMethods(),
-        fetchOperators(),
+        fetchOperators(rangeOverride),
         detailReportType ? fetchDetailReport(detailReportType, selectedFilter) : Promise.resolve()
       ]);
     } catch (error) {
@@ -659,6 +704,7 @@ export default function SalesReport() {
       setRefreshing(false);
     }
   };
+
 
   const fetchDetailReport = useCallback(
     async (reportType: DetailReportType, filterType = selectedFilter) => {
@@ -686,11 +732,10 @@ export default function SalesReport() {
           reportType,
           filterType: reportFilter,
         });
-        const token = useAuthStore.getState().token;
         const response = await fetch(
           `${API_URL}/api/reports/${endpoint}?${params.toString()}`,
           {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            headers: getTenantHeaders(),
           }
         );
 
@@ -807,15 +852,11 @@ export default function SalesReport() {
     }
   }, [selectedFilter, selectedDate, detailReportType, fetchDetailReport]);
 
-  const fetchSales = async () => {
+  const fetchSales = async (overrideRange?: { startDate: string; endDate: string }) => {
     try {
-      const { startDate: startStr, endDate: endStr } = effectiveDateRange;
-      const token = useAuthStore.getState().token;
+      const { startDate: startStr, endDate: endStr } = overrideRange || effectiveDateRange;
       const response = await fetch(`${API_URL}/api/sales/all?startDate=${startStr}&endDate=${endStr}`, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: getTenantHeaders(),
       });
       if (!response.ok) throw new Error("Failed to fetch sales");
       const data = await response.json();
@@ -830,13 +871,12 @@ export default function SalesReport() {
     }
   };
 
-  const fetchSummary = async () => {
+  const fetchSummary = async (overrideRange?: { startDate: string; endDate: string }) => {
     try {
-      const { startDate: startStr, endDate: endStr } = effectiveDateRange;
-      const token = useAuthStore.getState().token;
+      const { startDate: startStr, endDate: endStr } = overrideRange || effectiveDateRange;
       const url = `${API_URL}/api/sales/range?startDate=${startStr}&endDate=${endStr}`;
       const response = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getTenantHeaders(),
       });
       const data = await response.json();
       setSummary(Array.isArray(data) ? data[0] : data);
@@ -845,6 +885,7 @@ export default function SalesReport() {
       setSummary(null);
     }
   };
+
 
   const fetchReportData = async () => {
     const endObj = new Date();
@@ -878,11 +919,7 @@ export default function SalesReport() {
     const endStr = getSingaporeDateString(endObj);
 
     const userName = await AsyncStorage.getItem("userName") || "SR";
-    const token = useAuthStore.getState().token;
-    const authHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
+    const authHeaders = getTenantHeaders();
 
     const summaryUrl = `${API_URL}/api/sales/day-end-summary?startDate=${startStr}&endDate=${endStr}`;
     const summaryRes = await fetch(summaryUrl, { headers: authHeaders });
@@ -1016,7 +1053,7 @@ export default function SalesReport() {
 
       const response = await fetch(`${API_URL}/api/export/download-pdf`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getTenantHeaders(),
         body: JSON.stringify({ reportData }),
       });
       if (!response.ok) throw new Error("Failed to generate PDF");
@@ -1073,7 +1110,7 @@ export default function SalesReport() {
 
       const response = await fetch(`${API_URL}/api/export/email-pdf`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getTenantHeaders(),
         body: JSON.stringify({ reportData, email: emailCheck.normalized }),
       });
 
@@ -1189,7 +1226,7 @@ export default function SalesReport() {
   };
 
   const changeDate = (direction: number) => {
-    const maxDateStr = activeBusinessDate || getTodayDateStr();
+    const maxDateStr = activeBusinessDate || getSingaporeDateString(new Date());
     const current = parseLocalDate(selectedDate);
     let newRef = new Date(current);
 
@@ -1337,7 +1374,10 @@ export default function SalesReport() {
 
   const filteredSales = useMemo(() => {
     const filtered = baseFilteredSales.filter((s) => {
-      const cashierMatch = selectedCashierId === "ALL" || String(s.CashierId) === String(selectedCashierId);
+      const cashierMatch = selectedCashierId === "ALL" || 
+        String(s.CashierId || "").trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase() ||
+        (s.UserLogin && s.UserLogin !== '-' && String(s.UserLogin).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase()) ||
+        (s.CashierName && String(s.CashierName).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase());
       return (showCancelledOrders || !s.IsCancelled) && cashierMatch;
     });
 
@@ -1354,8 +1394,15 @@ export default function SalesReport() {
 
   const filteredMetrics = useMemo(() => {
     const processedBills = new Set<string>();
-    const scoped = selectedCashierId === "ALL" ? dateScopedSales : dateScopedSales.filter(s => String(s.CashierId) === String(selectedCashierId));
+    const scoped = selectedCashierId === "ALL" 
+      ? dateScopedSales 
+      : dateScopedSales.filter(s => 
+          String(s.CashierId || "").trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase() ||
+          (s.UserLogin && s.UserLogin !== '-' && String(s.UserLogin).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase()) ||
+          (s.CashierName && String(s.CashierName).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase())
+        );
     return scoped.reduce(
+
       (acc, s) => {
         const isSubsequentSplit = s.SettlementID && s.SettlementID.includes("-") && s.SettlementID.split("-").length > 5 && s.SettlementID.split("-").pop().match(/^\d+$/);
 
@@ -1693,9 +1740,9 @@ export default function SalesReport() {
       setOrderPayments([]);
       setOrderRewards(null);
       const [itemsRes, paymentsRes, rewardsRes] = await Promise.all([
-        fetch(`${API_URL}/api/sales/detail/${settlementId}`),
-        fetch(`${API_URL}/api/sales/detail/${settlementId}/payments`),
-        fetch(`${API_URL}/api/sales/detail/${settlementId}/rewards`),
+        fetch(`${API_URL}/api/sales/detail/${settlementId}`, { headers: getTenantHeaders() }),
+        fetch(`${API_URL}/api/sales/detail/${settlementId}/payments`, { headers: getTenantHeaders() }),
+        fetch(`${API_URL}/api/sales/detail/${settlementId}/rewards`, { headers: getTenantHeaders() }),
       ]);
 
       if (itemsRes.ok) {
@@ -1765,7 +1812,9 @@ export default function SalesReport() {
 
   const refreshOrder = async (settlementId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/sales/settlement/${settlementId}`);
+      const res = await fetch(`${API_URL}/api/sales/settlement/${settlementId}`, {
+        headers: getTenantHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.header) {
@@ -1791,7 +1840,7 @@ export default function SalesReport() {
           setLoadingDetails(true);
           const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getTenantHeaders(),
             body: JSON.stringify({ payMode: newPayMode, splits, memberId, creditCustomerId }),
           });
           const data = await res.json();
@@ -1835,7 +1884,7 @@ export default function SalesReport() {
           setLoadingDetails(true);
           const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getTenantHeaders(),
             body: JSON.stringify({ orderDetailIds: itemIds }),
           });
           const data = await res.json();
@@ -1869,7 +1918,7 @@ export default function SalesReport() {
           setLoadingDetails(true);
           const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/cancel`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getTenantHeaders(),
             body: JSON.stringify({ reason: cancellationReason }),
           });
           const data = await res.json();
@@ -1890,7 +1939,6 @@ export default function SalesReport() {
       }
     );
   };
-
 
   const handleReprint = async () => {
     if (!selectedOrder || orderDetails.length === 0) return;

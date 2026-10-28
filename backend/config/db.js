@@ -6,12 +6,17 @@ const { AsyncLocalStorage } = require("async_hooks");
 
 const tenancyContext = new AsyncLocalStorage();
 
+const configuredDb = (process.env.DB_NAME || "UCSPONDY").trim();
+// UNIPRO is the master lookup catalog containing BranchDatabaseMaster, NOT a restaurant POS database.
+// If DB_NAME is set to UNIPRO or missing, the default fallback POS operational database is UCSPONDY.
+const defaultPosDatabase = configuredDb.toUpperCase() === "UNIPRO" ? "UCSPONDY" : configuredDb;
+
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   server: process.env.DB_SERVER,
   port: parseInt(process.env.DB_PORT),
-  database: process.env.DB_NAME || "UCSPONDY",
+  database: defaultPosDatabase,
   options: {
     encrypt: false,
     trustServerCertificate: true,
@@ -41,6 +46,33 @@ console.log(`   Connection Timeout: ${dbConfig.connectionTimeout}ms`);
 let defaultPoolInstance = null;
 const pools = new Map(); // key: UPPERCASE dbName -> { pool, connectingPromise }
 
+async function ensureEssentialSchema(pool, targetDatabase) {
+  if (!pool || !pool.connected) return;
+  const dbName = String(targetDatabase || "").trim().toUpperCase();
+  if (!dbName || dbName === "UNIPRO") return;
+
+  try {
+    const stmts = [
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'start_date') ALTER TABLE [dbo].[SettlementHeader] ADD [start_date] DATE NULL",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'entry_status') ALTER TABLE [dbo].[SettlementHeader] ADD [entry_status] VARCHAR(50) NULL",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'VoidItemQty') ALTER TABLE [dbo].[SettlementHeader] ADD [VoidItemQty] DECIMAL(18, 3) NULL DEFAULT 0",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'VoidItemAmount') ALTER TABLE [dbo].[SettlementHeader] ADD [VoidItemAmount] DECIMAL(18, 2) NULL DEFAULT 0",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'CancelledByUserName') ALTER TABLE [dbo].[SettlementHeader] ADD [CancelledByUserName] NVARCHAR(100) NULL",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'Pax') ALTER TABLE [dbo].[SettlementHeader] ADD [Pax] INT NULL",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[SettlementHeader]') AND name = 'GuestName') ALTER TABLE [dbo].[SettlementHeader] ADD [GuestName] NVARCHAR(100) NULL",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CustomerCreditTransactions]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CustomerCreditTransactions]') AND name = 'start_date') ALTER TABLE [dbo].[CustomerCreditTransactions] ADD [start_date] DATE NULL",
+      "IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CustomerCreditTransactions]') AND type in (N'U')) AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[CustomerCreditTransactions]') AND name = 'CustomerType') ALTER TABLE [dbo].[CustomerCreditTransactions] ADD [CustomerType] NVARCHAR(50) NULL DEFAULT 'CREDIT'",
+      "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[DateEntry]') AND type in (N'U')) BEGIN CREATE TABLE [dbo].[DateEntry]([DateEntryId] [uniqueidentifier] NOT NULL PRIMARY KEY DEFAULT NEWID(), [username] [varchar](30) NULL, [StartDate] [date] NOT NULL, [CreatedBy] [varchar](30) NULL, [CreatedDate] [datetime] DEFAULT GETDATE(), [UpdateBy] [varchar](30) NULL, [UpdateDate] [datetime] NULL) END",
+      "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[BusinessDayLog]') AND type in (N'U')) BEGIN CREATE TABLE [dbo].[BusinessDayLog]([BusinessDate] [date] NOT NULL PRIMARY KEY, [StartedAt] [datetime] NULL, [StartedBy] [nvarchar](50) NULL, [EndedAt] [datetime] NULL, [EndedBy] [nvarchar](50) NULL) END"
+    ];
+    for (const stmt of stmts) {
+      await pool.request().query(stmt);
+    }
+  } catch (err) {
+    console.warn(`⚠️ [Database] Schema verify warning for "${targetDatabase}":`, err.message);
+  }
+}
+
 /**
  * Connect to a specific database pool with retries.
  */
@@ -66,6 +98,7 @@ async function createDatabasePool(targetDatabase, retries = 3, delay = 2000) {
           pools.delete(cleanDb.toUpperCase());
         }
       });
+      await ensureEssentialSchema(pool, cleanDb);
       return pool;
     } catch (err) {
       console.error(`❌ [Database Connection Attempt ${i + 1} Failed for "${cleanDb}"]:`, err.message);
@@ -125,11 +158,26 @@ const defaultPoolPromise = getPoolForDatabase(dbConfig.database).then((pool) => 
   return null;
 });
 
+let branchListCache = null;
+let branchListCacheTime = 0;
+const BRANCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Single source of truth: Fetch all company codes from UNIPRO.dbo.BranchDatabaseMaster dynamically.
  */
-async function getBranchDatabaseList() {
-  const masterPool = defaultPoolInstance || (await defaultPoolPromise) || (await getPoolForDatabase("UNIPRO"));
+async function getBranchDatabaseList(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && branchListCache && (now - branchListCacheTime < BRANCH_CACHE_TTL_MS)) {
+    return branchListCache;
+  }
+
+  let masterPool = null;
+  try {
+    masterPool = await getPoolForDatabase("UNIPRO");
+  } catch (err) {
+    masterPool = defaultPoolInstance || (await defaultPoolPromise);
+  }
+
   if (!masterPool) {
     throw new Error("Unable to obtain database connection for company lookup.");
   }
@@ -143,10 +191,14 @@ async function getBranchDatabaseList() {
     ORDER BY BranchCode ASC
   `);
 
-  return (result.recordset || []).map((row) => ({
+  const list = (result.recordset || []).map((row) => ({
     branchCode: String(row.BranchCode || "").trim(),
     databaseName: String(row.DatabaseName || "").trim(),
   }));
+
+  branchListCache = list;
+  branchListCacheTime = now;
+  return list;
 }
 
 /**
@@ -154,33 +206,25 @@ async function getBranchDatabaseList() {
  */
 async function lookupBranchDatabase(branchCode) {
   if (!branchCode || typeof branchCode !== "string") return null;
-  const cleanCode = branchCode.trim();
+  const cleanCode = branchCode.trim().toUpperCase();
   if (!cleanCode) return null;
 
-  const masterPool = defaultPoolInstance || (await defaultPoolPromise) || (await getPoolForDatabase("UNIPRO"));
-  if (!masterPool) {
-    throw new Error("Unable to obtain database connection for branch validation.");
+  // 1. Check in-memory cached branch list first for ultra-fast lookup
+  const list = await getBranchDatabaseList(false);
+  const found = list.find((item) => item.branchCode.toUpperCase() === cleanCode);
+  if (found) {
+    return found;
   }
 
-  const result = await masterPool.request()
-    .input("branchCode", sql.VarChar(100), cleanCode)
-    .query(`
-      SELECT TOP 1 
-        LTRIM(RTRIM(BranchCode)) AS BranchCode, 
-        LTRIM(RTRIM(DatabaseName)) AS DatabaseName 
-      FROM UNIPRO.dbo.BranchDatabaseMaster WITH (NOLOCK)
-      WHERE UPPER(LTRIM(RTRIM(BranchCode))) = UPPER(@branchCode)
-    `);
+  // 2. If not found in cache, force refresh from UNIPRO.dbo.BranchDatabaseMaster
+  const freshList = await getBranchDatabaseList(true);
+  const freshFound = freshList.find((item) => item.branchCode.toUpperCase() === cleanCode);
+  return freshFound || null;
+}
 
-  if (!result.recordset || result.recordset.length === 0) {
-    return null;
-  }
-
-  const row = result.recordset[0];
-  return {
-    branchCode: String(row.BranchCode || "").trim(),
-    databaseName: String(row.DatabaseName || "").trim(),
-  };
+function invalidateBranchDatabaseCache() {
+  branchListCache = null;
+  branchListCacheTime = 0;
 }
 
 /**
@@ -228,6 +272,7 @@ module.exports = {
   getPoolForDatabase,
   getBranchDatabaseList,
   lookupBranchDatabase,
+  invalidateBranchDatabaseCache,
   tenancyContext,
   defaultPoolPromise,
 };

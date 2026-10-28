@@ -1,0 +1,28 @@
+Please help to fill tin the attached “ POS Integration information form…”. For POS info, ECR v2 and the regression test result.
+ 
+1)            Please make sure you have implement the error handling in the ECR spec section 2.2.
+•             You may want to  run the error handling test cases with the out test terminal  simulator and send to us the comlog file. ( only for Rs232 implementation ) 
+2)            Your pos receipt need to print the nets transaction info, if you want to disable the receipt printing from terminal. Please refer to the  sample receipt provided when we released the spec.
+3)            Please implement admin function for Please implement a admin function page for logon, settlement ( Credit and Nets ) and TMS update. 
+4)            If end of day settlement if trigger from kiosk/POS, pls settle credit and follow by nets, After nets settlement, pls send the TMS update command. There must be an interval delay of about 20 Sec. between each settlement. 
+5)            If there is an issue of POS not receive the debit response , pls implement check last approved or send the same ECN to retrieve the last transaction status.
+6) Function Code: Q1 + Q2
+7) please refer to "POS Integration Information Form v1.02E_17012025" for the mandatory function to be implemented and state the reason if it's not. 
+8) POS-013 and POS-014 are Mandatory for LAN . POS-015 and POS-016 are mandatory for RS232.
+
+Mandatory to implement the following payment option and Field code HS for ECR Reference Number is a mandatory.  
+
+1) One Nets payment option ( All NETS Purchase (Function Code 30)
+
+   E.g 
+02-00-77-30-30-30-30-30-30-30-31-34-32-32-36-33-30-30-31-30-1C-54-32-00-02-30-31-1C-34-30-00-12-30-30-30-30-30-30-30-30-31-30-30-30-1C-34-32-00-12-30-30-30-30-30-30-30-30-30-30-30-30-1C-48-44-00-13-43-45-50-41-53-35-30-32-5F-69-63-74-32-1C-03-40
+
+2) One Nets QR Payment ( All NETS Purchase (Function Code 30)
+
+E.G 
+02-00-77-30-30-30-30-30-30-30-31-34-32-32-37-33-30-30-31-30-1C-54-32-00-02-30-34-1C-34-30-00-12-30-30-30-30-30-30-30-30-31-30-30-30-1C-34-32-00-12-30-30-30-30-30-30-30-30-30-30-30-30-1C-48-44-00-13-43-45-50-41-53-35-30-32-5F-69-63-74-32-1C-03-44
+
+3) Other e.g UPOS credit sale i0 
+
+02-00-61-30-30-30-30-30-30-30-31-34-32-32-38-49-30-30-31-30-1C-34-30-00-12-30-30-30-30-30-30-30-30-31-30-30-30-1C-39-47-00-03-44-42-53-1C-48-44-00-13-43-45-50-41-53-35-30-32-5F-69-63-74-32-1C-03-67
+

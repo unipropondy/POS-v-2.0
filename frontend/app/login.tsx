@@ -226,6 +226,12 @@ export default function LoginScreen() {
         setUser(data.user, data.token);
 
         try {
+          const { useMenuStore } = require("@/stores/menuStore");
+          useMenuStore.getState().clearCache();
+          useMenuStore.getState().fetchMenu(true).catch(() => {});
+        } catch (e) {}
+
+        try {
           if (rememberMe) {
             await AsyncStorage.setItem(
               "remembered_creds",

@@ -1,53 +1,57 @@
 const sql = require("mssql");
-const { poolPromise } = require("../config/db");
+const { poolPromise, tenancyContext } = require("../config/db");
 
-let cachedHoldOvertimeMinutes = null;
-let lastFetchTime = 0;
+const holdOvertimeCache = new Map(); // dbKey -> { value, time }
+const companySettingsCache = new Map(); // dbKey -> { value, time }
+const appSettingsCache = new Map(); // dbKey -> { value, time }
 const CACHE_TTL_MS = 60000; // 60 seconds cache TTL
 
-let cachedCompanySettings = null;
-let companySettingsFetchTime = 0;
+function getTenantDbKey(overrideDb) {
+  if (overrideDb) return String(overrideDb).trim().toUpperCase();
+  const store = tenancyContext.getStore();
+  return (store?.databaseName || "DEFAULT").toUpperCase();
+}
 
-let cachedAppSettings = null;
-let appSettingsFetchTime = 0;
-
-async function getHoldOvertimeMinutes() {
+async function getHoldOvertimeMinutes(targetDb) {
+  const dbKey = getTenantDbKey(targetDb);
   const now = Date.now();
-  if (cachedHoldOvertimeMinutes !== null && (now - lastFetchTime < CACHE_TTL_MS)) {
-    console.log("⚡ [SettingsCache] Cache HIT: HoldOvertimeMinutes");
-    return cachedHoldOvertimeMinutes;
+  const cached = holdOvertimeCache.get(dbKey);
+  if (cached && (now - cached.time < CACHE_TTL_MS)) {
+    console.log(`⚡ [SettingsCache] Cache HIT (${dbKey}): HoldOvertimeMinutes`);
+    return cached.value;
   }
 
-  console.log("⚡ [SettingsCache] Cache MISS: HoldOvertimeMinutes");
+  console.log(`⚡ [SettingsCache] Cache MISS (${dbKey}): HoldOvertimeMinutes`);
+  let holdMinutes = 30;
   try {
     const pool = await poolPromise;
     if (pool && pool.connected) {
       const result = await pool.request().query("SELECT TOP 1 HoldOvertimeMinutes FROM CompanySettings WITH (NOLOCK)");
       if (result.recordset.length > 0) {
-        cachedHoldOvertimeMinutes = result.recordset[0].HoldOvertimeMinutes || 30;
-      } else {
-        cachedHoldOvertimeMinutes = 30;
+        holdMinutes = result.recordset[0].HoldOvertimeMinutes || 30;
       }
-      lastFetchTime = now;
+      holdOvertimeCache.set(dbKey, { value: holdMinutes, time: now });
     }
   } catch (err) {
-    console.error("⚠️ [SettingsCache] Error fetching HoldOvertimeMinutes:", err.message);
-    if (cachedHoldOvertimeMinutes === null) {
-      return 30; // Return default if not yet cached
-    }
+    console.error(`⚠️ [SettingsCache] Error fetching HoldOvertimeMinutes for ${dbKey}:`, err.message);
+    if (cached) return cached.value;
+    return 30;
   }
 
-  return cachedHoldOvertimeMinutes;
+  return holdMinutes;
 }
 
-async function getCompanySettings() {
+async function getCompanySettings(targetDb) {
+  const dbKey = getTenantDbKey(targetDb);
   const now = Date.now();
-  if (cachedCompanySettings !== null && (now - companySettingsFetchTime < CACHE_TTL_MS)) {
-    console.log("⚡ [SettingsCache] Cache HIT: CompanySettings");
-    return cachedCompanySettings;
+  const cached = companySettingsCache.get(dbKey);
+  if (cached && (now - cached.time < CACHE_TTL_MS)) {
+    console.log(`⚡ [SettingsCache] Cache HIT (${dbKey}): CompanySettings`);
+    return cached.value;
   }
 
-  console.log("⚡ [SettingsCache] Cache MISS: CompanySettings");
+  console.log(`⚡ [SettingsCache] Cache MISS (${dbKey}): CompanySettings`);
+  let settings = null;
   try {
     const pool = await poolPromise;
     if (pool && pool.connected) {
@@ -66,45 +70,48 @@ async function getCompanySettings() {
       }
 
       if (result.recordset.length > 0) {
-        cachedCompanySettings = result.recordset[0];
-        companySettingsFetchTime = now;
+        settings = result.recordset[0];
+        companySettingsCache.set(dbKey, { value: settings, time: now });
       }
     }
   } catch (err) {
-    console.error("⚠️ [SettingsCache] Error fetching CompanySettings:", err.message);
+    console.error(`⚠️ [SettingsCache] Error fetching CompanySettings for ${dbKey}:`, err.message);
+    if (cached) return cached.value;
   }
 
-  return cachedCompanySettings;
+  return settings;
 }
 
-async function getAppSettings() {
+async function getAppSettings(targetDb) {
+  const dbKey = getTenantDbKey(targetDb);
   const now = Date.now();
-  if (cachedAppSettings !== null && (now - appSettingsFetchTime < CACHE_TTL_MS)) {
-    console.log("⚡ [SettingsCache] Cache HIT: AppSettings");
-    return cachedAppSettings;
+  const cached = appSettingsCache.get(dbKey);
+  if (cached && (now - cached.time < CACHE_TTL_MS)) {
+    console.log(`⚡ [SettingsCache] Cache HIT (${dbKey}): AppSettings`);
+    return cached.value;
   }
 
-  console.log("⚡ [SettingsCache] Cache MISS: AppSettings");
+  console.log(`⚡ [SettingsCache] Cache MISS (${dbKey}): AppSettings`);
+  let settings = {};
   try {
     const pool = await poolPromise;
     if (pool && pool.connected) {
       const result = await pool.request().query("SELECT TOP 1 * FROM AppSettings");
       if (result.recordset.length > 0) {
-        cachedAppSettings = result.recordset[0];
-        appSettingsFetchTime = now;
-      } else {
-        cachedAppSettings = {};
+        settings = result.recordset[0];
       }
+      appSettingsCache.set(dbKey, { value: settings, time: now });
     }
   } catch (err) {
-    console.error("⚠️ [SettingsCache] Error fetching AppSettings:", err.message);
+    console.error(`⚠️ [SettingsCache] Error fetching AppSettings for ${dbKey}:`, err.message);
+    if (cached) return cached.value;
   }
 
-  return cachedAppSettings;
+  return settings;
 }
 
-async function getBusinessTimezoneSettings() {
-  const companySettings = await getCompanySettings();
+async function getBusinessTimezoneSettings(targetDb) {
+  const companySettings = await getCompanySettings(targetDb);
   
   return {
     timezone: companySettings?.BusinessTimezone || 'Asia/Singapore',
@@ -112,14 +119,19 @@ async function getBusinessTimezoneSettings() {
   };
 }
 
-function invalidateCache() {
-  console.log("⚡ [SettingsCache] Cache INVALIDATION: Clearing all settings cache");
-  cachedHoldOvertimeMinutes = null;
-  lastFetchTime = 0;
-  cachedCompanySettings = null;
-  companySettingsFetchTime = 0;
-  cachedAppSettings = null;
-  appSettingsFetchTime = 0;
+function invalidateCache(targetDb) {
+  if (targetDb) {
+    const dbKey = String(targetDb).trim().toUpperCase();
+    console.log(`⚡ [SettingsCache] Cache INVALIDATION for ${dbKey}`);
+    holdOvertimeCache.delete(dbKey);
+    companySettingsCache.delete(dbKey);
+    appSettingsCache.delete(dbKey);
+  } else {
+    console.log("⚡ [SettingsCache] Cache INVALIDATION: Clearing all settings cache");
+    holdOvertimeCache.clear();
+    companySettingsCache.clear();
+    appSettingsCache.clear();
+  }
 }
 
 module.exports = {

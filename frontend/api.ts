@@ -9,12 +9,18 @@ const API = axios.create({
   },
 });
 
-// Automatically attach the JWT token to every outgoing request
+// Automatically attach the JWT token & company code to every outgoing request
 API.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token;
+    const authState = useAuthStore.getState();
+    const token = authState?.token;
+    const companyCode = authState?.user?.companyCode;
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (companyCode && !config.headers["X-Company-Code"]) {
+      config.headers["X-Company-Code"] = String(companyCode).trim();
     }
     return config;
   },

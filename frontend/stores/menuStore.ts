@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { API_URL } from '@/constants/Config';
 import { socket } from '@/constants/socket';
+import { useAuthStore } from './authStore';
 
 interface MenuState {
   kitchens: any[];
@@ -8,6 +9,7 @@ interface MenuState {
   dishesByGroup: Record<string, any[]>;
   allDishes: any[];
   modifierCache: Record<string, any[]>;
+  companyCode: string | null;
   lastFetched: number | null;
   isLoading: boolean;
 
@@ -19,6 +21,27 @@ interface MenuState {
   forceRefreshMenu: () => Promise<void>;
 }
 
+async function safeJson<T = any>(res: Response): Promise<T | null> {
+  if (!res.ok) return null;
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function getTenantHeaders(): Record<string, string> {
+  const auth = useAuthStore.getState();
+  const headers: Record<string, string> = {};
+  if (auth?.token) {
+    headers["Authorization"] = `Bearer ${auth.token}`;
+  }
+  if (auth?.user?.companyCode) {
+    headers["X-Company-Code"] = String(auth.user.companyCode).trim();
+  }
+  return headers;
+}
+
 let inflightMenuPromise: Promise<void> | null = null;
 const inflightGroupPromises = new Map<string, Promise<any[]>>();
 
@@ -28,13 +51,24 @@ export const useMenuStore = create<MenuState>((set, get) => ({
   dishesByGroup: {},
   allDishes: [],
   modifierCache: {},
+  companyCode: null,
   lastFetched: null,
   isLoading: false,
 
   fetchMenu: async (force = false) => {
-    const { lastFetched, kitchens, allDishes } = get();
-    // Cache for 10 minutes unless forced
-    if (!force && lastFetched && kitchens.length > 0 && allDishes.length > 0 && Date.now() - lastFetched < 600000) {
+    const authCompanyCode = useAuthStore.getState().user?.companyCode
+      ? String(useAuthStore.getState().user?.companyCode).trim().toUpperCase()
+      : null;
+    const { lastFetched, kitchens, allDishes, companyCode: cachedCompanyCode } = get();
+
+    // If company changed or no company was cached, force reload immediately
+    const isCompanyMismatch = Boolean(authCompanyCode && cachedCompanyCode && authCompanyCode !== cachedCompanyCode);
+    const shouldForce = force || isCompanyMismatch || (!cachedCompanyCode && Boolean(authCompanyCode));
+
+    if (shouldForce) {
+      inflightMenuPromise = null;
+      inflightGroupPromises.clear();
+    } else if (!force && lastFetched && kitchens.length > 0 && allDishes.length > 0 && Date.now() - lastFetched < 600000) {
       return;
     }
 
@@ -46,15 +80,16 @@ export const useMenuStore = create<MenuState>((set, get) => ({
     set({ isLoading: true });
     inflightMenuPromise = (async () => {
       try {
-        // ⚡ Parallel fetch: load kitchens and all dishes concurrently
+        const headers = getTenantHeaders();
+        // ⚡ Parallel fetch: load kitchens and all dishes concurrently with explicit tenant context
         const [kRes, dRes] = await Promise.all([
-          fetch(`${API_URL}/api/menu/kitchens`),
-          fetch(`${API_URL}/api/menu/dishes/all`),
+          fetch(`${API_URL}/api/menu/kitchens`, { headers }),
+          fetch(`${API_URL}/api/menu/dishes/all`, { headers }),
         ]);
 
         const [kData, dData] = await Promise.all([
-          kRes.json(),
-          dRes.json(),
+          safeJson(kRes),
+          safeJson(dRes),
         ]);
 
         const rawKitchens = Array.isArray(kData) ? kData.filter((k: any) => k.KitchenTypeName && !k.KitchenTypeName.includes("TEST")) : [];
@@ -70,6 +105,7 @@ export const useMenuStore = create<MenuState>((set, get) => ({
         set({ 
           kitchens: kitchensData, 
           allDishes: allDishesData,
+          companyCode: authCompanyCode,
           lastFetched: Date.now(),
           isLoading: false 
         });
@@ -93,8 +129,9 @@ export const useMenuStore = create<MenuState>((set, get) => ({
 
     const groupPromise = (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/menu/dishgroups/${kitchenId}`);
-        const data = await res.json();
+        const headers = getTenantHeaders();
+        const res = await fetch(`${API_URL}/api/menu/dishgroups/${kitchenId}`, { headers });
+        const data = await safeJson(res);
         const rawGroups = Array.isArray(data) ? data : [];
         // 🟢 Deduplicate groups by DishGroupId
         const groups = Array.from(
@@ -129,8 +166,9 @@ export const useMenuStore = create<MenuState>((set, get) => ({
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/menu/dishes/group/${groupId}`);
-      const data = await res.json();
+      const headers = getTenantHeaders();
+      const res = await fetch(`${API_URL}/api/menu/dishes/group/${groupId}`, { headers });
+      const data = await safeJson(res);
       const dishesRaw = Array.isArray(data) ? data : [];
       
       // Deduplicate dishes by DishId
@@ -154,8 +192,9 @@ export const useMenuStore = create<MenuState>((set, get) => ({
 
   fetchModifiersForGroup: async (groupId) => {
     try {
-      const res = await fetch(`${API_URL}/api/menu/modifiers/group/${groupId}`);
-      const data = await res.json();
+      const headers = getTenantHeaders();
+      const res = await fetch(`${API_URL}/api/menu/modifiers/group/${groupId}`, { headers });
+      const data = await safeJson(res);
       if (Array.isArray(data)) {
         const newModifiers: Record<string, any[]> = {};
         data.forEach(m => {
@@ -172,12 +211,26 @@ export const useMenuStore = create<MenuState>((set, get) => ({
     }
   },
 
-  clearCache: () => set({ kitchens: [], dishGroups: {}, dishesByGroup: {}, allDishes: [], modifierCache: {}, lastFetched: null }),
+  clearCache: () => {
+    inflightMenuPromise = null;
+    inflightGroupPromises.clear();
+    set({
+      kitchens: [],
+      dishGroups: {},
+      dishesByGroup: {},
+      allDishes: [],
+      modifierCache: {},
+      companyCode: null,
+      lastFetched: null,
+      isLoading: false,
+    });
+  },
 
   forceRefreshMenu: async () => {
     set({ isLoading: true });
     try {
-      await fetch(`${API_URL}/api/menu/clear-cache`, { method: 'POST' });
+      const headers = getTenantHeaders();
+      await fetch(`${API_URL}/api/menu/clear-cache`, { method: 'POST', headers });
     } catch (err) {
       console.warn("Backend cache clear failed:", err);
     }

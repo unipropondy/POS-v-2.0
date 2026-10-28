@@ -919,8 +919,9 @@ async function initDB(pool) {
 
     // --- Automated schema sync from reference database UCSPONDY ---
     try {
+      const currentDb = String(pool.config?.database || "").trim();
       const ucsPondyCheck = await pool.request().query("SELECT 1 FROM sys.databases WHERE name = 'UCSPONDY'");
-      if (ucsPondyCheck.recordset.length > 0) {
+      if (ucsPondyCheck.recordset.length > 0 && currentDb && currentDb.toUpperCase() !== "UCSPONDY" && currentDb.toUpperCase() !== "UNIPRO") {
         const missingCols = await pool.request().query(`
           SELECT 
             src.TABLE_NAME, 
@@ -930,9 +931,9 @@ async function initDB(pool) {
             src.NUMERIC_PRECISION, 
             src.NUMERIC_SCALE
           FROM UCSPONDY.INFORMATION_SCHEMA.COLUMNS src
-          JOIN UCSSITARAS.INFORMATION_SCHEMA.TABLES tgt_tbl 
+          JOIN INFORMATION_SCHEMA.TABLES tgt_tbl 
             ON src.TABLE_NAME = tgt_tbl.TABLE_NAME AND tgt_tbl.TABLE_TYPE = 'BASE TABLE'
-          LEFT JOIN UCSSITARAS.INFORMATION_SCHEMA.COLUMNS tgt
+          LEFT JOIN INFORMATION_SCHEMA.COLUMNS tgt
             ON src.TABLE_NAME = tgt.TABLE_NAME AND src.COLUMN_NAME = tgt.COLUMN_NAME
           WHERE tgt.COLUMN_NAME IS NULL
         `);

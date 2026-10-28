@@ -588,7 +588,7 @@ httpServer.listen(PORT, async () => {
     if (pool) {
       await initDB(pool);
       // ✅ One-time migration: Fix any active tables with NULL StartTime
-      await pool.request().query("UPDATE TableMaster SET StartTime = GETDATE() WHERE StartTime IS NULL AND Status IN (1, 2, 3, 4)");
+      await pool.request().query("IF OBJECT_ID('TableMaster', 'U') IS NOT NULL UPDATE TableMaster SET StartTime = GETDATE() WHERE StartTime IS NULL AND Status IN (1, 2, 3, 4)");
       console.log("✅ Database initialized and ready.");
     }
   } catch (err) {

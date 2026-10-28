@@ -336,9 +336,10 @@ const validateSalePayload = ({ totalAmount, paymentMethod, items, payments }) =>
 
 /* ================= SALES LIST & SUMMARY ================= */
 router.get("/all", async (req, res) => {
+
   try {
     res.set("Cache-Control", "no-store");
-    const pool = await poolPromise;
+    const pool = req.pool || req.db || (await poolPromise);
     const { startDate, endDate } = req.query;
 
     const isDateStr = (str) => typeof str === "string" && /^\d{4}-\d{2}-\d{2}$/.test(str);
@@ -361,7 +362,10 @@ router.get("/all", async (req, res) => {
              sh.CashierId, 
              sh.BillNo, 
              sh.SER_NAME,
-             ISNULL(um.FullName, ISNULL(um.UserName, 'Unknown')) AS CashierName,
+             ISNULL(um.FullName, ISNULL(um.UserName, ISNULL(CAST(sh.CashierId AS NVARCHAR(50)), 'Unknown'))) AS CashierName,
+             ISNULL(um.UserName, ISNULL(CAST(sh.CashierId AS NVARCHAR(50)), '-')) AS UserLogin,
+             ISNULL(um.UserCode, '-') AS UserCode,
+             ISNULL(g.UserGroupName, 'Cashier') AS RoleName,
              ${normalizeReportPayModeSql("sts.PayMode")} as PayMode,
              ISNULL(sts.SysAmount, sh.SysAmount) as SysAmount,
              ISNULL(sts.ManualAmount, sh.ManualAmount) as ManualAmount,
@@ -408,7 +412,13 @@ router.get("/all", async (req, res) => {
            LEFT JOIN CreditCustomerMaster ccm ON sh.MemberId = ccm.CustomerId
            LEFT JOIN MemberMaster mm_sale ON cct_sale.MemberId = mm_sale.MemberId
            LEFT JOIN CreditCustomerMaster ccm_sale ON cct_sale.MemberId = ccm_sale.CustomerId
-           LEFT JOIN UserMaster um ON TRY_CAST(sh.CashierId AS UNIQUEIDENTIFIER) = um.UserId
+           LEFT JOIN UserMaster um ON (
+             TRY_CAST(sh.CashierId AS UNIQUEIDENTIFIER) = um.UserId
+             OR CAST(sh.CashierId AS NVARCHAR(50)) = CAST(um.UserId AS NVARCHAR(50))
+             OR LOWER(LTRIM(RTRIM(sh.CashierId))) = LOWER(LTRIM(RTRIM(um.UserName)))
+             OR LOWER(LTRIM(RTRIM(sh.CashierId))) = LOWER(LTRIM(RTRIM(um.UserCode)))
+           )
+           LEFT JOIN UserGroupMaster g ON um.UserGroupId = g.UserGroupId
            WHERE ${shWhere}
 
            UNION ALL
@@ -430,7 +440,10 @@ router.get("/all", async (req, res) => {
              CAST(cct.CreatedBy AS VARCHAR(50)) AS CashierId,
              cct.Remarks AS BillNo,
              'Cashier' AS SER_NAME,
-             ISNULL(um.FullName, ISNULL(um.UserName, 'Unknown')) AS CashierName,
+             ISNULL(um.FullName, ISNULL(um.UserName, ISNULL(CAST(cct.CreatedBy AS VARCHAR(50)), 'Unknown'))) AS CashierName,
+             ISNULL(um.UserName, ISNULL(CAST(cct.CreatedBy AS VARCHAR(50)), '-')) AS UserLogin,
+             ISNULL(um.UserCode, '-') AS UserCode,
+             ISNULL(g.UserGroupName, 'Cashier') AS RoleName,
              cct.PaymentMethod AS PayMode,
              cct.PaidAmount AS SysAmount,
              cct.PaidAmount AS ManualAmount,
@@ -463,7 +476,13 @@ router.get("/all", async (req, res) => {
            FROM CustomerCreditTransactions cct
            LEFT JOIN CreditCustomerMaster m ON cct.MemberId = m.CustomerId AND (cct.CustomerType = 'CREDIT' OR cct.CustomerType IS NULL)
            LEFT JOIN MemberMaster mm ON cct.MemberId = mm.MemberId AND (cct.CustomerType = 'MEMBER' OR (cct.CustomerType IS NULL AND m.CustomerId IS NULL))
-           LEFT JOIN UserMaster um ON TRY_CAST(cct.CreatedBy AS UNIQUEIDENTIFIER) = um.UserId
+           LEFT JOIN UserMaster um ON (
+             TRY_CAST(cct.CreatedBy AS UNIQUEIDENTIFIER) = um.UserId
+             OR CAST(cct.CreatedBy AS NVARCHAR(50)) = CAST(um.UserId AS NVARCHAR(50))
+             OR LOWER(LTRIM(RTRIM(cct.CreatedBy))) = LOWER(LTRIM(RTRIM(um.UserName)))
+             OR LOWER(LTRIM(RTRIM(cct.CreatedBy))) = LOWER(LTRIM(RTRIM(um.UserCode)))
+           )
+           LEFT JOIN UserGroupMaster g ON um.UserGroupId = g.UserGroupId
            WHERE cct.TransactionType = 'PAYMENT' AND ${cctWhere}
         ) CombinedSales
         ORDER BY SettlementDate DESC
@@ -482,7 +501,10 @@ router.get("/all", async (req, res) => {
              sh.CashierId, 
              sh.BillNo, 
              sh.SER_NAME,
-             ISNULL(um.FullName, ISNULL(um.UserName, 'Unknown')) AS CashierName,
+             ISNULL(um.FullName, ISNULL(um.UserName, ISNULL(CAST(sh.CashierId AS NVARCHAR(50)), 'Unknown'))) AS CashierName,
+             ISNULL(um.UserName, ISNULL(CAST(sh.CashierId AS NVARCHAR(50)), '-')) AS UserLogin,
+             ISNULL(um.UserCode, '-') AS UserCode,
+             ISNULL(g.UserGroupName, 'Cashier') AS RoleName,
              ${normalizeReportPayModeSql("sts.PayMode")} as PayMode,
              ISNULL(sts.SysAmount, sh.SysAmount) as SysAmount,
              ISNULL(sts.ManualAmount, sh.ManualAmount) as ManualAmount,
@@ -529,10 +551,16 @@ router.get("/all", async (req, res) => {
            LEFT JOIN CreditCustomerMaster ccm ON sh.MemberId = ccm.CustomerId
            LEFT JOIN MemberMaster mm_sale ON cct_sale.MemberId = mm_sale.MemberId
            LEFT JOIN CreditCustomerMaster ccm_sale ON cct_sale.MemberId = ccm_sale.CustomerId
-           LEFT JOIN UserMaster um ON TRY_CAST(sh.CashierId AS UNIQUEIDENTIFIER) = um.UserId
- 
+           LEFT JOIN UserMaster um ON (
+             TRY_CAST(sh.CashierId AS UNIQUEIDENTIFIER) = um.UserId
+             OR CAST(sh.CashierId AS NVARCHAR(50)) = CAST(um.UserId AS NVARCHAR(50))
+             OR LOWER(LTRIM(RTRIM(sh.CashierId))) = LOWER(LTRIM(RTRIM(um.UserName)))
+             OR LOWER(LTRIM(RTRIM(sh.CashierId))) = LOWER(LTRIM(RTRIM(um.UserCode)))
+           )
+           LEFT JOIN UserGroupMaster g ON um.UserGroupId = g.UserGroupId
+
            UNION ALL
- 
+
            SELECT 
              cct.TransactionId AS SettlementID,
              CONVERT(VARCHAR(33), cct.CreatedDate, 126) + '+08:00' AS SettlementDate,
@@ -548,47 +576,57 @@ router.get("/all", async (req, res) => {
              'LEDGER' AS TableNo,
              COALESCE(m.Name, mm.Name, 'Customer') AS Section,
              CAST(cct.CreatedBy AS VARCHAR(50)) AS CashierId,
-            cct.Remarks AS BillNo,
-            'Cashier' AS SER_NAME,
-             ISNULL(um.FullName, ISNULL(um.UserName, 'Unknown')) AS CashierName,
+             cct.Remarks AS BillNo,
+             'Cashier' AS SER_NAME,
+             ISNULL(um.FullName, ISNULL(um.UserName, ISNULL(CAST(cct.CreatedBy AS VARCHAR(50)), 'Unknown'))) AS CashierName,
+             ISNULL(um.UserName, ISNULL(CAST(cct.CreatedBy AS VARCHAR(50)), '-')) AS UserLogin,
+             ISNULL(um.UserCode, '-') AS UserCode,
+             ISNULL(g.UserGroupName, 'Cashier') AS RoleName,
              cct.PaymentMethod AS PayMode,
-            cct.PaidAmount AS SysAmount,
-            cct.PaidAmount AS ManualAmount,
-            cct.PaidAmount AS SubTotal,
-            0 AS DiscountAmount,
-            NULL AS DiscountType,
-            0 AS ServiceCharge,
-            0 AS TotalTax,
-            0 AS TakeawayCharge,
-            1 AS ReceiptCount,
-            0 AS VoidQty,
-            0 AS VoidAmount,
-            0 AS IsCancelled,
-            NULL AS CancellationReason,
-            NULL AS CancelledDate,
-            NULL AS CancelledByUserName,
-            NULL AS MasterOrderId,
-            0 AS TotalDiscountAmount,
-            0 AS TotalLineItemDiscountAmount,
-            0 AS RoundedBy,
-            0 AS DiscountPercentage,
-            0 AS OutstandingAmount,
-            COALESCE(m.Name, mm.Name) AS CustomerName,
+             cct.PaidAmount AS SysAmount,
+             cct.PaidAmount AS ManualAmount,
+             cct.PaidAmount AS SubTotal,
+             0 AS DiscountAmount,
+             NULL AS DiscountType,
+             0 AS ServiceCharge,
+             0 AS TotalTax,
+             0 AS TakeawayCharge,
+             1 AS ReceiptCount,
+             0 AS VoidQty,
+             0 AS VoidAmount,
+             0 AS IsCancelled,
+             NULL AS CancellationReason,
+             NULL AS CancelledDate,
+             NULL AS CancelledByUserName,
+             NULL AS MasterOrderId,
+             0 AS TotalDiscountAmount,
+             0 AS TotalLineItemDiscountAmount,
+             0 AS RoundedBy,
+             0 AS DiscountPercentage,
+             0 AS OutstandingAmount,
+             COALESCE(m.Name, mm.Name) AS CustomerName,
              (SELECT TOP 1 tx.BillNo FROM CustomerCreditAllocations cca JOIN CustomerCreditTransactions tx ON cca.InvoiceTransactionId = tx.TransactionId WHERE cca.PaymentTransactionId = cct.TransactionId) AS CreditOrderNo,
-            COALESCE(m.Name, mm.Name) AS GuestName,
-            NULL AS Pax,
-            NULL AS entryStatus,
-            COALESCE(m.Phone, mm.Phone) AS CustomerPhone,
-            ISNULL(cct.CustomerType, CASE WHEN m.CustomerId IS NOT NULL THEN 'CREDIT' ELSE 'MEMBER' END) AS CustomerType
-          FROM CustomerCreditTransactions cct
-          LEFT JOIN CreditCustomerMaster m ON cct.MemberId = m.CustomerId AND (cct.CustomerType = 'CREDIT' OR cct.CustomerType IS NULL)
-          LEFT JOIN MemberMaster mm ON cct.MemberId = mm.MemberId AND (cct.CustomerType = 'MEMBER' OR (cct.CustomerType IS NULL AND m.CustomerId IS NULL))
-           LEFT JOIN UserMaster um ON TRY_CAST(cct.CreatedBy AS UNIQUEIDENTIFIER) = um.UserId
+             COALESCE(m.Name, mm.Name) AS GuestName,
+             NULL AS Pax,
+             NULL AS entryStatus,
+             COALESCE(m.Phone, mm.Phone) AS CustomerPhone,
+             ISNULL(cct.CustomerType, CASE WHEN m.CustomerId IS NOT NULL THEN 'CREDIT' ELSE 'MEMBER' END) AS CustomerType
+           FROM CustomerCreditTransactions cct
+           LEFT JOIN CreditCustomerMaster m ON cct.MemberId = m.CustomerId AND (cct.CustomerType = 'CREDIT' OR cct.CustomerType IS NULL)
+           LEFT JOIN MemberMaster mm ON cct.MemberId = mm.MemberId AND (cct.CustomerType = 'MEMBER' OR (cct.CustomerType IS NULL AND m.CustomerId IS NULL))
+           LEFT JOIN UserMaster um ON (
+             TRY_CAST(cct.CreatedBy AS UNIQUEIDENTIFIER) = um.UserId
+             OR CAST(cct.CreatedBy AS NVARCHAR(50)) = CAST(um.UserId AS NVARCHAR(50))
+             OR LOWER(LTRIM(RTRIM(cct.CreatedBy))) = LOWER(LTRIM(RTRIM(um.UserName)))
+             OR LOWER(LTRIM(RTRIM(cct.CreatedBy))) = LOWER(LTRIM(RTRIM(um.UserCode)))
+           )
+           LEFT JOIN UserGroupMaster g ON um.UserGroupId = g.UserGroupId
            WHERE cct.TransactionType = 'PAYMENT'
-         ) CombinedSales
+        ) CombinedSales
         ORDER BY SettlementDate DESC
       `;
     }
+
 
     const result = await pool.request().query(queryStr);
     const records = result.recordset || [];
@@ -683,7 +721,7 @@ router.get("/transactions", async (req, res) => {
 
 router.get("/range", async (req, res) => {
   try {
-    const pool = await poolPromise;
+    const pool = req.pool || req.db || (await poolPromise);
     const { startDate, endDate } = req.query;
     const isDateStr = (str) => typeof str === "string" && /^\d{4}-\d{2}-\d{2}$/.test(str);
     let whereClause = "";
@@ -1017,7 +1055,7 @@ router.get("/detail/:id/rewards", async (req, res) => {
 router.get("/login-wise-sales", async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
-    const pool = await poolPromise;
+    const pool = req.pool || req.db || (await poolPromise);
     const filter = req.query.filter || "daily";
     const date = req.query.date;
     const { startDate, endDate } = req.query;
@@ -1074,7 +1112,7 @@ router.get("/login-wise-sales", async (req, res) => {
         GROUP BY cct.CreatedBy
       )
       SELECT
-        u.UserId AS CashierId,
+        CAST(u.UserId AS NVARCHAR(50)) AS CashierId,
         ISNULL(NULLIF(LTRIM(RTRIM(u.FullName)), ''), u.UserName) AS CashierName,
         ISNULL(u.UserName, '-') AS UserLogin,
         ISNULL(u.UserCode, '-') AS UserCode,
@@ -1127,7 +1165,44 @@ router.get("/login-wise-sales", async (req, res) => {
         OR LOWER(LTRIM(RTRIM(cc.CashierIdRaw))) = LOWER(LTRIM(RTRIM(u.UserCode)))
         OR LOWER(LTRIM(RTRIM(cc.CashierIdRaw))) = LOWER(LTRIM(RTRIM(u.FullName)))
       )
-      WHERE ISNULL(h.TotalSales, 0) > 0 OR ISNULL(cc.CreditCollectedAmount, 0) > 0
+      WHERE ISNULL(h.TotalSales, 0) > 0 
+         OR ISNULL(cc.CreditCollectedAmount, 0) > 0
+         OR ISNULL(h.TotalBills, 0) > 0
+         OR UPPER(LTRIM(RTRIM(ISNULL(g.UserGroupName, '')))) IN ('ADMIN', 'CASHIER', 'ADMINISTRATOR', 'SUPERADMIN', 'MANAGER', 'OWNER')
+         OR UPPER(LTRIM(RTRIM(ISNULL(g.UserGroupCode, '')))) IN ('ADMIN', 'CASHIER', 'ADMINISTRATOR', 'SUPERADMIN', 'MANAGER', 'OWNER')
+         OR UPPER(LTRIM(RTRIM(ISNULL(u.UserName, '')))) IN ('ADMIN', 'UNIPRO', 'OWNER', 'CASHIER')
+
+      UNION ALL
+
+      SELECT
+        CAST(h.CashierId AS NVARCHAR(50)) AS CashierId,
+        ISNULL(NULLIF(LTRIM(RTRIM(CAST(h.CashierId AS NVARCHAR(50)))), ''), 'Unassigned') AS CashierName,
+        ISNULL(CAST(h.CashierId AS NVARCHAR(50)), '-') AS UserLogin,
+        '-' AS UserCode,
+        'CASHIER' AS RoleCode,
+        'Cashier' AS RoleName,
+        h.TotalBills, h.TotalSubTotal, h.TotalDiscount, h.TotalServiceCharge, h.TotalTax, h.TotalTakeaway,
+        h.TotalVoidAmount, h.TotalVoidQty, h.TotalRounded, h.TotalSales,
+        ISNULL(p.CashAmount, 0) AS CashAmount,
+        ISNULL(p.CardAmount, 0) AS CardAmount,
+        ISNULL(p.PayNowAmount, 0) AS PayNowAmount,
+        ISNULL(p.NetsAmount, 0) AS NetsAmount,
+        ISNULL(p.MemberAmount, 0) AS MemberAmount,
+        ISNULL(p.CreditAmount, 0) AS CreditAmount,
+        ISNULL(p.GrabAmount, 0) AS GrabAmount,
+        ISNULL(p.FoodPandaAmount, 0) AS FoodPandaAmount,
+        ISNULL(p.UpiAmount, 0) AS UpiAmount,
+        ISNULL(p.YeahPayAmount, 0) AS YeahPayAmount,
+        h.CancelledBills, 0 AS CreditCollectedAmount
+      FROM HeaderTotals h
+      LEFT JOIN PaymentTotals p ON (h.CashierId = p.CashierId OR (h.CashierId IS NULL AND p.CashierId IS NULL))
+      WHERE NOT EXISTS (
+        SELECT 1 FROM UserMaster um WHERE 
+          TRY_CAST(h.CashierId AS UNIQUEIDENTIFIER) = um.UserId 
+          OR CAST(h.CashierId AS NVARCHAR(50)) = CAST(um.UserId AS NVARCHAR(50))
+          OR LOWER(LTRIM(RTRIM(h.CashierId))) = LOWER(LTRIM(RTRIM(um.UserName)))
+          OR LOWER(LTRIM(RTRIM(h.CashierId))) = LOWER(LTRIM(RTRIM(um.UserCode)))
+      ) AND (ISNULL(h.TotalSales, 0) > 0 OR h.TotalBills > 0)
       ORDER BY TotalSales DESC, CashierName ASC
     `);
 
@@ -1138,6 +1213,7 @@ router.get("/login-wise-sales", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 /* ================= LOGIN-WISE SETTLEMENT REPORT ================= */
 router.get("/login-wise-settlement", async (req, res) => {
@@ -1562,7 +1638,7 @@ router.get("/day-end-summary", async (req, res) => {
 
     console.log(`[DAY-END DEBUG] Fetching summary from ${start} to ${end}. SQL filter: ${whereSql}`);
     
-    const pool = await poolPromise;
+    const pool = req.pool || req.db || (await poolPromise);
 
     // 0. Organization Info (from CompanySettings)
     const companySettings = await getCompanySettings();

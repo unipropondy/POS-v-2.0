@@ -148,14 +148,26 @@ router.post("/day-end", async (req, res) => {
 
 router.get("/active-day", async (req, res) => {
   try {
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
-    if (result.recordset.length > 0) {
+    if (result.recordset.length > 0 && result.recordset[0].StartDate) {
       const activeDate = result.recordset[0].StartDate;
       const formattedDate = activeDate instanceof Date ? activeDate.toISOString().split("T")[0] : activeDate;
       res.json({ success: true, active: true, startDate: formattedDate });
     } else {
-      res.json({ success: true, active: false, startDate: null });
+      // Fallback: check most recent settlement date in this company's database
+      const fallbackRes = await pool.request().query(`
+        SELECT TOP 1 
+          CONVERT(VARCHAR(10), COALESCE(start_date, CAST(LastSettlementDate AS DATE)), 120) AS LastDate
+        FROM SettlementHeader WITH (NOLOCK)
+        WHERE LastSettlementDate IS NOT NULL
+        ORDER BY LastSettlementDate DESC
+      `);
+      if (fallbackRes.recordset.length > 0 && fallbackRes.recordset[0].LastDate) {
+        res.json({ success: true, active: false, startDate: fallbackRes.recordset[0].LastDate });
+      } else {
+        res.json({ success: true, active: false, startDate: null });
+      }
     }
   } catch (err) {
     console.error("Active Day Fetch Error:", err);

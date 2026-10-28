@@ -1,4 +1,6 @@
 import "../shims/displayMock";
+import { installNetworkInterceptor } from "../utils/networkInterceptor";
+installNetworkInterceptor();
 import "react-native-get-random-values";
 import "react-native-reanimated";
 
@@ -332,9 +334,16 @@ global.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
       }
     }
 
-    const token = useAuthStore.getState().token;
+    const authState = useAuthStore.getState();
+    const token = authState?.token;
+    const companyCode = authState?.user?.companyCode;
+
     if (token && !headers['Authorization'] && !headers['authorization']) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (companyCode && !headers['X-Company-Code'] && !headers['x-company-code']) {
+      headers['X-Company-Code'] = String(companyCode).trim();
     }
 
     const requestId = headers['x-request-id'] || headers['X-Request-ID'] || getUUID();

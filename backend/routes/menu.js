@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { poolPromise } = require("../config/db");
+const { poolPromise, tenancyContext } = require("../config/db");
 const sharp = require("sharp");
 
 // 🚀 PERFORMANCE CACHE
@@ -8,7 +8,8 @@ const cache = new Map();
 const CACHE_TTL = 300000; // 5 minutes
 
 function getCached(key, req) {
-  const scope = req?.databaseName || "default";
+  const store = tenancyContext.getStore();
+  const scope = (req?.databaseName || store?.databaseName || "DEFAULT").toUpperCase();
   const fullKey = `${scope}:${key}`;
   const item = cache.get(fullKey);
   if (item && (Date.now() - item.time < CACHE_TTL)) {
@@ -20,7 +21,8 @@ function getCached(key, req) {
 }
 
 function setCache(key, data, req) {
-  const scope = req?.databaseName || "default";
+  const store = tenancyContext.getStore();
+  const scope = (req?.databaseName || store?.databaseName || "DEFAULT").toUpperCase();
   const fullKey = `${scope}:${key}`;
   cache.set(fullKey, { data, time: Date.now() });
   console.log(`⚡ [MenuCache] Cache STORED: ${fullKey}`);
@@ -29,7 +31,7 @@ function setCache(key, data, req) {
 /* ================= KITCHENS / CATEGORIES ================= */
 router.get("/kitchens", async (req, res) => {
   try {
-    const cached = getCached("kitchens");
+    const cached = getCached("kitchens", req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
@@ -40,7 +42,7 @@ router.get("/kitchens", async (req, res) => {
       WHERE cm.IsActive = 1
       ORDER BY cm.SortCode ASC, cm.CategoryName ASC
     `);
-    setCache("kitchens", result.recordset);
+    setCache("kitchens", result.recordset, req);
     res.json(result.recordset);
   } catch (err) {
     console.error("KITCHEN ERROR:", err);
@@ -51,7 +53,7 @@ router.get("/kitchens", async (req, res) => {
 router.get("/dishgroups/all", async (req, res) => {
   try {
     const cacheKey = "dishgroups_all";
-    const cached = getCached(cacheKey);
+    const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
@@ -64,7 +66,7 @@ router.get("/dishgroups/all", async (req, res) => {
       WHERE IsActive = 1
       ORDER BY DishGroupName ASC
     `);
-    setCache(cacheKey, result.recordset);
+    setCache(cacheKey, result.recordset, req);
     res.json(result.recordset || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -75,7 +77,7 @@ router.get("/dishgroups/:CategoryId", async (req, res) => {
   try {
     const categoryId = req.params.CategoryId;
     const cacheKey = `dishgroups_${categoryId}`;
-    const cached = getCached(cacheKey);
+    const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
@@ -99,10 +101,11 @@ router.get("/dishgroups/:CategoryId", async (req, res) => {
           )
           ORDER BY a.SortCode ASC, a.DishGroupName ASC
       `);
-    setCache(cacheKey, result.recordset);
+    setCache(cacheKey, result.recordset, req);
     res.json(result.recordset);
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error("Error fetching dish groups by category:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -110,7 +113,7 @@ router.get("/dishgroups/:CategoryId", async (req, res) => {
 router.get("/dishes/all", async (req, res) => {
   try {
     const cacheKey = "dishes_all";
-    const cached = getCached(cacheKey);
+    const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
@@ -151,10 +154,11 @@ router.get("/dishes/all", async (req, res) => {
       ) pm ON LOWER(TRIM(ISNULL(ckt.KitchenTypeName, cat.CategoryName))) = LOWER(TRIM(pm.KitchenTypeName)) AND pm.rn = 1
       WHERE d.IsActive = 1 ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
     `);
-    setCache(cacheKey, result.recordset);
+    setCache(cacheKey, result.recordset, req);
     res.json(result.recordset);
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error("Error fetching all dishes:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -227,7 +231,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
   try {
     const dishGroupId = req.params.DishGroupId;
     const cacheKey = `dishes_group_${dishGroupId}`;
-    const cached = getCached(cacheKey);
+    const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
@@ -297,7 +301,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
  
           ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
       `);
-    setCache(cacheKey, result.recordset);
+    setCache(cacheKey, result.recordset, req);
     res.json(result.recordset);
   } catch (err) {
     res.status(500).send(err.message);
@@ -653,9 +657,17 @@ router.get("/barcode/:code", async (req, res) => {
   }
 });
 
-router.clearMenuCache = (io) => {
-  cache.clear();
-  console.log("⚡ [MenuCache] Cache INVALIDATION: All menu cache cleared dynamically");
+router.clearMenuCache = (io, databaseName) => {
+  if (databaseName) {
+    const prefix = `${String(databaseName).trim().toUpperCase()}:`;
+    for (const key of cache.keys()) {
+      if (key.startsWith(prefix)) cache.delete(key);
+    }
+    console.log(`⚡ [MenuCache] Cache INVALIDATION for ${databaseName}`);
+  } else {
+    cache.clear();
+    console.log("⚡ [MenuCache] Cache INVALIDATION: All menu cache cleared dynamically");
+  }
   if (typeof imageCache !== 'undefined') {
     try { imageCache.clear(); } catch(e){}
   }

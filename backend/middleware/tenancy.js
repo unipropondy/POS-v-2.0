@@ -21,42 +21,52 @@ async function tenancyMiddleware(req, res, next) {
     let targetDb = null;
     let companyCode = null;
 
+    const candidateCode =
+      req.headers["x-company-code"] ||
+      (req.body && req.body.companyCode) ||
+      (req.query && req.query.companyCode);
+
     // 1. Inspect Authorization Bearer Token (trusted server-signed context)
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
+    let decodedToken = null;
     if (token) {
       try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded && decoded.databaseName) {
-          targetDb = String(decoded.databaseName).trim();
-          companyCode = decoded.companyCode ? String(decoded.companyCode).trim() : null;
-        }
+        decodedToken = jwt.verify(token, JWT_SECRET);
       } catch (err) {
         // Token invalid or expired - proceed to allow authenticateToken middleware to handle appropriately
       }
     }
 
-    // 2. Check X-Company-Code header or parsed body/query for unauthenticated company-scoped requests
-    if (!targetDb) {
-      const candidateCode =
-        req.headers["x-company-code"] ||
-        (req.body && req.body.companyCode) ||
-        (req.query && req.query.companyCode);
-
-      if (candidateCode && typeof candidateCode === "string" && candidateCode.trim()) {
+    // 2. Resolve target company database:
+    // If a candidate company code is provided:
+    if (candidateCode && typeof candidateCode === "string" && candidateCode.trim()) {
+      const cleanCandidate = candidateCode.trim().toUpperCase();
+      // If token is present and matches the candidate company code, reuse token's databaseName
+      if (decodedToken && decodedToken.companyCode && decodedToken.companyCode.toUpperCase() === cleanCandidate && decodedToken.databaseName) {
+        targetDb = String(decodedToken.databaseName).trim();
+        companyCode = String(decodedToken.companyCode).trim();
+      } else {
+        // Look up mapping dynamically from BranchDatabaseMaster
         try {
-          const mapping = await lookupBranchDatabase(candidateCode.trim());
+          const mapping = await lookupBranchDatabase(cleanCandidate);
           if (mapping && mapping.databaseName) {
             targetDb = mapping.databaseName;
             companyCode = mapping.branchCode;
           }
         } catch (e) {
-          console.warn("⚠️ [Tenancy] Failed to lookup branch database for candidate code:", candidateCode, e.message);
+          console.warn("⚠️ [Tenancy] Failed to lookup branch database for candidate code:", cleanCandidate, e.message);
         }
       }
     }
 
-    // 3. Fallback to default database
+    // 3. If no candidate code was in headers/body/query, check authenticated token context
+    if (!targetDb && decodedToken && decodedToken.databaseName) {
+      targetDb = String(decodedToken.databaseName).trim();
+      companyCode = decodedToken.companyCode ? String(decodedToken.companyCode).trim() : null;
+    }
+
+    // 4. Fallback to default database
     if (!targetDb) {
       targetDb = dbConfig.database || "UCSPONDY";
     }

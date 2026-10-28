@@ -856,15 +856,22 @@ export default function MenuScreen() {
   useEffect(() => {
     const initMenu = async () => {
       setIsInitialLoading(true);
-      await fetchMenu();
+      const activeCompany = user?.companyCode ? String(user.companyCode).trim().toUpperCase() : null;
+      const storeCompany = useMenuStore.getState().companyCode;
+      const isMismatch = Boolean(activeCompany && storeCompany !== activeCompany);
+
+      await fetchMenu(isMismatch);
       const currentKitchens = useMenuStore.getState().kitchens;
       if (currentKitchens.length > 0) {
         await loadGroups(currentKitchens[0].CategoryId);
+      } else {
+        setGroups([]);
+        setItems([]);
       }
       setIsInitialLoading(false);
     };
     initMenu();
-  }, []);
+  }, [user?.companyCode]);
 
   const loadGroups = async (kitchenId: string) => {
     setSelectedKitchenId(kitchenId);

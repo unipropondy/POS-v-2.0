@@ -1,13 +1,16 @@
-const { poolPromise } = require("../config/db");
+const { poolPromise, tenancyContext } = require("../config/db");
 
-let cachedOrg = null;
+const orgCache = new Map(); // dbKey -> org
 
 /**
  * Dynamically retrieves the active organization details from the database and caches them.
  * If the database connection fails or no organization exists, it falls back to a resilient default.
  */
-async function getActiveOrganization() {
-  if (cachedOrg) return cachedOrg;
+async function getActiveOrganization(targetDb) {
+  const store = tenancyContext.getStore();
+  const dbKey = (targetDb || store?.databaseName || "DEFAULT").toUpperCase();
+
+  if (orgCache.has(dbKey)) return orgCache.get(dbKey);
 
   try {
     const pool = await poolPromise;
@@ -22,16 +25,17 @@ async function getActiveOrganization() {
     `);
 
     if (result.recordset.length > 0) {
-      cachedOrg = {
+      const org = {
         businessUnitId: String(result.recordset[0].BusinessUnitId).toUpperCase(),
         businessUnitCode: String(result.recordset[0].BusinessUnitCode || "UPS").toUpperCase(),
         name: result.recordset[0].Name,
       };
-      console.log(`📡 [OrgHelper] Loaded active organization config: ${cachedOrg.name} (${cachedOrg.businessUnitCode})`);
-      return cachedOrg;
+      orgCache.set(dbKey, org);
+      console.log(`📡 [OrgHelper] Loaded active organization config for ${dbKey}: ${org.name} (${org.businessUnitCode})`);
+      return org;
     }
   } catch (err) {
-    console.error("🔥 [Critical] Error loading organization configuration:", err.message);
+    console.error(`🔥 [Critical] Error loading organization configuration for ${dbKey}:`, err.message);
   }
 
   // Resilient multi-branch fail-safe fallback
@@ -42,4 +46,12 @@ async function getActiveOrganization() {
   };
 }
 
-module.exports = { getActiveOrganization };
+function invalidateOrgCache(targetDb) {
+  if (targetDb) {
+    orgCache.delete(String(targetDb).toUpperCase());
+  } else {
+    orgCache.clear();
+  }
+}
+
+module.exports = { getActiveOrganization, invalidateOrgCache };

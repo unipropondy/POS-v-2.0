@@ -539,6 +539,18 @@ router.post("/login", async (req, res) => {
           { expiresIn: "24h" },
         );
 
+        // Invalidate tenant-scoped cache to guarantee fresh state
+        try {
+          const { invalidateCache } = require("../utils/settingsCache");
+          const { invalidateOrgCache } = require("../utils/organizationHelper");
+          const menuRoutes = require("./menu");
+          invalidateCache(targetDb);
+          invalidateOrgCache(targetDb);
+          if (menuRoutes && typeof menuRoutes.clearMenuCache === "function") {
+            menuRoutes.clearMenuCache(req.app.get("io"), targetDb);
+          }
+        } catch (e) {}
+
         return res.json({
           success: true,
           token,
@@ -555,6 +567,7 @@ router.post("/login", async (req, res) => {
             Promoamount: memberUser.Promoamount,
             AvailableCredit: memberUser.AvailableCredit,
             companyCode: branchMapping.branchCode,
+            databaseName: targetDb,
           },
         });
       }
@@ -708,6 +721,18 @@ router.post("/login", async (req, res) => {
 
     console.log(`✅ Login Success: ${user.FullName} | Role: ${roleCode} | Company: ${branchMapping.branchCode} (DB: ${targetDb})`);
 
+    // Invalidate tenant-scoped cache to guarantee fresh state
+    try {
+      const { invalidateCache } = require("../utils/settingsCache");
+      const { invalidateOrgCache } = require("../utils/organizationHelper");
+      const menuRoutes = require("./menu");
+      invalidateCache(targetDb);
+      invalidateOrgCache(targetDb);
+      if (menuRoutes && typeof menuRoutes.clearMenuCache === "function") {
+        menuRoutes.clearMenuCache(req.app.get("io"), targetDb);
+      }
+    } catch (e) {}
+
     // 2. Return Comprehensive Auth Response
     return res.json({
       success: true,
@@ -724,6 +749,7 @@ router.post("/login", async (req, res) => {
         licenseFromDate: user.FromDate,
         licenseToDate: user.ToDate,
         companyCode: branchMapping.branchCode,
+        databaseName: targetDb,
       },
     });
   } catch (err) {

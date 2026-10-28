@@ -30,7 +30,8 @@ const DEFAULT_GUID = "00000000-0000-0000-0000-000000000000";
 const columnExistenceCache = new Map(); // key: "TABLE_NAME.COLUMN_NAME" → true | false
 
 async function columnExists(pool, tableName, columnName) {
-  const cacheKey = `${tableName}.${columnName}`;
+  const dbName = String(pool?.config?.database || "default").toUpperCase();
+  const cacheKey = `${dbName}:${tableName}.${columnName}`;
   if (columnExistenceCache.has(cacheKey)) {
     return columnExistenceCache.get(cacheKey);
   }
