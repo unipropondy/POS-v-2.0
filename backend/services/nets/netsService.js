@@ -81,7 +81,10 @@ class NetsService {
    */
   async requestTerminalStatus(timeoutMs = 10000) {
     const ecn = this.getNextEcn();
-    console.log(`📡 [NETS] Request Terminal Status (FC 55) - ECN: ${ecn}`);
+    const config = typeof this.transport.getConfig === 'function'
+      ? this.transport.getConfig()
+      : { mode: 'LAN', activeEndpoint: 'LAN (Configured Endpoint)' };
+    console.log(`📡 [NETS] Request Terminal Status (FC 55) - ECN: ${ecn} - Endpoint: ${config.activeEndpoint}`);
 
     try {
       const response = await this.transport.execute(ecn, '55', [], timeoutMs);
@@ -96,17 +99,39 @@ class NetsService {
         isApproved: isReady,
         message: isReady ? 'Terminal is ready to accept transactions' : description,
         rawHex: response.rawHex,
-        fields: response.fields
+        fields: response.fields,
+        diagnostic: {
+          targetEndpoint: config.activeEndpoint,
+          interfaceMode: config.mode,
+          status: isReady ? 'ONLINE_READY' : 'TERMINAL_NOT_READY',
+          responseCode: response.responseCode,
+          detail: isReady ? 'Terminal responded with Approval code 00.' : `Terminal responded with response code ${response.responseCode}: ${description}`
+        }
       };
     } catch (err) {
+      const diag = err.diagnostic || {
+        targetEndpoint: config.activeEndpoint,
+        interfaceMode: config.mode,
+        failureReason: err.code || 'COMM_FAILURE',
+        detail: err.message,
+        actionRequired: 'Verify the physical connection, terminal power, and ECR settings.'
+      };
+
+      let responseCode = 'HS';
+      if (err.code === 'ETIMEDOUT') responseCode = 'TO';
+      else if (err.code === 'E_HTTP_ENDPOINT' || err.code === 'E_HTTP_PORT_CONFLICT') responseCode = 'CFG_ERR';
+      else if (err.code === 'E_LRC_MISMATCH') responseCode = 'LRC_ERR';
+      else if (err.code === 'TA') responseCode = 'TA';
+
       return {
         success: false,
         ecn,
         functionCode: '55',
-        responseCode: 'HS',
+        responseCode,
         isApproved: false,
         message: `Terminal status check failed: ${err.message}`,
-        error: err.message
+        error: err.message,
+        diagnostic: diag
       };
     }
   }

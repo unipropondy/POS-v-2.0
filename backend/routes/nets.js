@@ -171,21 +171,43 @@ router.post('/eod-sequence', async (req, res) => {
 });
 
 // 🔹 11. Get / Update Terminal Config
-router.get('/config', (req, res) => {
-  res.json({
-    success: true,
-    config: defaultTransport.getConfig(),
-    currentEcn: defaultNetsService.getCurrentEcn()
-  });
-});
-
-router.put('/config', (req, res) => {
+router.get('/config', async (req, res) => {
   try {
-    defaultTransport.updateConfig(req.body);
+    const config = await defaultTransport.loadConfigFromDb();
+    const serverPort = parseInt(process.env.PORT || '3000', 10);
     res.json({
       success: true,
-      message: 'Terminal configuration updated successfully',
-      config: defaultTransport.getConfig()
+      config,
+      currentEcn: defaultNetsService.getCurrentEcn(),
+      posServerInfo: {
+        httpPort: serverPort,
+        warning: `Do not configure terminal port to ${serverPort} (reserved for POS Express HTTP API). NETS ECR II raw TCP terminal port is typically 7500 (or 9742).`
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/config', async (req, res) => {
+  try {
+    const serverPort = parseInt(process.env.PORT || '3000', 10);
+    const validation = defaultTransport.validateConfig(req.body, serverPort);
+
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Terminal configuration validation failed',
+        errors: validation.errors
+      });
+    }
+
+    const updatedConfig = await defaultTransport.saveConfigToDb(validation.clean);
+
+    res.json({
+      success: true,
+      message: 'Terminal configuration updated and persisted to database successfully',
+      config: updatedConfig
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

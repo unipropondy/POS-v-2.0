@@ -28,6 +28,15 @@ class MockTransport {
     this.queuedResponses.push(respBuf);
   }
 
+  getConfig() {
+    return {
+      mode: 'LAN',
+      terminalIp: '127.0.0.1',
+      terminalPort: 7500,
+      activeEndpoint: '127.0.0.1:7500'
+    };
+  }
+
   async execute(ecn, fc, fields = [], timeoutMs = 5000) {
     const packet = buildLanPacket(ecn, fc, fields);
     this.sentPackets.push({ ecn, fc, fields, packet, rawHex: packet.toString('hex').toUpperCase() });

@@ -35,6 +35,21 @@ function fromBcd2(buf, offset = 0) {
 }
 
 /**
+ * Validates whether 2 bytes starting at offset form a valid 2-byte BCD integer.
+ * In BCD, all 4 nibbles must be decimal digits 0 through 9.
+ */
+function isValidBcd2(buf, offset = 0) {
+  if (!buf || buf.length < offset + 2) return false;
+  const b1 = buf[offset];
+  const b2 = buf[offset + 1];
+  const d1 = (b1 >> 4) & 0x0F;
+  const d2 = b1 & 0x0F;
+  const d3 = (b2 >> 4) & 0x0F;
+  const d4 = b2 & 0x0F;
+  return d1 <= 9 && d2 <= 9 && d3 <= 9 && d4 <= 9;
+}
+
+/**
  * Computes Longitudinal Redundancy Check (LRC) via XOR across all bytes in buffer.
  */
 function computeLrc(buffer, start = 0, end = buffer.length) {
@@ -189,6 +204,10 @@ function parseLanResponse(buffer) {
     throw new Error(`LAN packet too short: ${buffer ? buffer.length : 0} bytes (min 21 required)`);
   }
 
+  if (!isValidBcd2(buffer, 0)) {
+    throw new Error(`Invalid BCD length bytes (0x${buffer.slice(0, 2).toString('hex')}). The endpoint did not return a valid NETS ECR frame.`);
+  }
+
   const declaredLength = fromBcd2(buffer, 0);
   if (buffer.length < declaredLength + 2) {
     throw new Error(`Incomplete LAN packet: received ${buffer.length} bytes, expected ${declaredLength + 2}`);
@@ -317,6 +336,7 @@ module.exports = {
   FS,
   toBcd2,
   fromBcd2,
+  isValidBcd2,
   computeLrc,
   buildRequestHeader,
   encodeFields,
