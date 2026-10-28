@@ -1302,7 +1302,35 @@ async function initDB(pool) {
       END
     `);
 
-    console.log("✅ Database schema and performance indexes are up to date. (Rewards system active)");
+    // 29. Create NetsTerminalConfig table for NETS ECR II integration
+    await runQuery("Create NetsTerminalConfig table", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[NetsTerminalConfig]') AND type in (N'U'))
+      BEGIN
+          CREATE TABLE [dbo].[NetsTerminalConfig](
+              [ConfigId] INT IDENTITY(1,1) PRIMARY KEY,
+              [InterfaceMode] NVARCHAR(20) NOT NULL DEFAULT 'LAN',
+              [TerminalIp] NVARCHAR(50) NOT NULL DEFAULT '192.168.9.38',
+              [TerminalPort] INT NOT NULL DEFAULT 7500,
+              [ComPort] NVARCHAR(20) NOT NULL DEFAULT 'COM1',
+              [BaudRate] INT NOT NULL DEFAULT 9600,
+              [CreditAcquirer] NVARCHAR(20) NOT NULL DEFAULT 'DBS',
+              [ReceiptMode] NVARCHAR(50) NOT NULL DEFAULT 'POS_PRINT_RP',
+              [OnlineTimeoutSec] INT NOT NULL DEFAULT 120,
+              [OfflineTimeoutSec] INT NOT NULL DEFAULT 60,
+              [LastUpdated] DATETIME NOT NULL DEFAULT GETDATE()
+          );
+
+          INSERT INTO [dbo].[NetsTerminalConfig] (
+              InterfaceMode, TerminalIp, TerminalPort, ComPort, BaudRate,
+              CreditAcquirer, ReceiptMode, OnlineTimeoutSec, OfflineTimeoutSec
+          ) VALUES (
+              'LAN', '192.168.9.38', 7500, 'COM1', 9600,
+              'DBS', 'POS_PRINT_RP', 120, 60
+          );
+      END
+    `);
+
+    console.log("✅ Database schema and performance indexes are up to date. (Rewards & NETS active)");
 
 
     // 🔄 Auto-sync kitchens to PrintMaster on every startup

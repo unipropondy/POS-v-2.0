@@ -461,6 +461,26 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
   text += "[L]------------------------------------------------\n";
 
   text += `[R]<font size='big'><B>TOTAL: ${symbol}${finalTotal.toFixed(2)}</B></font>\n`;
+
+  // 💳 NETS Transaction Info (Section 2 of UAT Certification Requirements)
+  if (saleData.receiptText || saleData.netsInfo) {
+    text += "[L]------------------------------------------------\n";
+    text += "[C]<B>--- NETS TRANSACTION ---</B>\n";
+    if (saleData.receiptText) {
+      const cleanReceipt = String(saleData.receiptText).trim();
+      cleanReceipt.split('\n').forEach(line => {
+        if (line.trim()) text += `[L]<B>${line.trim()}</B>\n`;
+      });
+    } else if (saleData.netsInfo) {
+      const info = saleData.netsInfo;
+      if (info.terminalId) text += formatTwoCols48("MID / TID:", `${info.terminalId}`);
+      if (info.stan) text += formatTwoCols48("STAN:", `${info.stan}`);
+      if (info.approvalCode) text += formatTwoCols48("APPROVAL CODE:", `${info.approvalCode}`);
+      if (info.rrn) text += formatTwoCols48("REF NO (RRN):", `${info.rrn}`);
+      if (info.cardName) text += formatTwoCols48("CARD:", `${info.cardName}`);
+    }
+  }
+
   text += "[C]================================================\n";
   text += "[C]<B>THANK YOU! COME AGAIN!</B>\n";
   text += "[C]SMART-CAFE BY UNIPROSG\n";

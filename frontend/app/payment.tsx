@@ -1427,6 +1427,126 @@ export default function PaymentScreen() {
 
       return;
     }
+
+    // ✅ NETS ECR II - Terminal Payment (NETS / NETS CARD / NETS QR)
+    const isNetsCard = _methodNorm === "NETS" || _methodNorm === "NETS CARD";
+    const isNetsQr = _methodNorm === "NETS QR";
+    const isNets = isNetsCard || isNetsQr;
+
+    if (isNets && total > 0 && cacheKey) {
+      setPaymentStatus("processing");
+      setPaymentMessage("Please follow prompt on NETS terminal...");
+      setProcessing(true);
+
+      console.log('🔄 [MainPayment] Calling NETS terminal for:', method, 'Amount:', total);
+
+      const fetchPromise = (async () => {
+        try {
+          const response = await fetch(`${API_URL}/api/nets/purchase`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(useAuthStore.getState().token ? { 'Authorization': `Bearer ${useAuthStore.getState().token}` } : {}),
+            },
+            body: JSON.stringify({
+              amount: total,
+              isQrOnTerminal: isNetsQr,
+              ecrRef: displayOrderId || context?.tableId || `ECR${Date.now()}`,
+              tableId: context?.tableId || ''
+            })
+          });
+
+          const result = await response.json();
+          console.log('✅ [MainPayment] NETS Terminal response:', result);
+
+          let status: "success" | "cancelled" | "failed" = "failed";
+          let message = "";
+
+          if (result.success || result.isApproved) {
+            status = "success";
+            message = `✅ ${currencySymbol}${total.toFixed(2)} paid via ${method}`;
+          } else if (result.responseCode === 'UT' || result.responseCode === 'MA') {
+            status = "cancelled";
+            message = `❌ Transaction cancelled on terminal`;
+          } else if (result.responseCode === 'TO') {
+            status = "failed";
+            message = `⏰ Transaction timeout`;
+          } else {
+            status = "failed";
+            message = `❌ ${result.message || result.responseDesc || 'NETS Payment declined'}`;
+          }
+
+          if (ongoingPayments[cacheKey]) {
+            ongoingPayments[cacheKey].status = status;
+            ongoingPayments[cacheKey].message = message;
+          }
+
+          if (context?.tableId) {
+            useTerminalPaymentStore.getState().updateSession(context.tableId, { status, message });
+          }
+
+          if (status === "success") {
+            handleTerminalPaymentSuccess(method, total, message);
+          } else if (status === "cancelled") {
+            setPaymentMessage(message);
+            Alert.alert('❌ Transaction Cancelled', 'Payment was cancelled on the terminal.');
+            if (context?.tableId) {
+              useTerminalPaymentStore.getState().clearSession(String(context.tableId));
+            }
+            delete ongoingPayments[cacheKey];
+          } else {
+            setProcessing(false);
+            setPaymentStatus("failed");
+            setPaymentMessage(message);
+            Alert.alert('❌ Payment Failed', message || 'Failed to complete NETS transaction');
+            if (context?.tableId) {
+              useTerminalPaymentStore.getState().clearSession(String(context.tableId));
+            }
+            delete ongoingPayments[cacheKey];
+          }
+          return result;
+        } catch (error: any) {
+          console.error('❌ [MainPayment] NETS Terminal error:', error);
+          const status = "failed";
+          const message = `❌ ${error.message}`;
+
+          if (ongoingPayments[cacheKey]) {
+            ongoingPayments[cacheKey].status = status;
+            ongoingPayments[cacheKey].message = message;
+          }
+
+          if (context?.tableId) {
+            useTerminalPaymentStore.getState().updateSession(context.tableId, { status: "failed", message });
+          }
+          setProcessing(false);
+          setPaymentStatus("failed");
+          setPaymentMessage(message);
+          Alert.alert('❌ Payment Failed', message);
+          delete ongoingPayments[cacheKey];
+          return { success: false, message: error.message };
+        }
+      })();
+
+      ongoingPayments[cacheKey] = {
+        status: "processing",
+        message: "Please follow prompt on NETS terminal...",
+        method: method,
+        total: total,
+        promise: fetchPromise
+      };
+
+      if (context?.tableId) {
+        useTerminalPaymentStore.getState().setSession(context.tableId, {
+          tableId: context.tableId,
+          status: "processing",
+          message: "Processing on NETS terminal...",
+          method: method,
+          total: total,
+        });
+      }
+
+      return;
+    }
     // ============================================================
     // REST OF EXISTING CODE
     // ============================================================

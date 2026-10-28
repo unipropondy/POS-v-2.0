@@ -210,13 +210,42 @@ if (!gatewayResponse.success) {
 
         throw apiError;
       }
-    } else {
       if (_terminalAlreadyDone) {
         console.log(`✅ [YEAHPAY] Terminal already processed for ${payModeName} — skipping duplicate API call, saving to DB only.`);
       } else {
         console.log(`ℹ️ [YEAHPAY] NOT enabled for ${payModeName}`);
         console.log(`   YeahPayEnabled: ${dbPaymode.YeahPayEnabled}`);
         console.log(`   DeviceSN: ${dbPaymode.DeviceSN || 'NULL'}`);
+      }
+    }
+
+    // ============================================================
+    // 🆕 CHECK: Is NETS payment mode?
+    // ============================================================
+    const _pmUpper = payModeName.trim().toUpperCase();
+    const isNetsMode = _pmUpper === 'NETS' || _pmUpper === 'NETS CARD' || _pmUpper === 'NETS QR';
+
+    if (isNetsMode) {
+      if (_terminalAlreadyDone) {
+        console.log(`✅ [NETS] Terminal already processed for ${payModeName} (ref: ${payment.referenceNo || payment.stan || ''}) — saving to DB.`);
+        gatewayReferenceNo = payment.referenceNo || payment.approvalCode || payment.stan || null;
+      } else {
+        console.log(`🔄 [NETS] Invoking NETS ECR II terminal for ${payModeName}...`);
+        const { defaultNetsService } = require('./nets/netsService');
+        const isQr = _pmUpper === 'NETS QR';
+        const netsRes = await defaultNetsService.processPurchase({
+          amount,
+          isQrOnTerminal: isQr,
+          ecrRef: referenceId,
+          lockKey: `ref_${referenceId}`
+        });
+
+        if (!netsRes.success || !netsRes.isApproved) {
+          throw new Error(`NETS payment declined: ${netsRes.message || netsRes.responseDesc || 'Declined by terminal/host'}`);
+        }
+
+        gatewayReferenceNo = netsRes.approvalCode || netsRes.stan || netsRes.rrn || null;
+        gatewayResponse = netsRes;
       }
     }
 
