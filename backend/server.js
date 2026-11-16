@@ -361,6 +361,7 @@ app.use("/api/members", memberRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/order", orderRoutes);
 app.use("/api/servers", serverRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/company-settings", companySettingsRoutes);
@@ -445,26 +446,42 @@ app.get("/health", (req, res) => {
 app.post("/api/checkout", (req, res) =>
   res.redirect(307, "/api/orders/checkout"),
 );
-// 🔥 QR LEGACY: QR app uses /api/order (singular) but routes are /api/orders (plural)
-app.use("/api/order", (req, res) => {
-  const newPath = "/api/orders" + req.path + (Object.keys(req.query).length ? "?" + new URLSearchParams(req.query).toString() : "");
-  res.redirect(307, newPath);
-});
+
 app.get("/tables", (req, res) => res.redirect("/api/tables/all"));
-app.get("/kitchens", (req, res) => res.redirect("/api/menu/kitchens"));
-app.get("/dishgroups/:id", (req, res) =>
+app.get(["/kitchens", "/api/kitchens"], (req, res) => res.redirect("/api/menu/kitchens"));
+app.get(["/dishgroups/all", "/api/dishgroups/all"], (req, res) =>
+  res.redirect("/api/menu/dishgroups/all"),
+);
+app.get(["/dishgroups/:id", "/api/dishgroups/:id"], (req, res) =>
   res.redirect(`/api/menu/dishgroups/${req.params.id}`),
 );
-app.get("/dishes/:id", (req, res) =>
+app.get(["/dishes/all", "/api/dishes/all"], (req, res) =>
+  res.redirect("/api/menu/dishes/all"),
+);
+app.get(["/dishes/group/:id", "/api/dishes/group/:id"], (req, res) =>
   res.redirect(`/api/menu/dishes/group/${req.params.id}`),
 );
-app.get("/api/dishes/all", (req, res) => res.redirect("/api/menu/dishes/all"));
+app.get(["/dishes/:id", "/api/dishes/:id"], (req, res) =>
+  res.redirect(`/api/menu/dishes/group/${req.params.id}`),
+);
 app.get("/api/discounts", (req, res) => res.redirect("/api/admin/discounts"));
-app.get("/modifiers/:id", (req, res) =>
+app.get(["/modifiers/group/:id", "/api/modifiers/group/:id"], (req, res) =>
+  res.redirect(`/api/menu/modifiers/group/${req.params.id}`),
+);
+app.get(["/modifiers/:id", "/api/modifiers/:id"], (req, res) =>
   res.redirect(`/api/menu/modifiers/${req.params.id}`),
 );
-app.get("/image/:id", (req, res) =>
+app.get(["/image/:id", "/api/image/:id"], (req, res) =>
   res.redirect(`/api/menu/image/${req.params.id}`),
+);
+app.get(["/company/settings", "/api/company/settings"], (req, res) =>
+  res.redirect("/api/company-settings"),
+);
+app.get(["/paymodes/list", "/api/paymodes/list"], (req, res) =>
+  res.redirect("/api/sales/payment-methods"),
+);
+app.get(["/app-settings", "/api/app-settings"], (req, res) =>
+  res.redirect("/api/menu/app-settings"),
 );
 
 // 🧹 JANITOR HEARTBEAT: Safe Ghost Cleanup (Every 15 minutes)

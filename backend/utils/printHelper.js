@@ -546,8 +546,22 @@ async function queueQRPrintJobs(pool, sql, opts = {}) {
       `);
     if (ordRes.recordset.length > 0) {
       orderHeader = ordRes.recordset[0];
-      if (!tableNo || tableNo === "N/A" || tableNo === "TAKEAWAY") {
-        tableNo = orderHeader.Tableno || tableNo;
+      const headerTable = orderHeader.Tableno ? String(orderHeader.Tableno).trim() : "";
+      if (headerTable && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(headerTable)) {
+        tableNo = headerTable;
+      } else if (!tableNo || tableNo === "N/A" || tableNo === "TAKEAWAY" || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableNo)) {
+        tableNo = headerTable || tableNo;
+      }
+    }
+
+    // If tableNo is still a GUID, resolve the actual TableNumber from TableMaster
+    if (tableNo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(tableNo).replace(/[{}]/g, "").trim())) {
+      const cleanGuid = String(tableNo).replace(/[{}]/g, "").trim();
+      const tmRes = await pool.request()
+        .input("tid", sql.UniqueIdentifier, cleanGuid)
+        .query("SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tid");
+      if (tmRes.recordset.length > 0 && tmRes.recordset[0].TableNumber) {
+        tableNo = String(tmRes.recordset[0].TableNumber).trim();
       }
     }
   } catch (err) {

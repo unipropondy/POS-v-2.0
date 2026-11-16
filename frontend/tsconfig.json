@@ -15,12 +15,16 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "../src/Kiosk/**/*.ts",
+    "../src/Kiosk/**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],
   "exclude": [
     "node_modules",
     "admin-panel",
-    "components/ui/collapsible.tsx"
+    "components/ui/collapsible.tsx",
+    "../src/Kiosk/components/ui/collapsible.tsx",
+    "src/Kiosk/components/ui/collapsible.tsx"
   ]
 }

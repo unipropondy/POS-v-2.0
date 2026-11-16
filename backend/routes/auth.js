@@ -1063,4 +1063,45 @@ router.post("/signup", async (req, res) => {
   }
 });
 
+// ================= PROMO IMAGE API (FOR KIOSK) =================
+router.get("/promo-image", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    let promoImages = [];
+
+    try {
+      const result = await pool.request().query(`
+        SELECT 
+          PromoCode,
+          PromoName,
+          DiscountType,
+          DiscountValue,
+          PromoImage
+        FROM PromoCodeMaster
+        WHERE IsActive = 1
+          AND PromoImage IS NOT NULL
+        ORDER BY CreatedDate DESC
+      `);
+
+      if (result.recordset.length > 0) {
+        promoImages = result.recordset.map((promo) => ({
+          PromoCode: promo.PromoCode,
+          PromoName: promo.PromoName,
+          DiscountType: promo.DiscountType,
+          DiscountValue: promo.DiscountValue,
+          PromoImage: promo.PromoImage
+            ? `data:image/jpeg;base64,${promo.PromoImage.toString("base64")}`
+            : null
+        }));
+      }
+    } catch (dbErr) {
+      console.log("PromoCodeMaster table query skipped:", dbErr.message);
+    }
+
+    res.json({ success: true, promoImages });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

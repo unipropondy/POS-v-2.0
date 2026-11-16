@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["DOM", "ES2020"],
+    "strict": true,
+    "jsx": "react-native",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "typeRoots": [
+      "../../frontend/node_modules/@types"
+    ],
+    "paths": {
+      "react": ["../../frontend/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../frontend/node_modules/@types/react/jsx-runtime"],
+      "react-native": ["../../frontend/node_modules/@types/react-native", "../../frontend/node_modules/react-native"],
+      "@/*": ["./*", "../../frontend/*"],
+      "@/config": ["./config/index.ts", "../../frontend/config/index.ts"],
+      "@/config/*": ["./config/*", "../../frontend/config/*"],
+      "@/assets/*": ["./app/assets/*", "../../frontend/assets/*"],
+      "*": ["*", "../../frontend/node_modules/*"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ]
+}

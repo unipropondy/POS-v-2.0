@@ -588,6 +588,7 @@ export default function RootLayout() {
           <Stack.Screen name="table-master" />
           <Stack.Screen name="takeaway-qr" />
           <Stack.Screen name="qr-takeaway" />
+          <Stack.Screen name="kiosk" options={{ headerShown: false }} />
         </Stack>
         <StatusBar style="light" />
       </ToastProvider>

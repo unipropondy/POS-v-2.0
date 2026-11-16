@@ -11,6 +11,11 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 module.exports = function idempotencyMiddleware(req, res, next) {
+  // If the request was redirected (e.g. 307 redirect), do not double-process
+  if (req.originalUrl !== req.url && req.originalUrl?.startsWith("/api/order/")) {
+    return next();
+  }
+
   const requestId = req.headers['x-request-id'] || req.headers['X-Request-ID'];
   
   // Only apply to modifying requests (POST, PUT, DELETE) that specify a request ID

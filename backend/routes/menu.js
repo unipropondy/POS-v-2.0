@@ -727,4 +727,51 @@ router.post("/clear-cache", (req, res) => {
   res.json({ success: true, message: "Menu and image cache cleared successfully" });
 });
 
+/* ================= APP SETTINGS (FOR KIOSK) ================= */
+router.get("/app-settings", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+
+    let enableLogin = 0;
+    let enableKioskTable = 0;
+
+    try {
+      const colCheck = await pool.request().query(`
+        SELECT 
+          (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'enablelogin') AS cntLogin,
+          (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'Enablekiosktable') AS cntKioskTable
+      `);
+      let queryCols = [];
+      if (colCheck.recordset[0]?.cntLogin > 0) queryCols.push("enablelogin AS EnableLogin");
+      if (colCheck.recordset[0]?.cntKioskTable > 0) queryCols.push("Enablekiosktable");
+
+      if (queryCols.length > 0) {
+        const result = await pool.request().query(`
+          SELECT TOP 1 ${queryCols.join(", ")}
+          FROM AppSettings
+        `);
+        if (result.recordset.length > 0) {
+          const row = result.recordset[0];
+          enableLogin = row.EnableLogin !== undefined ? Number(row.EnableLogin) : 0;
+          enableKioskTable = row.Enablekiosktable !== undefined ? Number(row.Enablekiosktable) : 0;
+        }
+      }
+    } catch (err) {
+      console.warn("[app-settings] Query failed:", err.message);
+    }
+
+    res.json({
+      success: true,
+      enableLogin,
+      Enablekiosktable: enableKioskTable,
+      enablekiosktable: enableKioskTable
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
+
 module.exports = router;
