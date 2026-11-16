@@ -2116,16 +2116,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       </Text>
                     </View>
 
-                    <View style={styles.comboOptionsGrid}>
+                    <View style={styles.modifierSquareGrid}>
                       {comboDishModifiers.map((m: any) => {
                         const mId = String(m.ModifierID || m.ModifierId || "");
                         const isSelected = selectedComboModifierIds.includes(mId);
+                        const priceNum = Number(m.Price || 0);
                         return (
                           <TouchableOpacity
                             key={mId}
                             style={[
-                              styles.comboOptionRow,
-                              isSelected && styles.comboOptionRowSelected,
+                              styles.modifierSquareCard,
+                              isSelected && styles.modifierSquareCardSelected,
                             ]}
                             onPress={() => handleToggleComboModifier(mId)}
                             activeOpacity={0.8}
@@ -2133,6 +2134,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             <View
                               style={[
                                 styles.comboCheckboxSquare,
+                                styles.modifierSquareCheckbox,
                                 isSelected && styles.comboCheckboxSquareSelected,
                               ]}
                             >
@@ -2141,22 +2143,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               )}
                             </View>
 
-                            <View style={styles.comboOptInfo}>
-                              <Text
-                                style={[
-                                  styles.comboOptName,
-                                  isSelected && styles.comboOptNameSelected,
-                                ]}
-                                numberOfLines={2}
-                              >
-                                {m.ModifierName}
-                              </Text>
-                              <Text style={styles.comboOptPrice}>
-                                {Number(m.Price) > 0
-                                  ? `+$${Number(m.Price).toFixed(2)}`
-                                  : "$0.00"}
-                              </Text>
-                            </View>
+                            <Text
+                              style={[
+                                styles.modifierSquareName,
+                                isSelected && styles.modifierSquareNameSelected,
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {m.ModifierName}
+                            </Text>
+                            <Text style={[styles.modifierSquarePrice, isSelected && styles.modifierSquarePriceSelected]}>
+                              {priceNum > 0
+                                ? `+$${priceNum.toFixed(2)}`
+                                : "$0.00"}
+                            </Text>
                           </TouchableOpacity>
                         );
                       })}
@@ -2277,7 +2277,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   <Text style={styles.comboGroupPickBadge}>Optional</Text>
                 </View>
 
-                <View style={styles.comboOptionsGrid}>
+                <View style={styles.modifierSquareGrid}>
                   {modifiers.map((item) => {
                     const id = String(item.ModifierID || item.ModifierId);
                     const isSelected = selectedModifierIds.includes(id);
@@ -2287,8 +2287,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       <TouchableOpacity
                         key={id}
                         style={[
-                          styles.comboOptionRow,
-                          isSelected && styles.comboOptionRowSelected,
+                          styles.modifierSquareCard,
+                          isSelected && styles.modifierSquareCardSelected,
                         ]}
                         onPress={() => {
                           setSelectedModifierIds((prev) =>
@@ -2302,6 +2302,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         <View
                           style={[
                             styles.comboCheckboxSquare,
+                            styles.modifierSquareCheckbox,
                             isSelected && styles.comboCheckboxSquareSelected,
                           ]}
                         >
@@ -2310,20 +2311,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           )}
                         </View>
 
-                        <View style={styles.comboOptInfo}>
-                          <Text
-                            style={[
-                              styles.comboOptName,
-                              isSelected && styles.comboOptNameSelected,
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {item.ModifierName}
-                          </Text>
-                          <Text style={styles.comboOptPrice}>
-                            {priceNum > 0 ? `+$${priceNum.toFixed(2)}` : "$0.00"}
-                          </Text>
-                        </View>
+                        <Text
+                          style={[
+                            styles.modifierSquareName,
+                            isSelected && styles.modifierSquareNameSelected,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {item.ModifierName}
+                        </Text>
+                        <Text style={[styles.modifierSquarePrice, isSelected && styles.modifierSquarePriceSelected]}>
+                          {priceNum > 0 ? `+$${priceNum.toFixed(2)}` : "$0.00"}
+                        </Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -3459,6 +3458,67 @@ const styles = StyleSheet.create({
   },
   comboOptionsGrid: {
     gap: 10,
+  },
+  modifierSquareGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  modifierSquareCard: {
+    width: "31%",
+    minWidth: 105,
+    minHeight: 110,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.5,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "space-between",
+    position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  modifierSquareCardSelected: {
+    borderColor: "#f97316",
+    backgroundColor: "#fffaf5",
+    shadowColor: "#f97316",
+    shadowOpacity: 0.12,
+  },
+  modifierSquareCheckbox: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+  },
+  modifierSquareName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1e293b",
+    textAlign: "center",
+    marginTop: 20,
+    marginBottom: 6,
+  },
+  modifierSquareNameSelected: {
+    color: "#0f172a",
+    fontWeight: "800",
+  },
+  modifierSquarePrice: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  modifierSquarePriceSelected: {
+    color: "#f97316",
+    backgroundColor: "#ffedd5",
+    fontWeight: "800",
   },
   comboOptionRow: {
     flexDirection: "row",
