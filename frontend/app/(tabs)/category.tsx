@@ -1378,6 +1378,10 @@ export default function Category() {
   const { showToast } = useToast();
   const isWindows = Platform.OS === "windows" || (Platform.OS === "web" && typeof navigator !== "undefined" && /win/i.test(navigator.platform || navigator.userAgent));
   const [allTables, setAllTables] = useState<TableItem[]>([]);
+  const allTablesRef = useRef<TableItem[]>([]);
+  useEffect(() => {
+    allTablesRef.current = allTables;
+  }, [allTables]);
   const [loading, setLoading] = useState(true);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -2049,33 +2053,43 @@ export default function Category() {
       const cleanTableId = String(data.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
       const cleanTableNo = data.tableNo ? String(data.tableNo).trim().toLowerCase() : "";
 
+      const currentTables = allTablesRef.current || [];
+      const targetTable = currentTables.find((tbl) => {
+        const matchId = tbl.id && String(tbl.id).replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanTableId;
+        const matchNo = cleanTableNo && String(tbl.label).trim().toLowerCase() === cleanTableNo;
+        return matchId || matchNo;
+      });
+
+      if (targetTable) {
+        const rawSec = data.section || targetTable.DiningSection;
+        const secStr = getSectionFromDiningSection(rawSec);
+        const numStatus = data.status !== undefined ? Number(data.status) : targetTable.Status;
+        const mappedStatus = (numStatus === 5 ? "LOCKED" : (numStatus === 1 || numStatus === 4) ? "SENT" : numStatus === 2 ? "BILL_REQUESTED" : numStatus === 3 ? "HOLD" : "EMPTY");
+        useTableStatusStore.getState().updateTableStatus(
+          targetTable.id,
+          secStr,
+          targetTable.label,
+          (data.currentOrderId !== undefined ? data.currentOrderId : targetTable.currentOrderId) || "SYNC",
+          mappedStatus as any,
+          data.startTime || (numStatus === 0 ? 0 : undefined),
+          data.lockedByName,
+          data.totalAmount !== undefined ? Number(data.totalAmount) : targetTable.totalAmount,
+          false,
+          false,
+          data.modifiedOn || data.ModifiedOn,
+          data.entryStatus !== undefined ? (data.entryStatus || undefined) : (numStatus === 0 ? undefined : targetTable.entryStatus),
+          data.customerName !== undefined ? (data.customerName || undefined) : (numStatus === 0 ? undefined : targetTable.customerName),
+          data.pax !== undefined ? Number(data.pax) : (numStatus === 0 ? undefined : targetTable.pax),
+          data.paymentStatus !== undefined && data.paymentStatus !== null ? Number(data.paymentStatus) : (numStatus === 0 ? 0 : targetTable.paymentStatus)
+        );
+      }
+
       setAllTables((prev) =>
         prev.map((tbl) => {
           const matchId = tbl.id && String(tbl.id).replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanTableId;
           const matchNo = cleanTableNo && String(tbl.label).trim().toLowerCase() === cleanTableNo;
           if (matchId || matchNo) {
-            const rawSec = data.section || tbl.DiningSection;
-            const secStr = getSectionFromDiningSection(rawSec);
             const numStatus = data.status !== undefined ? Number(data.status) : tbl.Status;
-            const mappedStatus = (numStatus === 5 ? "LOCKED" : (numStatus === 1 || numStatus === 4) ? "SENT" : numStatus === 2 ? "BILL_REQUESTED" : numStatus === 3 ? "HOLD" : "EMPTY");
-            useTableStatusStore.getState().updateTableStatus(
-              tbl.id,
-              secStr,
-              tbl.label,
-              (data.currentOrderId !== undefined ? data.currentOrderId : tbl.currentOrderId) || "SYNC",
-              mappedStatus as any,
-              data.startTime || (numStatus === 0 ? 0 : undefined),
-              data.lockedByName,
-              data.totalAmount !== undefined ? Number(data.totalAmount) : tbl.totalAmount,
-              false,
-              false,
-              data.modifiedOn || data.ModifiedOn,
-              data.entryStatus !== undefined ? (data.entryStatus || undefined) : (numStatus === 0 ? undefined : tbl.entryStatus),
-              data.customerName !== undefined ? (data.customerName || undefined) : (numStatus === 0 ? undefined : tbl.customerName),
-              data.pax !== undefined ? Number(data.pax) : (numStatus === 0 ? undefined : tbl.pax),
-              data.paymentStatus !== undefined && data.paymentStatus !== null ? Number(data.paymentStatus) : (numStatus === 0 ? 0 : tbl.paymentStatus)
-            );
-
             return {
               ...tbl,
               Status: numStatus,
@@ -3166,7 +3180,7 @@ export default function Category() {
             colors={["rgba(255, 122, 0, 0.12)", "rgba(255, 169, 89, 0.04)", "transparent"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 0.6, y: 0.6 }}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
 
