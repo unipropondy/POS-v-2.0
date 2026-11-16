@@ -132,15 +132,9 @@ const isYeahPayCard = (modeName: string): boolean =>
 const isYeahPayTerminal = (modeName: string): boolean =>
   isYeahPayPayNow(modeName) || isYeahPayCard(modeName);
 
-/** true for NETS terminal modes (NETS / NETS CARD / NETS QR) */
-const isNetsTerminal = (modeName: string): boolean => {
-  const n = normalizeMode(modeName);
-  return n === "NETS" || n === "NETS CARD" || n === "NETS QR";
-};
-
-/** Modes that trigger a terminal call (YeahPay or NETS ECR II) */
+/** Modes that trigger a terminal call (YeahPay) */
 const needsTerminalCall = (modeName: string): boolean =>
-  isYeahPayTerminal(modeName) || isNetsTerminal(modeName);
+  isYeahPayTerminal(modeName);
 
 /** UPI-style modes that open the UPI QR modal */
 const isUpiMode = (modeName: string): boolean => {
@@ -582,109 +576,7 @@ const handleGenerateQR = async (row: SplitPaymentRow) => {
     return;
   }
 
-  // 💳 NETS ECR II Terminal (NETS, NETS CARD, NETS QR)
-  if (isNetsTerminal(row.payMode)) {
-    try {
-      setIsGeneratingQR(true);
-      setRows(prevRows =>
-        prevRows.map(r =>
-          r.id === row.id
-            ? { ...r, terminalStatus: "processing", terminalMsg: "Please follow prompt on NETS terminal..." }
-            : r
-        )
-      );
 
-      const context = useOrderContextStore.getState().currentOrder;
-      const tableId = context?.tableId?.toString();
-      const isQr = normalizeMode(row.payMode) === 'NETS QR';
-
-      if (tableId) {
-        ongoingSplitSessions[tableId] = {
-          status: "processing",
-          splitRowId: row.id,
-          amount: amt,
-          payMode: row.payMode,
-        };
-        useTerminalPaymentStore.getState().setSession(tableId, {
-          tableId,
-          status: "processing",
-          message: "Processing on NETS terminal...",
-          method: row.payMode,
-          total: amt,
-          splitRowId: row.id,
-          isSplit: true,
-        });
-      }
-
-      const response = await fetch(`${API_URL}/api/nets/purchase`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(useAuthStore.getState().token ? { 'Authorization': `Bearer ${useAuthStore.getState().token}` } : {}),
-        },
-        body: JSON.stringify({
-          amount: amt,
-          isQrOnTerminal: isQr,
-          ecrRef: `SPLIT_${row.id}_${Date.now()}`,
-          tableId: tableId || ''
-        })
-      });
-
-      const result = await response.json();
-      console.log('✅ [SplitPayment] NETS response:', result);
-
-      if (result.success || result.isApproved) {
-        if (tableId && ongoingSplitSessions[tableId]) {
-          ongoingSplitSessions[tableId].status = "success";
-          ongoingSplitSessions[tableId].onUpdate?.("success");
-          useTerminalPaymentStore.getState().clearSession(tableId);
-          delete ongoingSplitSessions[tableId];
-        }
-        setRows(prevRows =>
-          prevRows.map(r =>
-            r.id === row.id
-              ? {
-                  ...r,
-                  status: 'Paid',
-                  terminalStatus: 'success',
-                  terminalMsg: `✅ Paid via ${row.payMode}`
-                }
-              : r
-          )
-        );
-      } else {
-        if (tableId && ongoingSplitSessions[tableId]) {
-          useTerminalPaymentStore.getState().clearSession(tableId);
-          delete ongoingSplitSessions[tableId];
-        }
-        setRows(prevRows =>
-          prevRows.map(r =>
-            r.id === row.id
-              ? {
-                  ...r,
-                  terminalStatus: 'failed',
-                  terminalMsg: `❌ ${result.message || result.responseDesc || 'Payment declined'}`
-                }
-              : r
-          )
-        );
-        Alert.alert('❌ Payment Failed', result.message || 'NETS payment declined');
-      }
-    } catch (e: any) {
-      console.error('❌ [SplitPayment] NETS error:', e);
-      setRows(prevRows =>
-        prevRows.map(r =>
-          r.id === row.id
-            ? { ...r, terminalStatus: 'failed', terminalMsg: `❌ ${e.message}` }
-            : r
-        )
-      );
-      Alert.alert('❌ Payment Failed', e.message);
-    } finally {
-      setIsGeneratingQR(false);
-    }
-    return;
-  }
 
   // "Yeahpay Paynow" or "Yeahpay Card" → YeahPay terminal (SN required)
   if (!isYeahPayTerminal(row.payMode)) {

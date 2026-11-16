@@ -226,27 +226,8 @@ if (!gatewayResponse.success) {
     const isNetsMode = _pmUpper === 'NETS' || _pmUpper === 'NETS CARD' || _pmUpper === 'NETS QR';
 
     if (isNetsMode) {
-      if (_terminalAlreadyDone) {
-        console.log(`✅ [NETS] Terminal already processed for ${payModeName} (ref: ${payment.referenceNo || payment.stan || ''}) — saving to DB.`);
-        gatewayReferenceNo = payment.referenceNo || payment.approvalCode || payment.stan || null;
-      } else {
-        console.log(`🔄 [NETS] Invoking NETS ECR II terminal for ${payModeName}...`);
-        const { defaultNetsService } = require('./nets/netsService');
-        const isQr = _pmUpper === 'NETS QR';
-        const netsRes = await defaultNetsService.processPurchase({
-          amount,
-          isQrOnTerminal: isQr,
-          ecrRef: referenceId,
-          lockKey: `ref_${referenceId}`
-        });
-
-        if (!netsRes.success || !netsRes.isApproved) {
-          throw new Error(`NETS payment declined: ${netsRes.message || netsRes.responseDesc || 'Declined by terminal/host'}`);
-        }
-
-        gatewayReferenceNo = netsRes.approvalCode || netsRes.stan || netsRes.rrn || null;
-        gatewayResponse = netsRes;
-      }
+      console.log(`ℹ️ [NETS] Normal payment flow for ${payModeName} — skipping terminal call, saving to DB.`);
+      gatewayReferenceNo = payment.referenceNo || payment.approvalCode || payment.stan || null;
     }
 
     // ============================================================
