@@ -5015,11 +5015,11 @@ export default function Category() {
                     </Text>
                     <View style={{ gap: 8 }}>
                       {[
-                        { color: "#81C995", label: "Dining" },
-                        { color: "#93C5FD", label: "Hold" },
-                        { color: "#FCD34D", label: "Checkout" },
-                        { color: "#FCA5A5", label: "Reserved" },
-                        { color: "#C084FC", label: "Overtime" },
+                        { color: "#16a34a", label: "Dining" },
+                        { color: "#2563eb", label: "Hold" },
+                        { color: "#d97706", label: "Checkout" },
+                        { color: "#dc2626", label: "Reserved" },
+                        { color: "#7c3aed", label: "Overtime" },
                       ].map((item) => (
                         <View key={item.label} style={styles.legendItem}>
                           <View
@@ -5143,11 +5143,11 @@ export default function Category() {
           {isTablet && (
             <View style={styles.legend}>
               {[
-                { color: "#81C995", label: "Dining" },
-                { color: "#93C5FD", label: "Hold" },
-                { color: "#FCD34D", label: "Checkout" },
-                { color: "#FCA5A5", label: "Reserved" },
-                { color: "#C084FC", label: "Overtime" },
+                { color: "#16a34a", label: "Dining" },
+                { color: "#2563eb", label: "Hold" },
+                { color: "#d97706", label: "Checkout" },
+                { color: "#dc2626", label: "Reserved" },
+                { color: "#7c3aed", label: "Overtime" },
               ].map((item) => (
                 <View key={item.label} style={styles.legendItem}>
                   <View
@@ -6467,9 +6467,9 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: {
-    color: Theme.textMuted,
-    fontSize: 10,
-    fontFamily: Fonts.medium,
+    color: "#374151",
+    fontSize: 11,
+    fontFamily: Fonts.semiBold,
   },
 
   /* â”€â”€ Table Card â”€â”€ */
