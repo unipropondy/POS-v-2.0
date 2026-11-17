@@ -1649,59 +1649,174 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </TouchableOpacity>
               </View>
             ) : (
-              /* ── Step 2: Manual Text Input for Tent Number (No dropdown/table list) ── */
+              /* ── Step 2: Tent Number Numberpad Input (Grid layout) ── */
               <View style={styles.tableDirectInputBody}>
-                <Text style={styles.tentInputLabel}>Tent / Stand Number</Text>
-                <View style={[styles.tableDirectInputBox, !!tableInputError && styles.tableDirectInputBoxError]}>
-                  <Ionicons name="bookmark-outline" size={24} color="#ea580c" style={styles.tableDirectSearchIcon} />
-                  <TextInput
-                    style={styles.tableDirectTextInput}
-                    placeholder="e.g. 15 or T-12"
-                    placeholderTextColor="#94a3b8"
-                    value={inputTableNo}
-                    onChangeText={(text) => {
-                      setInputTableNo(text);
-                      if (tableInputError) setTableInputError(null);
-                    }}
-                    onSubmitEditing={handleSubmitTentNumber}
-                    returnKeyType="done"
-                    autoFocus={true}
-                    selectTextOnFocus={false}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                  />
-                  {inputTableNo.length > 0 && (
+                <Text style={styles.tentKeypadTitle}>Grab a Table tent and enter the code.</Text>
+                
+                {/* Display Value Box */}
+                <View style={[styles.tentDisplayBox, !!tableInputError && styles.tableDirectInputBoxError]}>
+                  <Text style={[styles.tentDisplayText, !inputTableNo && styles.tentDisplayPlaceholder]}>
+                    {inputTableNo || "Enter tent #"}
+                  </Text>
+                </View>
+
+                {/* 4x3 Grid Keypad */}
+                <View style={styles.tentKeypadGrid}>
+                  {/* Row 1 */}
+                  <View style={styles.tentKeypadRow}>
                     <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
                       onPress={() => {
-                        setInputTableNo("");
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "1");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>1</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "2");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>2</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "3");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>3</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.tentKeypadKey, styles.tentKeypadBackspaceKey]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setInputTableNo(prev => prev.slice(0, -1));
                         if (tableInputError) setTableInputError(null);
                       }}
-                      hitSlop={10}
-                      activeOpacity={0.7}
-                      style={styles.tableDirectClearBtn}
                     >
-                      <Ionicons name="close-circle" size={22} color="#94a3b8" />
+                      <Ionicons name="backspace-outline" size={28} color="#475569" />
                     </TouchableOpacity>
-                  )}
+                  </View>
+
+                  {/* Row 2 */}
+                  <View style={styles.tentKeypadRow}>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "4");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>4</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "5");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>5</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "6");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>6</Text>
+                    </TouchableOpacity>
+                    <View style={[styles.tentKeypadKey, styles.tentKeypadEmptyKey]} />
+                  </View>
+
+                  {/* Row 3 */}
+                  <View style={styles.tentKeypadRow}>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "7");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>7</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "8");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>8</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "9");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>9</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.tentKeypadKey}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (inputTableNo.length < 8) {
+                          setInputTableNo(prev => prev + "0");
+                          if (tableInputError) setTableInputError(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.tentKeypadKeyText}>0</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 {tableInputError ? (
                   <View style={styles.tableErrorBadge}>
                     <Text style={styles.tableErrorBadgeText}>{tableInputError}</Text>
                   </View>
-                ) : (
-                  <View style={styles.tableInstructionBadge}>
-                    <Text style={styles.tableInstructionBadgeText}>
-                      Type your tent number and tap "Continue to Payment"
-                    </Text>
-                  </View>
-                )}
+                ) : null}
 
                 <TouchableOpacity
                   style={[styles.tentContinueBtn, isUpdatingTent && { opacity: 0.7 }]}
                   onPress={handleSubmitTentNumber}
                   activeOpacity={0.88}
-                  disabled={isUpdatingTent}
+                  disabled={isUpdatingTent || !inputTableNo.trim()}
                 >
                   <Text style={styles.tentContinueBtnText}>
                     {isUpdatingTent ? "Checking Availability..." : "Continue to Payment"}
@@ -4365,9 +4480,80 @@ const styles = StyleSheet.create({
   /* ── DIRECT TENT NUMBER INPUT ── */
   tableDirectInputBody: {
     paddingHorizontal: 28,
-    paddingTop: 28,
-    paddingBottom: 36,
+    paddingTop: 24,
+    paddingBottom: 28,
     alignItems: "center",
+  },
+  tentKeypadTitle: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#0f172a",
+    textAlign: "center",
+    marginBottom: 24,
+    letterSpacing: -0.5,
+  },
+  tentDisplayBox: {
+    width: "100%",
+    maxWidth: 380,
+    height: 64,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.5,
+    borderColor: "#cbd5e1",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  tentDisplayText: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#0f172a",
+    letterSpacing: 2,
+  },
+  tentDisplayPlaceholder: {
+    color: "#94a3b8",
+    fontSize: 20,
+    fontWeight: "500",
+    letterSpacing: 0,
+  },
+  tentKeypadGrid: {
+    width: "100%",
+    maxWidth: 380,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+  },
+  tentKeypadRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  tentKeypadKey: {
+    flex: 1,
+    height: 72,
+    borderRightWidth: 1,
+    borderRightColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  tentKeypadKeyText: {
+    fontSize: 24,
+    fontWeight: "600",
+    color: "#1e293b",
+  },
+  tentKeypadBackspaceKey: {
+    backgroundColor: "#f8fafc",
+  },
+  tentKeypadEmptyKey: {
+    backgroundColor: "#f8fafc",
   },
   tentInputLabel: {
     alignSelf: "flex-start",
