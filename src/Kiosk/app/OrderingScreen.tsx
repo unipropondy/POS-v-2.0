@@ -1221,64 +1221,112 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     <View style={styles.container}>
       {/* ── Main Layout: Sidebar & Content ── */}
       <View style={styles.mainLayout}>
-        {/* Categories Sidebar */}
+        {/* Categories Sidebar with Accordion Dropdown for Dish Groups */}
         <View style={styles.sidebar}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sidebarContent}>
             {categories.map((cat) => {
               const isActive = activeCategory === cat.CategoryId;
               return (
-                <TouchableOpacity
-                  key={cat.CategoryId}
-                  style={[
-                    styles.catCard,
-                    isActive && styles.catCardActive,
-                  ]}
-                  onPress={() => {
-                    setActiveCategory(cat.CategoryId);
-                    if (isCategoryPrevious(cat)) {
-                      loadPreviousCategory();
-                    } else {
-                      loadGroups(cat.CategoryId);
-                    }
-                  }}
-                  activeOpacity={0.85}
-                >
-                  {/* Left orange accent bar */}
-                  <View
+                <View key={cat.CategoryId} style={styles.catGroupAccordionWrap}>
+                  <TouchableOpacity
                     style={[
-                      styles.catCardBar,
-                      isActive && styles.catCardBarActive,
+                      styles.catCard,
+                      isActive && styles.catCardActive,
                     ]}
-                  />
-
-                  {/* Category Food Icon */}
-                  <View style={styles.catIconWrap}>
-                    <Text style={styles.catIconEmoji}>🍽️</Text>
-                  </View>
-
-                  {/* Info: Title & 3 dashed dots */}
-                  <View style={styles.catInfoWrap}>
-                    <Text
+                    onPress={() => {
+                      if (activeCategory === cat.CategoryId) {
+                        // If already active, toggle collapse/re-select
+                      } else {
+                        setActiveCategory(cat.CategoryId);
+                        if (isCategoryPrevious(cat)) {
+                          loadPreviousCategory();
+                        } else {
+                          loadGroups(cat.CategoryId);
+                        }
+                      }
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    {/* Left orange accent bar */}
+                    <View
                       style={[
-                        styles.catCardTitle,
-                        isActive && styles.catCardTitleActive,
+                        styles.catCardBar,
+                        isActive && styles.catCardBarActive,
                       ]}
-                      numberOfLines={2}
-                    >
-                      {cat.KitchenTypeName}
-                    </Text>
-                    <View style={styles.catDotRow}>
-                      <View style={[styles.catDot, { backgroundColor: "#f97316" }]} />
-                      <View style={styles.catDot} />
-                      <View style={styles.catDot} />
-                    </View>
-                  </View>
+                    />
 
-                  {/* Right chevron arrow circle */}
-                  <View style={styles.catArrowWrap}>
-                    <Text style={styles.catArrowText}>›</Text>
-                  </View>
-                </TouchableOpacity>
+                    {/* Category Food Icon */}
+                    <View style={styles.catIconWrap}>
+                      <Text style={styles.catIconEmoji}>🍽️</Text>
+                    </View>
+
+                    {/* Info: Title & 3 dashed dots */}
+                    <View style={styles.catInfoWrap}>
+                      <Text
+                        style={[
+                          styles.catCardTitle,
+                          isActive && styles.catCardTitleActive,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {cat.KitchenTypeName}
+                      </Text>
+                      <View style={styles.catDotRow}>
+                        <View style={[styles.catDot, { backgroundColor: "#f97316" }]} />
+                        <View style={styles.catDot} />
+                        <View style={styles.catDot} />
+                      </View>
+                    </View>
+
+                    {/* Chevron Arrow: Rotates down if active */}
+                    <View style={styles.catArrowWrap}>
+                      <Text style={[styles.catArrowText, isActive && styles.catArrowTextActive]}>
+                        {isActive ? "▼" : "›"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Dropdown for Dish Groups under this Category */}
+                  {isActive && groups.length > 0 && (
+                    <View style={styles.sidebarSubgroupList}>
+                      {groups.map((grp) => {
+                        const isGrpActive = activeGroup === grp.DishGroupId;
+                        return (
+                          <TouchableOpacity
+                            key={grp.DishGroupId}
+                            style={[
+                              styles.sidebarSubgroupItem,
+                              isGrpActive && styles.sidebarSubgroupItemActive,
+                            ]}
+                            onPress={() => {
+                              setActiveGroup(grp.DishGroupId);
+                              if (isCategoryPrevious(cat)) {
+                                loadPreviousCategory();
+                              } else {
+                                loadDishes(grp.DishGroupId);
+                              }
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <View style={[
+                              styles.sidebarSubgroupBullet,
+                              isGrpActive && styles.sidebarSubgroupBulletActive
+                            ]} />
+                            <Text
+                              style={[
+                                styles.sidebarSubgroupText,
+                                isGrpActive && styles.sidebarSubgroupTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {grp.DishGroupName}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
               );
             })}
           </ScrollView>
