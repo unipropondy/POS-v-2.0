@@ -1286,11 +1286,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     </View>
                   </TouchableOpacity>
 
-                  {/* Dropdown for Dish Groups under this Category */}
+                  {/* Dropdown for Dish Groups under this Category - Unified Tray Design */}
                   {isActive && groups.length > 0 && (
                     <View style={styles.sidebarSubgroupList}>
                       {groups.map((grp) => {
                         const isGrpActive = activeGroup === grp.DishGroupId;
+                        const icon = getGroupIcon(grp.DishGroupName);
                         return (
                           <TouchableOpacity
                             key={grp.DishGroupId}
@@ -1306,12 +1307,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                 loadDishes(grp.DishGroupId);
                               }
                             }}
-                            activeOpacity={0.8}
+                            activeOpacity={0.82}
                           >
                             <View style={[
-                              styles.sidebarSubgroupBullet,
-                              isGrpActive && styles.sidebarSubgroupBulletActive
-                            ]} />
+                              styles.sidebarSubgroupIconCircle,
+                              isGrpActive && styles.sidebarSubgroupIconCircleActive
+                            ]}>
+                              <Text style={styles.sidebarSubgroupIconText}>{icon}</Text>
+                            </View>
+
                             <Text
                               style={[
                                 styles.sidebarSubgroupText,
@@ -1321,6 +1325,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             >
                               {grp.DishGroupName}
                             </Text>
+
+                            <View style={[
+                              styles.sidebarSubgroupIndicator,
+                              isGrpActive && styles.sidebarSubgroupIndicatorActive
+                            ]}>
+                              <Ionicons
+                                name={isGrpActive ? "chevron-forward" : "chevron-forward-outline"}
+                                size={15}
+                                color={isGrpActive ? "#ea580c" : "#cbd5e1"}
+                              />
+                            </View>
                           </TouchableOpacity>
                         );
                       })}
@@ -2783,59 +2798,78 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   sidebarSubgroupList: {
-    paddingLeft: 6,
-    paddingRight: 2,
+    backgroundColor: "#f8fafc",
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     marginTop: 8,
     marginBottom: 6,
-    gap: 8,
+    gap: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   sidebarSubgroupItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-    backgroundColor: "#ffffff",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: "transparent",
     borderWidth: 1.5,
-    borderColor: "#e2e8f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    borderColor: "transparent",
   },
   sidebarSubgroupItemActive: {
-    backgroundColor: "#fff7ed",
+    backgroundColor: "#ffffff",
     borderColor: "#f97316",
-    borderWidth: 2,
-    shadowColor: "#f97316",
+    shadowColor: "#ea580c",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.12,
     shadowRadius: 6,
     elevation: 3,
   },
-  sidebarSubgroupBullet: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#94a3b8",
-    marginRight: 12,
+  sidebarSubgroupIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
   },
-  sidebarSubgroupBulletActive: {
-    backgroundColor: "#ea580c",
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
+  sidebarSubgroupIconCircleActive: {
+    backgroundColor: "#fff7ed",
+    borderColor: "#fdba74",
+  },
+  sidebarSubgroupIconText: {
+    fontSize: 18,
   },
   sidebarSubgroupText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#334155",
+    color: "#475569",
     flex: 1,
+    letterSpacing: -0.2,
   },
   sidebarSubgroupTextActive: {
-    color: "#ea580c",
+    color: "#0f172a",
     fontWeight: "900",
+  },
+  sidebarSubgroupIndicator: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sidebarSubgroupIndicatorActive: {
+    backgroundColor: "#ffedd5",
   },
 
   /* Hero Banner matching image */
