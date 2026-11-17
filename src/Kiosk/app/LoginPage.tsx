@@ -200,10 +200,22 @@ export default function LoginPage({ onLoginSuccess, onBackToPOS }: Props) {
     setLoading(true);
 
     try {
+      // Retrieve stored companyCode if available from prior POS session
+      let activeCompanyCode = "";
+      try {
+        const storedCreds = await AsyncStorage.getItem("remembered_creds");
+        if (storedCreds) {
+          const parsed = JSON.parse(storedCreds);
+          activeCompanyCode = parsed.c || "";
+        }
+      } catch (_) {}
+
       const response = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          companyCode: activeCompanyCode || "UCS111",
+          userName: siUsername.trim(),
           username: siUsername.trim(),
           password: siPassword,
           promoCode: siPromoCode.trim(),

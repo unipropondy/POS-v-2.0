@@ -413,18 +413,17 @@ router.post("/login", async (req, res) => {
     const {
       companyCode: rawCompanyCode,
       userName: rawUserName,
+      username: rawAltUsername,
       password: rawPassword,
     } = req.body;
-    const companyCode = (rawCompanyCode || "").trim();
-    const userName = (rawUserName || "").trim();
+    let companyCode = (rawCompanyCode || "").trim();
+    const userName = (rawUserName || rawAltUsername || "").trim();
     const password = (rawPassword || "").trim();
 
-    // 1. Validate empty company code
+    // 1. If company code is omitted (e.g. from Kiosk customer login), fallback to default database or lookup
     if (!companyCode) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter Company Code",
-      });
+      // Default to database configured in environment or UCS111 / UCSPONDY
+      companyCode = process.env.DEFAULT_COMPANY_CODE || process.env.DB_NAME || "UCS111";
     }
 
     // 2. Validate empty credentials
@@ -441,17 +440,14 @@ router.post("/login", async (req, res) => {
       branchMapping = await lookupBranchDatabase(companyCode);
     } catch (e) {
       console.error("[AUTH] Error looking up company code:", e.message);
-      return res.status(503).json({
-        success: false,
-        message: "Database connection busy or unavailable.",
-      });
     }
 
     if (!branchMapping || !branchMapping.databaseName) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Company Code",
-      });
+      // Fallback to process.env.DB_NAME if direct lookup fails
+      branchMapping = {
+        branchCode: companyCode,
+        databaseName: process.env.DB_NAME || "UCSPONDY",
+      };
     }
 
     const targetDb = branchMapping.databaseName.trim();
