@@ -161,6 +161,29 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Kiosk Thank You Overlay
   const [kioskThankYouOrderId, setKioskThankYouOrderId] = useState<string | null>(null);
 
+  const getGroupIcon = (name: string) => {
+    const n = (name || "").toLowerCase();
+    if (n.includes("coffee")) return "☕";
+    if (n.includes("tea")) return "🍵";
+    if (n.includes("cool") || n.includes("cold") || n.includes("soda") || n.includes("drink")) return "🥤";
+    if (n.includes("juice")) return "🧃";
+    if (n.includes("milkshake") || n.includes("shake")) return "🥛";
+    if (n.includes("water")) return "💧";
+    if (n.includes("hot")) return "☕";
+    if (n.includes("biryani") || n.includes("rice")) return "🍚";
+    if (n.includes("dosa")) return "🥞";
+    if (n.includes("idly")) return "🥟";
+    if (n.includes("parotta") || n.includes("roti") || n.includes("chapathi") || n.includes("poori")) return "🫓";
+    if (n.includes("chicken")) return "🍗";
+    if (n.includes("mutton") || n.includes("meat")) return "🥩";
+    if (n.includes("egg")) return "🍳";
+    if (n.includes("pasta") || n.includes("noodle") || n.includes("maggie")) return "🍝";
+    if (n.includes("snack") || n.includes("kebab") || n.includes("shawarma")) return "🌯";
+    if (n.includes("soup")) return "🍲";
+    if (n.includes("meal") || n.includes("package")) return "🍱";
+    return "🍽️";
+  };
+
   const normalizeGuid = (val: any) =>
     String(val || "")
       .replace(/[{}]/g, "")
