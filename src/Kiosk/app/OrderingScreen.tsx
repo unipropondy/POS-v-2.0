@@ -1960,7 +1960,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       </View>
 
       {/* Floating Bottom Cart Bar */}
-      {cart.length > 0 && !showCartPage && (
+      {cart.length > 0 && !showCartPage && !showModifier && !showComboCustomizer && (
         <View style={styles.floatingCartBar}>
           <TouchableOpacity style={styles.cartClearBtn} onPress={handleClearCart}>
             <Text style={styles.cartClearText}>Clear</Text>
