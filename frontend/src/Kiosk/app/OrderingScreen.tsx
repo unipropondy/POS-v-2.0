@@ -1859,45 +1859,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             </TouchableOpacity>
           </View>
 
-          {/* Group Tabs Row */}
-          {groups.length > 0 && (
-            <View style={styles.groupTabsContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.groupsRow}
-                style={styles.groupTabsScroll}
-              >
-                {groups.map((group) => (
-                  <TouchableOpacity
-                    key={group.DishGroupId}
-                    style={[
-                      styles.groupPill,
-                      activeGroup === group.DishGroupId && styles.groupPillActive,
-                    ]}
-                    onPress={() => {
-                      setActiveGroup(group.DishGroupId);
-                      if (isCategoryPrevious(activeCategory)) {
-                        loadPreviousCategory();
-                      } else {
-                        loadDishes(group.DishGroupId);
-                      }
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.groupPillText,
-                        activeGroup === group.DishGroupId && styles.groupPillTextActive,
-                      ]}
-                    >
-                      {group.DishGroupName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
           {/* Dishes Grid */}
           <FlatList
             data={numColumns > 1 ? formatData(filteredDishes, numColumns) : filteredDishes}
