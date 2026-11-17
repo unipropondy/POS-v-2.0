@@ -1257,7 +1257,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                     {/* Category Food Icon */}
                     <View style={styles.catIconWrap}>
-                      <Text style={styles.catIconEmoji}>🍽️</Text>
+                      <Ionicons name="restaurant-outline" size={28} color="#f97316" />
                     </View>
 
                     {/* Info: Title & 3 dashed dots */}
@@ -1375,7 +1375,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 />
               ) : (
                 <View style={styles.comboHeroPlaceholder}>
-                  <Text style={{ fontSize: 48 }}>🚗</Text>
+                  <Ionicons name="fast-food-outline" size={64} color="#ea580c" />
                 </View>
               )}
             </View>
@@ -1855,7 +1855,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               {/* Hero Banner matching reference design */}
           <View style={styles.heroBanner}>
             <View style={styles.heroIconCircle}>
-              <Text style={styles.heroCarEmoji}>🍽️</Text>
+              <Ionicons name="restaurant" size={32} color="#ea580c" />
             </View>
             <View style={styles.heroTextWrap}>
               <Text style={styles.heroCategoryTitle}>
@@ -1920,7 +1920,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         resizeMode="cover"
                       />
                     ) : (
-                      <Text style={styles.dishEmoji}>🍲</Text>
+                      <Ionicons name="fast-food-outline" size={68} color="#94a3b8" />
                     )}
                     {item.IsSoldOut && (
                       <View style={styles.soldOutBadge}>
