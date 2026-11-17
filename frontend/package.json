@@ -12,7 +12,8 @@
     "build:web": "cross-env NODE_OPTIONS=--max-old-space-size=4096 EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK=1 expo export --platform web",
     "build:customer-display-web": "cross-env NODE_OPTIONS=--max-old-space-size=4096 EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK=1 expo export --platform web --output-dir ../print-bridge/customer-display-web",
     "postinstall": "node ./scripts/fix-jcenter.js",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "eas-build-pre-install": "npm config set legacy-peer-deps true"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
