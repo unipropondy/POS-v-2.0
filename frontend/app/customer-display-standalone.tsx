@@ -1,5 +1,5 @@
 import { View, StyleSheet, Platform } from 'react-native';
-import { CustomerDisplayContent } from '@unipro/customer-display';
+import { CustomerDisplayContent } from '../src/customer-display';
 import { Redirect } from 'expo-router';
 
 import { useState, useEffect } from 'react';

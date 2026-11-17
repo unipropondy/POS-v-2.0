@@ -8,7 +8,7 @@
         "./*"
       ],
       "@unipro/customer-display": [
-        "../packages/customer-display/src/index.ts"
+        "./src/customer-display/index.ts"
       ]
     }
   },
