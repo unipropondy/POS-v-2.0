@@ -1189,19 +1189,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         "kioskDefaultDishId",
       ]);
 
-      // 🖨️ Fire-and-forget: queue kiosk receipt print (non-blocking)
-      fetch(`${API}/order/kiosk/print-receipt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderId: completedId,
-          tableNo: tableNo || "KIOSK",
-          payMode: method,
-        }),
-      }).catch((printErr) =>
-        console.warn("[Kiosk] Receipt print request failed (non-blocking):", printErr)
-      );
-
       if (onOrderCompleted) {
         onOrderCompleted(completedId, {
           items: cartItemsSnapshot,

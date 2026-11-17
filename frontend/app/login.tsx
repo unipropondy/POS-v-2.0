@@ -126,7 +126,12 @@ export default function LoginScreen() {
           logout();
         } else {
           const uName = (user.userName || "").trim().toUpperCase();
-          if (user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
+          const uRole = String(user.role || "").trim().toUpperCase();
+          const uRoleName = String(user.roleName || "").trim().toUpperCase();
+
+          if (uRole === "KIOSK" || uRoleName === "KIOSK") {
+            router.replace("/kiosk" as any);
+          } else if (user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
             router.replace("/sales-report");
           } else if (uName === "KDS") {
             router.replace("/kds" as any);
@@ -256,8 +261,12 @@ export default function LoginScreen() {
           setPermissions({});
         }
 
-        const role = data.user.role;
-        if (data.user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
+        const role = String(data.user.role || "").trim().toUpperCase();
+        const roleName = String(data.user.roleName || "").trim().toUpperCase();
+
+        if (role === "KIOSK" || roleName === "KIOSK") {
+          router.replace("/kiosk" as any);
+        } else if (data.user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
           router.replace("/sales-report");
         } else if (role === "KDS") {
           router.replace("/(tabs)/kds" as any);
@@ -613,7 +622,7 @@ const styles = StyleSheet.create({
 
   /* Clipped Background Layer to Prevent Horizontal Scrollbars */
   backgroundLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: "hidden",
   },
   abstractBlobTopCenter: {

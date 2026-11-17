@@ -520,14 +520,20 @@ export default function RootLayout() {
       // 1. Not logged in -> Go to Login
       router.replace("/login");
     } else if (user) {
-      if (user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
+      const role = String(user.role || "").trim().toUpperCase();
+      const roleName = String(user.roleName || "").trim().toUpperCase();
+
+      if (role === "KIOSK" || roleName === "KIOSK") {
+        if (rootSegment !== "kiosk") {
+          router.replace("/kiosk" as any);
+        }
+      } else if (user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
         const allowedOwnerSegments = ["sales-report", "receivables"];
         if (!allowedOwnerSegments.includes(rootSegment)) {
           router.replace("/sales-report");
         }
       } else if (!rootSegment || rootSegment === "login") {
         // 2. Already logged in -> Go to Role-Specific Dashboard
-        const role = user.role;
         const userName = (user.userName || "").trim().toUpperCase();
 
         if (userName === "KDS") {

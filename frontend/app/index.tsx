@@ -19,6 +19,12 @@ export default function Index() {
     }
 
     const userName = (user.userName || "").trim().toUpperCase();
+    const role = String(user.role || "").trim().toUpperCase();
+    const roleName = String(user.roleName || "").trim().toUpperCase();
+
+    if (role === "KIOSK" || roleName === "KIOSK") {
+      return <Redirect href="/kiosk" />;
+    }
     if (user.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F") {
       return <Redirect href="/sales-report" />;
     }

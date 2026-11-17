@@ -5,7 +5,7 @@ import { Platform } from "react-native";
 
 /* ================= TYPES ================= */
 
-export type UserRole = "ADMIN" | "CASHIER" | "MANAGER" | "SUPERVISOR" | "KDS" | "WAITER" | "OWNER";
+export type UserRole = "ADMIN" | "CASHIER" | "MANAGER" | "SUPERVISOR" | "KDS" | "WAITER" | "OWNER" | "KIOSK";
 
 export type AuthUser = {
   userId: string;
@@ -96,6 +96,7 @@ export type AuthState = {
   isCashier: () => boolean;
   isWaiter: () => boolean;
   isKDS: () => boolean;
+  isKiosk: () => boolean;
 };
 
 /* ================= STORE ================= */
@@ -242,6 +243,12 @@ export const useAuthStore = create<AuthState>()(
       isCashier:    () => get().user?.role === "CASHIER",
       isWaiter:     () => get().user?.role === "WAITER",
       isKDS:        () => get().user?.role === "KDS",
+      isKiosk:      () => {
+        const u = get().user;
+        const role = String(u?.role || "").toUpperCase();
+        const roleName = String(u?.roleName || "").toUpperCase();
+        return role === "KIOSK" || roleName === "KIOSK";
+      },
     }),
     {
       name: "auth-storage",
