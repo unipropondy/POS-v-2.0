@@ -161,29 +161,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Kiosk Thank You Overlay
   const [kioskThankYouOrderId, setKioskThankYouOrderId] = useState<string | null>(null);
 
-  const getGroupIcon = (name: string) => {
-    const n = (name || "").toLowerCase();
-    if (n.includes("coffee")) return "☕";
-    if (n.includes("tea")) return "🍵";
-    if (n.includes("cool") || n.includes("cold") || n.includes("soda") || n.includes("drink")) return "🥤";
-    if (n.includes("juice")) return "🧃";
-    if (n.includes("milkshake") || n.includes("shake")) return "🥛";
-    if (n.includes("water")) return "💧";
-    if (n.includes("hot")) return "☕";
-    if (n.includes("biryani") || n.includes("rice")) return "🍚";
-    if (n.includes("dosa")) return "🥞";
-    if (n.includes("idly")) return "🥟";
-    if (n.includes("parotta") || n.includes("roti") || n.includes("chapathi") || n.includes("poori")) return "🫓";
-    if (n.includes("chicken")) return "🍗";
-    if (n.includes("mutton") || n.includes("meat")) return "🥩";
-    if (n.includes("egg")) return "🍳";
-    if (n.includes("pasta") || n.includes("noodle") || n.includes("maggie")) return "🍝";
-    if (n.includes("snack") || n.includes("kebab") || n.includes("shawarma")) return "🌯";
-    if (n.includes("soup")) return "🍲";
-    if (n.includes("meal") || n.includes("package")) return "🍱";
-    return "🍽️";
-  };
-
   const normalizeGuid = (val: any) =>
     String(val || "")
       .replace(/[{}]/g, "")
@@ -1309,12 +1286,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     </View>
                   </TouchableOpacity>
 
-                  {/* Dropdown for Dish Groups under this Category - Unified Tray Design */}
+                  {/* Dropdown for Dish Groups under this Category - Clean & Professional */}
                   {isActive && groups.length > 0 && (
                     <View style={styles.sidebarSubgroupList}>
                       {groups.map((grp) => {
                         const isGrpActive = activeGroup === grp.DishGroupId;
-                        const icon = getGroupIcon(grp.DishGroupName);
                         return (
                           <TouchableOpacity
                             key={grp.DishGroupId}
@@ -1330,14 +1306,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                 loadDishes(grp.DishGroupId);
                               }
                             }}
-                            activeOpacity={0.82}
+                            activeOpacity={0.8}
                           >
+                            {/* Subtle clean vertical indicator pip */}
                             <View style={[
-                              styles.sidebarSubgroupIconCircle,
-                              isGrpActive && styles.sidebarSubgroupIconCircleActive
-                            ]}>
-                              <Text style={styles.sidebarSubgroupIconText}>{icon}</Text>
-                            </View>
+                              styles.sidebarSubgroupBar,
+                              isGrpActive && styles.sidebarSubgroupBarActive
+                            ]} />
 
                             <Text
                               style={[
@@ -1356,7 +1331,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               <Ionicons
                                 name={isGrpActive ? "chevron-forward" : "chevron-forward-outline"}
                                 size={15}
-                                color={isGrpActive ? "#ea580c" : "#cbd5e1"}
+                                color={isGrpActive ? "#ea580c" : "#94a3b8"}
                               />
                             </View>
                           </TouchableOpacity>
@@ -2821,78 +2796,76 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   sidebarSubgroupList: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#e2e8f0",
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    borderColor: "#eef2f6",
+    paddingVertical: 6,
+    paddingHorizontal: 6,
     marginTop: 8,
     marginBottom: 6,
-    gap: 6,
+    gap: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOpacity: 0.03,
+    shadowRadius: 5,
+    elevation: 1,
   },
   sidebarSubgroupItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: "transparent",
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  sidebarSubgroupItemActive: {
-    backgroundColor: "#ffffff",
-    borderColor: "#f97316",
-    shadowColor: "#ea580c",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  sidebarSubgroupIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#f1f5f9",
   },
-  sidebarSubgroupIconCircleActive: {
+  sidebarSubgroupItemActive: {
     backgroundColor: "#fff7ed",
-    borderColor: "#fdba74",
+    borderColor: "#f97316",
+    borderWidth: 1.5,
+    shadowColor: "#f97316",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 2,
   },
-  sidebarSubgroupIconText: {
-    fontSize: 18,
+  sidebarSubgroupBar: {
+    width: 3.5,
+    height: 18,
+    borderRadius: 2,
+    backgroundColor: "#cbd5e1",
+    marginRight: 12,
+  },
+  sidebarSubgroupBarActive: {
+    backgroundColor: "#f97316",
+    height: 22,
   },
   sidebarSubgroupText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#475569",
+    color: "#334155",
     flex: 1,
     letterSpacing: -0.2,
   },
   sidebarSubgroupTextActive: {
-    color: "#0f172a",
+    color: "#ea580c",
     fontWeight: "900",
   },
   sidebarSubgroupIndicator: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
   },
   sidebarSubgroupIndicatorActive: {
     backgroundColor: "#ffedd5",
+    borderColor: "#fed7aa",
   },
 
   /* Hero Banner matching image */
