@@ -347,16 +347,6 @@ export default function SettlementSuccessScreen({
             <Text style={styles.orderNumber}>{orderSuffix}</Text>
           </View>
 
-          {/* Table / Tent Number Display */}
-          {Boolean(tableNo && tableNo !== "N/A") && (
-            <View style={styles.tableRow}>
-              <Text style={styles.tableLabel}>
-                {tableNo.toUpperCase().startsWith("TW") || tableNo.toUpperCase().includes("TAKEAWAY") ? "TENT / ORDER: " : "TABLE: "}
-                <Text style={styles.tableAccent}>{tableNo}</Text>
-              </Text>
-            </View>
-          )}
-
           {/* Subtitle */}
           <Text style={styles.confirmationSubtitle}>
             Please collect your receipt

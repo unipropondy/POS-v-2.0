@@ -1023,10 +1023,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           bizOrderId: bizOrderId,
           action: action,
           payWay: payWay,
+          tableId: tableId || "COUNTER",
         }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        console.error("Non-JSON Response from YeahPay endpoint:", rawText);
+        throw new Error(rawText.includes("<!DOCTYPE") ? "Backend server error (HTML returned). Please ensure backend is running." : rawText);
+      }
       console.log("💳 YeahPay Pay API Response:", data);
 
       if (data.success || data.status === 104) {
@@ -1298,8 +1306,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             </TouchableOpacity>
           </View>
 
-          {/* Group Tabs Row (hidden if only 1 generic group) */}
-          {groups.length > 1 && (
+          {/* Group Tabs Row */}
+          {groups.length > 0 && (
             <View style={styles.groupTabsContainer}>
               <ScrollView
                 horizontal
@@ -1600,15 +1608,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             </View>
 
             {checkoutStep === "CHOICE" ? (
-              /* ── Step 1: Two Options (Self Checkout & Enter Tent Number) ── */
+              /* ── Step 1: Two Options (Self Checkout & Enter Tent Number) side by side ── */
               <View style={styles.checkoutChoiceContainer}>
                 <TouchableOpacity
                   style={styles.checkoutChoiceCard}
                   onPress={handleSelfCheckout}
                   activeOpacity={0.85}
                 >
-                  <View style={[styles.checkoutChoiceIconWrap, { backgroundColor: "#fff7ed" }]}>
-                    <Ionicons name="card-outline" size={32} color="#ea580c" />
+                  <View style={styles.checkoutChoiceCardTop}>
+                    <View style={[styles.checkoutChoiceIconWrap, { backgroundColor: "#fff7ed" }]}>
+                      <Ionicons name="card-outline" size={32} color="#ea580c" />
+                    </View>
+                    <Ionicons name="chevron-forward" size={24} color="#94a3b8" />
                   </View>
                   <View style={styles.checkoutChoiceTextWrap}>
                     <Text style={styles.checkoutChoiceTitle}>Self Checkout</Text>
@@ -1616,7 +1627,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       Continue straight to payment without entering a table or tent number.
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={24} color="#94a3b8" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1624,8 +1634,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   onPress={handleChooseEnterTentNumber}
                   activeOpacity={0.85}
                 >
-                  <View style={[styles.checkoutChoiceIconWrap, { backgroundColor: "#f0fdf4" }]}>
-                    <Ionicons name="restaurant-outline" size={32} color="#16a34a" />
+                  <View style={styles.checkoutChoiceCardTop}>
+                    <View style={[styles.checkoutChoiceIconWrap, { backgroundColor: "#f0fdf4" }]}>
+                      <Ionicons name="restaurant-outline" size={32} color="#16a34a" />
+                    </View>
+                    <Ionicons name="chevron-forward" size={24} color="#ea580c" />
                   </View>
                   <View style={styles.checkoutChoiceTextWrap}>
                     <Text style={styles.checkoutChoiceTitle}>Enter Tent Number</Text>
@@ -1633,7 +1646,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       Manually enter your table / tent stand number so staff can deliver your food.
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={24} color="#94a3b8" />
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1702,22 +1714,27 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.tableModalFooter}>
               {checkoutStep === "ENTER_TENT" ? (
                 <TouchableOpacity
-                  style={styles.tableCancelBtn}
+                  style={styles.tableBackToCartBtn}
                   onPress={() => {
+                    setShowTableModal(false);
                     setCheckoutStep("CHOICE");
                     setTableInputError(null);
+                    setShowCartPage(true);
                   }}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.tableCancelBtnText}>← Back</Text>
+                  <Text style={styles.tableBackToCartBtnText}>← Go to Cart</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={styles.tableCancelBtn}
-                  onPress={() => setShowTableModal(false)}
+                  style={styles.tableBackToCartBtn}
+                  onPress={() => {
+                    setShowTableModal(false);
+                    setShowCartPage(true);
+                  }}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.tableCancelBtnText}>Cancel</Text>
+                  <Text style={styles.tableBackToCartBtnText}>← Go to Cart</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -2204,175 +2221,268 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
-      {/* ── Modifiers Modal (Full-Screen Design matching Combo Page) ── */}
+      {/* ── Modifiers Modal (Full-Screen Design matching Apple Juice Card reference) ── */}
       <Modal
         visible={showModifier && !!selectedDish}
         animationType="slide"
         onRequestClose={() => setShowModifier(false)}
       >
-        <View style={styles.comboFullScreenContainer}>
-          {/* Close Header */}
-          <View style={styles.comboHeaderBar}>
+        <View style={styles.customizeFullScreenContainer}>
+          {/* Top Bar on Pure White Background: Centered Title with Chef Hat & Orange Curved Swoosh, Orange Close Button */}
+          <View style={styles.customizeTopWhiteBar}>
+            {/* Left placeholder spacer to keep title perfectly centered */}
+            <View style={{ width: 46 }} />
+
+            <View style={styles.customizeTopTitleWrap}>
+              <View style={styles.customizeChefHatWrap}>
+                <Ionicons name="restaurant-outline" size={22} color="#0f172a" />
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                <Text style={styles.customizeTopTitleBold}>Customize </Text>
+                <Text style={styles.customizeTopTitleOrange}>Your Item</Text>
+              </View>
+              <View style={styles.customizeTopOrangeSwoosh} />
+            </View>
+
             <TouchableOpacity
-              style={styles.comboCloseBtn}
+              style={styles.customizeTopHomeBtn}
               onPress={() => setShowModifier(false)}
               activeOpacity={0.8}
             >
-              <Text style={styles.comboCloseBtnText}>✕</Text>
+              <Ionicons name="close" size={26} color="#ffffff" />
             </TouchableOpacity>
           </View>
 
           <ScrollView
-            style={styles.comboScrollView}
-            contentContainerStyle={styles.comboScrollContent}
+            style={styles.customizeScrollView}
+            contentContainerStyle={styles.customizeScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Dish Header Image / Placeholder */}
-            <View style={styles.comboHeroImgBox}>
-              {selectedDish?.Image ? (
-                <Image
-                  source={{ uri: `${API}/image/${selectedDish.Image}` }}
-                  style={styles.comboHeroImg}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.comboHeroPlaceholder}>
-                  <Text style={{ fontSize: 48 }}>🍽️</Text>
-                </View>
-              )}
-            </View>
-
-            {/* Dish Info */}
-            <View style={styles.comboDishInfoBox}>
-              <Text style={styles.comboDishTitle}>
-                {selectedDish?.Name || selectedDish?.name}
-              </Text>
-              <Text style={styles.comboDishPrice}>
-                $
-                {Number(
-                  selectedDish?.Price || selectedDish?.price || 0
-                ).toFixed(2)}
-              </Text>
-              {!!selectedDish?.Description && (
-                <View style={styles.comboDishBulletsWrap}>
-                  {parseDescriptionBullets(selectedDish.Description).map((bullet, idx) => (
-                    <View key={idx} style={styles.comboDishBulletRow}>
-                      <View style={styles.comboCheckBadge}>
-                        <Text style={styles.comboCheckBadgeIcon}>✓</Text>
-                      </View>
-                      <Text style={styles.comboDishBulletText}>{bullet}</Text>
+            {/* White Rounded Card Showcase: Photo on Left + Title, Bullets, Orange Price & Trailing Tag Pills */}
+            <View style={styles.customizeMainHeroCard}>
+              {/* Left Dish Photo Frame */}
+              <View style={styles.customizeHeroLeftOuter}>
+                <View style={styles.customizeHeroLeftInner}>
+                  {selectedDish?.Image ? (
+                    <Image
+                      source={{ uri: `${API}/image/${selectedDish.Image}` }}
+                      style={styles.customizeHeroImg}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.customizeHeroImgPlaceholder}>
+                      <Text style={{ fontSize: 72 }}>🍎</Text>
                     </View>
-                  ))}
+                  )}
                 </View>
-              )}
-            </View>
+              </View>
 
-            {/* Modifiers Selection Group */}
-            <View style={styles.comboGroupsContainer}>
-              <View style={styles.comboGroupCard}>
-                <View style={styles.comboGroupHeader}>
-                  <Text style={styles.comboGroupName}>
-                    Choose Custom Add-ons
+              {/* Right Side: Title, Subtitle, Price Pill & Trailing Tag Badges */}
+              <View style={styles.customizeHeroRight}>
+                <Text style={styles.customizeHeroTitle} numberOfLines={2}>
+                  {selectedDish?.Name || selectedDish?.name}
+                </Text>
+
+                <Text style={styles.customizeHeroSubtitle}>
+                  {selectedDish?.Description
+                    ? parseDescriptionBullets(selectedDish.Description).slice(0, 3).join(", ")
+                    : "Fresh Apple, No Added Colors, No Preservatives"}
+                </Text>
+
+                <View style={styles.customizePricePill}>
+                  <Text style={styles.customizePriceText}>
+                    $
+                    {Number(
+                      selectedDish?.Price || selectedDish?.price || 0
+                    ).toFixed(2)}
                   </Text>
-                  <Text style={styles.comboGroupPickBadge}>Optional</Text>
-                </View>
-
-                <View style={styles.modifierSquareGrid}>
-                  {modifiers.map((item) => {
-                    const id = String(item.ModifierID || item.ModifierId);
-                    const isSelected = selectedModifierIds.includes(id);
-                    const priceNum = Number(item.Price || 0);
-
-                    return (
-                      <TouchableOpacity
-                        key={id}
-                        style={[
-                          styles.modifierSquareCard,
-                          isSelected && styles.modifierSquareCardSelected,
-                        ]}
-                        onPress={() => {
-                          setSelectedModifierIds((prev) =>
-                            prev.includes(id)
-                              ? prev.filter((x) => x !== id)
-                              : [...prev, id]
-                          );
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View
-                          style={[
-                            styles.comboCheckboxSquare,
-                            styles.modifierSquareCheckbox,
-                            isSelected && styles.comboCheckboxSquareSelected,
-                          ]}
-                        >
-                          {isSelected && (
-                            <Text style={styles.comboCheckmark}>✓</Text>
-                          )}
-                        </View>
-
-                        <Text
-                          style={[
-                            styles.modifierSquareName,
-                            isSelected && styles.modifierSquareNameSelected,
-                          ]}
-                          numberOfLines={2}
-                        >
-                          {item.ModifierName}
-                        </Text>
-                        <Text style={[styles.modifierSquarePrice, isSelected && styles.modifierSquarePriceSelected]}>
-                          {priceNum > 0 ? `+$${priceNum.toFixed(2)}` : "$0.00"}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
                 </View>
               </View>
             </View>
+
+            {/* Choose Your Add-ons Header Pill */}
+            <View style={styles.customizeSectionCard}>
+              <View style={styles.customizeSectionHeaderRow}>
+                <View style={styles.customizeSectionOrangeTab}>
+                  <Text style={styles.customizeSectionOrangeTabText}>
+                    Choose Your Add-ons
+                  </Text>
+                </View>
+                <View style={styles.customizeOptionalBadge}>
+                  <Text style={styles.customizeOptionalText}>Optional</Text>
+                </View>
+              </View>
+
+              {/* Modifier Groups / Categories */}
+              {(() => {
+                // Group modifiers into categories (e.g. Extras, Flavors, Toppings, or single group)
+                const modGroups: { [title: string]: any[] } = {};
+                modifiers.forEach((m) => {
+                  const grpName = m.ModifierGroupName || "Extras";
+                  if (!modGroups[grpName]) modGroups[grpName] = [];
+                  modGroups[grpName].push(m);
+                });
+
+                const groupKeys = Object.keys(modGroups);
+
+                return groupKeys.map((groupKey, gIdx) => {
+                  const groupItems = modGroups[groupKey];
+                  const getGroupIcon = (title: string) => {
+                    const t = title.toLowerCase();
+                    if (t.includes("flavor") || t.includes("syrup") || t.includes("drink")) return "water-outline";
+                    if (t.includes("topping") || t.includes("sauce")) return "restaurant-outline";
+                    return "fast-food-outline";
+                  };
+
+                  return (
+                    <View key={groupKey} style={styles.customizeGroupBlock}>
+                      {/* Sub-header row */}
+                      <View style={styles.customizeGroupSubHeader}>
+                        <View style={styles.customizeGroupSubHeaderLeft}>
+                          <View style={styles.customizeGroupIconBadge}>
+                            <Ionicons name={getGroupIcon(groupKey) as any} size={18} color="#ea580c" />
+                          </View>
+                          <Text style={styles.customizeGroupTitleText}>{groupKey}</Text>
+                        </View>
+                        <Ionicons name="chevron-up" size={20} color="#ea580c" />
+                      </View>
+
+                      {/* Items in this group: 3-column cards */}
+                      <View style={styles.customizeTilesGridContainer}>
+                        {groupItems.map((item) => {
+                          const id = String(item.ModifierID || item.ModifierId);
+                          const isSelected = selectedModifierIds.includes(id);
+                          const priceNum = Number(item.Price || 0);
+
+                          const getModEmoji = (name: string) => {
+                            const n = (name || "").toLowerCase();
+                            if (n.includes("cheese")) return "🧀";
+                            if (n.includes("patty") || n.includes("beef") || n.includes("burger")) return "🥩";
+                            if (n.includes("chicken") || n.includes("wings")) return "🍗";
+                            if (n.includes("vanilla")) return "🌼";
+                            if (n.includes("chocolate") || n.includes("choco")) return "🍫";
+                            if (n.includes("strawberry") || n.includes("berry")) return "🍓";
+                            if (n.includes("onion")) return "🧅";
+                            if (n.includes("lettuce") || n.includes("salad")) return "🥬";
+                            if (n.includes("tomato")) return "🍅";
+                            if (n.includes("bacon") || n.includes("pork")) return "🥓";
+                            if (n.includes("egg")) return "🍳";
+                            return "🧀";
+                          };
+
+                          return (
+                            <TouchableOpacity
+                              key={id}
+                              style={[
+                                styles.customizeTileCard,
+                                isSelected && styles.customizeTileCardSelected,
+                              ]}
+                              onPress={() => {
+                                setSelectedModifierIds((prev) =>
+                                  prev.includes(id)
+                                    ? prev.filter((x) => x !== id)
+                                    : [...prev, id]
+                                );
+                              }}
+                              activeOpacity={0.85}
+                            >
+                              {/* Checkbox top right */}
+                              <View
+                                style={[
+                                  styles.customizeTileCheckSquare,
+                                  isSelected && styles.customizeTileCheckSquareSelected,
+                                ]}
+                              >
+                                {isSelected && (
+                                  <Ionicons name="checkmark" size={14} color="#ffffff" />
+                                )}
+                              </View>
+
+                              <Text
+                                style={[
+                                  styles.customizeTileName,
+                                  isSelected && styles.customizeTileNameSelected,
+                                ]}
+                                numberOfLines={2}
+                              >
+                                {item.ModifierName}
+                              </Text>
+
+                              <View
+                                style={[
+                                  styles.customizeTilePriceBadge,
+                                  isSelected && styles.customizeTilePriceBadgeSelected,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.customizeTilePriceText,
+                                    isSelected && styles.customizeTilePriceTextSelected,
+                                  ]}
+                                >
+                                  {priceNum > 0 ? `+ $${priceNum.toFixed(2)}` : "$0.00"}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                });
+              })()}
+            </View>
           </ScrollView>
 
-          {/* Fixed Bottom Bar */}
-          <View style={styles.comboFixedBottomBar}>
-            <View style={styles.comboQtyControls}>
-              <TouchableOpacity
-                style={styles.comboQtyBtn}
-                onPress={() => setComboQty(Math.max(1, comboQty - 1))}
-              >
-                <Text style={styles.comboQtyBtnText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.comboQtyVal}>{comboQty}</Text>
-              <TouchableOpacity
-                style={styles.comboQtyBtn}
-                onPress={() => setComboQty(comboQty + 1)}
-              >
-                <Text style={styles.comboQtyBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-
-            {(() => {
-              const chosenMods = modifiers.filter((m) =>
-                selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
-              );
-              const extra = chosenMods.reduce(
-                (s, m) => s + Number(m.Price || 0),
-                0
-              );
-              const unitPrice =
-                Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
-              const totalPrice = (unitPrice * comboQty).toFixed(2);
-
-              return (
+          {/* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */}
+          <View style={styles.customizeBottomBar}>
+            <View style={styles.customizeBottomBarInner}>
+              <View style={styles.customizeQtyControls}>
                 <TouchableOpacity
-                  style={styles.comboAddCartBtn}
-                  onPress={addWithModifiers}
-                  activeOpacity={0.85}
+                  style={styles.customizeQtyBtnMinus}
+                  onPress={() => setComboQty(Math.max(1, comboQty - 1))}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.comboAddCartBtnText}>
-                    Add to Cart ${totalPrice}
-                  </Text>
+                  <Ionicons name="remove" size={26} color="#ffffff" />
                 </TouchableOpacity>
-              );
-            })()}
+                <Text style={styles.customizeQtyVal}>{comboQty}</Text>
+                <TouchableOpacity
+                  style={styles.customizeQtyBtnPlus}
+                  onPress={() => setComboQty(comboQty + 1)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={26} color="#ffffff" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.customizeBottomDivider} />
+
+              {(() => {
+                const chosenMods = modifiers.filter((m) =>
+                  selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
+                );
+                const extra = chosenMods.reduce(
+                  (s, m) => s + Number(m.Price || 0),
+                  0
+                );
+                const unitPrice =
+                  Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
+                const totalPrice = (unitPrice * comboQty).toFixed(2);
+
+                return (
+                  <TouchableOpacity
+                    style={styles.customizeAddToCartBtn}
+                    onPress={addWithModifiers}
+                    activeOpacity={0.88}
+                  >
+                    <Ionicons name="cart-outline" size={24} color="#ffffff" style={{ marginRight: 10 }} />
+                    <Text style={styles.customizeAddToCartBtnText}>
+                      Add to Cart ${totalPrice}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
           </View>
         </View>
       </Modal>
@@ -2544,71 +2654,72 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ffcca2",
-    borderRadius: 24,
-    paddingVertical: 20,
-    paddingHorizontal: 22,
-    marginBottom: 18,
-    gap: 16,
+    borderRadius: 28,
+    paddingVertical: 28,
+    paddingHorizontal: 28,
+    marginBottom: 22,
+    gap: 20,
     position: "relative",
     overflow: "hidden",
     flexShrink: 0,
+    minHeight: 120,
   },
   heroIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   heroCarEmoji: {
-    fontSize: 32,
+    fontSize: 42,
   },
   heroTextWrap: {
     flex: 1,
   },
   heroCategoryTitle: {
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: "900",
     color: "#0f172a",
     letterSpacing: -0.5,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   heroSubtitle: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 18,
+    fontWeight: "600",
     color: "#334155",
   },
   heroMoreBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 5,
-    elevation: 2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   heroMoreDots: {
-    fontSize: 18,
+    fontSize: 22,
     color: "#2563eb",
     fontWeight: "900",
     letterSpacing: -1,
   },
 
-  contentArea: { flex: 1, padding: 18, backgroundColor: "#f3f7fd" },
+  contentArea: { flex: 1, padding: 20, backgroundColor: "#f3f7fd" },
   groupTabsContainer: {
     flexShrink: 0,
-    marginBottom: 16,
-    height: 44,
+    marginBottom: 22,
+    paddingVertical: 6,
     justifyContent: "center",
   },
   groupTabsScroll: {
@@ -2616,31 +2727,42 @@ const styles = StyleSheet.create({
   },
   groupsRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 16,
     alignItems: "center",
+    paddingHorizontal: 4,
   },
   groupPill: {
-    height: 38,
-    paddingHorizontal: 20,
-    borderRadius: 19,
-    borderWidth: 1.5,
+    height: 60,
+    paddingHorizontal: 36,
+    borderRadius: 30,
+    borderWidth: 2,
     borderColor: "#e2e8f0",
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   groupPillActive: {
     backgroundColor: "#ffedd5",
     borderColor: "#f97316",
+    shadowColor: "#f97316",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   groupPillText: {
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: "700",
     color: "#64748b",
+    letterSpacing: -0.2,
   },
   groupPillTextActive: {
     color: "#ea580c",
-    fontWeight: "800",
+    fontWeight: "900",
   },
 
   dishesFlatList: {
@@ -2843,8 +2965,8 @@ const styles = StyleSheet.create({
   cartScrollContent: {
     paddingTop: 36,
     paddingBottom: 24,
-    paddingHorizontal: 20,
-    maxWidth: 720,
+    paddingHorizontal: 24,
+    maxWidth: 960,
     width: "100%",
     alignSelf: "center",
   },
@@ -2852,19 +2974,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 18,
-    paddingHorizontal: 28,
+    paddingVertical: 24,
+    paddingHorizontal: 32,
     backgroundColor: "#ffffff",
-    borderRadius: 14,
-    marginBottom: 16,
+    borderRadius: 20,
+    marginBottom: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
   cartItemLeft: {
-    flex: 1,
+    flex: 1.2,
     alignItems: "flex-start",
   },
   cartItemCenter: {
@@ -2877,148 +2999,150 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 14,
+    gap: 18,
   },
   cartItemName: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#272e3b",
-    letterSpacing: -0.2,
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#1e293b",
+    letterSpacing: -0.3,
   },
   cartItemMods: {
-    fontSize: 13,
-    color: "#6b7280",
-    marginTop: 4,
+    fontSize: 15,
+    color: "#64748b",
+    marginTop: 6,
   },
   qtyControlsContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f4f5f7",
+    backgroundColor: "#f1f5f9",
     borderRadius: 24,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   qtyBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "#f97316",
     alignItems: "center",
     justifyContent: "center",
   },
   qtyBtnText: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "800",
-    lineHeight: 18,
+    lineHeight: 20,
     textAlign: "center",
   },
   qtyVal: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1e293b",
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0f172a",
     paddingHorizontal: 12,
     textAlign: "center",
   },
   cartItemPrice: {
-    fontSize: 17,
-    fontWeight: "800",
+    fontSize: 22,
+    fontWeight: "900",
     color: "#dc2626",
     textAlign: "right",
   },
   cartItemDeleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: "#fee2e2",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 2,
+    marginLeft: 6,
   },
 
   /* Fixed Bottom Container for Summary & Action Card */
   cartBottomFixedContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: Platform.OS === "ios" ? 34 : 24,
-    paddingTop: 8,
-    maxWidth: 720,
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === "ios" ? 36 : 28,
+    paddingTop: 12,
+    maxWidth: 960,
     width: "100%",
     alignSelf: "center",
   },
   cartSummaryCard: {
     backgroundColor: "#ffffff",
-    paddingHorizontal: 28,
-    paddingTop: 24,
-    paddingBottom: 24,
-    borderRadius: 14,
+    paddingHorizontal: 36,
+    paddingTop: 28,
+    paddingBottom: 28,
+    borderRadius: 22,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   totalLabel: {
-    fontSize: 17,
+    fontSize: 19,
     color: "#64748b",
-    fontWeight: "500",
+    fontWeight: "600",
   },
   totalValue: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#475569",
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#334155",
   },
   grandTotalRow: {
-    paddingVertical: 10,
-    marginTop: 2,
-    marginBottom: 8,
+    paddingVertical: 14,
+    marginTop: 4,
+    marginBottom: 12,
+    borderTopWidth: 1.5,
+    borderTopColor: "#f1f5f9",
   },
   grandTotalLabel: {
-    fontSize: 21,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "900",
     color: "#0f172a",
   },
   grandTotalValue: {
-    fontSize: 21,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "900",
     color: "#0f172a",
   },
   checkoutBtn: {
-    marginTop: 12,
-    height: 52,
+    marginTop: 14,
+    height: 62,
     backgroundColor: "#f97316",
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#f97316",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
   },
   checkoutBtnText: {
     color: "#ffffff",
-    fontSize: 17,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "900",
   },
   backToMenuBtn: {
-    marginTop: 12,
-    height: 52,
+    marginTop: 14,
+    height: 60,
     backgroundColor: "#ffffff",
-    borderRadius: 12,
-    borderWidth: 1.5,
+    borderRadius: 16,
+    borderWidth: 2,
     borderColor: "#cbd5e1",
     alignItems: "center",
     justifyContent: "center",
   },
   backToMenuText: {
-    color: "#334155",
-    fontSize: 17,
+    color: "#1e293b",
+    fontSize: 19,
     fontWeight: "800",
   },
 
@@ -3668,6 +3792,454 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
+  /* ── FULL SCREEN DESIGN MATCHING "BIG KING" SCREENSHOT ── */
+  customizeFullScreenContainer: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+  },
+  customizeTopWhiteBar: {
+    backgroundColor: "#ffffff",
+    paddingTop: Platform.OS === "android" ? 36 : 48,
+    paddingBottom: 12,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  customizeTopBackBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#fdba74",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  customizeTopHomeBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#ea580c",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  customizeTopTitleWrap: {
+    alignItems: "center",
+  },
+  customizeChefHatWrap: {
+    marginBottom: 2,
+  },
+  customizeTopTitleBold: {
+    color: "#0f172a",
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+  customizeTopTitleOrange: {
+    color: "#ea580c",
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+  customizeTopOrangeSwoosh: {
+    width: 48,
+    height: 3.5,
+    borderRadius: 2,
+    backgroundColor: "#ea580c",
+    marginTop: 4,
+  },
+  customizeScrollView: {
+    flex: 1,
+  },
+  customizeScrollContent: {
+    paddingBottom: 120,
+  },
+
+  /* Main Product Hero Card: Matching reference Apple Juice Card */
+  customizeMainHeroCard: {
+    backgroundColor: "#ffffff",
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 16,
+    borderRadius: 28,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: "#fed7aa",
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+    position: "relative",
+    overflow: "hidden",
+  },
+  customizeHeroLeftOuter: {
+    width: 240,
+    height: 240,
+    borderRadius: 22,
+    borderWidth: 2.5,
+    borderColor: "#f97316",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+    backgroundColor: "#000000",
+  },
+  customizeHeroLeftInner: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000000",
+  },
+  customizeHeroImg: {
+    width: "100%",
+    height: "100%",
+  },
+  customizeHeroImgPlaceholder: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#18181b",
+  },
+  customizeHeroRight: {
+    flex: 1,
+    paddingLeft: 24,
+    paddingVertical: 8,
+    justifyContent: "center",
+    alignItems: "flex-start",
+    position: "relative",
+  },
+  customizeHeroTitle: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#0f172a",
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  customizeHeroSubtitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748b",
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  customizePricePill: {
+    backgroundColor: "#ea580c",
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    borderRadius: 20,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+    marginBottom: 14,
+  },
+  customizePriceText: {
+    color: "#ffffff",
+    fontSize: 28,
+    fontWeight: "900",
+  },
+  customizeTagPillsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  customizeTagPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#ffedd5",
+  },
+  customizeTagPillText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#7c2d12",
+  },
+  customizeAppleWatermark: {
+    position: "absolute",
+    right: 12,
+    bottom: 8,
+    fontSize: 64,
+    opacity: 0.15,
+  },
+
+  /* Choose Your Add-ons Header Tab & Group Sections */
+  customizeSectionCard: {
+    paddingHorizontal: 20,
+    marginTop: 4,
+  },
+  customizeSectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    gap: 12,
+  },
+  customizeSectionOrangeTab: {
+    backgroundColor: "#ea580c",
+    paddingHorizontal: 22,
+    paddingVertical: 9,
+    borderTopLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    borderTopRightRadius: 6,
+    borderBottomLeftRadius: 6,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  customizeSectionOrangeTabText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+  customizeOptionalBadge: {
+    backgroundColor: "#ffedd5",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  customizeOptionalText: {
+    color: "#ea580c",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  /* Modifier Categories: Extras, Flavors, Toppings */
+  customizeGroupBlock: {
+    marginBottom: 18,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  customizeGroupSubHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f8fafc",
+    marginBottom: 12,
+  },
+  customizeGroupSubHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  customizeGroupIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  customizeGroupTitleText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+
+  /* 3-Column Square Grid Layout */
+  customizeTilesGridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+    paddingVertical: 4,
+  },
+  customizeTileCard: {
+    width: "31%",
+    minWidth: 140,
+    minHeight: 110,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    gap: 10,
+  },
+  customizeTileCardSelected: {
+    borderColor: "#ea580c",
+    borderWidth: 2,
+    backgroundColor: "#fffaf5",
+    shadowColor: "#ea580c",
+    shadowOpacity: 0.18,
+    elevation: 3,
+  },
+  customizeTileCheckSquare: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  customizeTileCheckSquareSelected: {
+    backgroundColor: "#ea580c",
+    borderColor: "#ea580c",
+  },
+  customizeTileName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0f172a",
+    textAlign: "center",
+  },
+  customizeTileNameSelected: {
+    color: "#0f172a",
+    fontWeight: "900",
+  },
+  customizeTilePriceBadge: {
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  customizeTilePriceBadgeSelected: {
+    backgroundColor: "#ffedd5",
+  },
+  customizeTilePriceText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#ea580c",
+  },
+  customizeTilePriceTextSelected: {
+    color: "#c2410c",
+  },
+
+  /* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */
+  customizeBottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#ffffff",
+    borderTopWidth: 1,
+    borderColor: "#f1f5f9",
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
+    alignItems: "flex-end",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  customizeBottomBarInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 18,
+  },
+  customizeQtyControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    borderRadius: 32,
+    borderWidth: 1.5,
+    borderColor: "#ffedd5",
+    padding: 8,
+    gap: 12,
+  },
+  customizeQtyBtnMinus: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#ea580c",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  customizeQtyBtnPlus: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#ea580c",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  customizeQtyVal: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#0f172a",
+    minWidth: 38,
+    textAlign: "center",
+  },
+  customizeBottomDivider: {
+    width: 2,
+    height: 48,
+    backgroundColor: "#e2e8f0",
+  },
+  customizeAddToCartBtn: {
+    minWidth: 300,
+    paddingHorizontal: 36,
+    height: 66,
+    backgroundColor: "#ea580c",
+    borderRadius: 33,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  customizeAddToCartBtnText: {
+    color: "#ffffff",
+    fontSize: 23,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+
   /* ── TABLE SELECTION MODAL ── */
   tableModalOverlay: {
     flex: 1,
@@ -3680,7 +4252,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 24,
     width: "100%",
-    maxWidth: 620,
+    maxWidth: 740,
     maxHeight: "85%",
     overflow: "hidden",
     shadowColor: "#000",
@@ -3695,15 +4267,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingTop: 24,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
   },
   tableModalTitle: {
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 24,
+    fontWeight: "900",
     color: "#0f172a",
     marginBottom: 4,
   },
@@ -3716,38 +4288,57 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#ea580c",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tableModalCloseText: {
     fontSize: 18,
-    color: "#475569",
+    color: "#ffffff",
     fontWeight: "700",
   },
-  /* ── TWO-OPTION CHECKOUT CHOICE ── */
+  /* ── TWO-OPTION CHECKOUT CHOICE (SIDE BY SIDE HORIZONTAL) ── */
   checkoutChoiceContainer: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingVertical: 28,
+    flexDirection: "row",
     gap: 16,
+    alignItems: "stretch",
   },
   checkoutChoiceCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 20,
-    borderRadius: 18,
+    flex: 1,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    padding: 24,
+    borderRadius: 20,
     backgroundColor: "#ffffff",
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: "#e2e8f0",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 2,
+    minHeight: 180,
   },
   checkoutChoiceCardHighlight: {
     borderColor: "#fdba74",
     backgroundColor: "#fffaf5",
+    shadowColor: "#ea580c",
+    shadowOpacity: 0.1,
+  },
+  checkoutChoiceCardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    marginBottom: 16,
   },
   checkoutChoiceIconWrap: {
     width: 58,
@@ -3755,21 +4346,20 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
   },
   checkoutChoiceTextWrap: {
-    flex: 1,
+    width: "100%",
   },
   checkoutChoiceTitle: {
-    fontSize: 18,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "900",
     color: "#0f172a",
-    marginBottom: 4,
+    marginBottom: 6,
   },
   checkoutChoiceDescription: {
-    fontSize: 13,
+    fontSize: 14,
     color: "#64748b",
-    lineHeight: 18,
+    lineHeight: 20,
     fontWeight: "500",
   },
   /* ── DIRECT TENT NUMBER INPUT ── */
@@ -3875,6 +4465,22 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
     alignItems: "flex-end",
+  },
+  tableBackToCartBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#ea580c",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tableBackToCartBtnText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff",
   },
   tableCancelBtn: {
     paddingHorizontal: 28,

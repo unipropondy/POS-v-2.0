@@ -4247,29 +4247,6 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
       const existingRecord = existingTableRes.recordset[0];
       targetTableId = existingRecord.TableId;
 
-      const isSameOrder = cleanOrderId && existingRecord.CurrentOrderId === cleanOrderId;
-      const isOccupiedInTableMaster = (existingRecord.Status !== 0 && existingRecord.CurrentOrderId && !isSameOrder);
-
-      const activeOrderCheck = await transaction.request()
-        .input("newTable", sql.VarChar(50), cleanNewTable)
-        .input("cleanOrderId", sql.NVarChar(50), cleanOrderId || "")
-        .query(`
-          SELECT TOP 1 OrderId, OrderNumber
-          FROM RestaurantOrderCur
-          WHERE LTRIM(RTRIM(Tableno)) = LTRIM(RTRIM(@newTable))
-            AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
-            AND StatusCode NOT IN (0, 3, 4)
-            AND (@cleanOrderId = '' OR OrderNumber <> @cleanOrderId)
-        `);
-
-      if (isOccupiedInTableMaster || activeOrderCheck.recordset.length > 0) {
-        await transaction.rollback();
-        return res.status(400).json({
-          success: false,
-          error: `Table / Tent number ${cleanNewTable} is currently occupied by another active order.`
-        });
-      }
-
       if (cleanCurrentTableId && String(cleanCurrentTableId).toLowerCase() !== String(targetTableId).toLowerCase()) {
         const oldGuid = toGuidOrNull(cleanCurrentTableId);
         if (oldGuid) {
