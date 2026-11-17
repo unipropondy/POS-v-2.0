@@ -1660,9 +1660,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   </Text>
                 </View>
 
-                {/* 4x3 Grid Keypad */}
+                {/* Standard 3x4 Grid Keypad: 1-9, Clear/Empty, 0, Backspace */}
                 <View style={styles.tentKeypadGrid}>
-                  {/* Row 1 */}
+                  {/* Row 1: 1, 2, 3 */}
                   <View style={styles.tentKeypadRow}>
                     <TouchableOpacity
                       style={styles.tentKeypadKey}
@@ -1700,19 +1700,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     >
                       <Text style={styles.tentKeypadKeyText}>3</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.tentKeypadKey, styles.tentKeypadBackspaceKey]}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        setInputTableNo(prev => prev.slice(0, -1));
-                        if (tableInputError) setTableInputError(null);
-                      }}
-                    >
-                      <Ionicons name="backspace-outline" size={28} color="#475569" />
-                    </TouchableOpacity>
                   </View>
 
-                  {/* Row 2 */}
+                  {/* Row 2: 4, 5, 6 */}
                   <View style={styles.tentKeypadRow}>
                     <TouchableOpacity
                       style={styles.tentKeypadKey}
@@ -1750,10 +1740,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     >
                       <Text style={styles.tentKeypadKeyText}>6</Text>
                     </TouchableOpacity>
-                    <View style={[styles.tentKeypadKey, styles.tentKeypadEmptyKey]} />
                   </View>
 
-                  {/* Row 3 */}
+                  {/* Row 3: 7, 8, 9 */}
                   <View style={styles.tentKeypadRow}>
                     <TouchableOpacity
                       style={styles.tentKeypadKey}
@@ -1791,6 +1780,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     >
                       <Text style={styles.tentKeypadKeyText}>9</Text>
                     </TouchableOpacity>
+                  </View>
+
+                  {/* Row 4 (Down): Clear [C], 0, Cancel/Backspace [⌫] */}
+                  <View style={styles.tentKeypadRow}>
+                    <TouchableOpacity
+                      style={[styles.tentKeypadKey, styles.tentKeypadActionKey]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setInputTableNo("");
+                        if (tableInputError) setTableInputError(null);
+                      }}
+                    >
+                      <Text style={styles.tentKeypadClearText}>C</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.tentKeypadKey}
                       activeOpacity={0.7}
@@ -1802,6 +1805,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       }}
                     >
                       <Text style={styles.tentKeypadKeyText}>0</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.tentKeypadKey, styles.tentKeypadActionKey]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setInputTableNo(prev => prev.slice(0, -1));
+                        if (tableInputError) setTableInputError(null);
+                      }}
+                    >
+                      <Ionicons name="backspace-outline" size={30} color="#475569" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -4549,11 +4562,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1e293b",
   },
-  tentKeypadBackspaceKey: {
+  tentKeypadActionKey: {
     backgroundColor: "#f8fafc",
   },
-  tentKeypadEmptyKey: {
-    backgroundColor: "#f8fafc",
+  tentKeypadClearText: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#ea580c",
   },
   tentInputLabel: {
     alignSelf: "flex-start",
