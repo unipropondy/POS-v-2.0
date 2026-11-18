@@ -1872,7 +1872,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 }
               />
 
-              {/* Bottom Right Logout Button (straight opposite from sidebar bottom) */}
+              {/* Bottom Right Start Over Button (straight opposite from sidebar bottom) */}
               {!!onLogout && (
                 <View style={styles.contentBottomRightLogoutWrap}>
                   <TouchableOpacity
@@ -1881,9 +1881,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     activeOpacity={0.8}
                   >
                     <View style={styles.sidebarLogoutIconWrap}>
-                      <Ionicons name="log-out-outline" size={22} color="#ea580c" style={{ marginLeft: 2 }} />
+                      <Ionicons name="refresh-outline" size={22} color="#ea580c" />
                     </View>
-                    <Text style={styles.sidebarLogoutText}>Logout</Text>
+                    <Text style={styles.sidebarLogoutText}>Start Over</Text>
                   </TouchableOpacity>
                 </View>
               )}
