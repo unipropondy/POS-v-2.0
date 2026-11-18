@@ -1244,6 +1244,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       isActive && styles.catCardActive,
                     ]}
                     onPress={() => {
+                      setShowModifier(false);
+                      setShowComboCustomizer(false);
+                      setSelectedDish(null);
                       if (isExpanded) {
                         // Collapse it
                         setExpandedCategoryId(null);
@@ -1312,6 +1315,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               isGrpActive && styles.sidebarSubgroupItemActive,
                             ]}
                             onPress={() => {
+                              setShowModifier(false);
+                              setShowComboCustomizer(false);
+                              setSelectedDish(null);
                               setActiveGroup(grp.DishGroupId);
                               if (isCategoryPrevious(cat)) {
                                 loadPreviousCategory();
