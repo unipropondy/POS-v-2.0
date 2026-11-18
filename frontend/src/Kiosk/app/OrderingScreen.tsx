@@ -2369,20 +2369,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   </Text>
                 )}
               </TouchableOpacity>
-
-              {/* Cash Payment */}
-              <TouchableOpacity
-                style={[styles.paymentCard, styles.cardGreen]}
-                onPress={() => handlePaymodeClick("CASH")}
-              >
-                <Text style={styles.paymentEmoji}>💵</Text>
-                <Text style={[styles.paymentModeLabel, { color: "#15803d" }]}>Cash</Text>
-                {getExtraChargeForPaymode("CASH") > 0 && (
-                  <Text style={styles.extraFeeNotice}>
-                    (+${getExtraChargeForPaymode("CASH").toFixed(2)} fee)
-                  </Text>
-                )}
-              </TouchableOpacity>
             </View>
           </ScrollView>
         </View>
