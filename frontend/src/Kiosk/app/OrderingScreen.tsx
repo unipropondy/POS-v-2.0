@@ -1587,7 +1587,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       <View style={styles.customizeSectionHeaderRow}>
                         <View style={styles.customizeSectionOrangeTab}>
                           <Text style={styles.customizeSectionOrangeTabText}>
-                            Choose Your Add-ons
+                            Add Modifier
                           </Text>
                         </View>
                         <View style={styles.customizeOptionalBadge}>
