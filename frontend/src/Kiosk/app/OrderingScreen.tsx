@@ -1374,22 +1374,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               );
             })}
           </ScrollView>
-
-          {/* Bottom Logout Button */}
-          {!!onLogout && (
-            <View style={styles.sidebarBottomLogoutWrap}>
-              <TouchableOpacity
-                style={styles.sidebarLogoutBtn}
-                onPress={onLogout}
-                activeOpacity={0.8}
-              >
-                <View style={styles.sidebarLogoutIconWrap}>
-                  <Ionicons name="log-out-outline" size={22} color="#ea580c" style={{ marginLeft: 2 }} />
-                </View>
-                <Text style={styles.sidebarLogoutText}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </View>
 
         {/* Content Area */}
@@ -1887,6 +1871,22 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   </View>
                 }
               />
+
+              {/* Bottom Right Logout Button (straight opposite from sidebar bottom) */}
+              {!!onLogout && (
+                <View style={styles.contentBottomRightLogoutWrap}>
+                  <TouchableOpacity
+                    style={styles.sidebarLogoutBtn}
+                    onPress={onLogout}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.sidebarLogoutIconWrap}>
+                      <Ionicons name="log-out-outline" size={22} color="#ea580c" style={{ marginLeft: 2 }} />
+                    </View>
+                    <Text style={styles.sidebarLogoutText}>Logout</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </>
           )}
         </View>
@@ -2612,12 +2612,10 @@ const styles = StyleSheet.create({
     borderColor: "#eef2f6",
   },
   sidebarContent: { paddingVertical: 22, paddingHorizontal: 16, gap: 16 },
-  sidebarBottomLogoutWrap: {
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    borderTopWidth: 1,
-    borderColor: "#f1f5f9",
-    backgroundColor: "#ffffff",
+  contentBottomRightLogoutWrap: {
+    alignSelf: "flex-end",
+    marginTop: 12,
+    marginBottom: 4,
   },
   sidebarLogoutBtn: {
     flexDirection: "row",
@@ -2626,9 +2624,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "#fed7aa",
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 18,
-    gap: 14,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   sidebarLogoutIconWrap: {
     width: 40,
