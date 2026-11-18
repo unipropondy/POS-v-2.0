@@ -483,7 +483,7 @@ export default function LoginPage({ onLoginSuccess, onBackToPOS }: Props) {
             </View>
 
             <Text style={[styles.brand, { fontSize: brandFontSize }]}>
-              SMART <Text style={styles.brandAccent}>POS</Text>
+              SMART <Text style={styles.brandAccent}>CAFE</Text>
             </Text>
             <Text style={styles.subtitle}>Restaurant & Cafe Kiosk</Text>
 

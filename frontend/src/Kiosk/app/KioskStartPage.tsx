@@ -275,7 +275,7 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
           </View>
           <View style={styles.brandTextGroup}>
             <Text style={styles.brandTitle}>
-              Smart <Text style={styles.brandTitleAccent}>POS</Text>
+              Smart <Text style={styles.brandTitleAccent}>Cafe</Text>
             </Text>
             <Text style={styles.brandSubtitle}>Delicious Food. Exceptional Experience.</Text>
           </View>

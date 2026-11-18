@@ -40,7 +40,7 @@ export default function TabLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       {Platform.OS === 'web' && (
         <Head>
-          <title>Smart POS</title>
+          <title>Smart Cafe</title>
           <link rel="icon" type="image/png" href={FAVICON_DATA_URI} />
           <link rel="shortcut icon" type="image/png" href={FAVICON_DATA_URI} />
           <link rel="apple-touch-icon" href={FAVICON_DATA_URI} />
