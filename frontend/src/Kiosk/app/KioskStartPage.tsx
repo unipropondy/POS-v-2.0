@@ -280,16 +280,6 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
             <Text style={styles.brandSubtitle}>Delicious Food. Exceptional Experience.</Text>
           </View>
         </View>
-
-        {onBackToLogin && (
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={onBackToLogin}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.backBtnText}>Exit</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Main Content Area */}
