@@ -2620,15 +2620,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
   },
   sidebarLogoutBtn: {
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
-    backgroundColor: "#fff7ed",
+    justifyContent: "space-between",
+    backgroundColor: "#fffdfa",
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "#fed7aa",
     paddingVertical: 14,
     paddingHorizontal: 18,
-    gap: 14,
   },
   sidebarLogoutIconWrap: {
     width: 40,
