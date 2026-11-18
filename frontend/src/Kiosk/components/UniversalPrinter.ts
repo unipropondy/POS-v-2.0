@@ -1046,35 +1046,11 @@ export const UniversalPrinter = {
         }
       }
 
-      // If running on native device (Android APK / iOS), check for Android USB Thermal Printer, Sunmi, or LAN/BT
+      // If running on native device (Android APK / iOS), check for Sunmi, or LAN/BT
       if (Platform.OS !== "web") {
         console.log("📱 Native device (APK) detected: printing directly from device...");
 
-        // 1. Android Kiosk Inbuilt USB Thermal Printer (ESC/POS via UsbManager)
-        if (Platform.OS === "android") {
-          try {
-            const UsbPrinterModule = require("react-native-usb-thermal-printer-broadcasting").default;
-            if (UsbPrinterModule && typeof UsbPrinterModule.scanPrinters === "function") {
-              console.log("🔌 Checking for Android USB thermal printer...");
-              const deviceName = await UsbPrinterModule.scanPrinters().catch(() => null);
-              if (deviceName) {
-                console.log(`✅ Detected Android USB thermal printer: ${deviceName}`);
-                // Format text with auto-cut {cut}
-                let usbText = text;
-                if (!usbText.includes("{cut}")) {
-                  usbText = usbText + "\n\n{cut}";
-                }
-                await UsbPrinterModule.printText(usbText, UsbPrinterModule.PAPER_SIZES.MM80);
-                console.log("✅ Printed successfully to Android USB thermal printer!");
-                return true;
-              }
-            }
-          } catch (usbErr: any) {
-            console.warn("Android USB thermal printer error/not found:", usbErr?.message || usbErr);
-          }
-        }
-
-        // 2. Try Sunmi direct print (if device happens to be Sunmi)
+        // 1. Try Sunmi direct print (if device happens to be Sunmi)
         try {
           const SunmiPrinterService = require("../../../components/SunmiPrinterService").default;
           if (SunmiPrinterService) {

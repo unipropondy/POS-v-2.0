@@ -68,7 +68,6 @@
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
     "react-native-thermal-printer": "^2.3.6",
-    "react-native-usb-thermal-printer-broadcasting": "^1.0.4",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.10.1",
     "react-native-worklets-core": "^1.6.3",
