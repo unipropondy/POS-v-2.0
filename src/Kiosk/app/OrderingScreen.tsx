@@ -2142,9 +2142,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     <Ionicons name="chevron-forward" size={24} color="#94a3b8" />
                   </View>
                   <View style={styles.checkoutChoiceTextWrap}>
-                    <Text style={styles.checkoutChoiceTitle}>Self Checkout</Text>
+                    <Text style={styles.checkoutChoiceTitle}>Self Collect</Text>
                     <Text style={styles.checkoutChoiceDescription}>
-                      Continue straight to payment without entering a table or tent number.
+                      Continue straight to payment and collect your food at the counter.
                     </Text>
                   </View>
                 </TouchableOpacity>
