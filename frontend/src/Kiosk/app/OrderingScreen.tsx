@@ -101,6 +101,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
   const [activeCategory, setActiveCategory] = useState<any>(null);
+  const [expandedCategoryId, setExpandedCategoryId] = useState<any>(null);
   const [groups, setGroups] = useState<any[]>([]);
   const [activeGroup, setActiveGroup] = useState<any>(null);
   const [dishes, setDishes] = useState<any[]>([]);
@@ -386,6 +387,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         if (safeKitchens.length > 0) {
           const firstCat = safeKitchens[0];
           setActiveCategory(firstCat.CategoryId);
+          setExpandedCategoryId(firstCat.CategoryId);
           if (isCategoryPrevious(firstCat)) {
             await loadPreviousCategory();
           } else {
@@ -1226,6 +1228,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sidebarContent}>
             {categories.map((cat) => {
               const isActive = activeCategory === cat.CategoryId;
+              const isExpanded = expandedCategoryId === cat.CategoryId;
               return (
                 <View key={cat.CategoryId} style={styles.catGroupAccordionWrap}>
                   <TouchableOpacity
@@ -1234,9 +1237,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       isActive && styles.catCardActive,
                     ]}
                     onPress={() => {
-                      if (activeCategory === cat.CategoryId) {
-                        // If already active, toggle collapse/re-select
+                      if (isExpanded) {
+                        // Collapse it
+                        setExpandedCategoryId(null);
                       } else {
+                        // Expand it and make active
+                        setExpandedCategoryId(cat.CategoryId);
                         setActiveCategory(cat.CategoryId);
                         if (isCategoryPrevious(cat)) {
                           loadPreviousCategory();
@@ -1280,14 +1286,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                     {/* Chevron Arrow: Rotates down if active */}
                     <View style={styles.catArrowWrap}>
-                      <Text style={[styles.catArrowText, isActive && styles.catArrowTextActive]}>
-                        {isActive ? "▼" : "›"}
+                      <Text style={[styles.catArrowText, isExpanded && styles.catArrowTextActive]}>
+                        {isExpanded ? "▼" : "›"}
                       </Text>
                     </View>
                   </TouchableOpacity>
 
                   {/* Dropdown for Dish Groups under this Category - Clean & Professional */}
-                  {isActive && groups.length > 0 && (
+                  {isExpanded && groups.length > 0 && (
                     <View style={styles.sidebarSubgroupList}>
                       {groups.map((grp) => {
                         const isGrpActive = activeGroup === grp.DishGroupId;
