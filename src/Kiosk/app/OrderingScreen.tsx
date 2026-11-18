@@ -827,6 +827,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   // Checkout button click handler
   const handleCheckoutClick = async () => {
+    // Check if order is Takeaway (TW) -> Skip table/tent prompt completely
+    const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+    const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY") || storedOrderType.toUpperCase() === "TW";
+    if (isTakeaway) {
+      handleProceedToPayment();
+      return;
+    }
+
     // Dynamically check latest Enablekiosktable from AppSettings
     let shouldPromptTable = enableKioskTable === 1;
     try {
@@ -839,7 +847,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     } catch (_) { }
 
     if (shouldPromptTable) {
-      // If Enablekiosktable = 1, display popup with two options: Self Checkout & Enter Tent Number
+      // If Enablekiosktable = 1 and Dine In, display popup with two options: Self Collect & Enter Tent Number
       setCheckoutStep("CHOICE");
       setInputTableNo("");
       setTableInputError(null);
