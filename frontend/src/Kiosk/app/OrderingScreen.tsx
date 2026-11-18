@@ -421,6 +421,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const handleDishClick = async (dish: any) => {
     if (dish.IsSoldOut) return;
 
+    setSelectedDish(dish);
+    setComboQty(1);
+    setComboConfig(null);
+    setComboSelections({});
+    setComboDishModifiers([]);
+    setSelectedComboModifierIds([]);
+    setModifiers([]);
+    setSelectedModifierIds([]);
+    setComboError(null);
+
     const isComboDish =
       dish.IsCombo === true ||
       dish.IsCombo === 1 ||
@@ -431,16 +441,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       String(dish.isCombo) === "1" ||
       String(dish.isCombo).toLowerCase() === "true";
 
-    setSelectedDish(dish);
-    setComboQty(1);
-
     if (isComboDish) {
-      // Open customizer immediately so the UI is responsive
       setComboLoading(true);
-      setComboError(null);
-      setComboSelections({});
-      setComboDishModifiers([]);
-      setSelectedComboModifierIds([]);
       setShowComboCustomizer(true);
 
       try {
@@ -449,13 +451,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           fetch(`${API}/modifiers/${dish.DishId}`).catch(() => null),
         ]);
 
-        let hasComboGroups = false;
         if (res && res.ok) {
           const payload = await res.json();
           if (payload.success && payload.data) {
             const config = payload.data;
             setComboConfig(config);
-            hasComboGroups = (config.groups || []).length > 0;
 
             // Auto-select defaults
             const initialSelections: { [groupId: string]: any[] } = {};
@@ -486,10 +486,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             const realMods = modData.filter((m: any) => m.ModifierName?.toUpperCase() !== "OPEN");
             setComboDishModifiers(realMods);
           }
-        }
-
-        if (!hasComboGroups && (!comboDishModifiers || comboDishModifiers.length === 0)) {
-          // If no combo options returned and no modifiers, check if we had any modifiers loaded
         }
       } catch (err: any) {
         console.error("Combo config fetch error:", err);
@@ -1405,6 +1401,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   onPress={() => {
                     setShowComboCustomizer(false);
                     setShowModifier(false);
+                    setSelectedDish(null);
+                    setComboConfig(null);
+                    setComboSelections({});
+                    setComboDishModifiers([]);
+                    setSelectedComboModifierIds([]);
+                    setModifiers([]);
+                    setSelectedModifierIds([]);
                   }}
                   activeOpacity={0.8}
                 >
