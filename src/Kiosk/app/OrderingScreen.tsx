@@ -421,8 +421,82 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const handleDishClick = async (dish: any) => {
     if (dish.IsSoldOut) return;
 
-    if (Number(enableCombo) === 1 && Number(dish.IsCombo) === 1) {
-      await openComboCustomizer(dish);
+    const isComboDish =
+      dish.IsCombo === true ||
+      dish.IsCombo === 1 ||
+      String(dish.IsCombo) === "1" ||
+      String(dish.IsCombo).toLowerCase() === "true" ||
+      dish.isCombo === true ||
+      dish.isCombo === 1 ||
+      String(dish.isCombo) === "1" ||
+      String(dish.isCombo).toLowerCase() === "true";
+
+    setSelectedDish(dish);
+    setComboQty(1);
+
+    if (isComboDish) {
+      // Open customizer immediately so the UI is responsive
+      setComboLoading(true);
+      setComboError(null);
+      setComboSelections({});
+      setComboDishModifiers([]);
+      setSelectedComboModifierIds([]);
+      setShowComboCustomizer(true);
+
+      try {
+        const [res, modRes] = await Promise.all([
+          fetch(`${API}/combo/config/${dish.DishId}`).catch(() => null),
+          fetch(`${API}/modifiers/${dish.DishId}`).catch(() => null),
+        ]);
+
+        let hasComboGroups = false;
+        if (res && res.ok) {
+          const payload = await res.json();
+          if (payload.success && payload.data) {
+            const config = payload.data;
+            setComboConfig(config);
+            hasComboGroups = (config.groups || []).length > 0;
+
+            // Auto-select defaults
+            const initialSelections: { [groupId: string]: any[] } = {};
+            (config.groups || []).forEach((group: any) => {
+              let defaults = (group.options || [])
+                .filter((o: any) => o.isDefault)
+                .map((o: any) => o.dishId);
+              if (!group.isMultiSelect || group.maxSelection === 1) {
+                defaults = defaults.slice(0, 1);
+              }
+              if (
+                defaults.length === 0 &&
+                group.minSelection > 0 &&
+                group.options &&
+                group.options.length > 0
+              ) {
+                defaults = [group.options[0].dishId];
+              }
+              initialSelections[group.comboGroupId] = defaults;
+            });
+            setComboSelections(initialSelections);
+          }
+        }
+
+        if (modRes && modRes.ok) {
+          const modData = await modRes.json();
+          if (Array.isArray(modData)) {
+            const realMods = modData.filter((m: any) => m.ModifierName?.toUpperCase() !== "OPEN");
+            setComboDishModifiers(realMods);
+          }
+        }
+
+        if (!hasComboGroups && (!comboDishModifiers || comboDishModifiers.length === 0)) {
+          // If no combo options returned and no modifiers, check if we had any modifiers loaded
+        }
+      } catch (err: any) {
+        console.error("Combo config fetch error:", err);
+        setComboError(err.message || "Failed to load options.");
+      } finally {
+        setComboLoading(false);
+      }
       return;
     }
 
@@ -434,10 +508,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         : [];
 
       if (realMods.length > 0) {
-        setSelectedDish(dish);
         setModifiers(realMods);
         setSelectedModifierIds([]);
-        setComboQty(1);
         setShowModifier(true);
       } else {
         addToCartSimple(dish);
@@ -448,63 +520,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const openComboCustomizer = async (dish: any) => {
-    setSelectedDish(dish);
-    setComboLoading(true);
-    setComboError(null);
-    setComboSelections({});
-    setComboDishModifiers([]);
-    setSelectedComboModifierIds([]);
-    setComboQty(1);
-    setShowComboCustomizer(true);
-
-    try {
-      const [res, modRes] = await Promise.all([
-        fetch(`${API}/combo/config/${dish.DishId}`),
-        fetch(`${API}/modifiers/${dish.DishId}`).catch(() => null),
-      ]);
-
-      if (modRes && modRes.ok) {
-        const modData = await modRes.json();
-        if (Array.isArray(modData)) {
-          setComboDishModifiers(modData);
-        }
-      }
-
-      if (!res.ok) throw new Error("Failed to load combo options.");
-      const payload = await res.json();
-      if (payload.success && payload.data) {
-        const config = payload.data;
-        setComboConfig(config);
-
-        // Auto-select defaults
-        const initialSelections: { [groupId: string]: any[] } = {};
-        (config.groups || []).forEach((group: any) => {
-          let defaults = (group.options || [])
-            .filter((o: any) => o.isDefault)
-            .map((o: any) => o.dishId);
-          if (!group.isMultiSelect || group.maxSelection === 1) {
-            defaults = defaults.slice(0, 1);
-          }
-          if (
-            defaults.length === 0 &&
-            group.minSelection > 0 &&
-            group.options &&
-            group.options.length > 0
-          ) {
-            defaults = [group.options[0].dishId];
-          }
-          initialSelections[group.comboGroupId] = defaults;
-        });
-        setComboSelections(initialSelections);
-      } else {
-        throw new Error(payload.error || "Failed to load combo config.");
-      }
-    } catch (err: any) {
-      console.error("Combo config fetch error:", err);
-      setComboError(err.message || "Something went wrong.");
-    } finally {
-      setComboLoading(false);
-    }
+    handleDishClick(dish);
   };
 
   const handleSelectComboOption = (
@@ -1366,251 +1382,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
         {/* Content Area */}
         <View style={styles.contentArea}>
-          {showComboCustomizer && !!selectedDish ? (
-            <View style={styles.comboFullScreenContainer}>
-              {/* Close Header */}
-              <View style={styles.comboHeaderBar}>
-                <TouchableOpacity
-                  style={styles.comboCloseBtn}
-                  onPress={() => setShowComboCustomizer(false)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.comboCloseBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                style={styles.comboScrollView}
-                contentContainerStyle={styles.comboScrollContent}
-                showsVerticalScrollIndicator={false}
-              >
-                {/* Dish Header Image / Placeholder */}
-                <View style={styles.comboHeroImgBox}>
-                  {selectedDish?.Image ? (
-                    <Image
-                      source={{ uri: `${API}/image/${selectedDish.Image}` }}
-                      style={styles.comboHeroImg}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.comboHeroPlaceholder}>
-                      <Ionicons name="fast-food-outline" size={64} color="#ea580c" />
-                    </View>
-                  )}
-                </View>
-
-                {/* Dish Info */}
-                <View style={styles.comboDishInfoBox}>
-                  <Text style={styles.comboDishTitle}>
-                    {selectedDish?.Name || selectedDish?.name}
-                  </Text>
-                  <Text style={styles.comboDishPrice}>
-                    $
-                    {Number(
-                      selectedDish?.Price || selectedDish?.price || 0
-                    ).toFixed(2)}
-                  </Text>
-                  {!!selectedDish?.Description && (
-                    <View style={styles.comboDishBulletsWrap}>
-                      {parseDescriptionBullets(selectedDish.Description).map((bullet, idx) => (
-                        <View key={idx} style={styles.comboDishBulletRow}>
-                          <View style={styles.comboCheckBadge}>
-                            <Text style={styles.comboCheckBadgeIcon}>✓</Text>
-                          </View>
-                          <Text style={styles.comboDishBulletText}>{bullet}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                {/* Combo Groups & Options */}
-                {comboLoading ? (
-                  <View style={styles.comboLoadingBox}>
-                    <ActivityIndicator size="large" color="#f97316" />
-                    <Text style={styles.comboLoadingText}>Loading options...</Text>
-                  </View>
-                ) : comboError && !comboConfig ? (
-                  <View style={styles.comboErrorBox}>
-                    <Text style={styles.comboErrorText}>{comboError}</Text>
-                    <TouchableOpacity
-                      style={styles.comboRetryBtn}
-                      onPress={() => openComboCustomizer(selectedDish)}
-                    >
-                      <Text style={styles.comboRetryBtnText}>Retry</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.comboGroupsContainer}>
-                    {(comboConfig?.groups || []).map((group: any) => {
-                      const selectedIds = comboSelections[group.comboGroupId] || [];
-                      return (
-                        <View key={group.comboGroupId} style={styles.comboGroupCard}>
-                          <View style={styles.comboGroupHeader}>
-                            <Text style={styles.comboGroupName}>{group.groupName}</Text>
-                            <Text style={styles.comboGroupPickBadge}>
-                              Select{" "}
-                              {group.minSelection === group.maxSelection
-                                ? group.minSelection
-                                : `${group.minSelection} to ${group.maxSelection}`}
-                            </Text>
-                          </View>
-
-                          <View style={styles.comboOptionsGrid}>
-                            {(group.options || []).map((opt: any) => {
-                              const isSelected = selectedIds.includes(opt.dishId);
-                              const totalOptSurcharge =
-                                (Number(opt.surcharge) || 0) +
-                                (Number(opt.dishPrice) || 0);
-
-                              return (
-                                <TouchableOpacity
-                                  key={opt.mappingId || opt.dishId}
-                                  style={[
-                                    styles.comboOptionRow,
-                                    isSelected && styles.comboOptionRowSelected,
-                                  ]}
-                                  onPress={() =>
-                                    handleSelectComboOption(
-                                      group.comboGroupId,
-                                      opt,
-                                      group.isMultiSelect,
-                                      group.maxSelection
-                                    )
-                                  }
-                                  activeOpacity={0.8}
-                                >
-                                  <View
-                                    style={[
-                                      styles.comboRadioCircle,
-                                      isSelected && styles.comboRadioCircleSelected,
-                                    ]}
-                                  >
-                                    {isSelected && (
-                                      <View style={styles.comboRadioDot} />
-                                    )}
-                                  </View>
-
-                                  <View style={styles.comboOptInfo}>
-                                    <Text
-                                      style={[
-                                        styles.comboOptName,
-                                        isSelected && styles.comboOptNameSelected,
-                                      ]}
-                                      numberOfLines={2}
-                                    >
-                                      {opt.name}
-                                    </Text>
-                                    <Text style={styles.comboOptPrice}>
-                                      {totalOptSurcharge > 0
-                                        ? `+$${totalOptSurcharge.toFixed(2)}`
-                                        : "$0.00"}
-                                    </Text>
-                                  </View>
-                                </TouchableOpacity>
-                              );
-                            })}
-                          </View>
-                        </View>
-                      );
-                    })}
-
-                    {/* Optional Modifiers for this Combo Dish */}
-                    {comboDishModifiers.length > 0 && (
-                      <View style={styles.comboGroupCard}>
-                        <View style={styles.comboGroupHeader}>
-                          <Text style={styles.comboGroupName}>
-                            Modifiers (Optional)
-                          </Text>
-                        </View>
-
-                        <View style={styles.modifierSquareGrid}>
-                          {comboDishModifiers.map((m: any) => {
-                            const mId = String(m.ModifierID || m.ModifierId || "");
-                            const isSelected = selectedComboModifierIds.includes(mId);
-                            const priceNum = Number(m.Price || 0);
-                            return (
-                              <TouchableOpacity
-                                key={mId}
-                                style={[
-                                  styles.modifierSquareCard,
-                                  isSelected && styles.modifierSquareCardSelected,
-                                ]}
-                                onPress={() => handleToggleComboModifier(mId)}
-                                activeOpacity={0.8}
-                              >
-                                <View
-                                  style={[
-                                    styles.comboCheckboxSquare,
-                                    styles.modifierSquareCheckbox,
-                                    isSelected && styles.comboCheckboxSquareSelected,
-                                  ]}
-                                >
-                                  {isSelected && (
-                                    <Text style={styles.comboCheckmark}>✓</Text>
-                                  )}
-                                </View>
-
-                                <Text
-                                  style={[
-                                    styles.modifierSquareName,
-                                    isSelected && styles.modifierSquareNameSelected,
-                                  ]}
-                                  numberOfLines={2}
-                                >
-                                  {m.ModifierName}
-                                </Text>
-                                <Text style={[styles.modifierSquarePrice, isSelected && styles.modifierSquarePriceSelected]}>
-                                  {priceNum > 0
-                                    ? `+$${priceNum.toFixed(2)}`
-                                    : "$0.00"}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    )}
-
-                    {!!comboError && (
-                      <View style={styles.comboInlineErrorBox}>
-                        <Text style={styles.comboInlineErrorText}>{comboError}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </ScrollView>
-
-              {/* Fixed Bottom Bar */}
-              <View style={styles.comboFixedBottomBar}>
-                <View style={styles.comboQtyControls}>
-                  <TouchableOpacity
-                    style={styles.comboQtyBtn}
-                    onPress={() => setComboQty(Math.max(1, comboQty - 1))}
-                  >
-                    <Text style={styles.comboQtyBtnText}>-</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.comboQtyVal}>{comboQty}</Text>
-                  <TouchableOpacity
-                    style={styles.comboQtyBtn}
-                    onPress={() => setComboQty(comboQty + 1)}
-                  >
-                    <Text style={styles.comboQtyBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.comboAddCartBtn}
-                  onPress={handleAddComboToCart}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.comboAddCartBtnText}>
-                    Add to Cart ${(calculateComboTotal() * comboQty).toFixed(2)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : showModifier && !!selectedDish ? (
+          {(showComboCustomizer || showModifier) && !!selectedDish ? (
             <View style={styles.customizeFullScreenContainer}>
               {/* Top Bar on Pure White Background: Centered Title with Chef Hat & Orange Curved Swoosh, Orange Close Button */}
               <View style={styles.customizeTopWhiteBar}>
@@ -1630,7 +1402,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                 <TouchableOpacity
                   style={styles.customizeTopHomeBtn}
-                  onPress={() => setShowModifier(false)}
+                  onPress={() => {
+                    setShowComboCustomizer(false);
+                    setShowModifier(false);
+                  }}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="close" size={26} color="#ffffff" />
@@ -1684,138 +1459,248 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   </View>
                 </View>
 
-                {/* Choose Your Add-ons Header Pill */}
-                <View style={styles.customizeSectionCard}>
-                  <View style={styles.customizeSectionHeaderRow}>
-                    <View style={styles.customizeSectionOrangeTab}>
-                      <Text style={styles.customizeSectionOrangeTabText}>
-                        Choose Your Add-ons
-                      </Text>
-                    </View>
-                    <View style={styles.customizeOptionalBadge}>
-                      <Text style={styles.customizeOptionalText}>Optional</Text>
-                    </View>
+                {/* Loading indicator if combo options are loading */}
+                {comboLoading && (
+                  <View style={styles.comboLoadingBox}>
+                    <ActivityIndicator size="large" color="#ea580c" />
+                    <Text style={styles.comboLoadingText}>Loading options...</Text>
                   </View>
+                )}
 
-                  {/* Modifier Groups / Categories */}
-                  {(() => {
-                    // Group modifiers into categories (e.g. Extras, Flavors, Toppings, or single group)
-                    const modGroups: { [title: string]: any[] } = {};
-                    modifiers.forEach((m) => {
-                      const grpName = m.ModifierGroupName || "Extras";
-                      if (!modGroups[grpName]) modGroups[grpName] = [];
-                      modGroups[grpName].push(m);
-                    });
+                {/* Combo Selection Groups (e.g., Choose Your Juice, Choose Your Side) */}
+                {(comboConfig?.groups || []).map((group: any) => {
+                  const selectedIds = comboSelections[group.comboGroupId] || [];
+                  const minSel = Number(group.minSelection || 0);
+                  const maxSel = Number(group.maxSelection || 1);
+                  const isRequired = minSel > 0;
 
-                    const groupKeys = Object.keys(modGroups);
+                  return (
+                    <View key={group.comboGroupId} style={styles.customizeSectionCard}>
+                      <View style={styles.customizeSectionHeaderRow}>
+                        <View style={styles.customizeSectionOrangeTab}>
+                          <Text style={styles.customizeSectionOrangeTabText}>
+                            {group.groupName}
+                          </Text>
+                        </View>
+                        <View style={styles.customizeOptionalBadge}>
+                          <Text style={styles.customizeOptionalText}>
+                            {isRequired
+                              ? `Select ${minSel === maxSel ? minSel : `${minSel} to ${maxSel}`}`
+                              : `Optional (up to ${maxSel})`}
+                          </Text>
+                        </View>
+                      </View>
 
-                    return groupKeys.map((groupKey, gIdx) => {
-                      const groupItems = modGroups[groupKey];
-                      const getGroupIcon = (title: string) => {
-                        const t = title.toLowerCase();
-                        if (t.includes("flavor") || t.includes("syrup") || t.includes("drink")) return "water-outline";
-                        if (t.includes("topping") || t.includes("sauce")) return "restaurant-outline";
-                        return "fast-food-outline";
-                      };
+                      <View style={styles.customizeTilesGridContainer}>
+                        {(group.options || []).map((opt: any) => {
+                          const isSelected = selectedIds.includes(opt.dishId);
+                          const totalOptSurcharge =
+                            (Number(opt.surcharge) || 0) + (Number(opt.dishPrice) || 0);
 
-                      return (
-                        <View key={groupKey} style={styles.customizeGroupBlock}>
-                          {/* Sub-header row */}
-                          <View style={styles.customizeGroupSubHeader}>
-                            <View style={styles.customizeGroupSubHeaderLeft}>
-                              <View style={styles.customizeGroupIconBadge}>
-                                <Ionicons name={getGroupIcon(groupKey) as any} size={18} color="#ea580c" />
+                          return (
+                            <TouchableOpacity
+                              key={opt.mappingId || opt.dishId}
+                              style={[
+                                styles.customizeTileCard,
+                                isSelected && styles.customizeTileCardSelected,
+                              ]}
+                              onPress={() =>
+                                handleSelectComboOption(
+                                  group.comboGroupId,
+                                  opt,
+                                  group.isMultiSelect,
+                                  group.maxSelection
+                                )
+                              }
+                              activeOpacity={0.85}
+                            >
+                              <View
+                                style={[
+                                  styles.customizeTileCheckSquare,
+                                  isSelected && styles.customizeTileCheckSquareSelected,
+                                  !group.isMultiSelect && { borderRadius: 12 },
+                                ]}
+                              >
+                                {isSelected && (
+                                  <Ionicons name="checkmark" size={14} color="#ffffff" />
+                                )}
                               </View>
-                              <Text style={styles.customizeGroupTitleText}>{groupKey}</Text>
-                            </View>
-                            <Ionicons name="chevron-up" size={20} color="#ea580c" />
-                          </View>
 
-                          {/* Items in this group: 3-column cards */}
-                          <View style={styles.customizeTilesGridContainer}>
-                            {groupItems.map((item) => {
-                              const id = String(item.ModifierID || item.ModifierId);
-                              const isSelected = selectedModifierIds.includes(id);
-                              const priceNum = Number(item.Price || 0);
+                              <Text
+                                style={[
+                                  styles.customizeTileName,
+                                  isSelected && styles.customizeTileNameSelected,
+                                ]}
+                                numberOfLines={2}
+                              >
+                                {opt.name}
+                              </Text>
 
-                              const getModEmoji = (name: string) => {
-                                const n = (name || "").toLowerCase();
-                                if (n.includes("cheese")) return "🧀";
-                                if (n.includes("patty") || n.includes("beef") || n.includes("burger")) return "🥩";
-                                if (n.includes("chicken") || n.includes("wings")) return "🍗";
-                                if (n.includes("vanilla")) return "🌼";
-                                if (n.includes("chocolate") || n.includes("choco")) return "🍫";
-                                if (n.includes("strawberry") || n.includes("berry")) return "🍓";
-                                if (n.includes("onion")) return "🧅";
-                                if (n.includes("lettuce") || n.includes("salad")) return "🥬";
-                                if (n.includes("tomato")) return "🍅";
-                                if (n.includes("bacon") || n.includes("pork")) return "🥓";
-                                if (n.includes("egg")) return "🍳";
-                                return "🧀";
-                              };
-
-                              return (
-                                <TouchableOpacity
-                                  key={id}
+                              <View
+                                style={[
+                                  styles.customizeTilePriceBadge,
+                                  isSelected && styles.customizeTilePriceBadgeSelected,
+                                ]}
+                              >
+                                <Text
                                   style={[
-                                    styles.customizeTileCard,
-                                    isSelected && styles.customizeTileCardSelected,
+                                    styles.customizeTilePriceText,
+                                    isSelected && styles.customizeTilePriceTextSelected,
                                   ]}
-                                  onPress={() => {
-                                    setSelectedModifierIds((prev) =>
-                                      prev.includes(id)
-                                        ? prev.filter((x) => x !== id)
-                                        : [...prev, id]
-                                    );
-                                  }}
-                                  activeOpacity={0.85}
                                 >
-                                  {/* Checkbox top right */}
-                                  <View
-                                    style={[
-                                      styles.customizeTileCheckSquare,
-                                      isSelected && styles.customizeTileCheckSquareSelected,
-                                    ]}
-                                  >
-                                    {isSelected && (
-                                      <Ionicons name="checkmark" size={14} color="#ffffff" />
-                                    )}
-                                  </View>
+                                  {totalOptSurcharge > 0
+                                    ? `+ $${totalOptSurcharge.toFixed(2)}`
+                                    : "$0.00"}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })}
 
-                                  <Text
-                                    style={[
-                                      styles.customizeTileName,
-                                      isSelected && styles.customizeTileNameSelected,
-                                    ]}
-                                    numberOfLines={2}
-                                  >
-                                    {item.ModifierName}
-                                  </Text>
+                {/* Modifiers / Add-ons Section (if any modifiers exist) */}
+                {(() => {
+                  const activeModifiers =
+                    (comboDishModifiers && comboDishModifiers.length > 0)
+                      ? comboDishModifiers
+                      : modifiers;
 
-                                  <View
+                  if (!activeModifiers || activeModifiers.length === 0) return null;
+
+                  const modGroups: { [title: string]: any[] } = {};
+                  activeModifiers.forEach((m) => {
+                    const grpName = m.ModifierGroupName || "Add-ons";
+                    if (!modGroups[grpName]) modGroups[grpName] = [];
+                    modGroups[grpName].push(m);
+                  });
+
+                  const groupKeys = Object.keys(modGroups);
+
+                  return (
+                    <View style={styles.customizeSectionCard}>
+                      <View style={styles.customizeSectionHeaderRow}>
+                        <View style={styles.customizeSectionOrangeTab}>
+                          <Text style={styles.customizeSectionOrangeTabText}>
+                            Choose Your Add-ons
+                          </Text>
+                        </View>
+                        <View style={styles.customizeOptionalBadge}>
+                          <Text style={styles.customizeOptionalText}>Optional</Text>
+                        </View>
+                      </View>
+
+                      {groupKeys.map((groupKey) => {
+                        const groupItems = modGroups[groupKey];
+                        const getGroupIcon = (title: string) => {
+                          const t = title.toLowerCase();
+                          if (t.includes("flavor") || t.includes("syrup") || t.includes("drink"))
+                            return "water-outline";
+                          if (t.includes("topping") || t.includes("sauce"))
+                            return "restaurant-outline";
+                          return "fast-food-outline";
+                        };
+
+                        return (
+                          <View key={groupKey} style={styles.customizeGroupBlock}>
+                            <View style={styles.customizeGroupSubHeader}>
+                              <View style={styles.customizeGroupSubHeaderLeft}>
+                                <View style={styles.customizeGroupIconBadge}>
+                                  <Ionicons
+                                    name={getGroupIcon(groupKey) as any}
+                                    size={18}
+                                    color="#ea580c"
+                                  />
+                                </View>
+                                <Text style={styles.customizeGroupTitleText}>{groupKey}</Text>
+                              </View>
+                              <Ionicons name="chevron-up" size={20} color="#ea580c" />
+                            </View>
+
+                            <View style={styles.customizeTilesGridContainer}>
+                              {groupItems.map((item) => {
+                                const id = String(item.ModifierID || item.ModifierId);
+                                const isComboActive = !!(comboConfig?.groups?.length > 0);
+                                const isSelected = isComboActive
+                                  ? selectedComboModifierIds.includes(id)
+                                  : selectedModifierIds.includes(id);
+                                const priceNum = Number(item.Price || 0);
+
+                                return (
+                                  <TouchableOpacity
+                                    key={id}
                                     style={[
-                                      styles.customizeTilePriceBadge,
-                                      isSelected && styles.customizeTilePriceBadgeSelected,
+                                      styles.customizeTileCard,
+                                      isSelected && styles.customizeTileCardSelected,
                                     ]}
+                                    onPress={() => {
+                                      if (isComboActive) {
+                                        handleToggleComboModifier(id);
+                                      } else {
+                                        setSelectedModifierIds((prev) =>
+                                          prev.includes(id)
+                                            ? prev.filter((x) => x !== id)
+                                            : [...prev, id]
+                                        );
+                                      }
+                                    }}
+                                    activeOpacity={0.85}
                                   >
-                                    <Text
+                                    <View
                                       style={[
-                                        styles.customizeTilePriceText,
-                                        isSelected && styles.customizeTilePriceTextSelected,
+                                        styles.customizeTileCheckSquare,
+                                        isSelected && styles.customizeTileCheckSquareSelected,
                                       ]}
                                     >
-                                      {priceNum > 0 ? `+ $${priceNum.toFixed(2)}` : "$0.00"}
+                                      {isSelected && (
+                                        <Ionicons name="checkmark" size={14} color="#ffffff" />
+                                      )}
+                                    </View>
+
+                                    <Text
+                                      style={[
+                                        styles.customizeTileName,
+                                        isSelected && styles.customizeTileNameSelected,
+                                      ]}
+                                      numberOfLines={2}
+                                    >
+                                      {item.ModifierName}
                                     </Text>
-                                  </View>
-                                </TouchableOpacity>
-                              );
-                            })}
+
+                                    <View
+                                      style={[
+                                        styles.customizeTilePriceBadge,
+                                        isSelected && styles.customizeTilePriceBadgeSelected,
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.customizeTilePriceText,
+                                          isSelected && styles.customizeTilePriceTextSelected,
+                                        ]}
+                                      >
+                                        {priceNum > 0 ? `+ $${priceNum.toFixed(2)}` : "$0.00"}
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
                           </View>
-                        </View>
-                      );
-                    });
-                  })()}
-                </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })()}
+
+                {/* Inline Combo Error Message */}
+                {!!comboError && (
+                  <View style={styles.comboInlineErrorBox}>
+                    <Text style={styles.comboInlineErrorText}>{comboError}</Text>
+                  </View>
+                )}
               </ScrollView>
 
               {/* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */}
@@ -1842,24 +1727,42 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   <View style={styles.customizeBottomDivider} />
 
                   {(() => {
-                    const chosenMods = modifiers.filter((m) =>
-                      selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
-                    );
-                    const extra = chosenMods.reduce(
-                      (s, m) => s + Number(m.Price || 0),
-                      0
-                    );
-                    const unitPrice =
-                      Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
-                    const totalPrice = (unitPrice * comboQty).toFixed(2);
+                    const isComboActive = !!(comboConfig?.groups?.length > 0);
+                    let totalPrice = "0.00";
+
+                    if (isComboActive) {
+                      totalPrice = (calculateComboTotal() * comboQty).toFixed(2);
+                    } else {
+                      const chosenMods = modifiers.filter((m) =>
+                        selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
+                      );
+                      const extra = chosenMods.reduce(
+                        (s, m) => s + Number(m.Price || 0),
+                        0
+                      );
+                      const unitPrice =
+                        Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
+                      totalPrice = (unitPrice * comboQty).toFixed(2);
+                    }
 
                     return (
                       <TouchableOpacity
                         style={styles.customizeAddToCartBtn}
-                        onPress={addWithModifiers}
+                        onPress={() => {
+                          if (isComboActive) {
+                            handleAddComboToCart();
+                          } else {
+                            addWithModifiers();
+                          }
+                        }}
                         activeOpacity={0.88}
                       >
-                        <Ionicons name="cart-outline" size={24} color="#ffffff" style={{ marginRight: 10 }} />
+                        <Ionicons
+                          name="cart-outline"
+                          size={24}
+                          color="#ffffff"
+                          style={{ marginRight: 10 }}
+                        />
                         <Text style={styles.customizeAddToCartBtnText}>
                           Add to Cart ${totalPrice}
                         </Text>
