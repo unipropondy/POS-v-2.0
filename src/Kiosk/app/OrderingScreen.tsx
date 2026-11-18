@@ -1374,6 +1374,22 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               );
             })}
           </ScrollView>
+
+          {/* Bottom Logout Button */}
+          {!!onLogout && (
+            <View style={styles.sidebarBottomLogoutWrap}>
+              <TouchableOpacity
+                style={styles.sidebarLogoutBtn}
+                onPress={onLogout}
+                activeOpacity={0.8}
+              >
+                <View style={styles.sidebarLogoutIconWrap}>
+                  <Ionicons name="log-out-outline" size={22} color="#ea580c" style={{ marginLeft: 2 }} />
+                </View>
+                <Text style={styles.sidebarLogoutText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Content Area */}
@@ -1788,13 +1804,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   </Text>
                   <Text style={styles.heroSubtitle}>Choose your favourite dish</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.heroMoreBtn}
-                  onPress={onLogout}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="log-out-outline" size={20} color="#ea580c" style={{ marginLeft: 2 }} />
-                </TouchableOpacity>
               </View>
 
               {/* Dishes Grid */}
@@ -2603,6 +2612,42 @@ const styles = StyleSheet.create({
     borderColor: "#eef2f6",
   },
   sidebarContent: { paddingVertical: 22, paddingHorizontal: 16, gap: 16 },
+  sidebarBottomLogoutWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    borderTopWidth: 1,
+    borderColor: "#f1f5f9",
+    backgroundColor: "#ffffff",
+  },
+  sidebarLogoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff7ed",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#fed7aa",
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    gap: 14,
+  },
+  sidebarLogoutIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  sidebarLogoutText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#ea580c",
+  },
 
   /* Card styling matching the reference image */
   catCard: {
