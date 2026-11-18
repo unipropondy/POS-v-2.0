@@ -1076,12 +1076,15 @@ export const UniversalPrinter = {
 
         // 2. Try Sunmi direct print (if device happens to be Sunmi)
         try {
-          const sunmiReady = await SunmiPrinterService.init().catch(() => false);
-          if (sunmiReady) {
-            const printed = await SunmiPrinterService.printReceipt(saleData, company);
-            if (printed) {
-              console.log("✅ Printed with Sunmi Kiosk printer - Auto Cut!");
-              return true;
+          const SunmiPrinterService = require("../../../components/SunmiPrinterService").default;
+          if (SunmiPrinterService) {
+            const sunmiReady = await SunmiPrinterService.init().catch(() => false);
+            if (sunmiReady) {
+              const printed = await SunmiPrinterService.printReceipt(saleData, company);
+              if (printed) {
+                console.log("✅ Printed with Sunmi Kiosk printer - Auto Cut!");
+                return true;
+              }
             }
           }
         } catch (sunmiErr) {
