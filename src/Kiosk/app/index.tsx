@@ -6,14 +6,14 @@ import LoginPage from "./LoginPage";
 import OrderingScreen from "./OrderingScreen";
 import SettlementSuccessScreen from "./SettlementSuccessScreen";
 
-type ScreenState = "login" | "start" | "ordering" | "settlement_success";
+type ScreenState = "start" | "ordering" | "settlement_success";
 
 type IndexProps = {
   onBackToPOS?: () => void;
 };
 
 export default function Index({ onBackToPOS }: IndexProps = {}) {
-  const [currentPage, setCurrentPage] = useState<ScreenState>("login");
+  const [currentPage, setCurrentPage] = useState<ScreenState>("start");
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
   const [completedOrderMeta, setCompletedOrderMeta] = useState<{ items?: any[]; extraCharge?: number; totalAmount?: number } | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -110,17 +110,18 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
           console.log("Kiosk session started for user:", user, selectedTable);
           setCurrentPage("ordering");
         }}
-        onBackToLogin={() => setCurrentPage("login")}
+        onBackToLogin={onBackToPOS}
       />
     );
   }
 
   return (
-    <LoginPage
-      onLoginSuccess={() => {
-        setCurrentPage("start");
+    <KioskStartPage
+      onStart={(user, selectedTable) => {
+        console.log("Kiosk session started for user:", user, selectedTable);
+        setCurrentPage("ordering");
       }}
-      onBackToPOS={onBackToPOS}
+      onBackToLogin={onBackToPOS}
     />
   );
 }
