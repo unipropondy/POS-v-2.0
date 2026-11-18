@@ -1,6 +1,6 @@
 import { API } from "@/config";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,7 +12,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View
@@ -318,23 +317,23 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             item.modifiers ||
             (item.ModifiersJSON
               ? (() => {
-                  try {
-                    return JSON.parse(item.ModifiersJSON);
-                  } catch {
-                    return [];
-                  }
-                })()
+                try {
+                  return JSON.parse(item.ModifiersJSON);
+                } catch {
+                  return [];
+                }
+              })()
               : []),
           comboSelections:
             item.comboSelections ||
             (item.ComboDetailsJSON
               ? (() => {
-                  try {
-                    return JSON.parse(item.ComboDetailsJSON);
-                  } catch {
-                    return [];
-                  }
-                })()
+                try {
+                  return JSON.parse(item.ComboDetailsJSON);
+                } catch {
+                  return [];
+                }
+              })()
               : []),
         }));
         setCart(fromDB);
@@ -369,9 +368,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           setEnableCombo(Number(settingsRes.EnableCombo || 0));
           const isKioskTableEnabled =
             settingsRes.Enablekiosktable === 1 ||
-            settingsRes.Enablekiosktable === true ||
-            String(settingsRes.Enablekiosktable) === "1" ||
-            String(settingsRes.Enablekiosktable).toLowerCase() === "true"
+              settingsRes.Enablekiosktable === true ||
+              String(settingsRes.Enablekiosktable) === "1" ||
+              String(settingsRes.Enablekiosktable).toLowerCase() === "true"
               ? 1
               : 0;
           setEnableKioskTable(isKioskTableEnabled);
@@ -672,7 +671,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           (item.DishId || item.id) === (selectedDish.DishId || selectedDish.id) &&
           (item.comboSelections || []).length === 0 &&
           JSON.stringify(item.selectedMods || []) ===
-            JSON.stringify(chosenModifiers) &&
+          JSON.stringify(chosenModifiers) &&
           item.status !== "SENT"
       );
 
@@ -680,10 +679,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         return prev.map((item) =>
           item === existing
             ? {
-                ...item,
-                qty: (item.qty || 1) + comboQty,
-                status: "NEW",
-              }
+              ...item,
+              qty: (item.qty || 1) + comboQty,
+              status: "NEW",
+            }
             : item
         );
       }
@@ -772,7 +771,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setShowModifier(false);
   };
 
-    const isServiceCategoryItem = (item: any) => {
+  const isServiceCategoryItem = (item: any) => {
     if (!item) return false;
     const catName = String(item.KitchenTypeName || item.kitchenTypeName || item.CategoryName || item.categoryName || '').toLowerCase();
     const groupName = String(item.DishGroupName || item.dishGroupName || '').toLowerCase();
@@ -837,7 +836,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         shouldPromptTable = (val === 1 || val === true || String(val) === "1" || String(val).toLowerCase() === "true");
         setEnableKioskTable(shouldPromptTable ? 1 : 0);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     if (shouldPromptTable) {
       // If Enablekiosktable = 1, display popup with two options: Self Checkout & Enter Tent Number
@@ -1355,624 +1354,610 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         <View style={styles.contentArea}>
           {showComboCustomizer && !!selectedDish ? (
             <View style={styles.comboFullScreenContainer}>
-          {/* Close Header */}
-          <View style={styles.comboHeaderBar}>
-            <TouchableOpacity
-              style={styles.comboCloseBtn}
-              onPress={() => setShowComboCustomizer(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.comboCloseBtnText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.comboScrollView}
-            contentContainerStyle={styles.comboScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Dish Header Image / Placeholder */}
-            <View style={styles.comboHeroImgBox}>
-              {selectedDish?.Image ? (
-                <Image
-                  source={{ uri: `${API}/image/${selectedDish.Image}` }}
-                  style={styles.comboHeroImg}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.comboHeroPlaceholder}>
-                  <Ionicons name="fast-food-outline" size={64} color="#ea580c" />
-                </View>
-              )}
-            </View>
-
-            {/* Dish Info */}
-            <View style={styles.comboDishInfoBox}>
-              <Text style={styles.comboDishTitle}>
-                {selectedDish?.Name || selectedDish?.name}
-              </Text>
-              <Text style={styles.comboDishPrice}>
-                $
-                {Number(
-                  selectedDish?.Price || selectedDish?.price || 0
-                ).toFixed(2)}
-              </Text>
-              {!!selectedDish?.Description && (
-                <View style={styles.comboDishBulletsWrap}>
-                  {parseDescriptionBullets(selectedDish.Description).map((bullet, idx) => (
-                    <View key={idx} style={styles.comboDishBulletRow}>
-                      <View style={styles.comboCheckBadge}>
-                        <Text style={styles.comboCheckBadgeIcon}>✓</Text>
-                      </View>
-                      <Text style={styles.comboDishBulletText}>{bullet}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Combo Groups & Options */}
-            {comboLoading ? (
-              <View style={styles.comboLoadingBox}>
-                <ActivityIndicator size="large" color="#f97316" />
-                <Text style={styles.comboLoadingText}>Loading options...</Text>
-              </View>
-            ) : comboError && !comboConfig ? (
-              <View style={styles.comboErrorBox}>
-                <Text style={styles.comboErrorText}>{comboError}</Text>
+              {/* Close Header */}
+              <View style={styles.comboHeaderBar}>
                 <TouchableOpacity
-                  style={styles.comboRetryBtn}
-                  onPress={() => openComboCustomizer(selectedDish)}
+                  style={styles.comboCloseBtn}
+                  onPress={() => setShowComboCustomizer(false)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.comboRetryBtnText}>Retry</Text>
+                  <Text style={styles.comboCloseBtnText}>✕</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <View style={styles.comboGroupsContainer}>
-                {(comboConfig?.groups || []).map((group: any) => {
-                  const selectedIds = comboSelections[group.comboGroupId] || [];
-                  return (
-                    <View key={group.comboGroupId} style={styles.comboGroupCard}>
-                      <View style={styles.comboGroupHeader}>
-                        <Text style={styles.comboGroupName}>{group.groupName}</Text>
-                        <Text style={styles.comboGroupPickBadge}>
-                          Select{" "}
-                          {group.minSelection === group.maxSelection
-                            ? group.minSelection
-                            : `${group.minSelection} to ${group.maxSelection}`}
-                        </Text>
-                      </View>
 
-                      <View style={styles.comboOptionsGrid}>
-                        {(group.options || []).map((opt: any) => {
-                          const isSelected = selectedIds.includes(opt.dishId);
-                          const totalOptSurcharge =
-                            (Number(opt.surcharge) || 0) +
-                            (Number(opt.dishPrice) || 0);
-
-                          return (
-                            <TouchableOpacity
-                              key={opt.mappingId || opt.dishId}
-                              style={[
-                                styles.comboOptionRow,
-                                isSelected && styles.comboOptionRowSelected,
-                              ]}
-                              onPress={() =>
-                                handleSelectComboOption(
-                                  group.comboGroupId,
-                                  opt,
-                                  group.isMultiSelect,
-                                  group.maxSelection
-                                )
-                              }
-                              activeOpacity={0.8}
-                            >
-                              <View
-                                style={[
-                                  styles.comboRadioCircle,
-                                  isSelected && styles.comboRadioCircleSelected,
-                                ]}
-                              >
-                                {isSelected && (
-                                  <View style={styles.comboRadioDot} />
-                                )}
-                              </View>
-
-                              <View style={styles.comboOptInfo}>
-                                <Text
-                                  style={[
-                                    styles.comboOptName,
-                                    isSelected && styles.comboOptNameSelected,
-                                  ]}
-                                  numberOfLines={2}
-                                >
-                                  {opt.name}
-                                </Text>
-                                <Text style={styles.comboOptPrice}>
-                                  {totalOptSurcharge > 0
-                                    ? `+$${totalOptSurcharge.toFixed(2)}`
-                                    : "$0.00"}
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                })}
-
-                {/* Optional Modifiers for this Combo Dish */}
-                {comboDishModifiers.length > 0 && (
-                  <View style={styles.comboGroupCard}>
-                    <View style={styles.comboGroupHeader}>
-                      <Text style={styles.comboGroupName}>
-                        Modifiers (Optional)
-                      </Text>
-                    </View>
-
-                    <View style={styles.modifierSquareGrid}>
-                      {comboDishModifiers.map((m: any) => {
-                        const mId = String(m.ModifierID || m.ModifierId || "");
-                        const isSelected = selectedComboModifierIds.includes(mId);
-                        const priceNum = Number(m.Price || 0);
-                        return (
-                          <TouchableOpacity
-                            key={mId}
-                            style={[
-                              styles.modifierSquareCard,
-                              isSelected && styles.modifierSquareCardSelected,
-                            ]}
-                            onPress={() => handleToggleComboModifier(mId)}
-                            activeOpacity={0.8}
-                          >
-                            <View
-                              style={[
-                                styles.comboCheckboxSquare,
-                                styles.modifierSquareCheckbox,
-                                isSelected && styles.comboCheckboxSquareSelected,
-                              ]}
-                            >
-                              {isSelected && (
-                                <Text style={styles.comboCheckmark}>✓</Text>
-                              )}
-                            </View>
-
-                            <Text
-                              style={[
-                                styles.modifierSquareName,
-                                isSelected && styles.modifierSquareNameSelected,
-                              ]}
-                              numberOfLines={2}
-                            >
-                              {m.ModifierName}
-                            </Text>
-                            <Text style={[styles.modifierSquarePrice, isSelected && styles.modifierSquarePriceSelected]}>
-                              {priceNum > 0
-                                ? `+$${priceNum.toFixed(2)}`
-                                : "$0.00"}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-                )}
-
-                {!!comboError && (
-                  <View style={styles.comboInlineErrorBox}>
-                    <Text style={styles.comboInlineErrorText}>{comboError}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </ScrollView>
-
-          {/* Fixed Bottom Bar */}
-          <View style={styles.comboFixedBottomBar}>
-            <View style={styles.comboQtyControls}>
-              <TouchableOpacity
-                style={styles.comboQtyBtn}
-                onPress={() => setComboQty(Math.max(1, comboQty - 1))}
+              <ScrollView
+                style={styles.comboScrollView}
+                contentContainerStyle={styles.comboScrollContent}
+                showsVerticalScrollIndicator={false}
               >
-                <Text style={styles.comboQtyBtnText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.comboQtyVal}>{comboQty}</Text>
-              <TouchableOpacity
-                style={styles.comboQtyBtn}
-                onPress={() => setComboQty(comboQty + 1)}
-              >
-                <Text style={styles.comboQtyBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.comboAddCartBtn}
-              onPress={handleAddComboToCart}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.comboAddCartBtnText}>
-                Add to Cart ${(calculateComboTotal() * comboQty).toFixed(2)}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-          ) : showModifier && !!selectedDish ? (
-            <View style={styles.customizeFullScreenContainer}>
-          {/* Top Bar on Pure White Background: Centered Title with Chef Hat & Orange Curved Swoosh, Orange Close Button */}
-          <View style={styles.customizeTopWhiteBar}>
-            {/* Left placeholder spacer to keep title perfectly centered */}
-            <View style={{ width: 46 }} />
-
-            <View style={styles.customizeTopTitleWrap}>
-              <View style={styles.customizeChefHatWrap}>
-                <Ionicons name="restaurant-outline" size={22} color="#0f172a" />
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-                <Text style={styles.customizeTopTitleBold}>Customize </Text>
-                <Text style={styles.customizeTopTitleOrange}>Your Item</Text>
-              </View>
-              <View style={styles.customizeTopOrangeSwoosh} />
-            </View>
-
-            <TouchableOpacity
-              style={styles.customizeTopHomeBtn}
-              onPress={() => setShowModifier(false)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="close" size={26} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.customizeScrollView}
-            contentContainerStyle={styles.customizeScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* White Rounded Card Showcase: Photo on Left + Title, Bullets, Orange Price & Trailing Tag Pills */}
-            <View style={styles.customizeMainHeroCard}>
-              {/* Left Dish Photo Frame */}
-              <View style={styles.customizeHeroLeftOuter}>
-                <View style={styles.customizeHeroLeftInner}>
+                {/* Dish Header Image / Placeholder */}
+                <View style={styles.comboHeroImgBox}>
                   {selectedDish?.Image ? (
                     <Image
                       source={{ uri: `${API}/image/${selectedDish.Image}` }}
-                      style={styles.customizeHeroImg}
+                      style={styles.comboHeroImg}
                       resizeMode="cover"
                     />
                   ) : (
-                    <View style={styles.customizeHeroImgPlaceholder}>
-                      <Text style={{ fontSize: 72 }}>🍎</Text>
+                    <View style={styles.comboHeroPlaceholder}>
+                      <Ionicons name="fast-food-outline" size={64} color="#ea580c" />
                     </View>
                   )}
                 </View>
-              </View>
 
-              {/* Right Side: Title, Subtitle, Price Pill & Trailing Tag Badges */}
-              <View style={styles.customizeHeroRight}>
-                <Text style={styles.customizeHeroTitle} numberOfLines={2}>
-                  {selectedDish?.Name || selectedDish?.name}
-                </Text>
-
-                <Text style={styles.customizeHeroSubtitle}>
-                  {selectedDish?.Description
-                    ? parseDescriptionBullets(selectedDish.Description).slice(0, 3).join(", ")
-                    : "Fresh Apple, No Added Colors, No Preservatives"}
-                </Text>
-
-                <View style={styles.customizePricePill}>
-                  <Text style={styles.customizePriceText}>
+                {/* Dish Info */}
+                <View style={styles.comboDishInfoBox}>
+                  <Text style={styles.comboDishTitle}>
+                    {selectedDish?.Name || selectedDish?.name}
+                  </Text>
+                  <Text style={styles.comboDishPrice}>
                     $
                     {Number(
                       selectedDish?.Price || selectedDish?.price || 0
                     ).toFixed(2)}
                   </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Choose Your Add-ons Header Pill */}
-            <View style={styles.customizeSectionCard}>
-              <View style={styles.customizeSectionHeaderRow}>
-                <View style={styles.customizeSectionOrangeTab}>
-                  <Text style={styles.customizeSectionOrangeTabText}>
-                    Choose Your Add-ons
-                  </Text>
-                </View>
-                <View style={styles.customizeOptionalBadge}>
-                  <Text style={styles.customizeOptionalText}>Optional</Text>
-                </View>
-              </View>
-
-              {/* Modifier Groups / Categories */}
-              {(() => {
-                // Group modifiers into categories (e.g. Extras, Flavors, Toppings, or single group)
-                const modGroups: { [title: string]: any[] } = {};
-                modifiers.forEach((m) => {
-                  const grpName = m.ModifierGroupName || "Extras";
-                  if (!modGroups[grpName]) modGroups[grpName] = [];
-                  modGroups[grpName].push(m);
-                });
-
-                const groupKeys = Object.keys(modGroups);
-
-                return groupKeys.map((groupKey, gIdx) => {
-                  const groupItems = modGroups[groupKey];
-                  const getGroupIcon = (title: string) => {
-                    const t = title.toLowerCase();
-                    if (t.includes("flavor") || t.includes("syrup") || t.includes("drink")) return "water-outline";
-                    if (t.includes("topping") || t.includes("sauce")) return "restaurant-outline";
-                    return "fast-food-outline";
-                  };
-
-                  return (
-                    <View key={groupKey} style={styles.customizeGroupBlock}>
-                      {/* Sub-header row */}
-                      <View style={styles.customizeGroupSubHeader}>
-                        <View style={styles.customizeGroupSubHeaderLeft}>
-                          <View style={styles.customizeGroupIconBadge}>
-                            <Ionicons name={getGroupIcon(groupKey) as any} size={18} color="#ea580c" />
+                  {!!selectedDish?.Description && (
+                    <View style={styles.comboDishBulletsWrap}>
+                      {parseDescriptionBullets(selectedDish.Description).map((bullet, idx) => (
+                        <View key={idx} style={styles.comboDishBulletRow}>
+                          <View style={styles.comboCheckBadge}>
+                            <Text style={styles.comboCheckBadgeIcon}>✓</Text>
                           </View>
-                          <Text style={styles.customizeGroupTitleText}>{groupKey}</Text>
+                          <Text style={styles.comboDishBulletText}>{bullet}</Text>
                         </View>
-                        <Ionicons name="chevron-up" size={20} color="#ea580c" />
-                      </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
 
-                      {/* Items in this group: 3-column cards */}
-                      <View style={styles.customizeTilesGridContainer}>
-                        {groupItems.map((item) => {
-                          const id = String(item.ModifierID || item.ModifierId);
-                          const isSelected = selectedModifierIds.includes(id);
-                          const priceNum = Number(item.Price || 0);
+                {/* Combo Groups & Options */}
+                {comboLoading ? (
+                  <View style={styles.comboLoadingBox}>
+                    <ActivityIndicator size="large" color="#f97316" />
+                    <Text style={styles.comboLoadingText}>Loading options...</Text>
+                  </View>
+                ) : comboError && !comboConfig ? (
+                  <View style={styles.comboErrorBox}>
+                    <Text style={styles.comboErrorText}>{comboError}</Text>
+                    <TouchableOpacity
+                      style={styles.comboRetryBtn}
+                      onPress={() => openComboCustomizer(selectedDish)}
+                    >
+                      <Text style={styles.comboRetryBtnText}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.comboGroupsContainer}>
+                    {(comboConfig?.groups || []).map((group: any) => {
+                      const selectedIds = comboSelections[group.comboGroupId] || [];
+                      return (
+                        <View key={group.comboGroupId} style={styles.comboGroupCard}>
+                          <View style={styles.comboGroupHeader}>
+                            <Text style={styles.comboGroupName}>{group.groupName}</Text>
+                            <Text style={styles.comboGroupPickBadge}>
+                              Select{" "}
+                              {group.minSelection === group.maxSelection
+                                ? group.minSelection
+                                : `${group.minSelection} to ${group.maxSelection}`}
+                            </Text>
+                          </View>
 
-                          const getModEmoji = (name: string) => {
-                            const n = (name || "").toLowerCase();
-                            if (n.includes("cheese")) return "🧀";
-                            if (n.includes("patty") || n.includes("beef") || n.includes("burger")) return "🥩";
-                            if (n.includes("chicken") || n.includes("wings")) return "🍗";
-                            if (n.includes("vanilla")) return "🌼";
-                            if (n.includes("chocolate") || n.includes("choco")) return "🍫";
-                            if (n.includes("strawberry") || n.includes("berry")) return "🍓";
-                            if (n.includes("onion")) return "🧅";
-                            if (n.includes("lettuce") || n.includes("salad")) return "🥬";
-                            if (n.includes("tomato")) return "🍅";
-                            if (n.includes("bacon") || n.includes("pork")) return "🥓";
-                            if (n.includes("egg")) return "🍳";
-                            return "🧀";
-                          };
+                          <View style={styles.comboOptionsGrid}>
+                            {(group.options || []).map((opt: any) => {
+                              const isSelected = selectedIds.includes(opt.dishId);
+                              const totalOptSurcharge =
+                                (Number(opt.surcharge) || 0) +
+                                (Number(opt.dishPrice) || 0);
 
-                          return (
-                            <TouchableOpacity
-                              key={id}
-                              style={[
-                                styles.customizeTileCard,
-                                isSelected && styles.customizeTileCardSelected,
-                              ]}
-                              onPress={() => {
-                                setSelectedModifierIds((prev) =>
-                                  prev.includes(id)
-                                    ? prev.filter((x) => x !== id)
-                                    : [...prev, id]
-                                );
-                              }}
-                              activeOpacity={0.85}
-                            >
-                              {/* Checkbox top right */}
-                              <View
-                                style={[
-                                  styles.customizeTileCheckSquare,
-                                  isSelected && styles.customizeTileCheckSquareSelected,
-                                ]}
-                              >
-                                {isSelected && (
-                                  <Ionicons name="checkmark" size={14} color="#ffffff" />
-                                )}
-                              </View>
-
-                              <Text
-                                style={[
-                                  styles.customizeTileName,
-                                  isSelected && styles.customizeTileNameSelected,
-                                ]}
-                                numberOfLines={2}
-                              >
-                                {item.ModifierName}
-                              </Text>
-
-                              <View
-                                style={[
-                                  styles.customizeTilePriceBadge,
-                                  isSelected && styles.customizeTilePriceBadgeSelected,
-                                ]}
-                              >
-                                <Text
+                              return (
+                                <TouchableOpacity
+                                  key={opt.mappingId || opt.dishId}
                                   style={[
-                                    styles.customizeTilePriceText,
-                                    isSelected && styles.customizeTilePriceTextSelected,
+                                    styles.comboOptionRow,
+                                    isSelected && styles.comboOptionRowSelected,
+                                  ]}
+                                  onPress={() =>
+                                    handleSelectComboOption(
+                                      group.comboGroupId,
+                                      opt,
+                                      group.isMultiSelect,
+                                      group.maxSelection
+                                    )
+                                  }
+                                  activeOpacity={0.8}
+                                >
+                                  <View
+                                    style={[
+                                      styles.comboRadioCircle,
+                                      isSelected && styles.comboRadioCircleSelected,
+                                    ]}
+                                  >
+                                    {isSelected && (
+                                      <View style={styles.comboRadioDot} />
+                                    )}
+                                  </View>
+
+                                  <View style={styles.comboOptInfo}>
+                                    <Text
+                                      style={[
+                                        styles.comboOptName,
+                                        isSelected && styles.comboOptNameSelected,
+                                      ]}
+                                      numberOfLines={2}
+                                    >
+                                      {opt.name}
+                                    </Text>
+                                    <Text style={styles.comboOptPrice}>
+                                      {totalOptSurcharge > 0
+                                        ? `+$${totalOptSurcharge.toFixed(2)}`
+                                        : "$0.00"}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    })}
+
+                    {/* Optional Modifiers for this Combo Dish */}
+                    {comboDishModifiers.length > 0 && (
+                      <View style={styles.comboGroupCard}>
+                        <View style={styles.comboGroupHeader}>
+                          <Text style={styles.comboGroupName}>
+                            Modifiers (Optional)
+                          </Text>
+                        </View>
+
+                        <View style={styles.modifierSquareGrid}>
+                          {comboDishModifiers.map((m: any) => {
+                            const mId = String(m.ModifierID || m.ModifierId || "");
+                            const isSelected = selectedComboModifierIds.includes(mId);
+                            const priceNum = Number(m.Price || 0);
+                            return (
+                              <TouchableOpacity
+                                key={mId}
+                                style={[
+                                  styles.modifierSquareCard,
+                                  isSelected && styles.modifierSquareCardSelected,
+                                ]}
+                                onPress={() => handleToggleComboModifier(mId)}
+                                activeOpacity={0.8}
+                              >
+                                <View
+                                  style={[
+                                    styles.comboCheckboxSquare,
+                                    styles.modifierSquareCheckbox,
+                                    isSelected && styles.comboCheckboxSquareSelected,
                                   ]}
                                 >
-                                  {priceNum > 0 ? `+ $${priceNum.toFixed(2)}` : "$0.00"}
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                });
-              })()}
-            </View>
-          </ScrollView>
+                                  {isSelected && (
+                                    <Text style={styles.comboCheckmark}>✓</Text>
+                                  )}
+                                </View>
 
-          {/* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */}
-          <View style={styles.customizeBottomBar}>
-            <View style={styles.customizeBottomBarInner}>
-              <View style={styles.customizeQtyControls}>
+                                <Text
+                                  style={[
+                                    styles.modifierSquareName,
+                                    isSelected && styles.modifierSquareNameSelected,
+                                  ]}
+                                  numberOfLines={2}
+                                >
+                                  {m.ModifierName}
+                                </Text>
+                                <Text style={[styles.modifierSquarePrice, isSelected && styles.modifierSquarePriceSelected]}>
+                                  {priceNum > 0
+                                    ? `+$${priceNum.toFixed(2)}`
+                                    : "$0.00"}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
+
+                    {!!comboError && (
+                      <View style={styles.comboInlineErrorBox}>
+                        <Text style={styles.comboInlineErrorText}>{comboError}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Fixed Bottom Bar */}
+              <View style={styles.comboFixedBottomBar}>
+                <View style={styles.comboQtyControls}>
+                  <TouchableOpacity
+                    style={styles.comboQtyBtn}
+                    onPress={() => setComboQty(Math.max(1, comboQty - 1))}
+                  >
+                    <Text style={styles.comboQtyBtnText}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.comboQtyVal}>{comboQty}</Text>
+                  <TouchableOpacity
+                    style={styles.comboQtyBtn}
+                    onPress={() => setComboQty(comboQty + 1)}
+                  >
+                    <Text style={styles.comboQtyBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+
                 <TouchableOpacity
-                  style={styles.customizeQtyBtnMinus}
-                  onPress={() => setComboQty(Math.max(1, comboQty - 1))}
-                  activeOpacity={0.7}
+                  style={styles.comboAddCartBtn}
+                  onPress={handleAddComboToCart}
+                  activeOpacity={0.85}
                 >
-                  <Ionicons name="remove" size={26} color="#ffffff" />
+                  <Text style={styles.comboAddCartBtnText}>
+                    Add to Cart ${(calculateComboTotal() * comboQty).toFixed(2)}
+                  </Text>
                 </TouchableOpacity>
-                <Text style={styles.customizeQtyVal}>{comboQty}</Text>
+              </View>
+            </View>
+          ) : showModifier && !!selectedDish ? (
+            <View style={styles.customizeFullScreenContainer}>
+              {/* Top Bar on Pure White Background: Centered Title with Chef Hat & Orange Curved Swoosh, Orange Close Button */}
+              <View style={styles.customizeTopWhiteBar}>
+                {/* Left placeholder spacer to keep title perfectly centered */}
+                <View style={{ width: 46 }} />
+
+                <View style={styles.customizeTopTitleWrap}>
+                  <View style={styles.customizeChefHatWrap}>
+                    <Ionicons name="restaurant-outline" size={22} color="#0f172a" />
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                    <Text style={styles.customizeTopTitleBold}>Customize </Text>
+                    <Text style={styles.customizeTopTitleOrange}>Your Item</Text>
+                  </View>
+                  <View style={styles.customizeTopOrangeSwoosh} />
+                </View>
+
                 <TouchableOpacity
-                  style={styles.customizeQtyBtnPlus}
-                  onPress={() => setComboQty(comboQty + 1)}
-                  activeOpacity={0.7}
+                  style={styles.customizeTopHomeBtn}
+                  onPress={() => setShowModifier(false)}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="add" size={26} color="#ffffff" />
+                  <Ionicons name="close" size={26} color="#ffffff" />
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.customizeBottomDivider} />
+              <ScrollView
+                style={styles.customizeScrollView}
+                contentContainerStyle={styles.customizeScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* White Rounded Card Showcase: Photo on Left + Title, Bullets, Orange Price & Trailing Tag Pills */}
+                <View style={styles.customizeMainHeroCard}>
+                  {/* Left Dish Photo Frame */}
+                  <View style={styles.customizeHeroLeftOuter}>
+                    <View style={styles.customizeHeroLeftInner}>
+                      {selectedDish?.Image ? (
+                        <Image
+                          source={{ uri: `${API}/image/${selectedDish.Image}` }}
+                          style={styles.customizeHeroImg}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.customizeHeroImgPlaceholder}>
+                          <Text style={{ fontSize: 72 }}>🍎</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
 
-              {(() => {
-                const chosenMods = modifiers.filter((m) =>
-                  selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
-                );
-                const extra = chosenMods.reduce(
-                  (s, m) => s + Number(m.Price || 0),
-                  0
-                );
-                const unitPrice =
-                  Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
-                const totalPrice = (unitPrice * comboQty).toFixed(2);
-
-                return (
-                  <TouchableOpacity
-                    style={styles.customizeAddToCartBtn}
-                    onPress={addWithModifiers}
-                    activeOpacity={0.88}
-                  >
-                    <Ionicons name="cart-outline" size={24} color="#ffffff" style={{ marginRight: 10 }} />
-                    <Text style={styles.customizeAddToCartBtnText}>
-                      Add to Cart ${totalPrice}
+                  {/* Right Side: Title, Subtitle, Price Pill & Trailing Tag Badges */}
+                  <View style={styles.customizeHeroRight}>
+                    <Text style={styles.customizeHeroTitle} numberOfLines={2}>
+                      {selectedDish?.Name || selectedDish?.name}
                     </Text>
-                  </TouchableOpacity>
-                );
-              })()}
+
+                    <Text style={styles.customizeHeroSubtitle}>
+                      {selectedDish?.Description
+                        ? parseDescriptionBullets(selectedDish.Description).slice(0, 3).join(", ")
+                        : "Fresh Apple, No Added Colors, No Preservatives"}
+                    </Text>
+
+                    <View style={styles.customizePricePill}>
+                      <Text style={styles.customizePriceText}>
+                        $
+                        {Number(
+                          selectedDish?.Price || selectedDish?.price || 0
+                        ).toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Choose Your Add-ons Header Pill */}
+                <View style={styles.customizeSectionCard}>
+                  <View style={styles.customizeSectionHeaderRow}>
+                    <View style={styles.customizeSectionOrangeTab}>
+                      <Text style={styles.customizeSectionOrangeTabText}>
+                        Choose Your Add-ons
+                      </Text>
+                    </View>
+                    <View style={styles.customizeOptionalBadge}>
+                      <Text style={styles.customizeOptionalText}>Optional</Text>
+                    </View>
+                  </View>
+
+                  {/* Modifier Groups / Categories */}
+                  {(() => {
+                    // Group modifiers into categories (e.g. Extras, Flavors, Toppings, or single group)
+                    const modGroups: { [title: string]: any[] } = {};
+                    modifiers.forEach((m) => {
+                      const grpName = m.ModifierGroupName || "Extras";
+                      if (!modGroups[grpName]) modGroups[grpName] = [];
+                      modGroups[grpName].push(m);
+                    });
+
+                    const groupKeys = Object.keys(modGroups);
+
+                    return groupKeys.map((groupKey, gIdx) => {
+                      const groupItems = modGroups[groupKey];
+                      const getGroupIcon = (title: string) => {
+                        const t = title.toLowerCase();
+                        if (t.includes("flavor") || t.includes("syrup") || t.includes("drink")) return "water-outline";
+                        if (t.includes("topping") || t.includes("sauce")) return "restaurant-outline";
+                        return "fast-food-outline";
+                      };
+
+                      return (
+                        <View key={groupKey} style={styles.customizeGroupBlock}>
+                          {/* Sub-header row */}
+                          <View style={styles.customizeGroupSubHeader}>
+                            <View style={styles.customizeGroupSubHeaderLeft}>
+                              <View style={styles.customizeGroupIconBadge}>
+                                <Ionicons name={getGroupIcon(groupKey) as any} size={18} color="#ea580c" />
+                              </View>
+                              <Text style={styles.customizeGroupTitleText}>{groupKey}</Text>
+                            </View>
+                            <Ionicons name="chevron-up" size={20} color="#ea580c" />
+                          </View>
+
+                          {/* Items in this group: 3-column cards */}
+                          <View style={styles.customizeTilesGridContainer}>
+                            {groupItems.map((item) => {
+                              const id = String(item.ModifierID || item.ModifierId);
+                              const isSelected = selectedModifierIds.includes(id);
+                              const priceNum = Number(item.Price || 0);
+
+                              const getModEmoji = (name: string) => {
+                                const n = (name || "").toLowerCase();
+                                if (n.includes("cheese")) return "🧀";
+                                if (n.includes("patty") || n.includes("beef") || n.includes("burger")) return "🥩";
+                                if (n.includes("chicken") || n.includes("wings")) return "🍗";
+                                if (n.includes("vanilla")) return "🌼";
+                                if (n.includes("chocolate") || n.includes("choco")) return "🍫";
+                                if (n.includes("strawberry") || n.includes("berry")) return "🍓";
+                                if (n.includes("onion")) return "🧅";
+                                if (n.includes("lettuce") || n.includes("salad")) return "🥬";
+                                if (n.includes("tomato")) return "🍅";
+                                if (n.includes("bacon") || n.includes("pork")) return "🥓";
+                                if (n.includes("egg")) return "🍳";
+                                return "🧀";
+                              };
+
+                              return (
+                                <TouchableOpacity
+                                  key={id}
+                                  style={[
+                                    styles.customizeTileCard,
+                                    isSelected && styles.customizeTileCardSelected,
+                                  ]}
+                                  onPress={() => {
+                                    setSelectedModifierIds((prev) =>
+                                      prev.includes(id)
+                                        ? prev.filter((x) => x !== id)
+                                        : [...prev, id]
+                                    );
+                                  }}
+                                  activeOpacity={0.85}
+                                >
+                                  {/* Checkbox top right */}
+                                  <View
+                                    style={[
+                                      styles.customizeTileCheckSquare,
+                                      isSelected && styles.customizeTileCheckSquareSelected,
+                                    ]}
+                                  >
+                                    {isSelected && (
+                                      <Ionicons name="checkmark" size={14} color="#ffffff" />
+                                    )}
+                                  </View>
+
+                                  <Text
+                                    style={[
+                                      styles.customizeTileName,
+                                      isSelected && styles.customizeTileNameSelected,
+                                    ]}
+                                    numberOfLines={2}
+                                  >
+                                    {item.ModifierName}
+                                  </Text>
+
+                                  <View
+                                    style={[
+                                      styles.customizeTilePriceBadge,
+                                      isSelected && styles.customizeTilePriceBadgeSelected,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.customizeTilePriceText,
+                                        isSelected && styles.customizeTilePriceTextSelected,
+                                      ]}
+                                    >
+                                      {priceNum > 0 ? `+ $${priceNum.toFixed(2)}` : "$0.00"}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    });
+                  })()}
+                </View>
+              </ScrollView>
+
+              {/* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */}
+              <View style={styles.customizeBottomBar}>
+                <View style={styles.customizeBottomBarInner}>
+                  <View style={styles.customizeQtyControls}>
+                    <TouchableOpacity
+                      style={styles.customizeQtyBtnMinus}
+                      onPress={() => setComboQty(Math.max(1, comboQty - 1))}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="remove" size={26} color="#ffffff" />
+                    </TouchableOpacity>
+                    <Text style={styles.customizeQtyVal}>{comboQty}</Text>
+                    <TouchableOpacity
+                      style={styles.customizeQtyBtnPlus}
+                      onPress={() => setComboQty(comboQty + 1)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="add" size={26} color="#ffffff" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.customizeBottomDivider} />
+
+                  {(() => {
+                    const chosenMods = modifiers.filter((m) =>
+                      selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
+                    );
+                    const extra = chosenMods.reduce(
+                      (s, m) => s + Number(m.Price || 0),
+                      0
+                    );
+                    const unitPrice =
+                      Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
+                    const totalPrice = (unitPrice * comboQty).toFixed(2);
+
+                    return (
+                      <TouchableOpacity
+                        style={styles.customizeAddToCartBtn}
+                        onPress={addWithModifiers}
+                        activeOpacity={0.88}
+                      >
+                        <Ionicons name="cart-outline" size={24} color="#ffffff" style={{ marginRight: 10 }} />
+                        <Text style={styles.customizeAddToCartBtnText}>
+                          Add to Cart ${totalPrice}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
+                </View>
+              </View>
             </View>
-          </View>
-        </View>
           ) : (
             <>
               {/* Hero Banner matching reference design */}
-          <View style={styles.heroBanner}>
-            <View style={styles.heroIconCircle}>
-              <Ionicons name="restaurant" size={32} color="#ea580c" />
-            </View>
-            <View style={styles.heroTextWrap}>
-              <Text style={styles.heroCategoryTitle}>
-                {categories.find((c) => c.CategoryId === activeCategory)?.KitchenTypeName || "Delicious Dishes"}
-              </Text>
-              <Text style={styles.heroSubtitle}>Choose your favourite dishes & beverages</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.heroMoreBtn}
-              onPress={onLogout}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="log-out-outline" size={20} color="#ea580c" style={{ marginLeft: 2 }} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Dishes Grid */}
-          <FlatList
-            data={numColumns > 1 ? formatData(filteredDishes, numColumns) : filteredDishes}
-            keyExtractor={(d) => String(d.DishId)}
-            numColumns={numColumns}
-            key={`cols-${numColumns}`}
-            style={styles.dishesFlatList}
-            contentContainerStyle={styles.dishesList}
-            renderItem={({ item }) => {
-              if (item.empty) {
-                return (
-                  <View
-                    style={[styles.dishCard, styles.dishCardInvisible]}
-                    pointerEvents="none"
-                  />
-                );
-              }
-
-              const dishQty = cart
-                .filter((c: any) => (c.DishId || c.id) === (item.DishId || item.id))
-                .reduce((sum: number, c: any) => sum + (c.qty || 1), 0);
-
-              return (
+              <View style={styles.heroBanner}>
+                <View style={styles.heroIconCircle}>
+                  <Ionicons name="restaurant" size={32} color="#ea580c" />
+                </View>
+                <View style={styles.heroTextWrap}>
+                  <Text style={styles.heroCategoryTitle}>
+                    {categories.find((c) => c.CategoryId === activeCategory)?.KitchenTypeName || "Delicious Dishes"}
+                  </Text>
+                  <Text style={styles.heroSubtitle}>Choose your favourite dish</Text>
+                </View>
                 <TouchableOpacity
-                  style={[styles.dishCard, item.IsSoldOut && styles.dishSoldOut]}
-                  onPress={() => handleDishClick(item)}
-                  activeOpacity={0.88}
+                  style={styles.heroMoreBtn}
+                  onPress={onLogout}
+                  activeOpacity={0.8}
                 >
-                  {/* Top Right Badge: Shows quantity (e.g. 1) if added to cart, otherwise heart outline */}
-                  {dishQty > 0 ? (
-                    <View style={styles.dishCardQtyBadge}>
-                      <Text style={styles.dishCardQtyBadgeText}>{dishQty}</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.dishCardHeartWrap}>
-                      <Text style={styles.dishCardHeartIcon}>♡</Text>
-                    </View>
-                  )}
-
-                  {/* Circular dish image matching reference design */}
-                  <View style={styles.dishCircularBox}>
-                    {item.Image ? (
-                      <Image
-                        source={{ uri: `${API}/image/${item.Image}` }}
-                        style={styles.dishImg}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Ionicons name="fast-food-outline" size={68} color="#94a3b8" />
-                    )}
-                    {item.IsSoldOut && (
-                      <View style={styles.soldOutBadge}>
-                        <Text style={styles.soldOutText}>Sold Out</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.dishInfo}>
-                    <View style={styles.dishTopContent}>
-                      <Text style={styles.dishName} numberOfLines={2}>
-                        {item.Name}
-                      </Text>
-
-                      {/* Bullet Points Description with Orange Check Mark badge */}
-                      <View style={styles.dishBulletsContainer}>
-                        {parseDescriptionBullets(
-                          item.Description || "Freshly prepared • Delicious • High Quality"
-                        ).map((bullet, idx) => (
-                          <View key={idx} style={styles.dishBulletRow}>
-                            <View style={styles.checkBadge}>
-                              <Text style={styles.checkBadgeIcon}>✓</Text>
-                            </View>
-                            <Text style={styles.dishBulletText}>
-                              {bullet}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-
-                    <Text style={styles.dishPrice}>${Number(item.Price || 0).toFixed(2)}</Text>
-                  </View>
+                  <Ionicons name="log-out-outline" size={20} color="#ea580c" style={{ marginLeft: 2 }} />
                 </TouchableOpacity>
-              );
-            }}
-            ListEmptyComponent={
-              <View style={styles.emptyDishes}>
-                <Text style={styles.emptyDishesText}>
-                  {isCategoryPrevious(activeCategory)
-                    ? "No previous orders found."
-                    : "No items in this group."}
-                </Text>
               </View>
-            }
-          />
+
+              {/* Dishes Grid */}
+              <FlatList
+                data={numColumns > 1 ? formatData(filteredDishes, numColumns) : filteredDishes}
+                keyExtractor={(d) => String(d.DishId)}
+                numColumns={numColumns}
+                key={`cols-${numColumns}`}
+                style={styles.dishesFlatList}
+                contentContainerStyle={styles.dishesList}
+                renderItem={({ item }) => {
+                  if (item.empty) {
+                    return (
+                      <View
+                        style={[styles.dishCard, styles.dishCardInvisible]}
+                        pointerEvents="none"
+                      />
+                    );
+                  }
+
+                  const dishQty = cart
+                    .filter((c: any) => (c.DishId || c.id) === (item.DishId || item.id))
+                    .reduce((sum: number, c: any) => sum + (c.qty || 1), 0);
+
+                  return (
+                    <TouchableOpacity
+                      style={[styles.dishCard, item.IsSoldOut && styles.dishSoldOut]}
+                      onPress={() => handleDishClick(item)}
+                      activeOpacity={0.88}
+                    >
+                      {/* Top Right Badge: Shows quantity (e.g. 1) if added to cart, otherwise heart outline */}
+                      {dishQty > 0 ? (
+                        <View style={styles.dishCardQtyBadge}>
+                          <Text style={styles.dishCardQtyBadgeText}>{dishQty}</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.dishCardHeartWrap}>
+                          <Text style={styles.dishCardHeartIcon}>♡</Text>
+                        </View>
+                      )}
+
+                      {/* Circular dish image matching reference design */}
+                      <View style={styles.dishCircularBox}>
+                        {item.Image ? (
+                          <Image
+                            source={{ uri: `${API}/image/${item.Image}` }}
+                            style={styles.dishImg}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Ionicons name="fast-food-outline" size={68} color="#94a3b8" />
+                        )}
+                        {item.IsSoldOut && (
+                          <View style={styles.soldOutBadge}>
+                            <Text style={styles.soldOutText}>Sold Out</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.dishInfo}>
+                        <View style={styles.dishTopContent}>
+                          <Text style={styles.dishName} numberOfLines={2}>
+                            {item.Name}
+                          </Text>
+
+
+                        </View>
+
+                        <Text style={styles.dishPrice}>${Number(item.Price || 0).toFixed(2)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.emptyDishes}>
+                    <Text style={styles.emptyDishesText}>
+                      {isCategoryPrevious(activeCategory)
+                        ? "No previous orders found."
+                        : "No items in this group."}
+                    </Text>
+                  </View>
+                }
+              />
             </>
           )}
         </View>
@@ -2187,7 +2172,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               /* ── Step 2: Tent Number Numberpad Input (Grid layout) ── */
               <View style={styles.tableDirectInputBody}>
                 <Text style={styles.tentKeypadTitle}>Grab a Table tent and enter the code.</Text>
-                
+
                 {/* Display Value Box */}
                 <View style={[styles.tentDisplayBox, !!tableInputError && styles.tableDirectInputBoxError]}>
                   <Text style={[styles.tentDisplayText, !inputTableNo && styles.tentDisplayPlaceholder]}>
@@ -2633,7 +2618,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
-      
+
 
       {/* Loading Modal */}
       <Modal
