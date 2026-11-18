@@ -399,6 +399,17 @@ router.get("/kitchen-printers", async (req, res) => {
       `);
     }
 
+    // 2.6 Self-healing check for Kiosk Receipt Printer (PrinterType = 5)
+    const kioskCheck = await pool.request()
+      .query("SELECT COUNT(*) as count FROM PrintMaster WHERE PrinterType = 5 AND IsActive = 1");
+    if (kioskCheck.recordset[0].count === 0) {
+      console.log("🛠️ Inserting default Kiosk Receipt Printer row into PrintMaster...");
+      await pool.request().query(`
+        INSERT INTO PrintMaster (PrinterId, PrinterName, PrinterPath, PrinterIP, PrinterType, PrintSection, KitchenTypeName, KitchenTypeValue, IsActive, PrintCopy)
+        VALUES (NEWID(), 'Kiosk Receipt Printer', '', '', 5, 1, 'Kiosk Receipt', 10, 1, 1)
+      `);
+    }
+
     // 3. Fetch active categories (matching menu.js kitchens endpoint structure)
     const activeCatsResult = await pool.request().query(`
       SELECT cm.CategoryId, cm.CategoryName AS KitchenTypeName, ckt.KitchenTypeCode
@@ -449,6 +460,16 @@ router.get("/kitchen-printers", async (req, res) => {
         ...kdsPrinter,
         IsActive: kdsPrinter.IsActive === true || kdsPrinter.IsActive === 1 ? 1 : 0,
         IsEnabled: kdsPrinter.IsEnabled === undefined || kdsPrinter.IsEnabled === null || kdsPrinter.IsEnabled === true || kdsPrinter.IsEnabled === 1 ? 1 : 0
+      });
+    }
+
+    // Add Kiosk Receipt printer (PrinterType = 5)
+    const kioskPrinter = allPrinters.find(p => p.PrinterType === 5);
+    if (kioskPrinter) {
+      responsePrinters.push({
+        ...kioskPrinter,
+        IsActive: kioskPrinter.IsActive === true || kioskPrinter.IsActive === 1 ? 1 : 0,
+        IsEnabled: kioskPrinter.IsEnabled === undefined || kioskPrinter.IsEnabled === null || kioskPrinter.IsEnabled === true || kioskPrinter.IsEnabled === 1 ? 1 : 0
       });
     }
 

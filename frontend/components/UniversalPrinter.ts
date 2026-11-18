@@ -1458,6 +1458,7 @@ class UniversalPrinter {
 
         let cashierIp = company.printerIp || "";
         let takeawayIp = company.printerIp || "";
+        let kioskIp = "";
         try {
           const now = Date.now();
           let printers = this.cachedPrinters;
@@ -1470,18 +1471,23 @@ class UniversalPrinter {
           if (Array.isArray(printers)) {
             const cashierPrinter = printers.find((p: any) => p.PrinterType === 1);
             const takeawayPrinter = printers.find((p: any) => p.PrinterType === 3);
+            const kioskPrinter = printers.find((p: any) => p.PrinterType === 5);
             cashierIp = cashierPrinter?.PrinterPath || cashierPrinter?.PrinterIP || cashierIp;
             takeawayIp = takeawayPrinter?.PrinterPath || takeawayPrinter?.PrinterIP || takeawayIp;
+            kioskIp = kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP || "";
           }
         } catch (err) {
           console.warn("[UniversalPrinter] Failed to fetch printer IPs from PrintMaster:", err);
         }
 
-        const targetIp = isTakeaway
+        const isKiosk = saleData.isKiosk || (preferredType as any) === 5 || (preferredType as any) === "kiosk";
+        const targetIp = isKiosk
+          ? (kioskIp || cashierIp || company.printerIp || "")
+          : isTakeaway
           ? (takeawayIp || cashierIp || company.printerIp || "")
           : (cashierIp || company.printerIp || "");
 
-        const pType = isTakeaway ? 3 : 1;
+        const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
         console.log(`📡 [Web Print Bridge] Queueing receipt (Type ${pType}, Target IP: ${targetIp || "default"})`);
         const success = await this.queuePrintJob(pType, undefined, text, true, targetIp);
         if (success) return true;
@@ -1502,6 +1508,7 @@ class UniversalPrinter {
         // Load printer IPs dynamically from PrintMaster with caching
         let cashierIp = "";
         let takeawayIp = "";
+        let kioskIp = "";
         try {
           const now = Date.now();
           let printers = this.cachedPrinters;
@@ -1516,14 +1523,17 @@ class UniversalPrinter {
           if (Array.isArray(printers)) {
             const cashierPrinter = printers.find((p) => p.PrinterType === 1);
             const takeawayPrinter = printers.find((p) => p.PrinterType === 3);
+            const kioskPrinter = printers.find((p) => p.PrinterType === 5);
             cashierIp = cashierPrinter?.PrinterPath || "";
             takeawayIp = takeawayPrinter?.PrinterPath || "";
+            kioskIp = kioskPrinter?.PrinterPath || "";
           }
         } catch (err) {
           console.warn("Failed to fetch printer IPs from PrintMaster:", err);
         }
 
-        // Determine target printer IP based on order type (Dine-in vs Takeaway)
+        // Determine target printer IP based on order type (Dine-in vs Takeaway vs Kiosk)
+        const isKiosk = saleData.isKiosk || (preferredType as any) === 5 || (preferredType as any) === "kiosk";
         const isTakeaway =
           !saleData.tableNo ||
           String(saleData.tableNo).trim() === "" ||
@@ -1532,7 +1542,9 @@ class UniversalPrinter {
           String(saleData.tableNo).toUpperCase() === "TAKE AWAY";
 
         let targetIp = "";
-        if (isTakeaway) {
+        if (isKiosk) {
+          targetIp = kioskIp || cashierIp || company.printerIp || "";
+        } else if (isTakeaway) {
           targetIp = takeawayIp || cashierIp || company.printerIp || "";
         } else {
           targetIp = cashierIp || company.printerIp || "";
@@ -1550,7 +1562,7 @@ class UniversalPrinter {
             try {
               console.log(`📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
               const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
-              const pType = isTakeaway ? 3 : 1;
+              const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
               const success = await this.queuePrintJob(pType, undefined, text);
               if (success) return;
             } catch (bridgeErr) {

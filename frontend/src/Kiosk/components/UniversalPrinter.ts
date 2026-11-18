@@ -1032,8 +1032,8 @@ export const UniversalPrinter = {
       const company = await BillPDFGenerator.loadSettings(outletId);
       const text = formatThermalTextWithDiscount(saleData, company, discountInfo);
 
-      // In POS/Kiosk mode, bill receipts always print to Cashier/Receipt printer (Type 1 = TD80 Printer)
-      const pType = preferredType || 1;
+      // In POS/Kiosk mode, bill receipts print to Kiosk printer (Type 5) if specified or Kiosk mode, else Cashier (Type 1)
+      const pType = preferredType || (saleData.isKiosk ? 5 : 1);
 
       // If Bridge is online, queue to USB printer directly
       const bridgeActive = await isBridgeOnline();
@@ -1046,9 +1046,57 @@ export const UniversalPrinter = {
         }
       }
 
-      // If running on native device (Android APK / iOS), print directly from device
+      // If running on native device (Android APK / iOS), check for Sunmi or Thermal Printer
       if (Platform.OS !== "web") {
         console.log("📱 Native device (APK) detected: printing directly from device...");
+        try {
+          // 1. Try Sunmi direct print first (for Sunmi Kiosk hardware like K2, T2, etc.)
+          const sunmiReady = await SunmiPrinterService.init().catch(() => false);
+          if (sunmiReady) {
+            const printed = await SunmiPrinterService.printReceipt(saleData, company);
+            if (printed) {
+              console.log("✅ Printed with Sunmi Kiosk printer - Auto Cut!");
+              return true;
+            }
+          }
+        } catch (sunmiErr) {
+          console.warn("Sunmi Kiosk print attempt failed:", sunmiErr);
+        }
+
+        // 2. Try configured Kiosk Printer IP/BT from PrintMaster
+        try {
+          const res = await fetch(`${API_URL}/api/settings/kitchen-printers`);
+          const printers = await res.json();
+          if (Array.isArray(printers)) {
+            const kioskPrinter = printers.find((p: any) => p.PrinterType === 5);
+            const targetIp = kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP || "";
+            if (targetIp && targetIp.trim().length > 0) {
+              const ThermalPrinter = require("react-native-thermal-printer").default;
+              const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp.trim());
+              if (isIp && ThermalPrinter?.printTcp) {
+                await ThermalPrinter.printTcp({
+                  ip: targetIp.trim(),
+                  port: 9100,
+                  payload: text,
+                  autoCut: true,
+                  mmFeedPaper: 25,
+                });
+                return true;
+              } else if (ThermalPrinter?.printBluetooth) {
+                await ThermalPrinter.printBluetooth({
+                  macAddress: targetIp.trim(),
+                  payload: text,
+                  autoCut: true,
+                  mmFeedPaper: 25,
+                });
+                return true;
+              }
+            }
+          }
+        } catch (tpErr) {
+          console.warn("Direct native Kiosk thermal print error:", tpErr);
+        }
+
         try {
           await BillPDFGenerator.printReceipt(saleData, outletId);
         } catch (nativeErr) {

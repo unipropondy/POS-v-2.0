@@ -1422,6 +1422,18 @@ async function syncKitchensToPrintMaster(pool) {
       console.log("🛠️ [KitchenSync] Auto-created default TakeAway Printer in PrintMaster.");
     }
 
+    // --- 2.5 Ensure default Kiosk Receipt Printer (PrinterType = 5) ---
+    const kioskCheck = await pool.request()
+      .query("SELECT COUNT(*) as cnt FROM PrintMaster WHERE PrinterType = 5 AND IsActive = 1");
+    if (kioskCheck.recordset[0].cnt === 0) {
+      await pool.request()
+        .query(`
+          INSERT INTO PrintMaster (PrinterId, PrinterName, PrinterPath, PrinterIP, PrinterType, PrintSection, KitchenTypeName, KitchenTypeValue, IsActive, PrintCopy)
+          VALUES (NEWID(), 'Kiosk Receipt Printer', '', '', 5, 1, 'Kiosk Receipt', 10, 1, 1)
+        `);
+      console.log("🛠️ [KitchenSync] Auto-created default Kiosk Receipt Printer in PrintMaster.");
+    }
+
     // --- 3. Fetch ALL active categories with their current KitchenTypeCode ---
     const activeCatsResult = await pool.request().query(`
       SELECT

@@ -38,6 +38,7 @@ export default function CompanySettingsScreen() {
   const [cashierIp, setCashierIp] = useState('');
   const [takeawayIp, setTakeawayIp] = useState('');
   const [kdsIp, setKdsIp] = useState('');
+  const [kioskReceiptIp, setKioskReceiptIp] = useState('');
   const [loadingKitchens, setLoadingKitchens] = useState(false);
   const [showAddPrinterModal, setShowAddPrinterModal] = useState(false);
   const [newPrinterName, setNewPrinterName] = useState('');
@@ -97,6 +98,8 @@ export default function CompanySettingsScreen() {
       setTakeawayIp(printerName);
     } else if (activeUsbTarget === "kds") {
       setKdsIp(printerName);
+    } else if (activeUsbTarget === "kiosk") {
+      setKioskReceiptIp(printerName);
     } else if (activeUsbTarget === "newPrinter") {
       setNewPrinterIP(printerName);
     } else if (typeof activeUsbTarget === "number") {
@@ -144,6 +147,8 @@ export default function CompanySettingsScreen() {
       setTakeawayIp(macAddress);
     } else if (activeBtTarget === "kds") {
       setKdsIp(macAddress);
+    } else if (activeBtTarget === "kiosk") {
+      setKioskReceiptIp(macAddress);
     } else if (activeBtTarget === "newPrinter") {
       setNewPrinterIP(macAddress);
     } else if (typeof activeBtTarget === "number") {
@@ -230,6 +235,12 @@ export default function CompanySettingsScreen() {
         const kds = data.find(p => p.PrinterType === 4);
         if (kds) {
           setKdsIp(kds.PrinterPath || '');
+        }
+
+        // Find Kiosk Receipt printer (PrinterType = 5)
+        const kiosk = data.find(p => p.PrinterType === 5);
+        if (kiosk) {
+          setKioskReceiptIp(kiosk.PrinterPath || '');
         }
 
         // Filter and Deduplicate Kitchen printers (PrinterType = 2)
@@ -348,6 +359,12 @@ export default function CompanySettingsScreen() {
           ip: kdsIp,
           type: 4,
           name: 'KDS Printer'
+        },
+        {
+          id: 10,
+          ip: kioskReceiptIp,
+          type: 5,
+          name: 'Kiosk Receipt Printer'
         },
         ...kitchenPrinters.map(kp => ({
           id: kp.KitchenTypeValue,
@@ -841,6 +858,40 @@ export default function CompanySettingsScreen() {
               />
               <Text style={[styles.note, { textAlign: 'left', marginTop: 5 }]}>
                 Used exclusively for printing KDS orders.
+              </Text>
+            </View>
+
+            <View style={{ marginTop: 15 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={[styles.inputLabel, { marginBottom: 0 }]}>Kiosk Receipt Printer (USB / IP / BT)</Text>
+                  <TouchableOpacity
+                    style={styles.smallBtBtn}
+                    onPress={() => scanBluetoothDevices("kiosk")}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="bluetooth" size={14} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallBtBtn, { backgroundColor: '#10B981', paddingHorizontal: 6, width: 'auto' }]}
+                    onPress={() => scanUsbDevices("kiosk")}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="hardware-chip" size={13} color="#fff" />
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold', marginLeft: 3 }}>USB</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <TextInput 
+                style={styles.input}
+                value={kioskReceiptIp}
+                onChangeText={setKioskReceiptIp}
+                placeholder="e.g. TD80 Printer, 192.168.1.106, or BT MAC"
+                placeholderTextColor={Theme.textMuted}
+                autoCapitalize="characters"
+              />
+              <Text style={[styles.note, { textAlign: 'left', marginTop: 5 }]}>
+                Used for printing customer receipts at self-ordering kiosk terminals.
               </Text>
             </View>
           </View>

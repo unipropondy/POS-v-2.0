@@ -227,6 +227,7 @@ export default function SettlementSuccessScreen({
         orderId: orderNumber || orderId,
         invoiceNumber: orderNumber || orderId,
         tableNo,
+        isKiosk: true,
         items: (currentItems || []).map((item: any) => ({
           name: item.DishName || item.Name || item.name || "Item",
           quantity: Number(item.Quantity || item.qty || 1),
@@ -238,8 +239,8 @@ export default function SettlementSuccessScreen({
         paymentMethod: "PAID",
       };
 
-      // Direct USB hardware printing via backend spooler/bridge (NO browser preview dialog)
-      await UniversalPrinter.smartPrint(saleData);
+      // Direct Kiosk receipt printer (PrinterType 5) via backend spooler/bridge or native device
+      await UniversalPrinter.smartPrint(saleData, undefined, undefined, undefined, 5);
     } catch (e: any) {
       console.log("Print error:", e);
       if (!isAuto) {
