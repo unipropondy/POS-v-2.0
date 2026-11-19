@@ -26,6 +26,7 @@ import { API_URL } from '@/constants/Config';
 import { useCompanySettingsStore } from '../stores/companySettingsStore';
 import { useAuthStore } from '../stores/authStore';
 import AuditLogModal from '../components/AuditLogModal';
+import { KioskPrinterSettingsScreen } from '../src/Kiosk/components/KioskPrinterSettingsScreen';
 
 export default function CompanySettingsScreen() {
   const { settings, loading, fetchSettings, updateSettings } = useCompanySettingsStore();
@@ -53,6 +54,7 @@ export default function CompanySettingsScreen() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pin, setPin] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [showKioskPrinterModal, setShowKioskPrinterModal] = useState(false);
   
   const [password, setPassword] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -881,6 +883,22 @@ export default function CompanySettingsScreen() {
                     <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold', marginLeft: 3 }}>USB</Text>
                   </TouchableOpacity>
                 </View>
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#6366F1',
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 6,
+                    gap: 4,
+                  }}
+                  onPress={() => setShowKioskPrinterModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="options-outline" size={14} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Kiosk PrintMaster</Text>
+                </TouchableOpacity>
               </View>
               <TextInput 
                 style={styles.input}
@@ -1233,6 +1251,60 @@ export default function CompanySettingsScreen() {
         visible={showAuditModal}
         onClose={() => setShowAuditModal(false)}
       />
+
+      {/* Kiosk PrintMaster Dedicated Hardware Configuration Modal */}
+      <Modal
+        visible={showKioskPrinterModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowKioskPrinterModal(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: '#E2E8F0',
+              backgroundColor: '#fff',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="hardware-chip" size={20} color="#6366F1" />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B' }}>
+                Kiosk Ticket Printer Setup
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowKioskPrinterModal(false)}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                backgroundColor: '#F1F5F9',
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ fontWeight: '700', color: '#475569' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <KioskPrinterSettingsScreen
+            printerContext="KIOSK"
+            onClose={() => setShowKioskPrinterModal(false)}
+            onConfigSaved={() => {
+              const { kioskPrinterConfigManager } = require('../src/services/printer/PrinterConfig');
+              const cfg = kioskPrinterConfigManager.getConfig();
+              if (cfg.type === 'USB' && cfg.usbDeviceName) {
+                setKioskReceiptIp(cfg.usbDeviceName);
+              } else if (cfg.type === 'LAN' && cfg.lanIp) {
+                setKioskReceiptIp(cfg.lanIp);
+              }
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
 
       {/* USB Printer Scanner Modal */}
       <Modal

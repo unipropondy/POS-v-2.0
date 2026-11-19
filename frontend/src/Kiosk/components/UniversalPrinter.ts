@@ -1035,6 +1035,32 @@ export const UniversalPrinter = {
       // In POS/Kiosk mode, bill receipts print to Kiosk printer (Type 5) if specified or Kiosk mode, else Cashier (Type 1)
       const pType = preferredType || (saleData.isKiosk ? 5 : 1);
 
+      // ── Dedicated Kiosk Printer Flow (from Kiosk Printer Configuration) ──
+      try {
+        const { kioskPrinterConfigManager } = require("../../services/printer/PrinterConfig");
+        const kioskConfig = await kioskPrinterConfigManager.loadConfig();
+
+        if (kioskConfig.type === "USB") {
+          const { usbPrinterDriver } = require("../../services/printer/drivers/UsbPrinter");
+          const encoder = new TextEncoder();
+          const raw = encoder.encode(text);
+          const printedUsb = await usbPrinterDriver.printRaw(raw, kioskConfig);
+          if (printedUsb) {
+            console.log("✅ Kiosk receipt printed via configured USB printer:", kioskConfig.usbDeviceName || kioskConfig.printerName);
+            return true;
+          }
+        } else if (kioskConfig.type === "SUNMI") {
+          const { sunmiPrinterDriver } = require("../../services/printer/drivers/SunmiPrinter");
+          const printedSunmi = await sunmiPrinterDriver.testPrint(kioskConfig);
+          if (printedSunmi.success) {
+            console.log("✅ Kiosk receipt printed via Sunmi built-in printer");
+            return true;
+          }
+        }
+      } catch (kioskPrnErr) {
+        console.warn("Dedicated Kiosk printer attempt notice:", kioskPrnErr);
+      }
+
       // Direct Network TCP Kiosk Receipt Print via Backend API (matches Car Wash implementation)
       // Connects directly to the Kiosk's built-in printer (192.168.0.199:9100) over TCP socket.
       // Works from BOTH Web Browser (localhost:8081/kiosk) and Native Android APK!
