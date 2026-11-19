@@ -1361,7 +1361,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             ]}>
                               <Ionicons
                                 name={isGrpActive ? "chevron-forward" : "chevron-forward-outline"}
-                                size={20}
+                                size={16}
                                 color={isGrpActive ? "#ea580c" : "#94a3b8"}
                               />
                             </View>
@@ -2773,52 +2773,52 @@ const styles = StyleSheet.create({
   sidebarSubgroupItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 18,
-    paddingHorizontal: 18,
-    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
     backgroundColor: "#f8fafc",
     borderWidth: 1.5,
     borderColor: "#f1f5f9",
-    minHeight: 64,
+    minHeight: 46,
   },
   sidebarSubgroupItemActive: {
     backgroundColor: "#fff7ed",
     borderColor: "#f97316",
-    borderWidth: 2,
+    borderWidth: 1.5,
     shadowColor: "#f97316",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
   },
   sidebarSubgroupBar: {
-    width: 5,
-    height: 26,
-    borderRadius: 3,
+    width: 4,
+    height: 18,
+    borderRadius: 2,
     backgroundColor: "#cbd5e1",
-    marginRight: 14,
+    marginRight: 10,
   },
   sidebarSubgroupBarActive: {
     backgroundColor: "#f97316",
-    height: 32,
-    width: 5,
+    height: 22,
+    width: 4,
   },
   sidebarSubgroupText: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: "700",
     color: "#334155",
     flex: 1,
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   sidebarSubgroupTextActive: {
     color: "#ea580c",
     fontWeight: "900",
-    fontSize: 21,
+    fontSize: 16,
   },
   sidebarSubgroupIndicator: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#ffffff",
