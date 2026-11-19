@@ -35,10 +35,17 @@ export function useCustomerDisplay(): {
   displays: DisplayInfo[];
   isConnected: boolean;
 } {
-  const screens = useExternalDisplay();
+  let screens: Record<string, any> = {};
+  try {
+    screens = useExternalDisplay() || {};
+  } catch (err) {
+    // If running on a device where native external display module is unavailable
+    // or getInitialScreens throws, safely fall back to an empty object.
+    screens = {};
+  }
 
   // Map all screens, filtering out display ID "0" (primary operator screen)
-  const displays: DisplayInfo[] = Object.entries(screens)
+  const displays: DisplayInfo[] = Object.entries(screens || {})
     .filter(([id]) => id !== "0")
     .map(([id, info]: [string, any]) => ({
       id,

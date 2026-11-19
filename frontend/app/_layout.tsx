@@ -21,13 +21,40 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
 import { useEffect } from "react";
-import { useWindowDimensions, Alert } from "react-native";
+import { useWindowDimensions, Alert, LogBox } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
+import * as SystemUI from "expo-system-ui";
+import { useRouter, useSegments, Slot } from "expo-router";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAuthStore } from "@/stores/authStore";
+import { Theme } from "@/constants/theme";
+import { useGlobalSocketSync } from "@/hooks/useGlobalSocketSync";
+import { API_URL } from "@/constants/Config";
+import { setApiUrl } from "@/stores/paymentSettingsStore";
 import { ToastProvider, useToast } from "../components/Toast";
 import { CustomerDisplayManager } from "../components/CustomerDisplayManager";
 import { InstallAppModal } from "../components/InstallAppModal";
 import { usePOSReadyGate } from "../hooks/usePOSReadyGate";
 import { socket } from "../constants/socket";
+
+LogBox.ignoreLogs([
+  "setLayoutAnimationEnabledExperimental is currently a no-op",
+]);
+
+// Set root background immediately to match theme
+try {
+  SystemUI.setBackgroundColorAsync(Theme.bgMain).catch(() => {});
+} catch (e) {}
+
+// Keep the splash screen visible while fonts load
+try {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+} catch (e) {}
+
+// Propagate API URL to local package stores
+setApiUrl(API_URL);
 
 function SocketToastListener() {
   const toast = useToast();
@@ -211,32 +238,6 @@ function SocketToastListener() {
 
   return null;
 }
-
-import { useColorScheme } from "@/hooks/use-color-scheme";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-
-import { useAuthStore } from "@/stores/authStore";
-import { useRouter, useSegments, Slot } from "expo-router";
-import * as SystemUI from "expo-system-ui";
-import { Theme } from "@/constants/theme";
-import { LogBox } from "react-native";
-
-LogBox.ignoreLogs([
-  "setLayoutAnimationEnabledExperimental is currently a no-op",
-]);
-
-// Set root background immediately to match theme
-SystemUI.setBackgroundColorAsync(Theme.bgMain);
-
-// Keep the splash screen visible while fonts load
-SplashScreen.preventAutoHideAsync();
-
-import { useGlobalSocketSync } from "@/hooks/useGlobalSocketSync";
-import { API_URL } from "@/constants/Config";
-import { setApiUrl } from "@/stores/paymentSettingsStore";
-
-// Propagate API URL to local package stores
-setApiUrl(API_URL);
 
 // 🌐 GLOBAL FETCH RETRY & IDEMPOTENCY ENGINE
 const originalFetch = global.fetch;

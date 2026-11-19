@@ -1,80 +1,49 @@
 const reactNative = require("react-native");
 
-const mockDisplayModule = {
-  init: () => {},
-  getInitialScreens: () => ({ SCREEN_INFO: {} }),
-  SCREEN_INFO: {},
-  requestScene: () => false,
-  closeScene: () => false,
-  isMainSceneActive: () => true,
-  resumeMainScene: () => true,
-  addListener: () => {},
-  removeListeners: () => {},
-};
+// Only mock on Web environment where native display and printer modules do not exist.
+// NEVER monkey-patch NativeModules or TurboModuleRegistry on Native Android/iOS,
+// as doing so in React Native 0.86+ Bridgeless mode intercepts C++ TurboModules
+// and causes immediate fatal unhandled C++/JS exceptions on app startup.
+if (reactNative && reactNative.Platform && reactNative.Platform.OS === "web") {
+  const mockDisplayModule = {
+    init: () => {},
+    getInitialScreens: () => ({ SCREEN_INFO: {} }),
+    SCREEN_INFO: {},
+    requestScene: () => false,
+    closeScene: () => false,
+    isMainSceneActive: () => true,
+    resumeMainScene: () => true,
+    addListener: () => {},
+    removeListeners: () => {},
+  };
 
-if (reactNative && reactNative.NativeModules) {
-  try {
-    const originalNativeModules = reactNative.NativeModules;
-    
-    // Create a mock for ThermalPrinter native module
-    const mockThermalPrinter = {
-      printTcp: async () => {},
-      printBluetooth: async () => {},
-      printUsb: async () => {},
-    };
+  const mockThermalPrinter = {
+    printTcp: async () => {},
+    printBluetooth: async () => {},
+    printUsb: async () => {},
+    getBluetoothDeviceList: async () => [],
+  };
 
-    // Create a proxy to intercept RNExternalDisplayEvent dynamically without writing to the read-only NativeModules proxy directly
-    const nativeModulesProxy = new Proxy(originalNativeModules, {
-      get(target, prop, receiver) {
-        if (prop === "RNExternalDisplayEvent") {
-          return mockDisplayModule;
-        }
-        if (prop === "ThermalPrinter") {
-          return mockThermalPrinter;
-        }
-        return Reflect.get(target, prop, receiver);
-      }
-    });
-
-    const descriptor = Object.getOwnPropertyDescriptor(reactNative, "NativeModules");
-    if (!descriptor || descriptor.configurable) {
-      Object.defineProperty(reactNative, "NativeModules", {
-        value: nativeModulesProxy,
-        configurable: true,
-        writable: true,
-      });
-    } else {
-      // If non-configurable, we can directly mutate the properties of the proxy target (originalNativeModules)
-      // or assign properties if writable
-      try {
-        originalNativeModules.RNExternalDisplayEvent = mockDisplayModule;
-        originalNativeModules.ThermalPrinter = mockThermalPrinter;
-      } catch (mutateErr) {
-        // Fallback silently if sealed
-      }
+  if (reactNative.NativeModules) {
+    try {
+      reactNative.NativeModules.RNExternalDisplayEvent = mockDisplayModule;
+      reactNative.NativeModules.ThermalPrinter = mockThermalPrinter;
+    } catch (e) {
+      // Ignored on web
     }
-  } catch (e) {
-    console.warn("⚠️ [DisplayMock] Failed to proxy NativeModules:", e.message);
+  }
+
+  if (reactNative.TurboModuleRegistry && typeof reactNative.TurboModuleRegistry.get === "function") {
+    try {
+      const originalGet = reactNative.TurboModuleRegistry.get;
+      reactNative.TurboModuleRegistry.get = (name) => {
+        if (name === "RNExternalDisplayEvent") return mockDisplayModule;
+        if (name === "ThermalPrinter") return mockThermalPrinter;
+        return originalGet(name);
+      };
+    } catch (e) {
+      // Ignored on web
+    }
   }
 }
 
-if (reactNative && reactNative.TurboModuleRegistry && typeof reactNative.TurboModuleRegistry.get === "function") {
-  try {
-    const originalGet = reactNative.TurboModuleRegistry.get;
-    reactNative.TurboModuleRegistry.get = (name) => {
-      if (name === "RNExternalDisplayEvent") {
-        return mockDisplayModule;
-      }
-      if (name === "ThermalPrinter") {
-        return {
-          printTcp: async () => {},
-          printBluetooth: async () => {},
-          printUsb: async () => {},
-        };
-      }
-      return originalGet(name);
-    };
-  } catch (e) {
-    console.warn("⚠️ [DisplayMock] Failed to patch TurboModuleRegistry:", e.message);
-  }
-}
