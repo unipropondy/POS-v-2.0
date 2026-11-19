@@ -386,6 +386,8 @@ const cashDrawerRouter = require("./routes/cashDrawer");
 app.use("/api/cash-drawer", cashDrawerRouter);
 const printJobsRouter = require("./routes/printJobs");
 app.use("/api/print-jobs", printJobsRouter);
+const printerRoutes = require("./routes/printerRoutes");
+app.use("/api/printers", printerRoutes);
 const terminalRoutes = require("./routes/terminal");
 app.use("/api/terminal", terminalRoutes);
 // AI Chat Integration

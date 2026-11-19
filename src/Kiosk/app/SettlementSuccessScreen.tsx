@@ -274,9 +274,14 @@ export default function SettlementSuccessScreen({
     loadOrderItems();
   };
 
-  // Note: Backend generateAndQueueReceipt() automatically prints the receipt on payment completion.
-  // We keep handlePrintReceipt available for manual user reprints if they click a print button,
-  // but DO NOT auto-trigger it to prevent duplicate prints.
+  // Auto-print receipt on order success (matches Car Wash kiosk implementation)
+  const hasAutoPrintedRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!hasAutoPrintedRef.current) {
+      hasAutoPrintedRef.current = true;
+      handlePrintReceipt(true);
+    }
+  }, [handlePrintReceipt]);
 
   const handleSharePDF = async () => {
     try {

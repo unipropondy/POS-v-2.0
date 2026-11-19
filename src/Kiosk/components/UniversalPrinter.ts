@@ -1032,8 +1032,29 @@ export const UniversalPrinter = {
       const company = await BillPDFGenerator.loadSettings(outletId);
       const text = formatThermalTextWithDiscount(saleData, company, discountInfo);
 
-      // In POS/Kiosk mode, bill receipts always print to Cashier/Receipt printer (Type 1 = TD80 Printer)
-      const pType = preferredType || 1;
+      // In POS/Kiosk mode, bill receipts print to Kiosk printer (Type 5) if specified or Kiosk mode, else Cashier (Type 1)
+      const pType = preferredType || (saleData.isKiosk ? 5 : 1);
+
+      // Direct Network TCP Kiosk Receipt Print via Backend API (matches Car Wash implementation)
+      // Connects directly to the Kiosk's built-in printer (192.168.0.199:9100) over TCP socket.
+      // Works from BOTH Web Browser (localhost:8081/kiosk) and Native Android APK!
+      try {
+        console.log("🖨️ Sending Kiosk receipt to backend direct TCP printer endpoint...");
+        const response = await fetch(`${API_URL}/api/printers/print-kiosk-receipt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ saleData, order: saleData }),
+        });
+        const printResult = await response.json();
+        if (printResult && printResult.success) {
+          console.log("✅ Kiosk receipt printed via direct TCP socket:", printResult.message);
+          return true;
+        } else {
+          console.warn("Backend direct print returned offline/error:", printResult?.message);
+        }
+      } catch (backendPrnErr) {
+        console.warn("Backend direct print request failed:", backendPrnErr);
+      }
 
       // If Bridge is online, queue to USB printer directly
       const bridgeActive = await isBridgeOnline();

@@ -406,7 +406,7 @@ router.get("/kitchen-printers", async (req, res) => {
       console.log("🛠️ Inserting default Kiosk Receipt Printer row into PrintMaster...");
       await pool.request().query(`
         INSERT INTO PrintMaster (PrinterId, PrinterName, PrinterPath, PrinterIP, PrinterType, PrintSection, KitchenTypeName, KitchenTypeValue, IsActive, PrintCopy)
-        VALUES (NEWID(), 'Kiosk Receipt Printer', '', '', 5, 1, 'Kiosk Receipt', 10, 1, 1)
+        VALUES (NEWID(), 'Kiosk Receipt Printer', '192.168.0.199', '192.168.0.199', 5, 1, 'Kiosk Receipt', 10, 1, 1)
       `);
     }
 
