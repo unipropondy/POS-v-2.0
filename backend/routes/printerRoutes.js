@@ -247,6 +247,8 @@ router.post('/print-kiosk-receipt', async (req, res) => {
         if (fallbackRes.recordset && fallbackRes.recordset.length > 0) {
           targetPrinter = fallbackRes.recordset[0];
         }
+      }
+
       // 2. Fallback: Inherit from Cashier Receipt Printer (matching Car Wash inheritance logic)
       if (!targetPrinter || !targetPrinter.PrinterIP) {
         const cashierRes = await pool.request().query(`
@@ -272,15 +274,6 @@ router.post('/print-kiosk-receipt', async (req, res) => {
             PrinterName: 'Company Default Printer'
           };
         }
-      }
-
-      // 4. Fallback: Internal kiosk loopback 127.0.0.1 (used by internal Android kiosk printer daemons)
-      if (!targetPrinter || !targetPrinter.PrinterIP) {
-        targetPrinter = {
-          PrinterIP: '127.0.0.1',
-          PrinterPort: 9100,
-          PrinterName: 'Internal Loopback Printer'
-        };
       }
     } catch (e) {
       console.warn('[PrinterRoutes] Could not query PrintMaster:', e.message);
