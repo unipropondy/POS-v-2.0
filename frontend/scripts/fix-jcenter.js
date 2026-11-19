@@ -23,6 +23,40 @@ const thermalPrinterGradle = path.join(
 );
 fixJcenter(thermalPrinterGradle);
 
+// 1b. Fix react-native-external-display build.gradle (remove ndk abiFilters that break 64-bit arm64-v8a devices)
+const externalDisplayGradle = path.join(
+  __dirname,
+  '..',
+  'node_modules',
+  'react-native-external-display',
+  'android',
+  'build.gradle'
+);
+if (fs.existsSync(externalDisplayGradle)) {
+  let edContent = fs.readFileSync(externalDisplayGradle, 'utf8');
+  let edChanged = false;
+  if (edContent.includes('abiFilters')) {
+    edContent = edContent.replace(/ndk\s*\{\s*abiFilters[^\}]*\}/g, '// removed restrictive ndk abiFilters to support arm64-v8a');
+    edChanged = true;
+  }
+  if (edContent.includes("safeExtGet('compileSdkVersion', 28)")) {
+    edContent = edContent.replace("safeExtGet('compileSdkVersion', 28)", "safeExtGet('compileSdkVersion', 34)");
+    edChanged = true;
+  }
+  if (edContent.includes("safeExtGet('targetSdkVersion', 28)")) {
+    edContent = edContent.replace("safeExtGet('targetSdkVersion', 28)", "safeExtGet('targetSdkVersion', 34)");
+    edChanged = true;
+  }
+  if (edContent.includes("safeExtGet('minSdkVersion', 16)")) {
+    edContent = edContent.replace("safeExtGet('minSdkVersion', 16)", "safeExtGet('minSdkVersion', 21)");
+    edChanged = true;
+  }
+  if (edChanged) {
+    fs.writeFileSync(externalDisplayGradle, edContent, 'utf8');
+    console.log(`✅ Patched react-native-external-display build.gradle for arm64-v8a and modern SDKs`);
+  }
+}
+
 // 2. Scan node_modules for any other build.gradle files containing jcenter()
 function scanDir(dir) {
   if (!fs.existsSync(dir)) return;
