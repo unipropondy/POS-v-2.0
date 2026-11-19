@@ -62,7 +62,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-audio"
+      "expo-audio",
+      "./plugins/withUniversalUsbPrinter.js"
     ],
     "experiments": {
       "typedRoutes": true,
