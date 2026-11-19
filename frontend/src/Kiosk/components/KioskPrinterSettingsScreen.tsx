@@ -18,19 +18,19 @@ import {
   PrinterType,
   UniversalPrinterConfig,
   UsbDeviceInfo,
-} from '../services/printer/PrinterTypes';
+} from '@/src/services/printer/PrinterTypes';
 import {
   kioskPrinter,
   posPrinter,
   UniversalPrinterService,
-} from '../services/printer/UniversalPrinter';
+} from '@/src/services/printer/UniversalPrinter';
 import {
   kioskPrinterConfigManager,
   posPrinterConfigManager,
   PrinterConfigManager,
-} from '../services/printer/PrinterConfig';
-import { usbPrinterDriver } from '../services/printer/drivers/UsbPrinter';
-import { sunmiPrinterDriver } from '../services/printer/drivers/SunmiPrinter';
+} from '@/src/services/printer/PrinterConfig';
+import { usbPrinterDriver } from '@/src/services/printer/drivers/UsbPrinter';
+import { sunmiPrinterDriver } from '@/src/services/printer/drivers/SunmiPrinter';
 
 interface Props {
   printerContext?: PrinterContext;
