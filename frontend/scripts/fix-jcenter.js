@@ -35,8 +35,8 @@ const externalDisplayGradle = path.join(
 if (fs.existsSync(externalDisplayGradle)) {
   let edContent = fs.readFileSync(externalDisplayGradle, 'utf8');
   let edChanged = false;
-  if (edContent.includes('abiFilters')) {
-    edContent = edContent.replace(/ndk\s*\{\s*abiFilters[^\}]*\}/g, '// removed restrictive ndk abiFilters to support arm64-v8a');
+  if (/ndk\s*\{[^}]*abiFilters[^}]*\}/s.test(edContent)) {
+    edContent = edContent.replace(/ndk\s*\{[^}]*abiFilters[^}]*\}/gs, '// removed restrictive ndk abiFilters to support arm64-v8a');
     edChanged = true;
   }
   if (edContent.includes("safeExtGet('compileSdkVersion', 28)")) {
