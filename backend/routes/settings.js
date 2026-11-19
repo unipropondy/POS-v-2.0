@@ -404,10 +404,14 @@ router.get("/kitchen-printers", async (req, res) => {
       .query("SELECT COUNT(*) as count FROM PrintMaster WHERE PrinterType = 5 AND IsActive = 1");
     if (kioskCheck.recordset[0].count === 0) {
       console.log("🛠️ Inserting default Kiosk Receipt Printer row into PrintMaster...");
-      await pool.request().query(`
-        INSERT INTO PrintMaster (PrinterId, PrinterName, PrinterPath, PrinterIP, PrinterType, PrintSection, KitchenTypeName, KitchenTypeValue, IsActive, PrintCopy)
-        VALUES (NEWID(), 'Kiosk Receipt Printer', '192.168.0.199', '192.168.0.199', 5, 1, 'Kiosk Receipt', 10, 1, 1)
-      `);
+      const compSettings = await pool.request().query("SELECT TOP 1 PrinterIP FROM CompanySettings");
+      const defaultIP = compSettings.recordset[0]?.PrinterIP || "";
+      await pool.request()
+        .input("ip", sql.NVarChar, defaultIP)
+        .query(`
+          INSERT INTO PrintMaster (PrinterId, PrinterName, PrinterPath, PrinterIP, PrinterType, PrintSection, KitchenTypeName, KitchenTypeValue, IsActive, PrintCopy)
+          VALUES (NEWID(), 'Kiosk Receipt Printer', @ip, @ip, 5, 1, 'Kiosk Receipt', 10, 1, 1)
+        `);
     }
 
     // 3. Fetch active categories (matching menu.js kitchens endpoint structure)

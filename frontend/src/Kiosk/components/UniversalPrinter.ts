@@ -1090,32 +1090,42 @@ export const UniversalPrinter = {
 
         // 3. Try configured Kiosk Printer IP/BT from PrintMaster
         try {
-          const res = await fetch(`${API_URL}/api/settings/kitchen-printers`);
-          const printers = await res.json();
-          if (Array.isArray(printers)) {
-            const kioskPrinter = printers.find((p: any) => p.PrinterType === 5);
-            const targetIp = kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP || "";
-            if (targetIp && targetIp.trim().length > 0) {
-              const ThermalPrinter = require("react-native-thermal-printer").default;
-              const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp.trim());
-              if (isIp && ThermalPrinter?.printTcp) {
-                await ThermalPrinter.printTcp({
-                  ip: targetIp.trim(),
-                  port: 9100,
-                  payload: text,
-                  autoCut: true,
-                  mmFeedPaper: 25,
-                });
-                return true;
-              } else if (ThermalPrinter?.printBluetooth) {
-                await ThermalPrinter.printBluetooth({
-                  macAddress: targetIp.trim(),
-                  payload: text,
-                  autoCut: true,
-                  mmFeedPaper: 25,
-                });
-                return true;
+          let targetIp = "";
+          try {
+            const res = await fetch(`${API_URL}/api/settings/kitchen-printers`);
+            const printers = await res.json();
+            if (Array.isArray(printers)) {
+              const kioskPrinter = printers.find((p: any) => p.PrinterType === 5 || p.KitchenTypeName?.includes("Kiosk"));
+              const foundIp = kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP;
+              if (foundIp && foundIp.trim().length > 0) {
+                targetIp = foundIp.trim();
               }
+            }
+          } catch (fetchErr) {
+            console.warn("Could not fetch printers from settings:", fetchErr);
+          }
+
+          if (targetIp && targetIp.length > 0) {
+            const ThermalPrinter = require("react-native-thermal-printer").default;
+            const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp);
+            if (isIp && ThermalPrinter?.printTcp) {
+              await ThermalPrinter.printTcp({
+                ip: targetIp,
+                port: 9100,
+                payload: text,
+                autoCut: true,
+                mmFeedPaper: 25,
+              });
+              console.log("✅ Printed directly from Android device to Kiosk printer:", targetIp);
+              return true;
+            } else if (ThermalPrinter?.printBluetooth) {
+              await ThermalPrinter.printBluetooth({
+                macAddress: targetIp,
+                payload: text,
+                autoCut: true,
+                mmFeedPaper: 25,
+              });
+              return true;
             }
           }
         } catch (tpErr) {

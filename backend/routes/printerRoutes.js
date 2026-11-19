@@ -202,7 +202,7 @@ function buildKioskEscPosReceipt(order, company = {}) {
 
 /**
  * POST /api/printers/print-kiosk-receipt
- * Print Kiosk bill receipt directly over TCP socket to in-built kiosk printer (192.168.0.199:9100)
+ * Automatically query active KIOSK printer from PrintMaster and print receipt via TCP
  */
 router.post('/print-kiosk-receipt', async (req, res) => {
   try {
@@ -215,7 +215,7 @@ router.post('/print-kiosk-receipt', async (req, res) => {
 
     const pool = await poolPromise;
 
-    // 1. Look up Kiosk printer from PrintMaster (PrinterType = 5 or 3 or name like Kiosk)
+    // 1. Automatically find the active configured Kiosk printer from PrintMaster (matching Car Wash implementation)
     let targetPrinter = null;
     try {
       const printerRes = await pool.request().query(`
@@ -226,19 +226,43 @@ router.post('/print-kiosk-receipt', async (req, res) => {
         WHERE IsActive = 1 AND IsEnabled = 1
           AND (PrinterType IN (5, 3) OR KitchenTypeName LIKE '%Kiosk%')
           AND PrinterIP IS NOT NULL AND PrinterIP != ''
-        ORDER BY PrinterType DESC
+        ORDER BY IsActive DESC, PrinterName ASC
       `);
       if (printerRes.recordset && printerRes.recordset.length > 0) {
         targetPrinter = printerRes.recordset[0];
+      }
+
+      // Fallback if not found with IsActive=1
+      if (!targetPrinter) {
+        const fallbackRes = await pool.request().query(`
+          SELECT TOP 1 
+            PrinterId, PrinterName, PrinterPath, PrinterIP, 
+            ISNULL(PrinterPort, 9100) AS PrinterPort, PrinterType, KitchenTypeName, IsActive
+          FROM PrintMaster
+          WHERE IsEnabled = 1 
+            AND (PrinterType IN (5, 3) OR KitchenTypeName LIKE '%Kiosk%')
+            AND PrinterIP IS NOT NULL AND PrinterIP != ''
+          ORDER BY PrinterType ASC, PrinterName ASC
+        `);
+        if (fallbackRes.recordset && fallbackRes.recordset.length > 0) {
+          targetPrinter = fallbackRes.recordset[0];
+        }
       }
     } catch (e) {
       console.warn('[PrinterRoutes] Could not query PrintMaster:', e.message);
     }
 
-    // Default to the kiosk hardware printer IP if not found in DB
-    const printerIP = targetPrinter?.PrinterIP || '192.168.0.199';
-    const printerPort = targetPrinter?.PrinterPort || 9100;
-    const printerName = targetPrinter?.PrinterName || 'Kiosk In-built Printer';
+    if (!targetPrinter || !targetPrinter.PrinterIP) {
+      return res.json({
+        success: false,
+        printedVia: 'NO_KIOSK_PRINTER_CONFIGURED',
+        message: 'No active kiosk printer configured in PrintMaster. Please configure a kiosk printer in Settings.',
+      });
+    }
+
+    const printerIP = targetPrinter.PrinterIP.trim();
+    const printerPort = parseInt(targetPrinter.PrinterPort || 9100, 10);
+    const printerName = targetPrinter.PrinterName || 'Kiosk Printer';
 
     // 2. Fetch CompanySettings for brand name, phone, GST
     let company = {};
@@ -291,7 +315,27 @@ router.post('/print-kiosk-receipt', async (req, res) => {
  */
 router.post('/test', async (req, res) => {
   try {
-    const { ip = '192.168.0.199', port = 9100 } = req.body;
+    const { ip, port = 9100 } = req.body;
+    let targetIP = ip;
+    let targetPort = port;
+
+    if (!targetIP) {
+      const pool = await poolPromise;
+      const r = await pool.request().query(`
+        SELECT TOP 1 PrinterIP, ISNULL(PrinterPort, 9100) AS PrinterPort 
+        FROM PrintMaster 
+        WHERE (PrinterType IN (5, 3) OR KitchenTypeName LIKE '%Kiosk%') AND PrinterIP IS NOT NULL AND PrinterIP != ''
+      `);
+      if (r.recordset.length > 0) {
+        targetIP = r.recordset[0].PrinterIP;
+        targetPort = r.recordset[0].PrinterPort;
+      }
+    }
+
+    if (!targetIP) {
+      return res.status(400).json({ success: false, message: 'Printer IP address is required' });
+    }
+
     const ESC = '\x1b';
     const GS = '\x1d';
     const LF = '\x0a';
