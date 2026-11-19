@@ -1099,10 +1099,22 @@ export const UniversalPrinter = {
               const foundIp = kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP;
               if (foundIp && foundIp.trim().length > 0) {
                 targetIp = foundIp.trim();
+              } else {
+                // Auto-inherit from Cashier Receipt Printer (PrinterType = 1) if Kiosk has no IP
+                const cashierPrinter = printers.find((p: any) => p.PrinterType === 1);
+                if (cashierPrinter?.PrinterIP && cashierPrinter.PrinterIP.trim().length > 0) {
+                  targetIp = cashierPrinter.PrinterIP.trim();
+                  console.log("Kiosk inherited printer IP from Cashier printer:", targetIp);
+                }
               }
             }
           } catch (fetchErr) {
             console.warn("Could not fetch printers from settings:", fetchErr);
+          }
+
+          // Fallback to internal loopback for Android kiosks with internal printer service
+          if (!targetIp) {
+            targetIp = "127.0.0.1";
           }
 
           if (targetIp && targetIp.length > 0) {
