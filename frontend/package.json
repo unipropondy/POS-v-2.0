@@ -30,7 +30,7 @@
     "date-fns": "^3.0.0",
     "dotenv": "^16.0.0",
     "expo": "~57.0.24",
-    "expo-av": "^16.0.8",
+    "expo-audio": "~57.0.5",
     "expo-blur": "~57.0.3",
     "expo-build-properties": "~57.0.21",
     "expo-constants": "~57.0.18",

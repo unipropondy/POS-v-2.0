@@ -327,28 +327,10 @@ export default function PaymentSuccess() {
           audio.volume = 1.0;
           await audio.play();
         } else {
-          const { Audio } = require("expo-av");
-          try {
-            await Audio.setAudioModeAsync({
-              playsInSilentModeIOS: true,
-              staysActiveInBackground: true,
-              shouldDuckAndroid: false,
-              allowsRecordingIOS: false,
-            });
-          } catch (_) {}
-          
+          const { createAudioPlayer } = require("expo-audio");
           const thankYouSound = require("../assets/Voice/Thank you, have a nice day.mp3");
-          const { sound } = await Audio.Sound.createAsync(
-            thankYouSound,
-            { shouldPlay: true, volume: 1.0 }
-          );
-          if (sound) {
-            sound.setOnPlaybackStatusUpdate((status: any) => {
-              if (status.didJustFinish) {
-                sound.unloadAsync().catch(() => {});
-              }
-            });
-          }
+          const player = createAudioPlayer(thankYouSound);
+          player.play();
         }
       } catch (err) {
         console.warn("Failed to play custom success voice audio:", err);

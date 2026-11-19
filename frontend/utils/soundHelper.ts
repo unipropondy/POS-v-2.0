@@ -135,20 +135,8 @@ export async function playNotificationSound() {
       playNote(now, 659.25, 0.15);
       playNote(now + 0.08, 987.77, 0.25);
     } else {
-      // 📱 Native Android/iOS: Use local file generation for 100% offline-first reliable playback
-      const { Audio } = require("expo-av");
-
-      if (!isAudioModeSet) {
-        try {
-          await Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: true,
-            shouldDuckAndroid: false,
-            allowsRecordingIOS: false,
-          });
-          isAudioModeSet = true;
-        } catch (_) {}
-      }
+      // 📱 Native Android/iOS: Use expo-audio createAudioPlayer
+      const { createAudioPlayer } = require("expo-audio");
 
       const localUri = FileSystem.cacheDirectory + "chime_v2.wav";
       const fileInfo = await FileSystem.getInfoAsync(localUri);
@@ -159,18 +147,8 @@ export async function playNotificationSound() {
         });
       }
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: localUri },
-        { shouldPlay: true, volume: 1.0 }
-      );
-
-      if (sound) {
-        sound.setOnPlaybackStatusUpdate((status: any) => {
-          if (status.didJustFinish) {
-            sound.unloadAsync().catch(() => {});
-          }
-        });
-      }
+      const player = createAudioPlayer({ uri: localUri });
+      player.play();
     }
   } catch (err) {
     console.warn("[SoundHelper] Failed to play notification sound:", err);
