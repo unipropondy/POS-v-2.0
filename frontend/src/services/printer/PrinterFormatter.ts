@@ -1,4 +1,4 @@
-import { PaperWidth, PrintOptions } from './PrinterTypes';
+import { PaperWidth, PrintOptions } from "./PrinterTypes";
 
 // Standard ESC/POS Control Byte Constants
 const ESC = 0x1b;
@@ -45,7 +45,10 @@ export class EscPosBuilder {
   /**
    * Character size: normal (0x00), double-height (0x01), double-width (0x10), double-both (0x11)
    */
-  public setTextSize(widthMul: number = 1, heightMul: number = 1): EscPosBuilder {
+  public setTextSize(
+    widthMul: number = 1,
+    heightMul: number = 1,
+  ): EscPosBuilder {
     const w = Math.max(1, Math.min(8, widthMul)) - 1;
     const h = Math.max(1, Math.min(8, heightMul)) - 1;
     const sizeByte = (w << 4) | h;
@@ -66,10 +69,12 @@ export class EscPosBuilder {
         this.buffer.push(code);
       } else {
         // Fallback or ASCII mapping for common symbols
-        if (str[i] === '•') this.buffer.push(0x2d); // -
-        else if (str[i] === '✓') this.buffer.push(0x76); // v
-        else if (str[i] === '—' || str[i] === '–') this.buffer.push(0x2d);
-        else if (str[i] === '©') {
+        if (str[i] === "•")
+          this.buffer.push(0x2d); // -
+        else if (str[i] === "✓")
+          this.buffer.push(0x76); // v
+        else if (str[i] === "—" || str[i] === "–") this.buffer.push(0x2d);
+        else if (str[i] === "©") {
           this.buffer.push(0x28, 0x63, 0x29); // (c)
         } else {
           this.buffer.push(0x20); // space for unsupported non-ascii
@@ -79,7 +84,7 @@ export class EscPosBuilder {
     return this;
   }
 
-  public textLine(str: string = ''): EscPosBuilder {
+  public textLine(str: string = ""): EscPosBuilder {
     this.text(str);
     this.buffer.push(LF);
     return this;
@@ -115,26 +120,35 @@ export class EscPosBuilder {
  */
 export class PrinterFormatter {
   public static getLineWidth(paperWidth: PaperWidth): number {
-    return paperWidth === '58mm' ? 32 : 48;
+    return paperWidth === "58mm" ? 32 : 48;
   }
 
-  public static formatTwoCol(left: string, right: string, width: number): string {
-    const l = String(left || '').trim();
-    const r = String(right || '').trim();
+  public static formatTwoCol(
+    left: string,
+    right: string,
+    width: number,
+  ): string {
+    const l = String(left || "").trim();
+    const r = String(right || "").trim();
     const spaceCount = width - l.length - r.length;
     if (spaceCount <= 0) {
       const avail = width - r.length - 1;
-      return (avail > 0 ? l.slice(0, avail) : l) + ' ' + r;
+      return (avail > 0 ? l.slice(0, avail) : l) + " " + r;
     }
-    return l + ' '.repeat(spaceCount) + r;
+    return l + " ".repeat(spaceCount) + r;
   }
 
-  public static formatThreeCol(left: string, mid: string, right: string, width: number): string {
-    const r = String(right || '').trim();
-    const m = String(mid || '').trim();
+  public static formatThreeCol(
+    left: string,
+    mid: string,
+    right: string,
+    width: number,
+  ): string {
+    const r = String(right || "").trim();
+    const m = String(mid || "").trim();
     const rightPart = `${m.padStart(4)} ${r.padStart(9)}`;
     const availLeft = width - rightPart.length;
-    let l = String(left || '').trim();
+    let l = String(left || "").trim();
     if (l.length > availLeft) {
       l = l.slice(0, availLeft);
     } else {
@@ -143,7 +157,7 @@ export class PrinterFormatter {
     return l + rightPart;
   }
 
-  public static formatDivider(char: string = '-', width: number): string {
+  public static formatDivider(char: string = "-", width: number): string {
     return char.repeat(width);
   }
 
@@ -153,58 +167,89 @@ export class PrinterFormatter {
   public static buildReceipt(
     saleData: any,
     company: any,
-    paperWidth: PaperWidth = '80mm',
-    options?: PrintOptions
+    paperWidth: PaperWidth = "80mm",
+    options?: PrintOptions,
   ): Uint8Array {
     const width = this.getLineWidth(paperWidth);
     const builder = new EscPosBuilder();
 
-    const companyName = (company?.CompanyName || company?.name || 'Smart Dining Cafe & Restaurant').trim();
-    const address = (company?.Address || company?.address || '').replace(/\r?\n/g, ' ').trim();
-    const phone = company?.Phone || company?.phone ? `Tel: ${company?.Phone || company?.phone}` : '';
-    const gstNo = company?.GSTNo || company?.gstNo ? `GST: ${company?.GSTNo || company?.gstNo}` : '';
-    const currency = company?.CurrencySymbol || company?.currencySymbol || '$';
+    const companyName = String(
+      company?.CompanyName ||
+      company?.name ||
+      ""
+    ).trim();
+    const address = String(company?.Address || company?.address || "")
+      .replace(/\r?\n/g, " ")
+      .trim();
+    const phone =
+      company?.Phone || company?.phone
+        ? `Tel: ${company?.Phone || company?.phone}`
+        : "";
+    const gstNo =
+      company?.GSTNo || company?.gstNo
+        ? `GST: ${company?.GSTNo || company?.gstNo}`
+        : "";
+    const currency = company?.CurrencySymbol || company?.currencySymbol || "$";
 
-    const orderNo = String(saleData?.orderNo || saleData?.orderId || saleData?.id || saleData?.billNumber || 'RECEIPT');
-    const tableNo = saleData?.tableNo ? String(saleData.tableNo).trim() : '';
-    const total = Number(saleData?.total || saleData?.totalAmount || saleData?.grandTotal || 0);
+    const orderNo = String(
+      saleData?.orderNo ||
+        saleData?.orderId ||
+        saleData?.id ||
+        saleData?.billNumber ||
+        "RECEIPT",
+    );
+    const tableNo = saleData?.tableNo ? String(saleData.tableNo).trim() : "";
+    const total = Number(
+      saleData?.total || saleData?.totalAmount || saleData?.grandTotal || 0,
+    );
     const subtotal = Number(saleData?.subtotal || total);
-    const serviceCharge = Number(saleData?.serviceCharge || saleData?.serviceChargeAmount || 0);
+    const serviceCharge = Number(
+      saleData?.serviceCharge || saleData?.serviceChargeAmount || 0,
+    );
     const gst = Number(saleData?.gst || saleData?.gstAmount || 0);
 
     const now = new Date();
     const dateStr = now.toLocaleDateString();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timeStr = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
 
     // 1. REPRINT WATERMARK
     if (options?.isReprint) {
       builder
         .alignCenter()
         .bold(true)
-        .textLine('*** OFFICIAL REPRINT ***')
+        .textLine("*** OFFICIAL REPRINT ***")
         .bold(false);
     }
 
-    // 2. COMPANY HEADER (Centered, Bold, Double Width/Height)
-    builder
-      .alignCenter()
-      .bold(true)
-      .setTextSize(1, 2)
-      .textLine(companyName)
-      .resetTextSize()
-      .bold(false);
+    // 2. COMPANY HEADER (Only print if companyName exists)
+    if (companyName) {
+      builder
+        .alignCenter()
+        .bold(true)
+        .setTextSize(1, 2)
+        .textLine(companyName)
+        .resetTextSize()
+        .bold(false);
+    }
 
+    // Address (Only print if present)
     if (address) {
       builder.textLine(address);
     }
 
     const contactParts = [phone, gstNo].filter(Boolean);
     if (contactParts.length > 0) {
-      builder.textLine(contactParts.join(' | '));
+      builder.textLine(contactParts.join(" | "));
     }
 
-    builder.textLine(this.formatTwoCol(`Date: ${dateStr}`, `Time: ${timeStr}`, width));
-    builder.textLine(this.formatDivider('=', width));
+    builder.textLine(
+      this.formatTwoCol(`Date: ${dateStr}`, `Time: ${timeStr}`, width),
+    );
+    builder.textLine(this.formatDivider("=", width));
 
     // 3. TICKET / ORDER INFO
     if (tableNo) {
@@ -215,89 +260,141 @@ export class PrinterFormatter {
         .textLine(`ORDER #: ${orderNo}  (${tableNo})`)
         .resetTextSize()
         .bold(false);
-      builder.textLine(this.formatDivider('=', width));
+      builder.textLine(this.formatDivider("=", width));
     } else {
       builder
         .alignCenter()
         .bold(true)
         .textLine(`ORDER #: ${orderNo}`)
         .bold(false);
-      builder.textLine(this.formatDivider('=', width));
+      builder.textLine(this.formatDivider("=", width));
     }
 
     // 4. ITEMS HEADER
     builder.alignLeft();
     builder.bold(true);
-    builder.textLine(this.formatThreeCol('ITEM', 'QTY', `TOTAL(${currency})`, width));
+    builder.textLine(
+      this.formatThreeCol("ITEM", "QTY", `TOTAL(${currency})`, width),
+    );
     builder.bold(false);
-    builder.textLine(this.formatDivider('-', width));
+    builder.textLine(this.formatDivider("-", width));
 
     // 5. ITEMS LIST
     const items = saleData?.items || saleData?.cartItems || [];
     items.forEach((item: any) => {
-      const itemName = String(item.name || item.Name || item.DishName || item.ProductName || 'Item');
+      const itemName = String(
+        item.name || item.Name || item.DishName || item.ProductName || "Item",
+      );
       const qty = String(item.quantity || item.qty || 1);
-      const price = (Number(item.price || item.Price || 0)) * Number(qty);
+      const price = Number(item.price || item.Price || 0) * Number(qty);
       const priceStr = `${currency}${price.toFixed(2)}`;
 
       builder.textLine(this.formatThreeCol(itemName, qty, priceStr, width));
 
-      if (item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0) {
+      if (
+        item.modifiers &&
+        Array.isArray(item.modifiers) &&
+        item.modifiers.length > 0
+      ) {
         item.modifiers.forEach((m: any) => {
           builder.textLine(`  + ${m.name || m.ModifierName}`);
         });
       }
     });
 
-    builder.textLine(this.formatDivider('-', width));
+    builder.textLine(this.formatDivider("-", width));
 
     // 6. TOTALS BREAKDOWN (Clean aligned columns)
-    builder.textLine(this.formatTwoCol('Subtotal:', `${currency}${subtotal.toFixed(2)}`, width));
+    builder.textLine(
+      this.formatTwoCol(
+        "Subtotal:",
+        `${currency}${subtotal.toFixed(2)}`,
+        width,
+      ),
+    );
 
-    if (saleData?.discount && saleData.discount.applied && saleData.discount.amount > 0) {
-      const discLabel = saleData.discount.type === 'percentage'
-        ? `Discount (${saleData.discount.value}%):`
-        : 'Discount:';
-      builder.textLine(this.formatTwoCol(discLabel, `-${currency}${Number(saleData.discount.amount).toFixed(2)}`, width));
+    if (
+      saleData?.discount &&
+      saleData.discount.applied &&
+      saleData.discount.amount > 0
+    ) {
+      const discLabel =
+        saleData.discount.type === "percentage"
+          ? `Discount (${saleData.discount.value}%):`
+          : "Discount:";
+      builder.textLine(
+        this.formatTwoCol(
+          discLabel,
+          `-${currency}${Number(saleData.discount.amount).toFixed(2)}`,
+          width,
+        ),
+      );
     }
 
     if (serviceCharge > 0) {
-      builder.textLine(this.formatTwoCol('Service Charge:', `${currency}${serviceCharge.toFixed(2)}`, width));
+      builder.textLine(
+        this.formatTwoCol(
+          "Service Charge:",
+          `${currency}${serviceCharge.toFixed(2)}`,
+          width,
+        ),
+      );
     }
 
     if (gst > 0) {
-      builder.textLine(this.formatTwoCol('GST:', `${currency}${gst.toFixed(2)}`, width));
+      builder.textLine(
+        this.formatTwoCol("GST:", `${currency}${gst.toFixed(2)}`, width),
+      );
     }
 
-    builder.textLine(this.formatDivider('=', width));
+    builder.textLine(this.formatDivider("=", width));
 
     // TOTAL AMOUNT (Large & Bold)
     builder
       .bold(true)
       .setTextSize(1, 2)
-      .textLine(this.formatTwoCol('TOTAL:', `${currency}${total.toFixed(2)}`, paperWidth === '58mm' ? 24 : 36))
+      .textLine(
+        this.formatTwoCol(
+          "TOTAL:",
+          `${currency}${total.toFixed(2)}`,
+          paperWidth === "58mm" ? 24 : 36,
+        ),
+      )
       .resetTextSize()
       .bold(false);
 
-    builder.textLine(this.formatDivider('=', width));
+    builder.textLine(this.formatDivider("=", width));
 
     // 7. PAYMENT DETAILS
-    const payMode = String(saleData?.paymentMode || saleData?.payMode || saleData?.PaymentMode || 'CASH').toUpperCase();
+    const payMode = String(
+      saleData?.paymentMode ||
+        saleData?.payMode ||
+        saleData?.PaymentMode ||
+        "CASH",
+    ).toUpperCase();
     const paid = Number(saleData?.amountPaid || saleData?.paidAmount || total);
-    const change = Number(saleData?.change || saleData?.changeAmount || Math.max(0, paid - total));
+    const change = Number(
+      saleData?.change || saleData?.changeAmount || Math.max(0, paid - total),
+    );
 
-    builder.textLine(this.formatTwoCol('Payment Mode:', payMode, width));
-    builder.textLine(this.formatTwoCol('Amount Paid:', `${currency}${paid.toFixed(2)}`, width));
+    builder.textLine(this.formatTwoCol("Payment Mode:", payMode, width));
+    builder.textLine(
+      this.formatTwoCol("Amount Paid:", `${currency}${paid.toFixed(2)}`, width),
+    );
     if (change > 0) {
-      builder.textLine(this.formatTwoCol('Change:', `${currency}${change.toFixed(2)}`, width));
+      builder.textLine(
+        this.formatTwoCol("Change:", `${currency}${change.toFixed(2)}`, width),
+      );
     }
 
-    builder.textLine(this.formatDivider('-', width));
+    builder.textLine(this.formatDivider("-", width));
 
     // 8. FOOTER (Centered)
     builder.alignCenter();
-    builder.bold(true).textLine('Thank you for your visit!').bold(false);
-    builder.textLine(`(c) ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD`);
+    builder.bold(true).textLine("Thank you for your visit!").bold(false);
+    builder.textLine(
+      `(c) ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD`,
+    );
 
     // AUTO CUT
     if (options?.autoCut ?? true) {
@@ -320,42 +417,69 @@ export class PrinterFormatter {
     printerType: string,
     printerName: string,
     company: any,
-    paperWidth: PaperWidth = '80mm'
+    paperWidth: PaperWidth = "80mm",
   ): Uint8Array {
     const width = this.getLineWidth(paperWidth);
     const builder = new EscPosBuilder();
 
-    const companyName = (company?.CompanyName || company?.name || 'Smart Dining Cafe & Restaurant').trim();
+    const companyName = String(
+      company?.CompanyName ||
+      company?.name ||
+      ""
+    ).trim();
+    const address = String(company?.Address || company?.address || "")
+      .replace(/\r?\n/g, " ")
+      .trim();
+
     const now = new Date();
     const dateStr = now.toLocaleDateString();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timeStr = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    if (companyName) {
+      builder
+        .alignCenter()
+        .bold(true)
+        .setTextSize(1, 2)
+        .textLine(companyName)
+        .resetTextSize()
+        .bold(false);
+      if (address) {
+        builder.textLine(address);
+      }
+      builder.textLine(this.formatDivider("=", width));
+    }
 
     builder
       .alignCenter()
       .bold(true)
       .setTextSize(1, 2)
-      .textLine(companyName)
-      .resetTextSize()
-      .textLine(this.formatDivider('=', width))
-      .bold(true)
-      .setTextSize(1, 2)
-      .textLine('KIOSK PRINTER TEST')
+      .textLine("KIOSK PRINTER TEST")
       .resetTextSize()
       .bold(false)
-      .textLine(this.formatDivider('=', width));
+      .textLine(this.formatDivider("=", width));
 
     builder.alignLeft();
-    builder.textLine(this.formatTwoCol('Device:', printerName.slice(0, 20), width));
-    builder.textLine(this.formatTwoCol('Type:', printerType, width));
-    builder.textLine(this.formatTwoCol('Width:', `${paperWidth} (${width} cols)`, width));
-    builder.textLine(this.formatTwoCol('Status:', 'ONLINE & READY', width));
-    builder.textLine(this.formatTwoCol(`Date: ${dateStr}`, `Time: ${timeStr}`, width));
+    builder.textLine(
+      this.formatTwoCol("Device:", printerName.slice(0, 20), width),
+    );
+    builder.textLine(this.formatTwoCol("Type:", printerType, width));
+    builder.textLine(
+      this.formatTwoCol("Width:", `${paperWidth} (${width} cols)`, width),
+    );
+    builder.textLine(this.formatTwoCol("Status:", "ONLINE & READY", width));
+    builder.textLine(
+      this.formatTwoCol(`Date: ${dateStr}`, `Time: ${timeStr}`, width),
+    );
 
-    builder.textLine(this.formatDivider('-', width));
+    builder.textLine(this.formatDivider("-", width));
 
     builder.alignCenter();
-    builder.bold(true).textLine('TEST PRINT COMPLETED').bold(false);
-    builder.textLine('Thermal Printer & Auto-cut OK');
+    builder.bold(true).textLine("TEST PRINT COMPLETED").bold(false);
+    builder.textLine("Thermal Printer & Auto-cut OK");
 
     builder.cut(true);
 
