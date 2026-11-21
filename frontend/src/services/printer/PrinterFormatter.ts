@@ -173,14 +173,9 @@ export class PrinterFormatter {
     const width = this.getLineWidth(paperWidth);
     const builder = new EscPosBuilder();
 
-    const companyName = String(
-      company?.CompanyName ||
-      company?.name ||
-      ""
-    ).trim();
-    const address = String(company?.Address || company?.address || "")
-      .replace(/\r?\n/g, " ")
-      .trim();
+    const rawName = company?.CompanyName || company?.name;
+    const companyName = rawName && String(rawName).trim() ? String(rawName).trim() : "POS SYSTEM";
+    const address = company?.Address || company?.address ? String(company?.Address || company?.address).replace(/\r?\n/g, " ").trim() : "";
     const phone =
       company?.Phone || company?.phone
         ? `Tel: ${company?.Phone || company?.phone}`
@@ -422,14 +417,9 @@ export class PrinterFormatter {
     const width = this.getLineWidth(paperWidth);
     const builder = new EscPosBuilder();
 
-    const companyName = String(
-      company?.CompanyName ||
-      company?.name ||
-      ""
-    ).trim();
-    const address = String(company?.Address || company?.address || "")
-      .replace(/\r?\n/g, " ")
-      .trim();
+    const rawName = company?.CompanyName || company?.name;
+    const companyName = rawName && String(rawName).trim() ? String(rawName).trim() : "POS SYSTEM";
+    const address = company?.Address || company?.address ? String(company?.Address || company?.address).replace(/\r?\n/g, " ").trim() : "";
 
     const now = new Date();
     const dateStr = now.toLocaleDateString();

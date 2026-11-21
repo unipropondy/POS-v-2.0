@@ -51,6 +51,12 @@ export interface PrinterStatusResult {
   details?: any;
 }
 
+export interface PrintOptions {
+  autoCut?: boolean;
+  openDrawer?: boolean;
+  isReprint?: boolean;
+}
+
 export interface PrintResult {
   success: boolean;
   jobId: string;
