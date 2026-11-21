@@ -5,6 +5,7 @@ import {
   UniversalPrinterConfig,
   UsbDeviceInfo,
 } from '../PrinterTypes';
+import { PrinterFormatter } from '../PrinterFormatter';
 
 const { UniversalPrinterModule } = NativeModules;
 
@@ -62,7 +63,6 @@ export class UsbPrinterDriver {
       }
     } catch (_) {}
 
-    // Return empty list if no USB printers are connected
     return [];
   }
 
@@ -226,29 +226,16 @@ export class UsbPrinterDriver {
   public async testPrint(config?: UniversalPrinterConfig): Promise<PrintResult> {
     const startTime = Date.now();
     const cfg = this.resolveConfig(config);
-    const ESC = '\x1b';
-    const GS = '\x1d';
-    const LF = '\x0a';
 
-    let testSlip = ESC + '@'; // init
-    testSlip += ESC + 'a' + '\x01'; // center
-    testSlip += ESC + '!' + '\x38'; // double
-    testSlip += 'KIOSK PRINTER TEST' + LF;
-    testSlip += ESC + '!' + '\x00'; // normal
-    testSlip += '================================' + LF;
-    testSlip += `Device: ${cfg.usbDeviceName || cfg.printerName}` + LF;
-    testSlip += `Type: USB Direct Host` + LF;
-    testSlip += `Width: ${cfg.paperWidth}` + LF;
-    testSlip += `Time: ${new Date().toLocaleTimeString()}` + LF;
-    testSlip += '================================' + LF;
-    testSlip += LF + LF + LF;
-    if (cfg.autoCut) {
-      testSlip += GS + 'V' + '\x41' + '\x00'; // cut
-    }
+    // Use native ESC/POS PrinterFormatter for proper centering, columns and auto-cut
+    const rawData = PrinterFormatter.buildTestPrint(
+      'USB Direct Host',
+      cfg.usbDeviceName || cfg.printerName || 'Virtual PRN',
+      {},
+      cfg.paperWidth || '80mm'
+    );
 
-    const encoder = new TextEncoder();
-    const raw = encoder.encode(testSlip);
-    const success = await this.printRaw(raw, cfg);
+    const success = await this.printRaw(rawData, cfg);
 
     return {
       success,

@@ -1042,8 +1042,11 @@ export const UniversalPrinter = {
 
         if (kioskConfig.type === "USB") {
           const { usbPrinterDriver } = require("../../services/printer/drivers/UsbPrinter");
-          const encoder = new TextEncoder();
-          const raw = encoder.encode(text);
+          const { PrinterFormatter } = require("../../services/printer/PrinterFormatter");
+          const raw = PrinterFormatter.buildReceipt(saleData, company, kioskConfig.paperWidth || "80mm", {
+            autoCut: kioskConfig.autoCut ?? true,
+            openDrawer: kioskConfig.openDrawer ?? false,
+          });
           const printedUsb = await usbPrinterDriver.printRaw(raw, kioskConfig);
           if (printedUsb) {
             console.log("✅ Kiosk receipt printed via configured USB printer:", kioskConfig.usbDeviceName || kioskConfig.printerName);
