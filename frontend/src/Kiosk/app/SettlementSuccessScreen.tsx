@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   Platform,
   ScrollView,
@@ -12,7 +13,8 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { API } from "@/config";
+import { io, Socket } from "socket.io-client";
+import { API, BASE_URL } from "@/config";
 import BillPDFGenerator from "../components/BillPDFGenerator";
 import BillPrompt from "../components/BillPrompt";
 import UniversalPrinter from "../components/UniversalPrinter";
@@ -90,7 +92,34 @@ export default function SettlementSuccessScreen({
   const [tableNo, setTableNo] = useState<string>(initialTableNo || "");
   const [tableId, setTableId] = useState<string>(initialTableId || "");
   const [orderNumber, setOrderNumber] = useState<string>("");
-  const [statusCode, setStatusCode] = useState<number>(2); // default: preparing
+  const [statusCode, setStatusCode] = useState<number>(2); // default: 2 (PREPARING)
+  const [orderStatus, setOrderStatus] = useState<"PREPARING" | "READY">("PREPARING");
+
+  // Pulsing animation for real-time status indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (orderStatus === "PREPARING") {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.35,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [orderStatus, pulseAnim]);
 
   // Order Details popup state - kept false so modal does not block screen
   const [showOrderDetails, setShowOrderDetails] = useState(false);
@@ -128,13 +157,37 @@ export default function SettlementSuccessScreen({
     readStorage();
   }, [orderId, tableNo, tableId]);
 
-  // Load Order Details (Order Number & Status code)
+  // Load Order Details & Live Status by Order Number (e.g. 0031) or ID
   const loadOrderDetails = useCallback(async () => {
-    if (!orderId) return;
+    const lookupKey = orderNumber || orderId || "";
+    if (!lookupKey) return;
 
     try {
+      // 1. Fetch live status via dedicated status endpoint using order number
+      const statusRes = await fetch(
+        `${API}/order/status/${encodeURIComponent(lookupKey)}`
+      ).catch(() => null);
+
+      if (statusRes && statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData && statusData.success) {
+          if (statusData.orderNumber) {
+            setOrderNumber(String(statusData.orderNumber).trim());
+          }
+          if (statusData.isReady || statusData.status === "READY" || statusData.statusCode >= 3) {
+            setOrderStatus("READY");
+            setStatusCode(3);
+          } else {
+            setOrderStatus("PREPARING");
+            setStatusCode(2);
+          }
+          return;
+        }
+      }
+
+      // 2. Fallback to order-details
       const res = await fetch(
-        `${API}/order/order-details/${encodeURIComponent(orderId)}`
+        `${API}/order/order-details/${encodeURIComponent(lookupKey)}`
       );
       const data = await res.json();
 
@@ -149,15 +202,25 @@ export default function SettlementSuccessScreen({
           setTableNo(String(dbTableNo).trim());
         }
 
-        const maxStatus = Math.max(
-          ...data.map((d: any) => Number(d.StatusCode || 2))
+        const isAnyReady = data.some(
+          (d: any) =>
+            Number(d.StatusCode || 2) >= 3 ||
+            String(d.StatusLabel || "").toUpperCase() === "READY" ||
+            String(d.StatusLabel || "").toUpperCase() === "SERVED"
         );
-        setStatusCode(maxStatus);
+
+        if (isAnyReady) {
+          setOrderStatus("READY");
+          setStatusCode(3);
+        } else {
+          setOrderStatus("PREPARING");
+          setStatusCode(2);
+        }
       }
     } catch (err) {
       console.log("Failed to load order details:", err);
     }
-  }, [orderId]);
+  }, [orderId, orderNumber]);
 
   const handleReturn = useCallback(async () => {
     try {
@@ -251,24 +314,94 @@ export default function SettlementSuccessScreen({
     }
   }, [orderId, orderNumber, tableNo, orderItems, grandTotal, extraCharge]);
 
+  // ── REAL-TIME SOCKET LISTENER: Live Order Status from Kitchen / KDS ──
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadOrderDetails();
-      loadOrderItems();
-    }, 0);
-    const interval = setInterval(loadOrderDetails, 10000);
+    let socket: Socket | null = null;
+    try {
+      const socketUrl =
+        BASE_URL ||
+        (typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin
+          : "http://localhost:5000");
 
-    // Auto-return timer (30 seconds)
-    autoReturnTimerRef.current = setTimeout(() => {
-      handleReturn();
-    }, 30000);
+      socket = io(socketUrl, {
+        transports: ["polling", "websocket"],
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 4000,
+        timeout: 10000,
+      });
+
+      const handleLiveStatusChange = (data: any) => {
+        if (!data) return;
+        const incomingId = String(data.orderId || data.orderNumber || data.OrderNumber || "").trim();
+        const incomingSuffix = incomingId ? incomingId.replace(/\D/g, "").slice(-4) : "";
+        const myFullId = String(orderNumber || orderId || "").trim();
+        const mySuffix = myFullId ? myFullId.replace(/\D/g, "").slice(-4) : "";
+
+        // Check if event is for this order
+        const isMatch =
+          !incomingId ||
+          (incomingId && myFullId && (incomingId === myFullId || myFullId.includes(incomingId) || incomingId.includes(myFullId))) ||
+          (incomingSuffix && mySuffix && incomingSuffix === mySuffix);
+
+        if (isMatch) {
+          console.log("🔔 [Live Status Socket] Real-time status event received:", data);
+          const rawStatus = String(data.status || data.StatusLabel || data.statusCode || data.StatusCode || "").toUpperCase();
+          if (rawStatus === "READY" || rawStatus === "3" || rawStatus === "SERVED" || rawStatus === "4") {
+            setOrderStatus("READY");
+            setStatusCode(3);
+          } else if (rawStatus === "PREPARING" || rawStatus === "2" || rawStatus === "SENT" || rawStatus === "NEW" || rawStatus === "1") {
+            setOrderStatus("PREPARING");
+            setStatusCode(2);
+          }
+        }
+      };
+
+      socket.on("item_status_updated", handleLiveStatusChange);
+      socket.on("order_status_updated", handleLiveStatusChange);
+      socket.on("order_status_update", handleLiveStatusChange);
+    } catch (sockErr) {
+      console.warn("Socket live status initialization warning:", sockErr);
+    }
 
     return () => {
-      clearTimeout(timer);
+      if (socket) {
+        socket.off("item_status_updated");
+        socket.off("order_status_updated");
+        socket.off("order_status_update");
+        socket.disconnect();
+      }
+    };
+  }, [orderId, orderNumber]);
+
+  // Fast polling fallback & Auto-return timer
+  useEffect(() => {
+    loadOrderDetails();
+    loadOrderItems();
+
+    // Fast 3-second polling ensures status updates even if socket drops
+    const interval = setInterval(loadOrderDetails, 3000);
+
+    // Initial 60-second auto-return timer
+    autoReturnTimerRef.current = setTimeout(() => {
+      handleReturn();
+    }, 60000);
+
+    return () => {
       clearInterval(interval);
       if (autoReturnTimerRef.current) clearTimeout(autoReturnTimerRef.current);
     };
-  }, [loadOrderDetails, loadOrderItems, handleReturn, handlePrintReceipt]);
+  }, [loadOrderDetails, loadOrderItems, handleReturn]);
+
+  // When order becomes READY: refresh timer by 60s so customer has plenty of time to see it
+  useEffect(() => {
+    if (orderStatus === "READY") {
+      if (autoReturnTimerRef.current) clearTimeout(autoReturnTimerRef.current);
+      autoReturnTimerRef.current = setTimeout(() => {
+        handleReturn();
+      }, 60000);
+    }
+  }, [orderStatus, handleReturn]);
 
   const handleOpenOrderDetails = () => {
     setShowOrderDetails(true);
@@ -332,6 +465,8 @@ export default function SettlementSuccessScreen({
   // Determine circle size responsive
   const circleSize = Math.min(Math.max(screenWidth * 0.32, 210), 280);
 
+  const isReady = orderStatus === "READY" || statusCode >= 3;
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -353,9 +488,37 @@ export default function SettlementSuccessScreen({
             <Text style={styles.orderNumber}>{orderSuffix}</Text>
           </View>
 
+          {/* Live Order Status Badge */}
+          <View style={styles.liveStatusContainer}>
+            <View
+              style={[
+                styles.liveStatusPill,
+                isReady ? styles.liveStatusPillReady : styles.liveStatusPillPreparing,
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.liveStatusDot,
+                  isReady ? styles.liveStatusDotReady : styles.liveStatusDotPreparing,
+                  !isReady ? { opacity: pulseAnim } : null,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.liveStatusText,
+                  isReady ? styles.liveStatusTextReady : styles.liveStatusTextPreparing,
+                ]}
+              >
+                {isReady ? "READY" : "PREPARING"}
+              </Text>
+            </View>
+          </View>
+
           {/* Subtitle */}
           <Text style={styles.confirmationSubtitle}>
-            Please collect your receipt
+            {isReady
+              ? "Your order is ready! Please collect your receipt"
+              : "Please collect your receipt"}
           </Text>
 
           {/* New Order / Return Button */}
@@ -608,6 +771,58 @@ const styles = StyleSheet.create({
     color: "#ea580c",
     letterSpacing: -1,
     textAlign: "center",
+  },
+  liveStatusContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+    width: "100%",
+  },
+  liveStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    gap: 12,
+  },
+  liveStatusPillPreparing: {
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.9)",
+  },
+  liveStatusPillReady: {
+    borderWidth: 2.5,
+    borderColor: "#22c55e",
+  },
+  liveStatusDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  liveStatusDotPreparing: {
+    backgroundColor: "#ea580c",
+  },
+  liveStatusDotReady: {
+    backgroundColor: "#16a34a",
+  },
+  liveStatusText: {
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  liveStatusTextPreparing: {
+    color: "#ea580c",
+  },
+  liveStatusTextReady: {
+    color: "#16a34a",
   },
   tableRow: {
     marginBottom: 16,

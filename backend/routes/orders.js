@@ -2710,6 +2710,21 @@ router.post("/update-item-status", async (req, res) => {
       orderId,
     });
 
+    // 🚀 LIVE STATUS: Emit real-time order status signal for Kiosk Thank You & status screens
+    const normalizedItemStatus = String(status || "").toUpperCase();
+    const isReadyState = normalizedItemStatus === "READY" || normalizedItemStatus === "SERVED";
+    const statusPayload = {
+      orderId,
+      orderNumber: orderId,
+      orderSuffix: orderId ? String(orderId).replace(/\D/g, "").slice(-4) : "",
+      status: isReadyState ? "READY" : "PREPARING",
+      statusCode: statusMap[status] || (isReadyState ? 3 : 2),
+      isReady: isReadyState,
+      tableId: String(resolvedTableId || "").toLowerCase(),
+    };
+    req.app.get("io")?.emit("order_status_updated", statusPayload);
+    req.app.get("io")?.emit("order_status_update", statusPayload);
+
     if (resolvedTableId) {
       const cleanTableId = String(resolvedTableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
       syncTableStatus(req, resolvedTableId).catch(() => { });
@@ -4442,6 +4457,108 @@ router.post("/delete-cart-item", async (req, res) => {
   }
 });
 
+// ✅ Route: GET /api/order/status/:orderId (also accessible via /api/orders/status/:orderId)
+// Returns live status (PREPARING vs READY) matching by order number suffix (e.g. 0031), full order number, or GUID
+router.get("/status/:orderId", async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const pool = await poolPromise;
+    const cleanId = String(orderId || "").trim();
+    if (!cleanId) return res.status(400).json({ success: false, error: "orderId is required" });
+
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+
+    // 1. First look up the latest matching order from active orders (RestaurantOrderCur)
+    let headerRes = await pool.request()
+      .input("orderNo", sql.NVarChar(50), cleanId)
+      .input("orderGuid", sql.UniqueIdentifier, isGuid ? cleanId : null)
+      .query(`
+        SELECT TOP 1 OrderId, OrderNumber, CreatedOn, OrderDateTime
+        FROM RestaurantOrderCur
+        WHERE (
+          OrderNumber = @orderNo
+          OR (@orderGuid IS NOT NULL AND OrderId = @orderGuid)
+          OR RIGHT(RTRIM(LTRIM(OrderNumber)), 4) = @orderNo
+          OR OrderNumber LIKE '%' + @orderNo
+        )
+        ORDER BY ISNULL(OrderDateTime, CreatedOn) DESC, CreatedOn DESC
+      `);
+
+    let isArchived = false;
+    if (headerRes.recordset.length === 0) {
+      // 2. Check archived table as fallback
+      headerRes = await pool.request()
+        .input("orderNo", sql.NVarChar(50), cleanId)
+        .input("orderGuid", sql.UniqueIdentifier, isGuid ? cleanId : null)
+        .query(`
+          SELECT TOP 1 OrderId, OrderNumber, CreatedOn, OrderDateTime
+          FROM RestaurantOrder
+          WHERE (
+            OrderNumber = @orderNo
+            OR (@orderGuid IS NOT NULL AND OrderId = @orderGuid)
+            OR RIGHT(RTRIM(LTRIM(OrderNumber)), 4) = @orderNo
+            OR OrderNumber LIKE '%' + @orderNo
+          )
+          ORDER BY ISNULL(OrderDateTime, CreatedOn) DESC, CreatedOn DESC
+        `);
+      isArchived = true;
+    }
+
+    if (headerRes.recordset.length === 0) {
+      return res.json({
+        success: true,
+        orderNumber: cleanId,
+        orderSuffix: cleanId.replace(/\D/g, "").slice(-4) || cleanId,
+        status: "PREPARING",
+        statusCode: 2,
+        isReady: false,
+        itemCount: 0,
+      });
+    }
+
+    const orderRow = headerRes.recordset[0];
+    const targetOrderId = orderRow.OrderId;
+    const orderNumber = orderRow.OrderNumber || cleanId;
+    const orderSuffix = orderNumber ? String(orderNumber).replace(/\D/g, "").slice(-4) || orderNumber : cleanId;
+
+    // Fetch line items for this specific order
+    const detailTable = isArchived ? "RestaurantOrderDetail" : "RestaurantOrderDetailCur";
+    const itemsRes = await pool.request()
+      .input("oid", sql.UniqueIdentifier, targetOrderId)
+      .query(`
+        SELECT OrderDetailId, DishName, StatusCode
+        FROM ${detailTable}
+        WHERE OrderId = @oid AND StatusCode NOT IN (0)
+      `);
+
+    const items = itemsRes.recordset || [];
+    let statusCode = 2; // PREPARING
+    if (items.length > 0) {
+      const statusCodes = items.map(i => Number(i.StatusCode || 2));
+      // If ANY item is READY (3) or SERVED (4)
+      const hasReady = statusCodes.some(c => c >= 3);
+      statusCode = hasReady ? 3 : 2;
+    }
+
+    const isReady = statusCode >= 3;
+    const statusLabel = isReady ? "READY" : "PREPARING";
+
+    res.json({
+      success: true,
+      orderId: targetOrderId,
+      orderNumber,
+      orderSuffix,
+      status: statusLabel,
+      statusCode,
+      isReady,
+      itemCount: items.length,
+    });
+  } catch (err) {
+    console.error("Order status check error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.get("/order-details/:orderId", async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -4475,7 +4592,13 @@ router.get("/order-details/:orderId", async (req, res) => {
         FROM RestaurantOrderCur o
         INNER JOIN RestaurantOrderDetailCur d ON o.OrderId = d.OrderId
         LEFT JOIN TableMaster tm ON (TRY_CAST(o.Tableno AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(o.Tableno AS UNIQUEIDENTIFIER))
-        WHERE (o.OrderNumber = @orderNo OR d.OrderNumber = @orderNo OR (@orderGuid IS NOT NULL AND o.OrderId = @orderGuid))
+        WHERE (
+          o.OrderNumber = @orderNo 
+          OR d.OrderNumber = @orderNo 
+          OR (@orderGuid IS NOT NULL AND o.OrderId = @orderGuid)
+          OR RIGHT(RTRIM(LTRIM(o.OrderNumber)), 4) = @orderNo
+          OR o.OrderNumber LIKE '%' + @orderNo
+        )
           AND d.StatusCode NOT IN (0)
         ORDER BY o.OrderDateTime ASC
       `);
@@ -4498,7 +4621,10 @@ router.get("/order-details/:orderId", async (req, res) => {
             o.TotalAmount AS Price
           FROM RestaurantOrderCur o
           LEFT JOIN TableMaster tm ON (TRY_CAST(o.Tableno AS UNIQUEIDENTIFIER) IS NOT NULL AND tm.TableId = TRY_CAST(o.Tableno AS UNIQUEIDENTIFIER))
-          WHERE o.OrderNumber = @orderNo OR (@orderGuid IS NOT NULL AND o.OrderId = @orderGuid)
+          WHERE o.OrderNumber = @orderNo 
+             OR (@orderGuid IS NOT NULL AND o.OrderId = @orderGuid)
+             OR RIGHT(RTRIM(LTRIM(o.OrderNumber)), 4) = @orderNo
+             OR o.OrderNumber LIKE '%' + @orderNo
         `);
       return res.json(headerOnly.recordset || []);
     }
@@ -4532,7 +4658,12 @@ router.get("/order-items/:orderId", async (req, res) => {
             d.ComboDetailsJSON,
             d.ModifiersJSON
         FROM RestaurantOrderDetailCur d
-        WHERE (d.OrderNumber = @orderNo OR (@orderGuid IS NOT NULL AND d.OrderId = @orderGuid))
+        WHERE (
+          d.OrderNumber = @orderNo 
+          OR (@orderGuid IS NOT NULL AND d.OrderId = @orderGuid)
+          OR RIGHT(RTRIM(LTRIM(d.OrderNumber)), 4) = @orderNo
+          OR d.OrderNumber LIKE '%' + @orderNo
+        )
           AND d.StatusCode NOT IN (0)
         UNION ALL
         SELECT
@@ -4548,11 +4679,23 @@ router.get("/order-items/:orderId", async (req, res) => {
             NULL AS ComboDetailsJSON,
             NULL AS ModifiersJSON
         FROM RestaurantOrderDetail rd
-        WHERE (rd.OrderId IN (SELECT OrderId FROM RestaurantOrder WHERE OrderNumber = @orderNo)
-               OR (@orderGuid IS NOT NULL AND rd.OrderId = @orderGuid))
+        WHERE (
+          rd.OrderId IN (
+            SELECT OrderId FROM RestaurantOrder 
+            WHERE OrderNumber = @orderNo 
+               OR RIGHT(RTRIM(LTRIM(OrderNumber)), 4) = @orderNo
+               OR OrderNumber LIKE '%' + @orderNo
+          )
+          OR (@orderGuid IS NOT NULL AND rd.OrderId = @orderGuid)
+        )
           AND NOT EXISTS (
             SELECT 1 FROM RestaurantOrderDetailCur cd 
-            WHERE (cd.OrderNumber = @orderNo OR (@orderGuid IS NOT NULL AND cd.OrderId = @orderGuid))
+            WHERE (
+              cd.OrderNumber = @orderNo 
+              OR (@orderGuid IS NOT NULL AND cd.OrderId = @orderGuid)
+              OR RIGHT(RTRIM(LTRIM(cd.OrderNumber)), 4) = @orderNo
+              OR cd.OrderNumber LIKE '%' + @orderNo
+            )
               AND cd.StatusCode NOT IN (0)
           )
       `);
