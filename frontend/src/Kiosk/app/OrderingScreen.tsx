@@ -84,7 +84,20 @@ const parseDescriptionBullets = (desc?: string): string[] => {
 };
 
 type Props = {
-  onOrderCompleted?: (orderId: string, metadata?: { items?: any[]; extraCharge?: number; totalAmount?: number }) => void;
+  onOrderCompleted?: (
+    orderId: string,
+    metadata?: {
+      items?: any[];
+      extraCharge?: number;
+      totalAmount?: number;
+      subtotal?: number;
+      serviceCharge?: number;
+      takeawayCharge?: number;
+      gst?: number;
+      total?: number;
+      [key: string]: any;
+    }
+  ) => void;
   onLogout?: () => void;
 };
 
