@@ -1148,6 +1148,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const customerName = await AsyncStorage.getItem("kioskCustomerName");
       const customerVehicleId = await AsyncStorage.getItem("kioskCustomerVehicleId");
       const orderType = await AsyncStorage.getItem("kioskOrderType");
+      const storedTableId = await AsyncStorage.getItem("tableId");
+      const storedTableNo = await AsyncStorage.getItem("tableNo");
+      const resolvedTableId = tableId || storedTableId || "TAKEAWAY";
+      const resolvedTableNo = tableNo || storedTableNo || resolvedTableId || "TAKEAWAY";
 
       // Retain selected dish ID from cart throughout checkout
       const selectedDishId = cart.length > 0 ? (cart[0]?.DishId || cart[0]?.id) : null;
@@ -1159,8 +1163,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId,
-          tableNo: tableNo || (activeTableId && activeTableId !== "COUNTER" ? activeTableId : "TAKEAWAY"),
-          tableId: tableId || (activeTableId && activeTableId !== "COUNTER" ? activeTableId : "TAKEAWAY"),
+          tableNo: resolvedTableNo,
+          tableId: resolvedTableId,
           kioskOrderType: orderType,
           kioskCarNumber: carNumber || undefined,
           kioskCustomerName: customerName || undefined,
