@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -13,11 +14,90 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, { Circle, G, Line, Path } from "react-native-svg";
 import { io, Socket } from "socket.io-client";
 import { API, BASE_URL } from "@/config";
 import BillPDFGenerator from "../components/BillPDFGenerator";
 import BillPrompt from "../components/BillPrompt";
 import UniversalPrinter from "../components/UniversalPrinter";
+
+const thankyouFoodImg = require("../assets/images/thankyou_food.png");
+
+// Scalloped checkmark badge with radiating rays matching reference design
+function ScallopedCheckBadge() {
+  return (
+    <View style={styles.badgeWrapper}>
+      <Svg width={140} height={56} viewBox="0 0 140 56">
+        {/* Left radiating rays */}
+        <Line x1="16" y1="17" x2="32" y2="23" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+        <Line x1="10" y1="30" x2="28" y2="30" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+        <Line x1="16" y1="43" x2="32" y2="37" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+
+        {/* Center 12-scallop rosette badge */}
+        <G transform="translate(45, 3)">
+          <Path
+            d="M 25.0 -0.5 Q 25.0 -0.5 27.6 2.4 Q 30.3 5.2 34.0 4.0 Q 37.8 2.9 38.6 6.7 Q 39.5 10.5 43.3 11.3 Q 47.1 12.2 46.0 15.9 Q 44.8 19.7 47.6 22.4 Q 50.5 25.0 47.6 27.6 Q 44.8 30.3 46.0 34.0 Q 47.1 37.7 43.3 38.6 Q 39.5 39.5 38.6 43.3 Q 37.8 47.1 34.0 46.0 Q 30.3 44.8 27.6 47.6 Q 25.0 50.5 22.4 47.6 Q 19.7 44.8 16.0 46.0 Q 12.3 47.1 11.4 43.3 Q 10.5 39.5 6.7 38.6 Q 2.9 37.8 4.0 34.0 Q 5.2 30.3 2.4 27.6 Q -0.5 25.0 2.4 22.4 Q 5.2 19.7 4.0 15.9 Q 2.9 12.2 6.7 11.3 Q 10.5 10.5 11.3 6.7 Q 12.2 2.9 15.9 4.0 Q 19.7 5.2 22.4 2.4 Z"
+            fill="#ffffff"
+          />
+          {/* Checkmark */}
+          <Path
+            d="M 17 25 L 23 31 L 33 19"
+            stroke="#ea580c"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </G>
+
+        {/* Right radiating rays */}
+        <Line x1="124" y1="17" x2="108" y2="23" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+        <Line x1="130" y1="30" x2="112" y2="30" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+        <Line x1="124" y1="43" x2="108" y2="37" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+      </Svg>
+    </View>
+  );
+}
+
+// Orange ticket icon with cloche dome inside matching reference model
+function TicketClocheIcon() {
+  return (
+    <Svg width={66} height={66} viewBox="0 0 64 64" fill="none">
+      {/* Ticket outline with top notch and zigzag bottom */}
+      <Path
+        d="M 12 12 H 27 M 37 12 H 52 V 48 L 47 43 L 42 48 L 37 43 L 32 48 L 27 43 L 22 48 L 17 43 L 12 48 Z"
+        stroke="#ea580c"
+        strokeWidth={3.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Top alignment dots */}
+      <Circle cx={21} cy={18} r={1.5} fill="#ea580c" />
+      <Circle cx={43} cy={18} r={1.5} fill="#ea580c" />
+      {/* Cloche handle */}
+      <Circle cx={32} cy={23} r={2.5} fill="#ea580c" />
+      {/* Cloche dome cover */}
+      <Path
+        d="M 21 34 C 21 26 43 26 43 34 Z"
+        stroke="#ea580c"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Cloche tray plate */}
+      <Line
+        x1={18}
+        y1={37.5}
+        x2={46}
+        y2={37.5}
+        stroke="#ea580c"
+        strokeWidth={3}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
 
 type Props = {
   orderId?: string | null;
@@ -270,7 +350,7 @@ export default function SettlementSuccessScreen({
   }, [orderId, orderItems.length]);
 
   const calculatedItemsTotal = (orderItems || []).reduce(
-    (sum, item) => sum + Number(item.LineTotal || (Number(item.PricePerUnit || item.price || item.Price || 0) * Number(item.Quantity || item.qty || 1))),
+    (sum: number, item: any) => sum + Number(item.LineTotal || (Number(item.PricePerUnit || item.price || item.Price || 0) * Number(item.Quantity || item.qty || 1))),
     0
   );
 
@@ -292,7 +372,7 @@ export default function SettlementSuccessScreen({
       }
 
       const calculatedSubtotal = (currentItems || []).reduce(
-        (sum, item) => sum + Number(item.LineTotal || (Number(item.PricePerUnit || item.price || item.Price || 0) * Number(item.Quantity || item.qty || 1))),
+        (sum: number, item: any) => sum + Number(item.LineTotal || (Number(item.PricePerUnit || item.price || item.Price || 0) * Number(item.Quantity || item.qty || 1))),
         0
       );
 
@@ -475,80 +555,183 @@ export default function SettlementSuccessScreen({
     ? String(effectiveNumber).replace(/\D/g, "").slice(-4) || effectiveNumber
     : "----";
 
-  const activeStep = getActiveStep(statusCode);
-  const currentStatus = STATUS_STEPS[activeStep];
-  const isValidStatus = [2, 3, 4].includes(Number(statusCode));
-
-  // Determine circle size responsive
-  const circleSize = Math.min(Math.max(screenWidth * 0.32, 210), 280);
-
   const isReady = orderStatus === "READY" || statusCode >= 3;
+  const isLandscape = screenWidth >= 768;
+
+  const pulseScale = pulseAnim.interpolate({
+    inputRange: [0.35, 1],
+    outputRange: [0.93, 1.07],
+  });
+
+  const renderCardContent = () => (
+    <View style={styles.cardContent}>
+      {/* Scalloped check badge with radiating rays */}
+      <ScallopedCheckBadge />
+
+      {/* Heading & Subtitle */}
+      <Text style={styles.thankYouHeading}>Thank You!</Text>
+      <Text style={styles.orderSubtitle}>Your order has been placed successfully.</Text>
+
+      {/* Order Number White Card */}
+      <TouchableOpacity
+        style={styles.orderNumberCard}
+        activeOpacity={0.92}
+        onPress={handleOpenOrderDetails}
+      >
+        <View style={styles.cardLeftIcon}>
+          <TicketClocheIcon />
+        </View>
+
+        <View style={styles.cardDivider} />
+
+        <View style={styles.cardRightInfo}>
+          <Text style={styles.cardOrderLabel}>Your Order No.</Text>
+          <Text style={styles.cardOrderNum}>{orderSuffix}</Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* 3-Step Horizontal Stepper */}
+      <View style={styles.stepperContainer}>
+        {/* Step 1: Order Placed */}
+        <View style={styles.stepItem}>
+          <View style={styles.stepCirclePlaced}>
+            <Ionicons name="checkmark" size={20} color="#ffffff" />
+          </View>
+          <Text style={styles.stepLabel}>Order Placed</Text>
+        </View>
+
+        {/* Connector 1 */}
+        <View style={[styles.stepConnectorLine, styles.stepConnectorActive]} />
+
+        {/* Step 2: Preparing */}
+        <View style={styles.stepItem}>
+          <Animated.View
+            style={[
+              styles.stepCirclePreparing,
+              isReady ? styles.stepCirclePreparingDone : null,
+              !isReady ? { transform: [{ scale: pulseScale }] } : null,
+            ]}
+          >
+            {isReady ? (
+              <Ionicons name="checkmark" size={20} color="#ea580c" />
+            ) : (
+              <MaterialCommunityIcons name="chef-hat" size={24} color="#ea580c" />
+            )}
+          </Animated.View>
+          <Text style={[styles.stepLabel, !isReady && styles.stepLabelActive]}>
+            Preparing
+          </Text>
+        </View>
+
+        {/* Connector 2 */}
+        <View
+          style={[
+            styles.stepConnectorLine,
+            isReady ? styles.stepConnectorActive : styles.stepConnectorPending,
+          ]}
+        />
+
+        {/* Step 3: Ready */}
+        <View style={styles.stepItem}>
+          <View
+            style={[
+              styles.stepCircleReady,
+              isReady && styles.stepCircleReadyActive,
+            ]}
+          >
+            <Ionicons
+              name={isReady ? "checkmark-circle" : "bag-handle"}
+              size={20}
+              color={isReady ? "#16a34a" : "rgba(255, 255, 255, 0.85)"}
+            />
+          </View>
+          <Text style={[styles.stepLabel, isReady && styles.stepLabelReady]}>
+            Ready
+          </Text>
+        </View>
+      </View>
+
+      {/* Notice Capsule */}
+      <View style={styles.noticeCapsule}>
+        <MaterialCommunityIcons
+          name="receipt"
+          size={18}
+          color="#ffffff"
+          style={{ marginRight: 8 }}
+        />
+        <Text style={styles.noticeText}>
+          {isReady
+            ? "Your order is ready! Please collect your receipt at the counter."
+            : "Please collect your receipt at the counter."}
+        </Text>
+      </View>
+
+      {/* Start New Order Button */}
+      <TouchableOpacity
+        style={styles.newOrderBtn}
+        onPress={handleReturn}
+        activeOpacity={0.88}
+      >
+        <Ionicons
+          name="reload"
+          size={20}
+          color="#ea580c"
+          style={{ marginRight: 8 }}
+        />
+        <Text style={styles.newOrderBtnText}>Start New Order</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.confirmationCard}>
-          {/* Banner */}
-          <Text style={styles.confirmationBanner}>Thank You!</Text>
+      {/* Ambient soft background curves */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+          <Path
+            d="M 500 -120 C 700 0, 900 180, 1200 90 L 1200 -120 Z"
+            fill="rgba(255, 255, 255, 0.05)"
+          />
+          <Path
+            d="M 700 800 C 850 650, 1000 620, 1200 680 L 1200 800 Z"
+            fill="rgba(255, 255, 255, 0.05)"
+          />
+        </Svg>
+      </View>
 
-          {/* Big Order Number Circle */}
-          <View
-            style={[
-              styles.orderCircle,
-              { width: circleSize, height: circleSize, borderRadius: circleSize / 2 },
-            ]}
-          >
-            <Text style={styles.orderCaption}>YOUR ORDER NO.</Text>
-            <Text style={styles.orderNumber}>{orderSuffix}</Text>
+      {isLandscape ? (
+        <View style={styles.landscapeContainer}>
+          {/* Left: Food plate illustration anchored to left */}
+          <View style={styles.foodColLandscape}>
+            <Image
+              source={thankyouFoodImg}
+              style={styles.foodImageLandscape}
+              resizeMode="cover"
+            />
           </View>
 
-          {/* Live Order Status Badge */}
-          <View style={styles.liveStatusContainer}>
-            <View
-              style={[
-                styles.liveStatusPill,
-                isReady ? styles.liveStatusPillReady : styles.liveStatusPillPreparing,
-              ]}
-            >
-              <Animated.View
-                style={[
-                  styles.liveStatusDot,
-                  isReady ? styles.liveStatusDotReady : styles.liveStatusDotPreparing,
-                  !isReady ? { opacity: pulseAnim } : null,
-                ]}
-              />
-              <Text
-                style={[
-                  styles.liveStatusText,
-                  isReady ? styles.liveStatusTextReady : styles.liveStatusTextPreparing,
-                ]}
-              >
-                {isReady ? "READY" : "PREPARING"}
-              </Text>
-            </View>
+          {/* Right: Confirmation flow */}
+          <View style={styles.contentColLandscape}>
+            {renderCardContent()}
           </View>
-
-          {/* Subtitle */}
-          <Text style={styles.confirmationSubtitle}>
-            {isReady
-              ? "Your order is ready! Please collect your receipt"
-              : "Please collect your receipt"}
-          </Text>
-
-          {/* New Order / Return Button */}
-          <TouchableOpacity
-            style={styles.returnBtn}
-            onPress={handleReturn}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.returnBtnIcon}>↺</Text>
-            <Text style={styles.returnBtnText}>Start New Order</Text>
-          </TouchableOpacity>
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.portraitScrollContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.foodColPortrait}>
+            <Image
+              source={thankyouFoodImg}
+              style={styles.foodImagePortrait}
+              resizeMode="contain"
+            />
+          </View>
+          <View style={styles.contentColPortrait}>
+            {renderCardContent()}
+          </View>
+        </ScrollView>
+      )}
 
       {/* Bill Prompt Dialog */}
       <BillPrompt
@@ -611,7 +794,7 @@ export default function SettlementSuccessScreen({
                   </View>
 
                     <ScrollView style={styles.itemsScroll}>
-                    {orderItems.map((item, idx) => {
+                    {orderItems.map((item: any, idx: number) => {
                       const itemName = item.DishName || item.Name || item.name || "Item";
                       const itemQty = Number(item.Quantity || item.qty || 1);
                       const itemPrice = Number(item.PricePerUnit ?? item.price ?? item.Price ?? 0);
@@ -734,278 +917,260 @@ export default function SettlementSuccessScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f97316",
+    backgroundColor: "#ea580c",
   },
-  scrollContainer: {
+  landscapeContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  foodColLandscape: {
+    width: "36%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "flex-start",
+    overflow: "hidden",
+  },
+  foodImageLandscape: {
+    width: "100%",
+    height: "94%",
+    maxWidth: 440,
+  },
+  contentColLandscape: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  portraitScrollContainer: {
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 32,
-    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
-  confirmationCard: {
+  foodColPortrait: {
     width: "100%",
-    maxWidth: 720,
-    backgroundColor: "transparent",
+    height: 220,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    marginBottom: 8,
   },
-  confirmationBanner: {
-    fontSize: 48,
+  foodImagePortrait: {
+    width: "90%",
+    height: "100%",
+  },
+  contentColPortrait: {
+    width: "100%",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  cardContent: {
+    width: "100%",
+    maxWidth: 490,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  thankYouHeading: {
+    fontSize: 42,
     fontWeight: "900",
     color: "#ffffff",
-    letterSpacing: -1,
+    letterSpacing: -0.5,
     textAlign: "center",
-    marginBottom: 28,
-    textShadowColor: "rgba(0, 0, 0, 0.15)",
+    marginBottom: 4,
+    textShadowColor: "rgba(0, 0, 0, 0.12)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
   },
-  orderCircle: {
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.22,
-    shadowRadius: 28,
-    elevation: 12,
+  orderSubtitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.95)",
+    textAlign: "center",
     marginBottom: 20,
   },
-  orderCaption: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#ea580c",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    marginBottom: 4,
+  orderNumberCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    width: "100%",
+    maxWidth: 440,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 8,
+    marginBottom: 20,
   },
-  orderNumber: {
+  cardLeftIcon: {
+    justifyContent: "center",
+    alignItems: "center",
+    width: 68,
+  },
+  cardDivider: {
+    width: 1.5,
+    height: 52,
+    backgroundColor: "#e2e8f0",
+    marginHorizontal: 18,
+  },
+  cardRightInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  cardOrderLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 2,
+  },
+  cardOrderNum: {
     fontSize: 52,
     fontWeight: "900",
     color: "#ea580c",
-    letterSpacing: -1,
-    textAlign: "center",
+    letterSpacing: -0.5,
+    lineHeight: 56,
   },
-  liveStatusContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-    width: "100%",
-  },
-  liveStatusPill: {
+  stepperContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#ffffff",
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 999,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
-    gap: 12,
-  },
-  liveStatusPillPreparing: {
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.9)",
-  },
-  liveStatusPillReady: {
-    borderWidth: 2.5,
-    borderColor: "#22c55e",
-  },
-  liveStatusDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-  },
-  liveStatusDotPreparing: {
-    backgroundColor: "#ea580c",
-  },
-  liveStatusDotReady: {
-    backgroundColor: "#16a34a",
-  },
-  liveStatusText: {
-    fontSize: 22,
-    fontWeight: "900",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-  },
-  liveStatusTextPreparing: {
-    color: "#ea580c",
-  },
-  liveStatusTextReady: {
-    color: "#16a34a",
-  },
-  tableRow: {
-    marginBottom: 16,
-  },
-  tableLabel: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#ffffff",
-  },
-  tableAccent: {
-    color: "#fef08a",
-    fontSize: 26,
-    fontWeight: "900",
-  },
-  actionButtonsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 10,
-    marginBottom: 20,
-    width: "100%",
-    maxWidth: 480,
-  },
-  detailsBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#ffffff",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  detailsBtnIcon: {
-    fontSize: 16,
-  },
-  detailsBtnText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#ea580c",
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderWidth: 2,
-    borderRadius: 18,
-    padding: 16,
     width: "100%",
     maxWidth: 440,
-    gap: 14,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  statusBadgeEmoji: {
-    fontSize: 34,
-  },
-  statusBadgeTextWrap: {
-    flex: 1,
-  },
-  statusBadgeTitle: {
-    fontSize: 17,
-    fontWeight: "900",
-    marginBottom: 2,
-  },
-  statusBadgeMsg: {
-    fontSize: 13,
-    color: "#6b7280",
-    fontWeight: "600",
-    lineHeight: 18,
-  },
-  trackerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    maxWidth: 460,
-    marginBottom: 24,
-  },
-  stepWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
+    marginBottom: 20,
   },
   stepItem: {
     alignItems: "center",
-    flex: 1,
+    width: 86,
   },
-  stepCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 2.5,
-    borderColor: "rgba(255,255,255,0.6)",
-    backgroundColor: "rgba(255,255,255,0.25)",
+  stepCirclePlaced: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    borderWidth: 2,
+    borderColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 6,
   },
-  doneCheck: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "900",
+  stepCirclePreparing: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#fef3c7",
+    borderWidth: 2.5,
+    borderColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  stepEmoji: {
-    fontSize: 18,
+  stepCirclePreparingDone: {
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff",
+  },
+  stepCircleReady: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  stepCircleReadyActive: {
+    backgroundColor: "#ffffff",
+    borderColor: "#22c55e",
+    borderWidth: 2.5,
+    shadowColor: "#22c55e",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   stepLabel: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "600",
     color: "#ffffff",
     textAlign: "center",
   },
-  stepConnector: {
-    height: 3,
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.35)",
-    marginTop: -16,
-    borderRadius: 2,
+  stepLabelActive: {
+    fontWeight: "800",
   },
-  stepConnectorFilled: {
-    backgroundColor: "#ffffff",
-  },
-  confirmationSubtitle: {
-    fontSize: 20,
+  stepLabelReady: {
     fontWeight: "800",
     color: "#ffffff",
-    textAlign: "center",
-    marginBottom: 24,
-    textShadowColor: "rgba(0, 0, 0, 0.1)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
-  returnBtn: {
+  stepConnectorLine: {
+    flex: 1,
+    height: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.35)",
+    marginTop: -18,
+    marginHorizontal: -4,
+  },
+  stepConnectorActive: {
+    backgroundColor: "#ffffff",
+  },
+  stepConnectorPending: {
+    backgroundColor: "rgba(255, 255, 255, 0.35)",
+  },
+  noticeCapsule: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    backgroundColor: "#ffffff",
-    paddingVertical: 16,
-    paddingHorizontal: 36,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
     borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
     width: "100%",
-    maxWidth: 380,
+    maxWidth: 440,
+    marginBottom: 18,
+  },
+  noticeText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ffffff",
+    textAlign: "center",
+  },
+  newOrderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    paddingVertical: 14,
+    paddingHorizontal: 36,
+    width: "100%",
+    maxWidth: 340,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
     shadowRadius: 14,
     elevation: 6,
   },
-  returnBtnIcon: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#ea580c",
-  },
-  returnBtnText: {
-    fontSize: 19,
-    fontWeight: "900",
+  newOrderBtnText: {
+    fontSize: 18,
+    fontWeight: "800",
     color: "#ea580c",
   },
 
