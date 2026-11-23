@@ -939,8 +939,45 @@ async function syncToProfessionalTables(
       DELETE FROM RestaurantmodifierdetailCur WHERE OrderDetailId IN (SELECT OrderDetailId FROM RestaurantOrderDetailCur WHERE OrderId = @orderId AND StatusCode = 1 ${notInClause});
       DELETE FROM RestaurantOrderDetailCur WHERE OrderId = @orderId AND StatusCode = 1 ${notInClause};
       
-      -- Final Header Total Update
-      UPDATE RestaurantOrderCur SET TotalAmount = (SELECT ISNULL(SUM(ActualAmount), 0) FROM RestaurantOrderDetailCur WHERE OrderId = @orderId AND StatusCode <> 0) WHERE OrderId = @orderId;
+      -- Final Header Total Update including Service Charge, Takeaway Charges, and GST
+      DECLARE @calcSubtotal DECIMAL(18,2) = 0;
+      DECLARE @calcSC DECIMAL(18,2) = 0;
+      DECLARE @calcTW DECIMAL(18,2) = 0;
+      DECLARE @calcTWRate DECIMAL(18,2) = 0;
+      DECLARE @calcGSTRate DECIMAL(18,2) = 0;
+      DECLARE @calcDisc DECIMAL(18,2) = 0;
+
+      SELECT TOP 1 @calcTWRate = ISNULL(TakeawayCharges, 0), @calcGSTRate = ISNULL(GSTPercentage, 0) / 100.0 FROM CompanySettings;
+
+      SELECT 
+          @calcSubtotal = ISNULL(SUM(d.ActualAmount), 0),
+          @calcSC = ISNULL(SUM(d.ServiceCharge), 0),
+          @calcTW = ISNULL(SUM(d.Quantity * CASE 
+              WHEN d.isTakeAway = 1 THEN 
+                  CASE 
+                      WHEN ISNULL(dish.TakeawayCharge, 0) > 0 THEN dish.TakeawayCharge 
+                      ELSE @calcTWRate 
+                  END
+              ELSE 0 
+          END), 0)
+      FROM RestaurantOrderDetailCur d
+      LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+      WHERE d.OrderId = @orderId AND d.StatusCode <> 0;
+
+      SELECT TOP 1 @calcDisc = ISNULL(DiscountAmount, 0) FROM RestaurantOrderCur WHERE OrderId = @orderId;
+      DECLARE @calcTaxable DECIMAL(18,2) = @calcSubtotal - @calcDisc;
+      IF @calcTaxable < 0 SET @calcTaxable = 0;
+
+      DECLARE @calcTotal DECIMAL(18,2) = ROUND(@calcTaxable + @calcSC + @calcTW + ((@calcTaxable + @calcSC + @calcTW) * ISNULL(@calcGSTRate, 0)), 2);
+
+      UPDATE RestaurantOrderCur 
+      SET TotalLineItemAmount = @calcSubtotal,
+          TotalAmountLessFreight = @calcSubtotal,
+          TakeawayCharge = @calcTW,
+          ServiceCharge = @calcSC,
+          TotalTax = ROUND((@calcTaxable + @calcSC + @calcTW) * ISNULL(@calcGSTRate, 0), 2),
+          TotalAmount = @calcTotal
+      WHERE OrderId = @orderId;
     `;
     await cleanupRequest.query(cleanupSql);
   } else {
@@ -948,7 +985,44 @@ async function syncToProfessionalTables(
     const totalRequest = transaction.request();
     totalRequest.input("orderId", sql.UniqueIdentifier, orderGuid);
     await totalRequest.query(`
-      UPDATE RestaurantOrderCur SET TotalAmount = (SELECT ISNULL(SUM(ActualAmount), 0) FROM RestaurantOrderDetailCur WHERE OrderId = @orderId AND StatusCode <> 0) WHERE OrderId = @orderId;
+      DECLARE @calcSubtotal2 DECIMAL(18,2) = 0;
+      DECLARE @calcSC2 DECIMAL(18,2) = 0;
+      DECLARE @calcTW2 DECIMAL(18,2) = 0;
+      DECLARE @calcTWRate2 DECIMAL(18,2) = 0;
+      DECLARE @calcGSTRate2 DECIMAL(18,2) = 0;
+      DECLARE @calcDisc2 DECIMAL(18,2) = 0;
+
+      SELECT TOP 1 @calcTWRate2 = ISNULL(TakeawayCharges, 0), @calcGSTRate2 = ISNULL(GSTPercentage, 0) / 100.0 FROM CompanySettings;
+
+      SELECT 
+          @calcSubtotal2 = ISNULL(SUM(d.ActualAmount), 0),
+          @calcSC2 = ISNULL(SUM(d.ServiceCharge), 0),
+          @calcTW2 = ISNULL(SUM(d.Quantity * CASE 
+              WHEN d.isTakeAway = 1 THEN 
+                  CASE 
+                      WHEN ISNULL(dish.TakeawayCharge, 0) > 0 THEN dish.TakeawayCharge 
+                      ELSE @calcTWRate2 
+                  END
+              ELSE 0 
+          END), 0)
+      FROM RestaurantOrderDetailCur d
+      LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
+      WHERE d.OrderId = @orderId AND d.StatusCode <> 0;
+
+      SELECT TOP 1 @calcDisc2 = ISNULL(DiscountAmount, 0) FROM RestaurantOrderCur WHERE OrderId = @orderId;
+      DECLARE @calcTaxable2 DECIMAL(18,2) = @calcSubtotal2 - @calcDisc2;
+      IF @calcTaxable2 < 0 SET @calcTaxable2 = 0;
+
+      DECLARE @calcTotal2 DECIMAL(18,2) = ROUND(@calcTaxable2 + @calcSC2 + @calcTW2 + ((@calcTaxable2 + @calcSC2 + @calcTW2) * ISNULL(@calcGSTRate2, 0)), 2);
+
+      UPDATE RestaurantOrderCur 
+      SET TotalLineItemAmount = @calcSubtotal2,
+          TotalAmountLessFreight = @calcSubtotal2,
+          TakeawayCharge = @calcTW2,
+          ServiceCharge = @calcSC2,
+          TotalTax = ROUND((@calcTaxable2 + @calcSC2 + @calcTW2) * ISNULL(@calcGSTRate2, 0), 2),
+          TotalAmount = @calcTotal2
+      WHERE OrderId = @orderId;
     `);
   }
 }
@@ -4388,7 +4462,9 @@ router.get("/cart/kiosk/:orderId", async (req, res) => {
           d.PricePerUnit,
           ISNULL(dish.Name, d.DishName) as name,
           ISNULL(dish.Name, d.DishName) as Name,
-          dish.isServiceCharge AS isServiceCharge,
+          ISNULL(dish.isServiceCharge, 1) AS isServiceCharge,
+          ISNULL(dish.TakeawayCharge, 0) AS takeawayCharge,
+          ISNULL(dish.TakeawayCharge, 0) AS TakeawayCharge,
           d.ModifiersJSON,
           d.ComboDetailsJSON,
           d.Remarks as note,

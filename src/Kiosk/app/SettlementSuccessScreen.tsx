@@ -27,6 +27,11 @@ type Props = {
   showActionButtons?: boolean;
   extraCharge?: number;
   initialItems?: any[];
+  subtotal?: number;
+  serviceCharge?: number;
+  takeawayCharge?: number;
+  gst?: number;
+  total?: number;
   onReturnToOrder?: () => void;
 };
 
@@ -84,6 +89,11 @@ export default function SettlementSuccessScreen({
   showActionButtons = true,
   extraCharge: initialExtraCharge = 0,
   initialItems = [],
+  subtotal: initialSubtotal,
+  serviceCharge: initialServiceCharge,
+  takeawayCharge: initialTakeawayCharge,
+  gst: initialGst,
+  total: initialTotal,
   onReturnToOrder,
 }: Props) {
   const { width: screenWidth } = useWindowDimensions();
@@ -286,6 +296,9 @@ export default function SettlementSuccessScreen({
         0
       );
 
+      const resolvedSubtotal = initialSubtotal !== undefined ? initialSubtotal : calculatedSubtotal;
+      const resolvedTotal = initialTotal !== undefined ? initialTotal : (grandTotal > 0 ? grandTotal : (calculatedSubtotal + Number(extraCharge || 0)));
+
       const saleData = {
         orderId: orderNumber || orderId,
         invoiceNumber: orderNumber || orderId,
@@ -298,7 +311,11 @@ export default function SettlementSuccessScreen({
           modifiers: item.modifiers || [],
         })),
         extraCharge: Number(extraCharge || 0),
-        total: calculatedSubtotal > 0 ? (calculatedSubtotal + Number(extraCharge || 0)) : grandTotal,
+        subtotal: resolvedSubtotal,
+        serviceCharge: initialServiceCharge !== undefined ? initialServiceCharge : 0,
+        takeawayCharge: initialTakeawayCharge !== undefined ? initialTakeawayCharge : 0,
+        gst: initialGst !== undefined ? initialGst : 0,
+        total: resolvedTotal,
         paymentMethod: "PAID",
       };
 
@@ -312,7 +329,7 @@ export default function SettlementSuccessScreen({
     } finally {
       setIsPrinting(false);
     }
-  }, [orderId, orderNumber, tableNo, orderItems, grandTotal, extraCharge]);
+  }, [orderId, orderNumber, tableNo, orderItems, grandTotal, extraCharge, initialSubtotal, initialServiceCharge, initialTakeawayCharge, initialGst, initialTotal]);
 
   // ── REAL-TIME SOCKET LISTENER: Live Order Status from Kitchen / KDS ──
   useEffect(() => {

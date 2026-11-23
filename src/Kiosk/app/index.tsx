@@ -66,6 +66,11 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
         orderId={completedOrderId}
         initialItems={completedOrderMeta?.items || []}
         extraCharge={completedOrderMeta?.extraCharge || 0}
+        subtotal={completedOrderMeta?.subtotal}
+        serviceCharge={completedOrderMeta?.serviceCharge}
+        takeawayCharge={completedOrderMeta?.takeawayCharge}
+        gst={completedOrderMeta?.gst}
+        total={completedOrderMeta?.total}
         showActionButtons={true}
         onReturnToOrder={() => {
           setCompletedOrderId(null);

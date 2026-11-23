@@ -532,6 +532,11 @@ function formatThermalTextWithDiscount(saleData: any, company: any, discountInfo
     text += `[R]${discLabel} -${symbol}${Number(discountInfo.amount).toFixed(2)}\n`;
   }
 
+  const takeawayCharge = saleData.takeawayCharge || saleData.takeawayCharges || saleData.takeawayChargeAmount || 0;
+  if (takeawayCharge > 0) {
+    text += `[R]Takeaway Charge: ${symbol}${Number(takeawayCharge).toFixed(2)}\n`;
+  }
+
   const serviceCharge = saleData.serviceCharge || saleData.serviceChargeAmount || 0;
   if (serviceCharge > 0) {
     text += `[R]Service Charge: ${symbol}${Number(serviceCharge).toFixed(2)}\n`;
@@ -575,6 +580,7 @@ function generateReceiptHTML(saleData: any, company: any, discountInfo?: any) {
   const subtotal =
     saleData.subtotal ||
     items.reduce((s: number, i: any) => s + (Number(i.price || i.Price || 0)) * (i.quantity || i.qty || 1), 0);
+  const takeawayCharge = saleData.takeawayCharge || saleData.takeawayCharges || saleData.takeawayChargeAmount || 0;
   const serviceCharge = saleData.serviceCharge || saleData.serviceChargeAmount || 0;
   const gst = saleData.gst || saleData.gstAmount || 0;
   const total = saleData.total || saleData.totalAmount || saleData.grandTotal || 0;
@@ -661,6 +667,7 @@ function generateReceiptHTML(saleData: any, company: any, discountInfo?: any) {
         </div>`
       : ""
     }
+  ${takeawayCharge > 0 ? `<div class="summary-row"><span>Takeaway Charge</span><span>${symbol}${Number(takeawayCharge).toFixed(2)}</span></div>` : ""}
   ${serviceCharge > 0 ? `<div class="summary-row"><span>Service Charge</span><span>${symbol}${Number(serviceCharge).toFixed(2)}</span></div>` : ""}
   ${gst > 0 ? `<div class="summary-row"><span>GST</span><span>${symbol}${Number(gst).toFixed(2)}</span></div>` : ""}
 

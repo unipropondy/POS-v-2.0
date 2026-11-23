@@ -143,8 +143,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Payment Modal State
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [totalAmount, setTotalAmount] = useState("0.00");
+  const [companySettings, setCompanySettings] = useState<any>(null);
   const [serviceChargePercent, setServiceChargePercent] = useState(0);
+  const [twServiceChargePercent, setTwServiceChargePercent] = useState(0);
+  const [takeawayChargeRate, setTakeawayChargeRate] = useState(0);
   const [gstPercent, setGstPercent] = useState(0);
+  const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
+  const [currencySymbol, setCurrencySymbol] = useState("$");
+  const [orderType, setOrderType] = useState<string>("DINE_IN");
   const [paymodesList, setPaymodesList] = useState<any[]>([]);
 
   // Extra Charge Confirmation Modal
@@ -312,6 +318,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           qty: Number(item.qty || item.Quantity || 1),
           Price: Number(item.price || item.Price || item.PricePerUnit || 0),
           finalPrice: Number(item.price || item.Price || item.PricePerUnit || 0),
+          isServiceCharge: item.isServiceCharge !== undefined ? item.isServiceCharge : (item.IsServiceCharge !== undefined ? item.IsServiceCharge : true),
+          takeawayCharge: Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0),
+          isTakeaway: !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway),
           status: item.status || (item.StatusCode === 1 ? "NEW" : "SENT"),
           selectedMods:
             item.modifiers ||
@@ -355,26 +364,51 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         setTableNo(storedTableNo || "");
         setTableId(storedTableId || "");
 
-        // Fetch settings and paymodes
-        const [settingsRes, paymodesRes, kitchensRes] = await Promise.all([
-          fetch(`${API}/company/settings`).then((r) => r.json()).catch(() => ({})),
+        // Fetch settings, paymodes, kitchens and orderType
+        const [settingsRes, paymodesRes, kitchensRes, storedOrderType] = await Promise.all([
+          fetch(`${API}/company-settings/1`)
+            .then((r) => r.json())
+            .catch(() =>
+              fetch(`${API}/company/settings`)
+                .then((r) => r.json())
+                .catch(() => ({}))
+            ),
           fetch(`${API}/paymodes/list`).then((r) => r.json()).catch(() => []),
           fetch(`${API}/kitchens`).then((r) => r.json()).catch(() => []),
+          AsyncStorage.getItem("kioskOrderType").then(
+            (t) => t || AsyncStorage.getItem("orderType").then((ot) => ot || "DINE_IN")
+          ),
         ]);
 
-        if (settingsRes) {
-          setServiceChargePercent(Number(settingsRes.ServiceChargePercentage || 0));
-          setGstPercent(Number(settingsRes.GSTPercentage || 0));
-          setEnableCombo(Number(settingsRes.EnableCombo || 0));
-          const isKioskTableEnabled =
-            settingsRes.Enablekiosktable === 1 ||
-              settingsRes.Enablekiosktable === true ||
-              String(settingsRes.Enablekiosktable) === "1" ||
-              String(settingsRes.Enablekiosktable).toLowerCase() === "true"
-              ? 1
-              : 0;
-          setEnableKioskTable(isKioskTableEnabled);
-        }
+        const rawSettings = settingsRes?.settings || settingsRes || {};
+        setCompanySettings(rawSettings);
+
+        const sc = Number(rawSettings.ServiceChargePercentage ?? rawSettings.serviceChargePercentage ?? 0);
+        const twSc = Number(rawSettings.TWServiceChargePercentage ?? rawSettings.twServiceChargePercentage ?? 0);
+        const twRate = Number(rawSettings.TakeawayCharges ?? rawSettings.takeawayCharges ?? 0);
+        const gst = Number(rawSettings.GSTPercentage ?? rawSettings.gstPercentage ?? 0);
+        const tMode = String(rawSettings.TaxMode ?? rawSettings.taxMode ?? "exclusive").toLowerCase();
+        const sym = String(rawSettings.CurrencySymbol ?? rawSettings.currencySymbol ?? "$");
+
+        setServiceChargePercent(sc);
+        setTwServiceChargePercent(twSc);
+        setTakeawayChargeRate(twRate);
+        setGstPercent(gst);
+        setTaxMode(tMode === "inclusive" ? "inclusive" : "exclusive");
+        setCurrencySymbol(sym);
+
+        const activeOrderType = storedOrderType || "DINE_IN";
+        setOrderType(activeOrderType);
+
+        setEnableCombo(Number(rawSettings.EnableCombo ?? rawSettings.enableCombo ?? 0));
+        const isKioskTableEnabled =
+          rawSettings.Enablekiosktable === 1 ||
+          rawSettings.Enablekiosktable === true ||
+          String(rawSettings.Enablekiosktable) === "1" ||
+          String(rawSettings.Enablekiosktable).toLowerCase() === "true"
+            ? 1
+            : 0;
+        setEnableKioskTable(isKioskTableEnabled);
 
         if (Array.isArray(paymodesRes)) {
           setPaymodesList(paymodesRes);
@@ -408,14 +442,64 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     initData();
   }, []);
 
-  // Calculations
+  // ── ACCURATE CHARGE CALCULATIONS (ALIGNED WITH POS & QR CUSTOMER FLOW) ──
+  const isTakeawayOrder =
+    orderType.toUpperCase().includes("TAKEAWAY") ||
+    orderType.toUpperCase() === "TW";
+
+  // 1. Subtotal
   const subTotal = cart.reduce(
-    (sum, item) => sum + Number(item.Price || item.finalPrice || 0) * Number(item.qty || 1),
+    (sum, item) => sum + Number(item.Price || item.finalPrice || item.price || 0) * Number(item.qty || 1),
     0
   );
-  const serviceCharge = subTotal * (serviceChargePercent / 100);
-  const gstAmount = (subTotal + serviceCharge) * (gstPercent / 100);
-  const calculatedTotal = (subTotal + serviceCharge + gstAmount).toFixed(2);
+
+  // 2. Takeaway Charges (per-item packing charge for takeaway orders or individual takeaway items)
+  const takeawayCharge = cart.reduce((sum, item) => {
+    const isItemTW = isTakeawayOrder || !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
+    if (!isItemTW) return sum;
+    const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
+    const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayChargeRate;
+    return sum + Number(item.qty || 1) * effectiveTWRate;
+  }, 0);
+
+  // 3. Service Charge (SVC) - applies only if dish has isServiceCharge flag enabled
+  const applicableScPercent = isTakeawayOrder ? twServiceChargePercent : serviceChargePercent;
+
+  const scEligibleSubtotal = cart.reduce((sum, item) => {
+    const isItemTW = isTakeawayOrder || !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
+    if (isTakeawayOrder && twServiceChargePercent <= 0) return sum;
+
+    const isSC = item.isServiceCharge ?? item.IsServiceCharge;
+    const isSCActive = isSC === true || Number(isSC) === 1 || String(isSC) === "true" || String(isSC) === "1" || isSC === undefined || isSC === null;
+    if (isSCActive && (!isItemTW || twServiceChargePercent > 0)) {
+      return sum + Number(item.Price || item.finalPrice || item.price || 0) * Number(item.qty || 1);
+    }
+    return sum;
+  }, 0);
+
+  const serviceCharge = (applicableScPercent > 0 && scEligibleSubtotal > 0)
+    ? scEligibleSubtotal * (applicableScPercent / 100)
+    : 0;
+
+  // 4. Taxable Base for GST
+  const taxableBase = subTotal + serviceCharge + takeawayCharge;
+
+  // 5. GST Amount (Exclusive vs Inclusive)
+  let gstAmount = 0;
+  if (gstPercent > 0 && taxableBase > 0) {
+    if (taxMode === "inclusive") {
+      gstAmount = taxableBase - (taxableBase / (1 + gstPercent / 100));
+    } else {
+      gstAmount = taxableBase * (gstPercent / 100);
+    }
+  }
+
+  // 6. Final Total
+  let totalBeforeRound = subTotal + serviceCharge + takeawayCharge;
+  if (taxMode === "exclusive") {
+    totalBeforeRound += gstAmount;
+  }
+  const calculatedTotal = Math.max(0, totalBeforeRound).toFixed(2);
 
   // Open Combo Customizer or Modifiers or Add Direct
   const handleDishClick = async (dish: any) => {
@@ -679,6 +763,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       Price: finalPrice,
       finalPrice: finalPrice,
       basePrice: comboConfig.basePrice,
+      isServiceCharge: selectedDish.isServiceCharge !== undefined ? selectedDish.isServiceCharge : (selectedDish.IsServiceCharge !== undefined ? selectedDish.IsServiceCharge : true),
+      takeawayCharge: Number(selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge ?? 0),
+      isTakeaway: isTakeawayOrder,
       comboSelections: chosenSelections,
       selectedMods: chosenModifiers,
       modifiers: chosenModifiers,
@@ -747,6 +834,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           Price: basePrice,
           price: basePrice,
           finalPrice: basePrice,
+          isServiceCharge: dish.isServiceCharge !== undefined ? dish.isServiceCharge : (dish.IsServiceCharge !== undefined ? dish.IsServiceCharge : true),
+          takeawayCharge: Number(dish.takeawayCharge ?? dish.TakeawayCharge ?? 0),
+          isTakeaway: isTakeawayOrder,
           selectedMods: [],
           comboSelections: [],
           status: "NEW",
@@ -782,6 +872,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         Price: finalPrice,
         price: finalPrice,
         finalPrice: finalPrice,
+        isServiceCharge: selectedDish.isServiceCharge !== undefined ? selectedDish.isServiceCharge : (selectedDish.IsServiceCharge !== undefined ? selectedDish.IsServiceCharge : true),
+        takeawayCharge: Number(selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge ?? 0),
+        isTakeaway: isTakeawayOrder,
         selectedMods: chosenMods,
         comboSelections: [],
         status: "NEW",
@@ -1227,6 +1320,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           items: cartItemsSnapshot,
           extraCharge: extraChargeSnapshot,
           totalAmount: finalAmountSnapshot,
+          subtotal: subTotal,
+          serviceCharge: serviceCharge,
+          takeawayCharge: takeawayCharge,
+          gst: gstAmount,
+          total: Number(finalPayable),
         });
       }
     } catch (err: any) {
@@ -1915,7 +2013,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <Text style={styles.cartBarCount}>
               {cart.length} Item{cart.length > 1 ? "s" : ""}
             </Text>
-            <Text style={styles.cartBarPrice}>${calculatedTotal}</Text>
+            <Text style={styles.cartBarPrice}>{currencySymbol}{calculatedTotal}</Text>
           </View>
 
           <TouchableOpacity
@@ -1996,26 +2094,35 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.cartSummaryCard}>
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Subtotal</Text>
-                <Text style={styles.totalValue}>${subTotal.toFixed(2)}</Text>
+                <Text style={styles.totalValue}>{currencySymbol}{subTotal.toFixed(2)}</Text>
               </View>
 
-              {serviceCharge > 0 && (
+              {takeawayCharge > 0 && (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Service Charge ({serviceChargePercent}%)</Text>
-                  <Text style={styles.totalValue}>${serviceCharge.toFixed(2)}</Text>
+                  <Text style={styles.totalLabel}>Takeaway Charge</Text>
+                  <Text style={styles.totalValue}>{currencySymbol}{takeawayCharge.toFixed(2)}</Text>
                 </View>
               )}
 
-              {gstAmount > 0 && (
+              {serviceCharge > 0 && (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>GST ({gstPercent}%)</Text>
-                  <Text style={styles.totalValue}>${gstAmount.toFixed(2)}</Text>
+                  <Text style={styles.totalLabel}>Service Charge ({applicableScPercent}%)</Text>
+                  <Text style={styles.totalValue}>{currencySymbol}{serviceCharge.toFixed(2)}</Text>
+                </View>
+              )}
+
+              {gstPercent > 0 && (
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>
+                    GST ({gstPercent}%) {taxMode === "inclusive" ? "(Incl)" : ""}
+                  </Text>
+                  <Text style={styles.totalValue}>{currencySymbol}{gstAmount.toFixed(2)}</Text>
                 </View>
               )}
 
               <View style={[styles.totalRow, styles.grandTotalRow]}>
                 <Text style={styles.grandTotalLabel}>Total</Text>
-                <Text style={styles.grandTotalValue}>${calculatedTotal}</Text>
+                <Text style={styles.grandTotalValue}>{currencySymbol}{calculatedTotal}</Text>
               </View>
 
               <TouchableOpacity
@@ -2350,7 +2457,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <Text style={styles.paymentTotal}>TOTAL: ${totalAmount}</Text>
+            <Text style={styles.paymentTotal}>TOTAL: {currencySymbol}{totalAmount}</Text>
             <Text style={styles.paymentPrompt}>Choose your payment mode</Text>
 
             <View style={styles.paymentOptionsRow}>
