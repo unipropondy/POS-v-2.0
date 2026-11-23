@@ -655,6 +655,7 @@ async function syncToProfessionalTables(
   };
 
   const batchSize = 50;
+  const processedDetailIds = [];
   for (let i = 0; i < items.length; i += batchSize) {
     const chunk = items.slice(i, i + batchSize);
     const itemRequest = transaction.request();
@@ -667,14 +668,18 @@ async function syncToProfessionalTables(
     let batchSql = "";
 
     chunk.forEach((item, idx) => {
-      const cleanProdId = String(item.id || item.ProductId || DEFAULT_GUID)
+      const rawDishId = item.DishId || item.dishId || item.ProductId || item.productId || item.id || DEFAULT_GUID;
+      const cleanProdId = String(rawDishId)
         .replace(/^\{|\}$/g, "")
         .trim();
       const finalProdId = toGuidOrNull(cleanProdId) || DEFAULT_GUID;
+      const rawLineItemId = item.lineItemId || item.OrderDetailId || item.line_item_id;
       const lineItemId =
-        toGuidOrNull(item.lineItemId) ||
-        toGuidOrNull(item.id) ||
+        toGuidOrNull(rawLineItemId) ||
         require("crypto").randomUUID();
+      item.lineItemId = lineItemId;
+      item.OrderDetailId = lineItemId;
+      processedDetailIds.push(lineItemId);
       const itemStatus = item.status || item.Status;
       const currentStatusCode = statusCodes[itemStatus] || 2;
       console.log(`[syncToProfessionalTables] Item: ${item.name || 'Dish'} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
@@ -895,9 +900,9 @@ async function syncToProfessionalTables(
   }
 
   // 🚀 OPTIMIZATION 3: Smart Removal & Cleanup Request
-  const incomingIds = items
-    .map((i) => i.lineItemId || i.id || i.DishId)
-    .filter((id) => !!id && String(id).length > 5);
+  const incomingIds = (processedDetailIds.length > 0 ? processedDetailIds : items.map((i) => i.lineItemId || i.OrderDetailId))
+    .map((id) => toGuidOrNull(id))
+    .filter((id) => !!id);
   const notInClause =
     incomingIds.length > 0
       ? `AND OrderDetailId NOT IN (${incomingIds.map((id) => `'${id}'`).join(",")})`
@@ -3324,6 +3329,8 @@ async function resolveTableOrderNo(pool, cleanId) {
     const res = await pool.request().input("tid", sql.VarChar(50), cleanId).query(`
       SELECT TOP 1 OrderNumber FROM RestaurantOrderCur 
       WHERE (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid)) OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@tid AS UNIQUEIDENTIFIER)))
+        AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = RestaurantOrderCur.OrderNumber)
       ORDER BY CreatedOn DESC
     `);
     return res.recordset[0]?.OrderNumber || null;
@@ -3737,8 +3744,14 @@ router.post("/complete-online-payment", async (req, res) => {
   try {
     const { orderId, tableNo, tableId, paymentMethod, cart, totalAmount, paidAmount, kioskOrderType } = req.body;
     const pool = await poolPromise;
-    const cleanId = String(tableId || tableNo || "").replace(/^\{|\}$/g, "").trim();
-    let orderNo = orderId || (cleanId ? await resolveTableOrderNo(pool, cleanId) : null);
+    const cleanId = String(tableId || tableNo || "TAKEAWAY").replace(/^\{|\}$/g, "").trim();
+    let orderNo = orderId;
+    if (!orderNo || orderNo === "NEW" || orderNo === "#NEW" || orderNo === "PENDING" || orderNo.length < 5) {
+      orderNo = cleanId ? await resolveTableOrderNo(pool, cleanId) : null;
+    }
+    if (!orderNo || orderNo === "NEW" || orderNo === "#NEW" || orderNo === "PENDING" || orderNo.length < 5) {
+      orderNo = await getOrGenerateOrderId(req, cleanId || "TAKEAWAY");
+    }
     
     // 🛡️ KIOSK SAFETY: If cart items are provided and DB doesn't have items for this order yet, save them first!
     if (cart && Array.isArray(cart) && cart.length > 0) {
@@ -3759,6 +3772,12 @@ router.post("/complete-online-payment", async (req, res) => {
           const activeStartDate = activeDayRes.recordset[0]?.StartDate;
           const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : activeStartDate;
 
+          const paidCart = cart.map((item) => ({
+            ...item,
+            status: "SENT",
+            Status: "SENT",
+          }));
+
           const syncTx = new sql.Transaction(pool);
           await syncTx.begin();
           try {
@@ -3766,7 +3785,7 @@ router.post("/complete-online-payment", async (req, res) => {
               syncTx,
               cleanId || "TAKEAWAY",
               orderNo,
-              cart,
+              paidCart,
               "00000000-0000-0000-0000-000000000000",
               formattedStartDate,
               true,
@@ -3780,10 +3799,11 @@ router.post("/complete-online-payment", async (req, res) => {
           } catch (syncErr) {
             if (syncTx._isStarted) await syncTx.rollback();
             console.error("❌ [complete-online-payment] Failed to sync cart items to RestaurantOrderDetailCur:", syncErr.message);
+            throw syncErr;
           }
         }
       } catch (checkErr) {
-        console.error("⚠️ [complete-online-payment] Error checking existing items:", checkErr.message);
+        console.error("⚠️ [complete-online-payment] Error checking/saving cart items:", checkErr.message);
       }
     }
 
@@ -4689,4 +4709,5 @@ router.post("/kiosk/customer/save", async (req, res) => {
   }
 });
 
+router.syncToProfessionalTables = syncToProfessionalTables;
 module.exports = router;

@@ -664,7 +664,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     const newCartItem = {
       ...selectedDish,
       DishId: selectedDish.DishId || selectedDish.id,
+      id: selectedDish.DishId || selectedDish.id,
+      lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      }),
       Name: selectedDish.Name || selectedDish.name,
+      name: selectedDish.Name || selectedDish.name,
+      dishName: selectedDish.Name || selectedDish.name,
       qty: comboQty,
       isCombo: true,
       price: finalPrice,
@@ -1151,8 +1159,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId,
-          tableNo,
-          tableId,
+          tableNo: tableNo || (activeTableId && activeTableId !== "COUNTER" ? activeTableId : "TAKEAWAY"),
+          tableId: tableId || (activeTableId && activeTableId !== "COUNTER" ? activeTableId : "TAKEAWAY"),
           kioskOrderType: orderType,
           kioskCarNumber: carNumber || undefined,
           kioskCustomerName: customerName || undefined,
