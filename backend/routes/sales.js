@@ -3075,12 +3075,11 @@ router.post("/save", async (req, res) => {
           if (validTableGuid) {
             await transaction.request()
               .input("tid", sql.UniqueIdentifier, validTableGuid)
-              .input("tno", sql.NVarChar(50), String(targetTableNo))
-              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid OR TableNumber = @tno");
+              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
           } else {
             await transaction.request()
               .input("tno", sql.NVarChar(50), String(targetTableNo))
-              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno OR TableId = @tno");
+              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
           }
 
           const io = req.app.get("io");
@@ -3090,25 +3089,28 @@ router.post("/save", async (req, res) => {
             io.emit("order_closed", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo, orderId: displayOrderId });
           }
 
-          // 🚀 CLEANUP MERGED SOURCE TABLES AS WELL (Bullet 5)
+          // 🚀 CLEANUP MERGED SOURCE TABLES AS WELL (Strictly scoped to current order only)
           try {
-            const targetTableNoVal = targetTableNo || cleanTableId;
             const childTablesRes = await transaction.request()
               .input("orderNo", sql.NVarChar(50), displayOrderId)
               .input("guidOid", sql.UniqueIdentifier, guidOrderId || DEFAULT_GUID)
-              .input("targetTno", sql.NVarChar(50), String(targetTableNoVal))
               .query(`
-                SELECT tm.TableId, tm.TableNumber, tm.DiningSection
+                SELECT DISTINCT tm.TableId, tm.TableNumber, tm.DiningSection
                 FROM OrderMergeHistory omh
                 JOIN TableMaster tm ON (
-                  omh.ChildTableNo = tm.TableNumber 
+                  RTRIM(LTRIM(omh.ChildTableNo)) = RTRIM(LTRIM(tm.TableNumber))
                   OR TRY_CAST(omh.ChildOrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100))
-                  OR TRY_CAST(omh.ChildOrderId AS NVARCHAR(100)) = TRY_CAST(tm.TableId AS NVARCHAR(100))
                 )
-                WHERE omh.ParentOrderId = @guidOid 
-                   OR omh.ParentTableNo = @targetTno
-                   OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
-                   OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrder WHERE OrderNumber = @orderNo)
+                WHERE (
+                  (@guidOid <> '00000000-0000-0000-0000-000000000000' AND omh.ParentOrderId = @guidOid)
+                  OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                  OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrder WHERE OrderNumber = @orderNo)
+                )
+                AND (
+                  tm.CurrentOrderId IS NULL 
+                  OR TRY_CAST(omh.ChildOrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100))
+                  OR tm.CurrentOrderId = @orderNo
+                )
               `);
 
             if (childTablesRes.recordset && childTablesRes.recordset.length > 0) {
@@ -3128,12 +3130,11 @@ router.post("/save", async (req, res) => {
                 if (validChildGuid) {
                   await transaction.request()
                     .input("tid", sql.UniqueIdentifier, validChildGuid)
-                    .input("tno", sql.NVarChar(50), String(childTableNo))
-                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid OR TableNumber = @tno");
+                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
                 } else {
                   await transaction.request()
                     .input("tno", sql.NVarChar(50), String(childTableNo))
-                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno OR TableId = @tno");
+                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
                 }
 
                 if (io) {
@@ -3160,16 +3161,17 @@ router.post("/save", async (req, res) => {
           await transaction.request()
             .input("orderNo", sql.NVarChar(50), displayOrderId)
             .input("guidOid", sql.UniqueIdentifier, guidOrderId || DEFAULT_GUID)
-            .input("targetTno", sql.NVarChar(50), String(tableNo || cleanTableId))
             .query(`
               UPDATE RestaurantOrderCur 
               SET isOrderClosed = 1, ModifiedOn = GETDATE() 
               WHERE OrderNumber = @orderNo 
+                 OR (
+                   @guidOid <> '00000000-0000-0000-0000-000000000000' AND OrderId = @guidOid
+                 )
                  OR OrderId IN (
                    SELECT omh.ChildOrderId 
                    FROM OrderMergeHistory omh
-                   WHERE omh.ParentOrderId = @guidOid 
-                      OR omh.ParentTableNo = @targetTno
+                   WHERE (@guidOid <> '00000000-0000-0000-0000-000000000000' AND omh.ParentOrderId = @guidOid)
                       OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
                       OR omh.ParentOrderId IN (SELECT OrderId FROM RestaurantOrder WHERE OrderNumber = @orderNo)
                  )

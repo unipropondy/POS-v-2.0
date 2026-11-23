@@ -68,7 +68,7 @@ router.get("/all", async (req, res) => {
     const holdMinutes = await getHoldOvertimeMinutes();
 
     // 🛡️ AUTO-RECONCILE: Clear ghost/stale tables whose orders are closed or fully paid
-    // NOTE: Protect active Takeaway QR sessions (DiningSection 4, entry_status 'q') within 15 mins
+    // NOTE: Protect active dining tables and active Takeaway QR sessions
     try {
       const reconcileResult = await pool.request().query(`
         DECLARE @cleared TABLE (TableId UNIQUEIDENTIFIER, TableNumber NVARCHAR(50), DiningSection INT);
@@ -78,6 +78,8 @@ router.get("/all", async (req, res) => {
         OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection INTO @cleared
         FROM TableMaster tm
         WHERE tm.Status IN (1, 2, 3, 4)
+          -- 🛡️ Never auto-clear dining tables active/modified in the last 30 minutes
+          AND DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 30
           -- 🛡️ DO NOT clear active Takeaway QR sessions (DiningSection 4) within active timeout (15 mins) with active session lock
           AND NOT (
             CAST(tm.DiningSection AS VARCHAR(10)) = '4' 
@@ -85,20 +87,22 @@ router.get("/all", async (req, res) => {
             AND tm.LockedByName IS NOT NULL
             AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) < 15
           )
+          -- 🛡️ Must NOT have any active CartItems
+          AND NOT EXISTS (
+            SELECT 1 FROM CartItems ci 
+            WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
+               OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
+          )
+          -- 🛡️ Must NOT have any active unclosed orders in RestaurantOrderCur
+          AND NOT EXISTS (
+            SELECT 1 FROM RestaurantOrderCur roc 
+            WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+              AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+          )
+          -- 🛡️ Must be verified closed
           AND (
-            (tm.CurrentOrderId IS NOT NULL AND NOT EXISTS (
-              SELECT 1 FROM RestaurantOrderCur roc 
-              WHERE (roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
-                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
-            ))
-            OR
-            (NOT EXISTS (
-              SELECT 1 FROM CartItems ci WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber
-            ) AND NOT EXISTS (
-              SELECT 1 FROM RestaurantOrderCur roc 
-              WHERE (roc.Tableno = tm.TableNumber OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
-                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
-            ))
+            tm.CurrentOrderId IS NOT NULL 
+            OR tm.TotalAmount = 0
           );
 
         SELECT TableId, TableNumber, DiningSection FROM @cleared;
