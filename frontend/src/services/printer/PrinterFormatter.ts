@@ -470,8 +470,10 @@ export class PrinterFormatter {
 
     // ── Grand Total (Double Size, Bold) ──
     builder.bold(true).setTextSize(1, 2);
-    // In double size, character width doubles so pass half width
-    builder.textLine(this.formatTwoCol("TOTAL:", `${currency}${finalTotal.toFixed(2)}`, is58 ? 16 : 24));
+    // In double size (2x width), 48 columns becomes 24 characters.
+    // To match POS layout with TOTAL: on left and amount on right:
+    const totalCols = is58 ? 16 : 24;
+    builder.textLine(this.formatTwoCol("TOTAL:", `${currency}${finalTotal.toFixed(2)}`, totalCols));
     builder.resetTextSize().bold(false);
 
     builder.textLine(this.formatDivider("=", width));

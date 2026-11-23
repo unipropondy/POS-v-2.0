@@ -1338,6 +1338,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           takeawayCharge: takeawayCharge,
           gst: gstAmount,
           total: Number(finalPayable),
+          tableNo: resolvedTableNo,
+          tableId: resolvedTableId,
         });
       }
     } catch (err: any) {

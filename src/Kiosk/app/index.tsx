@@ -64,6 +64,8 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
     return (
       <SettlementSuccessScreen
         orderId={completedOrderId}
+        tableNo={completedOrderMeta?.tableNo}
+        tableId={completedOrderMeta?.tableId}
         initialItems={completedOrderMeta?.items || []}
         extraCharge={completedOrderMeta?.extraCharge || 0}
         subtotal={completedOrderMeta?.subtotal}
