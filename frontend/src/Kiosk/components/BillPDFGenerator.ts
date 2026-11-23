@@ -1,7 +1,7 @@
+import { API_BASE, API_URL } from "@/config";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
-import { API_BASE, API_URL } from "@/config";
 import {
   formatToSingaporeDate,
   formatToSingaporeTime,
@@ -13,9 +13,7 @@ export class BillPDFGenerator {
 
   static async loadSettings(userId?: string) {
     try {
-      if (!userId) return this.getDefaultSettings();
-
-      const targetId = "1";
+      const targetId = userId && String(userId).trim() ? String(userId).trim() : "1";
       const now = Date.now();
       const cached = this.settingsCache[targetId];
       if (cached && now - cached.time < 30000) {
@@ -24,7 +22,7 @@ export class BillPDFGenerator {
 
       const timestamp = Date.now();
       const response = await fetch(
-        `${API_BASE}/company-settings/${targetId}?_t=${timestamp}`
+        `${API_BASE}/company-settings/${targetId}?_t=${timestamp}`,
       );
       let responseData = await response.json();
 
@@ -34,7 +32,7 @@ export class BillPDFGenerator {
           responseData.settings.CompanyName.trim() === "")
       ) {
         const masterResponse = await fetch(
-          `${API_BASE}/company-settings/1?_t=${timestamp}`
+          `${API_BASE}/company-settings/1?_t=${timestamp}`,
         );
         const masterData = await masterResponse.json();
         if (masterData?.success && masterData.settings?.CompanyName) {
@@ -50,18 +48,20 @@ export class BillPDFGenerator {
           settings.ShowHalalLogo === 1 || settings.ShowHalalLogo === true;
 
         const gstPercentage =
-          settings.GSTPercentage !== undefined && settings.GSTPercentage !== null
+          settings.GSTPercentage !== undefined &&
+          settings.GSTPercentage !== null
             ? Number(settings.GSTPercentage)
             : 9;
 
         const formatUrl = (url?: string) => {
           if (!url) return "";
-          if (url.startsWith("data:image") || url.startsWith("http")) return url;
+          if (url.startsWith("data:image") || url.startsWith("http"))
+            return url;
           return `${API_URL}${url.startsWith("/") ? "" : "/"}${url}`;
         };
 
         const result = {
-          name: settings.CompanyName || "Smart Dining Cafe & Restaurant",
+          name: settings.CompanyName || "POS SYSTEM",
           address: settings.Address || "",
           gstNo: settings.GSTNo || "",
           gstPercentage: gstPercentage,
@@ -95,7 +95,7 @@ export class BillPDFGenerator {
 
   static getDefaultSettings() {
     return {
-      name: "Smart Dining Cafe & Restaurant",
+      name: "POS SYSTEM",
       address: "",
       gstNo: "",
       gstPercentage: 9,
@@ -116,7 +116,7 @@ export class BillPDFGenerator {
     saleData: any,
     userId?: string,
     discountInfo?: any,
-    companyOverride?: any
+    companyOverride?: any,
   ): Promise<string> {
     const company = companyOverride || (await this.loadSettings(userId));
 
@@ -155,9 +155,12 @@ export class BillPDFGenerator {
       saleData.id ||
       `ORD-${saleDate.getFullYear()}${(saleDate.getMonth() + 1)
         .toString()
-        .padStart(2, "0")}${saleDate.getDate().toString().padStart(2, "0")}-${Math.floor(
-          1000 + Math.random() * 9000
-        )}`;
+        .padStart(
+          2,
+          "0",
+        )}${saleDate.getDate().toString().padStart(2, "0")}-${Math.floor(
+        1000 + Math.random() * 9000,
+      )}`;
 
     const hasGST = company.gstPercentage > 0;
     const gstRate = company.gstPercentage || 9;
@@ -169,7 +172,7 @@ export class BillPDFGenerator {
     (saleData.items || []).forEach((item: any) => {
       if (item.status === "VOIDED") return;
       const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
-      const baseTotal = (Number(item.price || item.Price || 0)) * qtyNum;
+      const baseTotal = Number(item.price || item.Price || 0) * qtyNum;
       let itemDiscount = 0;
       const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
       const discType = item.discountType || "percentage";
@@ -192,13 +195,13 @@ export class BillPDFGenerator {
     const originalSubTotal = grossTotal;
 
     const activeItems = (saleData.items || []).filter(
-      (i: any) => i.status !== "VOIDED" && i.statusCode !== 0
+      (i: any) => i.status !== "VOIDED" && i.statusCode !== 0,
     );
     const allItemsHaveSC =
       activeItems.length > 0 &&
       activeItems.every(
         (item: any) =>
-          Number(item.isServiceCharge) === 1 || item.isServiceCharge === true
+          Number(item.isServiceCharge) === 1 || item.isServiceCharge === true,
       );
 
     const scPercentage = company.serviceChargePercentage || 0;
@@ -210,7 +213,7 @@ export class BillPDFGenerator {
       (saleData.items || []).forEach((item: any) => {
         if (item.status === "VOIDED") return;
         const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
-        const baseTotal = (Number(item.price || item.Price || 0)) * qtyNum;
+        const baseTotal = Number(item.price || item.Price || 0) * qtyNum;
         const isSC =
           Number(item.isServiceCharge) === 1 || item.isServiceCharge === true;
         if (isSC) {
@@ -227,13 +230,14 @@ export class BillPDFGenerator {
     const amountWithoutGST = currentSubtotal;
 
     const extraChargeAmount = parseFloat(
-      saleData.extraCharge || saleData.PaymodeServiceCharge || 0
+      saleData.extraCharge || saleData.PaymodeServiceCharge || 0,
     );
     finalTotal = taxableAmount + gstAmount + extraChargeAmount;
 
     const companyLogoUrl = company.companyLogo || "";
     const halalLogoUrl = company.halalLogo || "";
-    const showCompanyLogo = company.showCompanyLogo === true && !!companyLogoUrl;
+    const showCompanyLogo =
+      company.showCompanyLogo === true && !!companyLogoUrl;
     const showHalalLogo = company.showHalalLogo === true && !!halalLogoUrl;
 
     const itemsHTML = (saleData.items || [])
@@ -248,7 +252,7 @@ export class BillPDFGenerator {
                 .filter((m: any) => {
                   const mAmt =
                     parseFloat(
-                      String(m.Amount ?? m.Price ?? m.amount ?? m.price ?? 0)
+                      String(m.Amount ?? m.Price ?? m.amount ?? m.price ?? 0),
                     ) || 0;
                   return mAmt > 0;
                 })
@@ -256,7 +260,7 @@ export class BillPDFGenerator {
                   const mName = (m.ModifierName || m.name || "").trim();
                   const mAmt =
                     parseFloat(
-                      String(m.Amount ?? m.Price ?? m.amount ?? m.price ?? 0)
+                      String(m.Amount ?? m.Price ?? m.amount ?? m.price ?? 0),
                     ) || 0;
                   return `<div class="item-modifiers">+ ${mName}: ${currencySymbol}${(
                     mAmt * qtyNum
@@ -279,7 +283,12 @@ export class BillPDFGenerator {
       })
       .join("");
 
-    const paymentMethod = (saleData.paymentMethod || saleData.payMode || saleData.PaymentMode || "CASH").toUpperCase();
+    const paymentMethod = (
+      saleData.paymentMethod ||
+      saleData.payMode ||
+      saleData.PaymentMode ||
+      "CASH"
+    ).toUpperCase();
 
     return `
       <!DOCTYPE html>
@@ -429,21 +438,33 @@ export class BillPDFGenerator {
               <span>Sub Total:</span>
               <span>${currencySymbol}${amountWithoutGST.toFixed(2)}</span>
             </div>
-            ${hasSC ? `
+            ${
+              hasSC
+                ? `
             <div class="total-row">
               <span>Service Charge:</span>
               <span>${currencySymbol}${serviceChargeAmount.toFixed(2)}</span>
-            </div>` : ""}
-            ${extraChargeAmount > 0 ? `
+            </div>`
+                : ""
+            }
+            ${
+              extraChargeAmount > 0
+                ? `
             <div class="total-row">
               <span>Extra Fee:</span>
               <span>+${currencySymbol}${extraChargeAmount.toFixed(2)}</span>
-            </div>` : ""}
-            ${hasGST && gstAmount > 0 ? `
+            </div>`
+                : ""
+            }
+            ${
+              hasGST && gstAmount > 0
+                ? `
             <div class="total-row">
               <span>GST (${gstRate}%):</span>
               <span>${currencySymbol}${gstAmount.toFixed(2)}</span>
-            </div>` : ""}
+            </div>`
+                : ""
+            }
           </div>
 
           <div class="grand-total">
@@ -484,7 +505,9 @@ export class BillPDFGenerator {
       if (Platform.OS === "web" || typeof window !== "undefined") {
         if (typeof document !== "undefined") {
           const iframeId = "receipt-thermal-print-iframe";
-          let frame = document.getElementById(iframeId) as HTMLIFrameElement | null;
+          let frame = document.getElementById(
+            iframeId,
+          ) as HTMLIFrameElement | null;
           if (!frame) {
             frame = document.createElement("iframe");
             frame.id = iframeId;
@@ -527,7 +550,10 @@ export class BillPDFGenerator {
     }
   }
 
-  static async shareReceiptPDF(saleData: any, userId?: string): Promise<boolean> {
+  static async shareReceiptPDF(
+    saleData: any,
+    userId?: string,
+  ): Promise<boolean> {
     try {
       const html = await this.generateHTML(saleData, userId);
       const { uri } = await Print.printToFileAsync({ html });

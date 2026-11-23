@@ -138,23 +138,42 @@ export class PrinterFormatter {
     return l + " ".repeat(spaceCount) + r;
   }
 
-  public static formatThreeCol(
-    left: string,
-    mid: string,
-    right: string,
+  public static formatItemRow(
+    itemName: string,
+    qtyNum: number,
+    priceNum: number,
+    totalNum: number,
+    currency: string,
     width: number,
-  ): string {
-    const r = String(right || "").trim();
-    const m = String(mid || "").trim();
-    const rightPart = `${m.padStart(4)} ${r.padStart(9)}`;
-    const availLeft = width - rightPart.length;
-    let l = String(left || "").trim();
-    if (l.length > availLeft) {
-      l = l.slice(0, availLeft);
+  ): string[] {
+    const lines: string[] = [];
+    const is58 = width <= 32;
+
+    if (is58) {
+      // 32-column format
+      const qtyStr = `[${qtyNum}]`.padStart(4);
+      const totalStr = `${currency}${totalNum.toFixed(2)}`.padStart(8);
+      const rightPart = `${qtyStr} ${totalStr}`; // 13 chars
+      const availName = width - rightPart.length; // 19 chars
+      const truncatedName = itemName.length > availName ? itemName.substring(0, availName) : itemName.padEnd(availName);
+      lines.push(`${truncatedName}${rightPart}`);
+      if (itemName.length > availName) {
+        lines.push(`   ${itemName}`);
+      }
     } else {
-      l = l.padEnd(availLeft);
+      // 48-column format (Standard POS 80mm)
+      // ITEM (26 chars), QTY [1] (5 chars), PRICE $X.XX (8 chars), TOTAL $X.XX (9 chars)
+      const nameCol = itemName.substring(0, 26).padEnd(26);
+      const qtyCol = `[${qtyNum}]`.padStart(5);
+      const priceCol = `${currency}${priceNum.toFixed(2)}`.padStart(8);
+      const totalCol = `${currency}${totalNum.toFixed(2)}`.padStart(9);
+      lines.push(`${nameCol}${qtyCol}${priceCol}${totalCol}`);
+      if (itemName.length > 26) {
+        lines.push(`   ${itemName}`);
+      }
     }
-    return l + rightPart;
+
+    return lines;
   }
 
   public static formatDivider(char: string = "-", width: number): string {
@@ -163,6 +182,7 @@ export class PrinterFormatter {
 
   /**
    * Build Full Customer Bill Receipt with native ESC/POS commands
+   * Strictly matches the professional POS thermal receipt format
    */
   public static buildReceipt(
     saleData: any,
@@ -171,6 +191,7 @@ export class PrinterFormatter {
     options?: PrintOptions,
   ): Uint8Array {
     const width = this.getLineWidth(paperWidth);
+    const is58 = width <= 32;
     const builder = new EscPosBuilder();
 
     const rawName = company?.CompanyName || company?.name;
@@ -186,212 +207,290 @@ export class PrinterFormatter {
         : "";
     const currency = company?.CurrencySymbol || company?.currencySymbol || "$";
 
-    const orderNo = String(
-      saleData?.orderNo ||
-        saleData?.orderId ||
+    const isCheckout = !!saleData?.isCheckout;
+    const isReprint = !!options?.isReprint || !!saleData?.isReprint;
+
+    const billNumber = String(
+      saleData?.invoiceNumber ||
+        saleData?.billNo ||
+        saleData?.BillNo ||
         saleData?.id ||
-        saleData?.billNumber ||
-        "RECEIPT",
+        saleData?.orderNumber ||
+        saleData?.orderNo ||
+        saleData?.orderId ||
+        "",
     );
-    const tableNo = saleData?.tableNo ? String(saleData.tableNo).trim() : "";
-    const total = Number(
-      saleData?.total || saleData?.totalAmount || saleData?.grandTotal || 0,
-    );
-    const subtotal = Number(saleData?.subtotal || total);
-    const serviceCharge = Number(
-      saleData?.serviceCharge || saleData?.serviceChargeAmount || 0,
-    );
-    const gst = Number(saleData?.gst || saleData?.gstAmount || 0);
 
-    const now = new Date();
-    const dateStr = now.toLocaleDateString();
-    const timeStr = now.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    const isReceiptTW =
+      saleData?.orderType === "TAKEAWAY" ||
+      saleData?.isTakeaway ||
+      saleData?.IsTakeaway ||
+      String(saleData?.tableNo || "").toUpperCase().includes("TAKEAWAY") ||
+      String(saleData?.tableNo || "").toUpperCase().startsWith("TW");
 
-    // 1. REPRINT WATERMARK
-    if (options?.isReprint) {
-      builder
-        .alignCenter()
-        .bold(true)
-        .textLine("*** OFFICIAL REPRINT ***")
-        .bold(false);
+    const rawTable = saleData?.tableNo ? String(saleData.tableNo).trim() : "";
+    const cleanTableNo = rawTable.replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
+
+    // ── Upside White Space & Header Border ──
+    builder.lineFeed(1);
+    builder.alignCenter();
+    builder.textLine(this.formatDivider("=", width));
+
+    if (isReprint) {
+      builder.bold(true).textLine("*** OFFICIAL REPRINT ***").bold(false);
     }
 
-    // 2. COMPANY HEADER (Only print if companyName exists)
-    if (companyName) {
-      builder
-        .alignCenter()
-        .bold(true)
-        .setTextSize(1, 2)
-        .textLine(companyName)
-        .resetTextSize()
-        .bold(false);
+    if (isCheckout) {
+      builder.bold(true).setTextSize(1, 2).textLine("CHECKOUT BILL").resetTextSize();
+      builder.bold(true).textLine("PAYMENT PENDING").bold(false);
+    } else {
+      builder.bold(true).setTextSize(1, 2).textLine("PAYMENT RECEIPT").resetTextSize();
     }
+    builder.textLine(this.formatDivider("=", width));
 
-    // Address (Only print if present)
+    // ── Company Header (Upper Case, Big Bold) ──
+    builder.bold(true).setTextSize(1, 2).textLine(companyName.toUpperCase()).resetTextSize().bold(false);
+
     if (address) {
       builder.textLine(address);
     }
-
-    const contactParts = [phone, gstNo].filter(Boolean);
-    if (contactParts.length > 0) {
-      builder.textLine(contactParts.join(" | "));
+    if (phone) {
+      builder.textLine(phone);
     }
-
-    builder.textLine(
-      this.formatTwoCol(`Date: ${dateStr}`, `Time: ${timeStr}`, width),
-    );
-    builder.textLine(this.formatDivider("=", width));
-
-    // 3. TICKET / ORDER INFO
-    if (tableNo) {
-      builder
-        .alignCenter()
-        .bold(true)
-        .setTextSize(1, 1)
-        .textLine(`ORDER #: ${orderNo}  (${tableNo})`)
-        .resetTextSize()
-        .bold(false);
-      builder.textLine(this.formatDivider("=", width));
-    } else {
-      builder
-        .alignCenter()
-        .bold(true)
-        .textLine(`ORDER #: ${orderNo}`)
-        .bold(false);
-      builder.textLine(this.formatDivider("=", width));
+    if (gstNo) {
+      builder.textLine(gstNo);
     }
+    builder.textLine(this.formatDivider("-", width));
 
-    // 4. ITEMS HEADER
+    // ── Order Metadata ──
     builder.alignLeft();
     builder.bold(true);
-    builder.textLine(
-      this.formatThreeCol("ITEM", "QTY", `TOTAL(${currency})`, width),
-    );
+    if (isReceiptTW) {
+      const shortOrderNo = billNumber ? String(billNumber).slice(-4) : "";
+      const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
+      builder.textLine(this.formatTwoCol(`Bill No: ${billNumber}`, twLabel, width));
+    } else if (cleanTableNo) {
+      builder.textLine(this.formatTwoCol(`Bill No: ${billNumber}`, `TABLE: ${cleanTableNo}`, width));
+    } else {
+      builder.textLine(`Bill No: ${billNumber}`);
+    }
+
+    const now = new Date();
+    const dateFormatted = now.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const timeFormatted = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }).toUpperCase();
+
+    builder.textLine(`Date: ${dateFormatted} ${timeFormatted}`);
+
+    if (saleData?.waiterName && saleData.waiterName !== "Staff") {
+      const displayWaiter = String(saleData.waiterName).replace(/\s*\(quick serve\)/gi, "").trim() || "Staff";
+      builder.textLine(`Waiter: ${displayWaiter}`);
+    }
+    if (saleData?.mobileNo) {
+      builder.textLine(`Member Phone: ${saleData.mobileNo}`);
+    }
     builder.bold(false);
     builder.textLine(this.formatDivider("-", width));
 
-    // 5. ITEMS LIST
-    const items = saleData?.items || saleData?.cartItems || [];
-    items.forEach((item: any) => {
-      const itemName = String(
-        item.name || item.Name || item.DishName || item.ProductName || "Item",
-      );
-      const qty = String(item.quantity || item.qty || 1);
-      const price = Number(item.price || item.Price || 0) * Number(qty);
-      const priceStr = `${currency}${price.toFixed(2)}`;
+    // ── Items Header ──
+    builder.bold(true);
+    if (is58) {
+      builder.textLine(this.formatTwoCol("ITEM", "QTY   TOTAL", width));
+    } else {
+      // 48-char POS header: ITEM (26) QTY (5) PRICE (8) TOTAL (9)
+      const hItem = "ITEM".padEnd(26);
+      const hQty = "QTY".padStart(5);
+      const hPrice = "PRICE".padStart(8);
+      const hTotal = "TOTAL".padStart(9);
+      builder.textLine(`${hItem}${hQty}${hPrice}${hTotal}`);
+    }
+    builder.bold(false);
+    builder.textLine(this.formatDivider("-", width));
 
-      builder.textLine(this.formatThreeCol(itemName, qty, priceStr, width));
+    // ── Items List ──
+    const rawItems = saleData?.items || saleData?.cartItems || [];
+    const printItems = rawItems.filter((i: any) => i.status !== "VOIDED" && i.statusCode !== 0);
 
-      if (
-        item.modifiers &&
-        Array.isArray(item.modifiers) &&
-        item.modifiers.length > 0
-      ) {
+    let grossTotal = 0;
+    let totalItemDiscount = 0;
+
+    printItems.forEach((item: any) => {
+      const itemName = String(item.name || item.DishName || item.ProductName || item.Name || "Item");
+      const qtyNum = parseInt(String(item.qty || item.quantity || item.Quantity || 1)) || 1;
+      const priceNum = parseFloat(String(item.price || item.Price || item.Cost || item.PricePerUnit || 0)) || 0;
+      const baseTotal = priceNum * qtyNum;
+
+      // Item discount calculation
+      let itemDiscount = 0;
+      const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
+      const discType = item.discountType || "percentage";
+      if (discAmt > 0) {
+        if (discType === "percentage") {
+          itemDiscount = (priceNum * (discAmt / 100)) * qtyNum;
+        } else if (discType === "FOC") {
+          itemDiscount = baseTotal;
+        } else {
+          itemDiscount = Math.min(discAmt, priceNum) * qtyNum;
+        }
+      }
+
+      grossTotal += baseTotal;
+      totalItemDiscount += itemDiscount;
+
+      // Render Item line
+      const lines = this.formatItemRow(itemName, qtyNum, priceNum, baseTotal, currency, width);
+      lines.forEach((line) => {
+        builder.bold(true).textLine(line).bold(false);
+      });
+
+      // Song / special tags
+      if (item.songName || item.SongName) {
+        builder.textLine(`   ♪ ${item.songName || item.SongName}`);
+      }
+
+      // Modifiers
+      if (item.modifiers && Array.isArray(item.modifiers)) {
         item.modifiers.forEach((m: any) => {
-          builder.textLine(`  + ${m.name || m.ModifierName}`);
+          const mName = (m.ModifierName || m.name || "").trim();
+          if (mName) {
+            builder.textLine(`   + ${mName}`);
+          }
         });
+      }
+
+      // Combo choices
+      const comboSels = item.comboSelections ||
+        (typeof item.ComboDetailsJSON === "string" && item.ComboDetailsJSON
+          ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : p.groups || p.items || []; } catch { return undefined; } })()
+          : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : undefined)) || [];
+      if (Array.isArray(comboSels) && comboSels.length > 0) {
+        comboSels.forEach((group: any) => {
+          const choices = group.items || group.dishes || (Array.isArray(group) ? group : [group]);
+          if (Array.isArray(choices)) {
+            choices.forEach((opt: any) => {
+              const optName = opt.name || opt.DishName || opt.itemName || "";
+              if (optName) {
+                builder.textLine(`   - ${optName}`);
+              }
+            });
+          }
+        });
+      }
+
+      // Item Discount line
+      if (discAmt > 0) {
+        const discStr = discType === "FOC" ? "FOC" : discType === "percentage" ? `-${discAmt}%` : `-${currency}${itemDiscount.toFixed(2)}`;
+        builder.textLine(`      Discount: ${discStr}`);
       }
     });
 
     builder.textLine(this.formatDivider("-", width));
 
-    // 6. TOTALS BREAKDOWN (Clean aligned columns)
-    builder.textLine(
-      this.formatTwoCol(
-        "Subtotal:",
-        `${currency}${subtotal.toFixed(2)}`,
-        width,
-      ),
-    );
-
-    if (
-      saleData?.discount &&
-      saleData.discount.applied &&
-      saleData.discount.amount > 0
-    ) {
-      const discLabel =
-        saleData.discount.type === "percentage"
-          ? `Discount (${saleData.discount.value}%):`
-          : "Discount:";
-      builder.textLine(
-        this.formatTwoCol(
-          discLabel,
-          `-${currency}${Number(saleData.discount.amount).toFixed(2)}`,
-          width,
-        ),
-      );
+    // ── Order Discount ──
+    const discountInfo = saleData?.discount || null;
+    let orderDiscount = 0;
+    if (discountInfo && discountInfo.applied && discountInfo.amount > 0) {
+      orderDiscount = Number(discountInfo.amount);
+    } else if (saleData?.discountAmount && saleData.discountAmount > 0) {
+      orderDiscount = Number(saleData.discountAmount);
     }
+
+    const currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - orderDiscount);
+
+    // Subtotal
+    builder.bold(true).textLine(this.formatTwoCol("Sub Total:", `${currency}${grossTotal.toFixed(2)}`, width)).bold(false);
+
+    if (totalItemDiscount > 0) {
+      builder.textLine(this.formatTwoCol("Item Discounts:", `-${currency}${totalItemDiscount.toFixed(2)}`, width));
+    }
+
+    if (orderDiscount > 0) {
+      const discLabel = discountInfo?.type === "percentage" ? `Discount (${discountInfo.value}%):` : "Discount:";
+      builder.textLine(this.formatTwoCol(discLabel, `-${currency}${orderDiscount.toFixed(2)}`, width));
+    }
+
+    if (totalItemDiscount > 0 || orderDiscount > 0) {
+      builder.textLine(this.formatDivider("-", width));
+      builder.bold(true).textLine(this.formatTwoCol("Net Amount:", `${currency}${currentSubtotal.toFixed(2)}`, width)).bold(false);
+    }
+
+    // Taxes & Charges
+    const serviceCharge = Number(saleData?.serviceCharge || saleData?.serviceChargeAmount || 0);
+    const takeawayCharge = Number(saleData?.takeawayCharge || saleData?.takeawayCharges || 0);
+    const gstRate = Number(company?.gstPercentage ?? company?.GSTPercentage ?? 0);
+    const gstAmount = Number(saleData?.gst || saleData?.gstAmount || (gstRate > 0 ? (currentSubtotal + serviceCharge + takeawayCharge) * (gstRate / 100) : 0));
 
     if (serviceCharge > 0) {
-      builder.textLine(
-        this.formatTwoCol(
-          "Service Charge:",
-          `${currency}${serviceCharge.toFixed(2)}`,
-          width,
-        ),
-      );
+      builder.textLine(this.formatTwoCol("Service Charge:", `${currency}${serviceCharge.toFixed(2)}`, width));
     }
 
-    if (gst > 0) {
-      builder.textLine(
-        this.formatTwoCol("GST:", `${currency}${gst.toFixed(2)}`, width),
-      );
+    if (takeawayCharge > 0) {
+      builder.textLine(this.formatTwoCol("Takeaway Charges:", `${currency}${takeawayCharge.toFixed(2)}`, width));
     }
+
+    if (gstAmount > 0) {
+      builder.textLine(this.formatTwoCol(gstRate > 0 ? `GST (${gstRate}%):` : "GST:", `${currency}${gstAmount.toFixed(2)}`, width));
+      builder.textLine(this.formatDivider("-", width));
+    }
+
+    // Final Total Calculation
+    const calculatedTotal = currentSubtotal + serviceCharge + takeawayCharge + gstAmount;
+    const finalTotal = Number(saleData?.total || saleData?.totalAmount || saleData?.grandTotal || calculatedTotal);
+
+    const roundOff = saleData?.roundOff ? parseFloat(String(saleData.roundOff)) : 0;
+    if (roundOff !== 0) {
+      const roSign = roundOff > 0 ? "+" : "";
+      builder.textLine(this.formatTwoCol("Round Off:", `${roSign}${currency}${roundOff.toFixed(2)}`, width));
+      builder.textLine(this.formatDivider("-", width));
+    }
+
+    // ── Payment Details ──
+    if (!isCheckout) {
+      builder.textLine(this.formatDivider("-", width));
+      if (saleData?.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0) {
+        saleData.payments.forEach((p: any) => {
+          let modeText = String(p.payMode || p.payModeName || p.Remarks || "Payment");
+          if (modeText.toUpperCase().trim() === "FOC") modeText = "FOC (Discount)";
+          const amountVal = `${currency}${parseFloat(p.amount).toFixed(2)}`;
+          builder.textLine(this.formatTwoCol(modeText, amountVal, width));
+        });
+      } else {
+        const payMode = String(saleData?.paymentMode || saleData?.payMode || saleData?.PaymentMode || "CASH").toUpperCase();
+        builder.textLine(this.formatTwoCol(payMode, `${currency}${finalTotal.toFixed(2)}`, width));
+      }
+      builder.textLine(this.formatDivider("-", width));
+    }
+
+    // ── Grand Total (Double Size, Bold) ──
+    builder.bold(true).setTextSize(1, 2);
+    // In double size, character width doubles so pass half width
+    builder.textLine(this.formatTwoCol("TOTAL:", `${currency}${finalTotal.toFixed(2)}`, is58 ? 16 : 24));
+    builder.resetTextSize().bold(false);
 
     builder.textLine(this.formatDivider("=", width));
 
-    // TOTAL AMOUNT (Large & Bold)
-    builder
-      .bold(true)
-      .setTextSize(1, 2)
-      .textLine(
-        this.formatTwoCol(
-          "TOTAL:",
-          `${currency}${total.toFixed(2)}`,
-          paperWidth === "58mm" ? 24 : 36,
-        ),
-      )
-      .resetTextSize()
-      .bold(false);
-
-    builder.textLine(this.formatDivider("=", width));
-
-    // 7. PAYMENT DETAILS
-    const payMode = String(
-      saleData?.paymentMode ||
-        saleData?.payMode ||
-        saleData?.PaymentMode ||
-        "CASH",
-    ).toUpperCase();
-    const paid = Number(saleData?.amountPaid || saleData?.paidAmount || total);
-    const change = Number(
-      saleData?.change || saleData?.changeAmount || Math.max(0, paid - total),
-    );
-
-    builder.textLine(this.formatTwoCol("Payment Mode:", payMode, width));
-    builder.textLine(
-      this.formatTwoCol("Amount Paid:", `${currency}${paid.toFixed(2)}`, width),
-    );
-    if (change > 0) {
-      builder.textLine(
-        this.formatTwoCol("Change:", `${currency}${change.toFixed(2)}`, width),
-      );
+    // ── Reward Points (if any) ──
+    if (parseFloat(saleData?.rewardPointsEarned || 0) > 0) {
+      builder.textLine(`Reward Points Earned: +$${parseFloat(saleData.rewardPointsEarned).toFixed(2)}`);
+    }
+    if (parseFloat(saleData?.memberRewardBalance || 0) > 0) {
+      builder.textLine(`Available Member Credit: $${parseFloat(saleData.memberRewardBalance).toFixed(2)}`);
+      builder.textLine(this.formatDivider("-", width));
     }
 
-    builder.textLine(this.formatDivider("-", width));
-
-    // 8. FOOTER (Centered)
+    // ── Footer ──
     builder.alignCenter();
-    builder.bold(true).textLine("Thank you for your visit!").bold(false);
-    builder.textLine(
-      `(c) ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD`,
-    );
+    builder.bold(true).textLine("THANK YOU! COME AGAIN!").bold(false);
+    builder.textLine("SMART-CAFE BY UNIPROSG");
 
-    // AUTO CUT
+    // Auto Cut & Drawer
     if (options?.autoCut ?? true) {
       builder.cut(true);
     } else {
@@ -429,22 +528,21 @@ export class PrinterFormatter {
       second: "2-digit",
     });
 
-    if (companyName) {
-      builder
-        .alignCenter()
-        .bold(true)
-        .setTextSize(1, 2)
-        .textLine(companyName)
-        .resetTextSize()
-        .bold(false);
-      if (address) {
-        builder.textLine(address);
-      }
-      builder.textLine(this.formatDivider("=", width));
+    builder.alignCenter();
+    builder.textLine(this.formatDivider("=", width));
+    builder
+      .bold(true)
+      .setTextSize(1, 2)
+      .textLine(companyName.toUpperCase())
+      .resetTextSize()
+      .bold(false);
+
+    if (address) {
+      builder.textLine(address);
     }
+    builder.textLine(this.formatDivider("=", width));
 
     builder
-      .alignCenter()
       .bold(true)
       .setTextSize(1, 2)
       .textLine("KIOSK PRINTER TEST")
