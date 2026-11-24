@@ -306,26 +306,16 @@ export default function PaymentSuccess() {
 
   React.useEffect(() => {
     const generalSettings = useGeneralSettingsStore.getState().settings;
-    const runAutoPrintFlow = async () => {
-      const enableReceiptPrint = generalSettings.enableReceiptPrint !== undefined ? generalSettings.enableReceiptPrint : true;
-      
-      if (enableReceiptPrint) {
-        await handlePrint();
-      } else {
-        await openDrawerForCash();
-      }
-    };
-    runAutoPrintFlow();
 
-    // Play custom voice audio asset
-    const playSuccessAudio = async () => {
+    // ⚡ 1. Play custom voice audio IMMEDIATELY on screen mount without waiting
+    const playSuccessAudio = () => {
       try {
         if (Platform.OS === "web") {
           const audioAsset = require("../assets/Voice/Thank you, have a nice day.mp3");
           const uri = typeof audioAsset === "object" && audioAsset.default ? audioAsset.default : audioAsset;
           const audio = new window.Audio(uri);
           audio.volume = 1.0;
-          await audio.play();
+          audio.play().catch((err) => console.warn("[Voice Audio] Web play prevented:", err));
         } else {
           const { createAudioPlayer } = require("expo-audio");
           const thankYouSound = require("../assets/Voice/Thank you, have a nice day.mp3");
@@ -340,7 +330,15 @@ export default function PaymentSuccess() {
       playSuccessAudio();
     }
 
-    // Auto-redirect to main screen after 1.2 seconds
+    // ⚡ 2. Non-blocking Fire-and-Forget Print & Cash Drawer Flow
+    const enableReceiptPrint = generalSettings.enableReceiptPrint !== undefined ? generalSettings.enableReceiptPrint : true;
+    if (enableReceiptPrint) {
+      handlePrint().catch((err) => console.warn("[Print] Non-blocking print warning:", err));
+    } else {
+      openDrawerForCash().catch((err) => console.warn("[Cash Drawer] Non-blocking drawer warning:", err));
+    }
+
+    // ⚡ 3. Auto-redirect to main screen after 1.2 seconds
     const timer = setTimeout(() => {
       handleDone();
     }, 1200);

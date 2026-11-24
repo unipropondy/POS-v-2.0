@@ -1,4 +1,5 @@
 import { API } from "@/config";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
@@ -104,6 +105,8 @@ type Props = {
 
 export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const safeBottom = Math.max(insets.bottom, Platform.OS === "android" ? 28 : 0);
 
   const isLandscape = screenWidth > screenHeight;
   const isWide = screenWidth >= 600;
@@ -138,6 +141,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
   const [inputTableNo, setInputTableNo] = useState<string>("");
   const [tableInputError, setTableInputError] = useState<string | null>(null);
+  const [isSelfCollect, setIsSelfCollect] = useState<boolean>(false);
+  const [isTentNumber, setIsTentNumber] = useState<boolean>(false);
   const [isUpdatingTent, setIsUpdatingTent] = useState(false);
 
   // Modifiers Modal State
@@ -1466,12 +1471,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Option 1: Self Checkout – continue checkout without entering a table number
   // Keeps the initially assigned Table Number from TableMaster unchanged
   const handleSelfCheckout = () => {
+    setIsSelfCollect(true);
+    setIsTentNumber(false);
     setShowTableModal(false);
     handleProceedToPayment();
   };
 
   // Option 2: Enter Tent Number – switch to tent number input view
   const handleChooseEnterTentNumber = () => {
+    setIsSelfCollect(false);
+    setIsTentNumber(true);
     setCheckoutStep("ENTER_TENT");
     setInputTableNo("");
     setTableInputError(null);
@@ -1783,8 +1792,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId,
-          tableNo: resolvedTableNo,
+          tableNo: isSelfCollect ? "" : resolvedTableNo,
           tableId: resolvedTableId,
+          isSelfCollect: isSelfCollect,
+          isTentNumber: isTentNumber,
           kioskOrderType: orderType,
           kioskCarNumber: carNumber || undefined,
           kioskCustomerName: customerName || undefined,
@@ -1855,8 +1866,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           takeawayCharge: takeawayCharge,
           gst: gstAmount,
           total: Number(finalPayable),
-          tableNo: resolvedTableNo,
+          tableNo: isSelfCollect ? "" : resolvedTableNo,
           tableId: resolvedTableId,
+          isSelfCollect: isSelfCollect,
+          isTentNumber: isTentNumber,
         });
       }
     } catch (err: any) {
@@ -1900,16 +1913,40 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             },
           ]}
         >
-          <View style={[styles.kioskToastPill, toastNotification.type === "error" && styles.kioskToastPillError]}>
-            <View style={[styles.kioskToastIconWrap, toastNotification.type === "error" && styles.kioskToastIconWrapError]}>
+          <View
+            style={[
+              styles.kioskToastPill,
+              toastNotification.type === "error" && styles.kioskToastPillError,
+            ]}
+          >
+            <View
+              style={[
+                styles.kioskToastIconWrap,
+                toastNotification.type === "error" &&
+                  styles.kioskToastIconWrapError,
+              ]}
+            >
               <Ionicons
-                name={toastNotification.type === "error" ? "alert-circle" : "checkmark-circle"}
+                name={
+                  toastNotification.type === "error"
+                    ? "alert-circle"
+                    : "checkmark-circle"
+                }
                 size={30}
-                color={toastNotification.type === "error" ? "#ef4444" : "#10b981"}
+                color={
+                  toastNotification.type === "error" ? "#ef4444" : "#10b981"
+                }
               />
             </View>
             <View style={styles.kioskToastTextWrap}>
-              <Text style={[styles.kioskToastTitle, toastNotification.type === "error" && styles.kioskToastTitleError]} numberOfLines={2}>
+              <Text
+                style={[
+                  styles.kioskToastTitle,
+                  toastNotification.type === "error" &&
+                    styles.kioskToastTitleError,
+                ]}
+                numberOfLines={2}
+              >
                 {toastNotification.itemName}
               </Text>
               {toastNotification.type !== "error" && (
@@ -2209,12 +2246,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   const minSel = Number(group.minSelection || 0);
                   const maxSel = Number(group.maxSelection || 1);
                   const isRequired = minSel > 0;
-                  const isGroupIncomplete = !!comboError && selectedIds.length < minSel;
+                  const isGroupIncomplete =
+                    !!comboError && selectedIds.length < minSel;
 
                   return (
                     <View
                       key={group.comboGroupId}
-                      style={[styles.customizeSectionCard, isGroupIncomplete && styles.customizeSectionCardIncomplete]}
+                      style={[
+                        styles.customizeSectionCard,
+                        isGroupIncomplete &&
+                          styles.customizeSectionCardIncomplete,
+                      ]}
                     >
                       <View style={styles.customizeSectionHeaderRow}>
                         <View style={styles.customizeSectionOrangeTab}>
@@ -2486,7 +2528,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </ScrollView>
 
               {/* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */}
-              <View style={styles.customizeBottomBar}>
+              <View style={[styles.customizeBottomBar, { paddingBottom: (Platform.OS === "ios" ? 34 : 20) + safeBottom }]}>
                 <View style={styles.customizeBottomBarInner}>
                   <View style={styles.customizeQtyControls}>
                     <TouchableOpacity
@@ -2701,7 +2743,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       {/* Unified Full-Width 4-Section Bottom Navigation Action Bar */}
       {!showCartPage && !showModifier && !showComboCustomizer && (
-        <View style={styles.floatingCartBar}>
+        <View style={[styles.floatingCartBar, { paddingBottom: 14 + safeBottom }]}>
           {/* Section 1: Start Over with Reset Icon (25%) */}
           <View style={styles.bottomBarCol}>
             <TouchableOpacity
@@ -4041,7 +4083,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
-  dishesList: { paddingTop: 2, paddingBottom: 110, paddingHorizontal: 2 },
+  dishesList: { paddingTop: 2, paddingBottom: 140, paddingHorizontal: 2 },
   dishCard: {
     flex: 1,
     margin: 10,

@@ -490,13 +490,29 @@ function formatThermalTextWithDiscount(saleData: any, company: any, discountInfo
   if (address) text += `[C]${address}\n`;
   if (gstNo) text += `[C]GST: ${gstNo}\n`;
   if (tel) text += `[C]Tel: ${tel}\n`;
-  text += `[C]${dateStr} ${timeStr}\n`;
+  text += "[C]--------------------------------\n";
+
+  const rawOrderNo = String(saleData.orderNo || saleData.id || saleData.saleId || saleData.orderId || saleData.invoiceNumber || "").trim();
+  const cleanDigits = rawOrderNo.replace(/\D/g, "");
+  const queueNo = cleanDigits ? cleanDigits.slice(-4) : (rawOrderNo.length >= 4 ? rawOrderNo.slice(-4) : rawOrderNo);
+
+  text += "[C]OFFICIAL QUEUE TICKET\n";
+  text += `[C]<font size='big'><B>#${queueNo}</B></font>\n`;
   text += "[L]================================\n";
 
-  const tableNo = saleData.tableNo || "";
-  const orderNo = saleData.orderNo || saleData.id || saleData.saleId || "";
-  if (tableNo) text += `[L]Takeaway: ${tableNo}\n`;
-  if (orderNo) text += `[L]Order #: ${orderNo}\n`;
+  const isSelfCollect = saleData.isSelfCollect === true;
+  const rawTable = String(saleData.tableNo || "").trim();
+  const isTakeaway = rawTable.toUpperCase() === "TAKEAWAY" || rawTable.toUpperCase().startsWith("TW");
+  const showTable = !isSelfCollect && !isTakeaway && !!rawTable;
+
+  const isTent = saleData.isTentNumber === true;
+  const tableLabel = isTent ? "TENT NO" : "TABLE";
+  if (showTable) {
+    text += `[L]<B>Bill No: ${rawOrderNo}</B>   <B>${tableLabel}: ${rawTable}</B>\n`;
+  } else {
+    text += `[L]<B>Bill No: ${rawOrderNo}</B>\n`;
+  }
+  text += `[L]Date: ${dateStr} ${timeStr}\n`;
   text += "[L]================================\n";
   text += "[L]Item                   Qty  Total\n";
   text += "[L]--------------------------------\n";

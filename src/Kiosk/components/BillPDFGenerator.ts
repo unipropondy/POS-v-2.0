@@ -332,6 +332,26 @@ export class BillPDFGenerator {
             border-top: 2px solid #000;
             margin: 3mm 0;
           }
+          .queue-box {
+            text-align: center;
+            border-top: 1.5px dashed #000;
+            border-bottom: 1.5px dashed #000;
+            padding: 3mm 0 2mm 0;
+            margin: 2mm 0 3mm 0;
+          }
+          .queue-title {
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+          }
+          .queue-number {
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            line-height: 1.1;
+            margin-top: 1mm;
+          }
           .bill-box {
             border: 1.5px solid #000;
             padding: 2.5mm 3mm;
@@ -408,14 +428,36 @@ export class BillPDFGenerator {
             ${company.phone ? `<div style="font-size: 10px;">Tel: ${company.phone}</div>` : ""}
           </div>
 
+          ${(() => {
+            const rawBill = String(billNo || "").trim();
+            const cleanDigits = rawBill.replace(/\D/g, "");
+            const queueSuffix = cleanDigits ? cleanDigits.slice(-4) : (rawBill.length >= 4 ? rawBill.slice(-4) : rawBill);
+            return `
+              <div class="queue-box">
+                <div class="queue-title">OFFICIAL QUEUE TICKET</div>
+                <div class="queue-number">#${queueSuffix}</div>
+              </div>
+            `;
+          })()}
+
           <div class="bill-box">
             <div class="detail-row">
-              <span><b>INVOICE NO: ${billNo}</b></span>
-              ${saleData.tableNo ? `<span><b>TABLE: ${saleData.tableNo}</b></span>` : ""}
+              <span><b>BILL NO: ${billNo}</b></span>
+              ${(() => {
+                const isSelfCollect = saleData.isSelfCollect === true;
+                const tbl = String(saleData.tableNo || "").trim();
+                const isTakeaway = tbl.toUpperCase() === "TAKEAWAY" || tbl.toUpperCase().startsWith("TW");
+                if (isSelfCollect || isTakeaway || !tbl) {
+                  return "";
+                }
+                const isTent = saleData.isTentNumber === true;
+                const label = isTent ? "TENT NO" : "TABLE";
+                return `<span><b>${label}: ${tbl}</b></span>`;
+              })()}
             </div>
             <div class="detail-row" style="margin-top: 2px;">
-              <span>DATE:</span>
-              <span>${formatToSingaporeDate(saleDate)} ${formatToSingaporeTime(saleDate)}</span>
+              <span>DATE: ${formatToSingaporeDate(saleDate)}</span>
+              <span>TIME: ${formatToSingaporeTime(saleDate)}</span>
             </div>
           </div>
 

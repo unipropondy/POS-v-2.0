@@ -112,6 +112,8 @@ type Props = {
   takeawayCharge?: number;
   gst?: number;
   total?: number;
+  isSelfCollect?: boolean;
+  isTentNumber?: boolean;
   onReturnToOrder?: () => void;
 };
 
@@ -174,6 +176,8 @@ export default function SettlementSuccessScreen({
   takeawayCharge: initialTakeawayCharge,
   gst: initialGst,
   total: initialTotal,
+  isSelfCollect = false,
+  isTentNumber = false,
   onReturnToOrder,
 }: Props) {
   const { width: screenWidth } = useWindowDimensions();
@@ -232,7 +236,7 @@ export default function SettlementSuccessScreen({
             (await AsyncStorage.getItem("orderId"));
           if (storedOrder) setOrderId(storedOrder);
         }
-        if (!tableNo) {
+        if (!isSelfCollect) {
           const storedTable = await AsyncStorage.getItem("tableNo");
           if (storedTable) setTableNo(storedTable);
         }
@@ -288,7 +292,7 @@ export default function SettlementSuccessScreen({
         }
 
         const dbTableNo = data[0]?.Tableno || data[0]?.tableNo;
-        if (dbTableNo) {
+        if (!isSelfCollect && dbTableNo) {
           setTableNo(String(dbTableNo).trim());
         }
 
@@ -382,7 +386,9 @@ export default function SettlementSuccessScreen({
       const saleData = {
         orderId: orderNumber || orderId,
         invoiceNumber: orderNumber || orderId,
-        tableNo,
+        tableNo: isSelfCollect ? "" : tableNo,
+        isSelfCollect,
+        isTentNumber,
         isKiosk: true,
         items: (currentItems || []).map((item: any) => ({
           name: item.DishName || item.Name || item.name || "Item",
@@ -661,8 +667,8 @@ export default function SettlementSuccessScreen({
         />
         <Text style={styles.noticeText}>
           {isReady
-            ? "Your order is ready! Please collect your receipt at the counter."
-            : "Please collect your receipt at the counter."}
+            ? "Your order is ready! Please collect your receipt."
+            : "Please collect your receipt."}
         </Text>
       </View>
 

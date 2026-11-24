@@ -449,7 +449,7 @@ class UniversalPrinter {
 
   private static async waitForJobCompletion(
     jobId: string,
-    timeoutMs: number = 15000
+    timeoutMs: number = 3000
   ): Promise<{ success: boolean; error?: string }> {
     const startTime = Date.now();
     while (Date.now() - startTime < timeoutMs) {
@@ -1489,7 +1489,7 @@ class UniversalPrinter {
 
         const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
         console.log(`📡 [Web Print Bridge] Queueing receipt (Type ${pType}, Target IP: ${targetIp || "default"})`);
-        const success = await this.queuePrintJob(pType, undefined, text, true, targetIp);
+        const success = await this.queuePrintJob(pType, undefined, text, false, targetIp);
         if (success) return true;
 
         console.log("⚠️ [Web Receipt Print] Print Bridge queue failed. Falling back to iframe print preview.");
@@ -1872,13 +1872,27 @@ class UniversalPrinter {
       saleData.orderId ||
       "";
 
+    const isKiosk = saleData.isKiosk || saleData.kioskOrderType || saleData.isSelfCollect;
+    const cleanDigits = String(billNumber || "").replace(/\D/g, "");
+    const queueNo = cleanDigits ? cleanDigits.slice(-4) : (String(billNumber).length >= 4 ? String(billNumber).slice(-4) : billNumber);
+
+    if (isKiosk && queueNo) {
+      text += "[C]OFFICIAL QUEUE TICKET\n";
+      text += `[C]<font size='big'><B>#${queueNo}</B></font>\n`;
+      text += "[C]------------------------------------------------\n";
+    }
+
+    const isSelfCollect = saleData.isSelfCollect === true;
+    const cleanTableNo = String(saleData.tableNo || "").replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
+
     if (isReceiptTW) {
       const shortOrderNo = billNumber ? String(billNumber).slice(-4) : "";
       const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
       text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>${twLabel}</B>`);
-    } else if (saleData.tableNo) {
-      const cleanTableNo = String(saleData.tableNo).replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
-      text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>TABLE: ${cleanTableNo}</B>`);
+    } else if (!isSelfCollect && cleanTableNo && cleanTableNo.toUpperCase() !== "TAKEAWAY") {
+      const isTent = saleData.isTentNumber === true;
+      const tableLabel = isTent ? "TENT NO" : "TABLE";
+      text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>${tableLabel}: ${cleanTableNo}</B>`);
     } else {
       text += `[L]<B>Bill No: ${billNumber}</B>\n`;
     }
