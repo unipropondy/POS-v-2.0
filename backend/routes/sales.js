@@ -3075,16 +3075,16 @@ router.post("/save", async (req, res) => {
           if (validTableGuid) {
             await transaction.request()
               .input("tid", sql.UniqueIdentifier, validTableGuid)
-              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
+              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
           } else {
             await transaction.request()
               .input("tno", sql.NVarChar(50), String(targetTableNo))
-              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
+              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
           }
 
           const io = req.app.get("io");
           if (io) {
-            io.emit("table_status_updated", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo, status: 0, totalAmount: 0, customerName: null, pax: null });
+            io.emit("table_status_updated", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo, status: 0, paymentStatus: 0, totalAmount: 0, customerName: null, pax: null });
             io.emit("cart_updated", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo });
             io.emit("order_closed", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo, orderId: displayOrderId });
           }
@@ -3130,17 +3130,18 @@ router.post("/save", async (req, res) => {
                 if (validChildGuid) {
                   await transaction.request()
                     .input("tid", sql.UniqueIdentifier, validChildGuid)
-                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
+                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
                 } else {
                   await transaction.request()
                     .input("tno", sql.NVarChar(50), String(childTableNo))
-                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
+                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
                 }
 
                 if (io) {
                   io.emit("table_status_updated", { 
                     tableId: childTableId.toLowerCase(), 
                     status: 0, 
+                    paymentStatus: 0,
                     totalAmount: 0,
                     startTime: null,
                     tableNo: childTableNo,

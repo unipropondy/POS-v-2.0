@@ -2380,7 +2380,7 @@ router.post("/cancel", async (req, res) => {
         .request()
         .input("tid", sql.VarChar(50), cleanTid)
         .query(
-          "UPDATE TableMaster SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid",
+          "UPDATE TableMaster SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid",
         );
 
       await transaction.commit();
@@ -2417,7 +2417,7 @@ router.post("/complete", async (req, res) => {
         WHERE Tableno = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tid) 
         AND (isOrderClosed = 0 OR isOrderClosed IS NULL);
         
-        UPDATE TableMaster SET Status = 0, entry_status = NULL, CurrentOrderId = NULL, StartTime = NULL, TotalAmount = 0, CustomerName = NULL, Pax = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid;
+        UPDATE TableMaster SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, CurrentOrderId = NULL, StartTime = NULL, TotalAmount = 0, CustomerName = NULL, Pax = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid;
       `);
 
     const updated = await syncTableStatus(req, cleanId);
@@ -3299,14 +3299,14 @@ router.post("/merge", async (req, res) => {
             .input("tid", sql.UniqueIdentifier, validSourceGuid)
             .input("tno", sql.NVarChar(50), String(sourceTableNo))
             .query(
-              "UPDATE TableMaster SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid OR TableNumber = @tno",
+              "UPDATE TableMaster SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid OR TableNumber = @tno",
             );
         } else {
           await transaction
             .request()
             .input("tno", sql.NVarChar(50), String(sourceTableNo))
             .query(
-              "UPDATE TableMaster SET Status = 0, entry_status = NULL, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno OR TableId = @tno",
+              "UPDATE TableMaster SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno OR TableId = @tno",
             );
         }
 
@@ -4364,6 +4364,8 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
             .query(`
               UPDATE TableMaster
               SET Status = 0,
+                  entry_status = NULL,
+                  PAYMENT_STATUS = 0,
                   CurrentOrderId = NULL,
                   TotalAmount = 0,
                   StartTime = NULL,

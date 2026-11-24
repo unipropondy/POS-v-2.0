@@ -683,7 +683,7 @@ const TableItemComponent = React.memo(
       ui = getStatusUI(4, item.DiningSection);
     }
 
-    // 🌹 QR PAID: entryStatus='q' + paymentStatus=1 → Rose card + "Paid" label
+    // 🌹 QR PAID: ONLY if entryStatus='q' AND paymentStatus=1 AND table is actively occupied (status !== 0)
     const rawEntryStatus =
       (tableData?.entryStatus !== undefined && tableData?.entryStatus !== null)
         ? tableData.entryStatus
@@ -692,7 +692,7 @@ const TableItemComponent = React.memo(
       (tableData as any)?.paymentStatus !== undefined
         ? (tableData as any).paymentStatus
         : item.paymentStatus;
-    const isPaid = rawEntryStatus === "q" && Number(rawPaymentStatus) === 1;
+    const isPaid = status !== 0 && rawEntryStatus === "q" && Number(rawPaymentStatus) === 1;
 
     if (isPaid) {
       ui = { text: "PAID", color: "#f43f5e", lightBg: "#fff1f2" };

@@ -1,4 +1,5 @@
 import { API } from "@/config";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -183,7 +184,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Extra Charge Confirmation Modal
   const [showExtraChargeModal, setShowExtraChargeModal] = useState(false);
 
-  // ── Inactivity Auto-Reset Timer (65s idle + 15s warning) ──
+  // ── Inactivity Auto-Reset Timer (75s idle + 15s warning = 90s total) ──
   const [showInactivityModal, setShowInactivityModal] = useState(false);
   const [inactivityCountdown, setInactivityCountdown] = useState(15);
   const idleTimerRef = useRef<any>(null);
@@ -338,10 +339,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       return;
     }
 
-    // 65 seconds idle before showing the warning
+    // 75 seconds idle before showing the warning (75s + 15s = 90s total)
     idleTimerRef.current = setTimeout(() => {
       startInactivityCountdown();
-    }, 65000);
+    }, 75000);
   };
 
   useEffect(() => {
@@ -1977,6 +1978,62 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       {/* ── Main Layout: Sidebar & Content ── */}
       <View style={styles.mainLayout}>
+        {/* Floor Plan Champagne Aura Background for Main Menu */}
+        {Platform.OS === "web" ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(ellipse 55% 45% at 30% 50%, rgba(253,186,116,0.4) 0%, transparent 60%)",
+                mixBlendMode: "normal",
+                filter: "blur(140px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(ellipse 45% 55% at 65% 40%, rgba(251,146,60,0.3) 0%, transparent 55%)",
+                mixBlendMode: "normal",
+                filter: "blur(150px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(ellipse 40% 35% at 50% 70%, rgba(254,215,170,0.35) 0%, transparent 50%)",
+                mixBlendMode: "normal",
+                filter: "blur(130px)",
+                pointerEvents: "none",
+                transform: "translateZ(0)",
+              }}
+              aria-hidden="true"
+            />
+          </>
+        ) : (
+          <LinearGradient
+            colors={[
+              "transparent",
+              "rgba(255, 230, 180, 0.14)",
+              "rgba(255, 200, 140, 0.45)",
+              "rgba(230, 170, 100, 0.65)",
+            ]}
+            locations={[0, 0.3, 0.65, 1.0]}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+
         {/* Categories Sidebar with Accordion Dropdown for Dish Groups */}
         <View style={styles.sidebar}>
           <ScrollView
@@ -2893,71 +2950,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </TouchableOpacity>
       )}
 
-      {/* ── Inactivity Warning Modal (65s idle + 15s countdown, strictly suppressed during screensaver) ── */}
-      <Modal
-        visible={showInactivityModal && !showAttractLoop}
-        transparent
-        animationType="fade"
-        onRequestClose={resetIdleTimer}
-      >
-        <View style={styles.inactivityModalOverlay}>
-          <View style={styles.inactivityModalCard}>
-            {/* Soft Ambient Icon Header */}
-            <View style={styles.inactivityIconCircle}>
-              <Ionicons name="hourglass-outline" size={38} color="#ea580c" />
-            </View>
-
-            <Text style={styles.inactivityTitle}>Are you still there?</Text>
-            <Text style={styles.inactivitySubtitle}>
-              Your order session will automatically reset in
-            </Text>
-
-            {/* Aesthetic Countdown Ring with Progress Pill */}
-            <View style={styles.inactivityCountdownOuter}>
-              <View style={styles.inactivityCountdownCircle}>
-                <Text style={styles.inactivityCountdownNumber}>
-                  {inactivityCountdown}
-                </Text>
-                <Text style={styles.inactivityCountdownUnit}>sec</Text>
-              </View>
-            </View>
-
-            {/* Action Buttons styled like modern Kiosk touch elements */}
-            <View style={styles.inactivityBtnRow}>
-              <TouchableOpacity
-                style={styles.inactivityResetBtn}
-                onPress={resetAllKioskState}
-                activeOpacity={0.75}
-              >
-                <Ionicons
-                  name="refresh"
-                  size={18}
-                  color="#64748b"
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={styles.inactivityResetBtnText}>Start Over</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.inactivityContinueBtn}
-                onPress={resetIdleTimer}
-                activeOpacity={0.88}
-              >
-                <Ionicons
-                  name="hand-left"
-                  size={20}
-                  color="#ffffff"
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.inactivityContinueBtnText}>
-                  Continue Ordering
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* ── Cart Full-Screen View ── */}
       <Modal
         visible={showCartPage}
@@ -2965,80 +2957,189 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         onRequestClose={() => setShowCartPage(false)}
       >
         <View style={styles.cartModalContainer}>
+          {/* Floor Plan Style Background (Matching POS Category Champagne Aura) */}
+          {Platform.OS === "web" ? (
+            <>
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "radial-gradient(ellipse 55% 45% at 30% 50%, rgba(253,186,116,0.5) 0%, transparent 60%)",
+                  mixBlendMode: "normal",
+                  filter: "blur(140px)",
+                  pointerEvents: "none",
+                  transform: "translateZ(0)",
+                }}
+                aria-hidden="true"
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "radial-gradient(ellipse 45% 55% at 65% 40%, rgba(251,146,60,0.38) 0%, transparent 55%)",
+                  mixBlendMode: "normal",
+                  filter: "blur(150px)",
+                  pointerEvents: "none",
+                  transform: "translateZ(0)",
+                }}
+                aria-hidden="true"
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "radial-gradient(ellipse 40% 35% at 50% 70%, rgba(254,215,170,0.45) 0%, transparent 50%)",
+                  mixBlendMode: "normal",
+                  filter: "blur(130px)",
+                  pointerEvents: "none",
+                  transform: "translateZ(0)",
+                }}
+                aria-hidden="true"
+              />
+            </>
+          ) : (
+            <>
+              <LinearGradient
+                colors={[
+                  "transparent",
+                  "rgba(255, 230, 180, 0.18)",
+                  "rgba(255, 200, 140, 0.55)",
+                  "rgba(230, 170, 100, 0.75)",
+                ]}
+                locations={[0, 0.3, 0.65, 1.0]}
+                style={StyleSheet.absoluteFill}
+              />
+            </>
+          )}
+
+          {/* Cart Header */}
+          <View style={styles.cartModalHeader}>
+            <TouchableOpacity
+              style={styles.cartHeaderBackBtn}
+              onPress={() => setShowCartPage(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-back" size={24} color="#1e293b" />
+            </TouchableOpacity>
+            <View style={styles.cartHeaderTitleWrap}>
+              <Text style={styles.cartHeaderTitle}>Your Cart</Text>
+              <Text style={styles.cartHeaderSubtitle}>
+                {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0)} {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0) === 1 ? "item" : "items"} selected
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.cartHeaderClearBtn}
+              onPress={handleClearCart}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-bin-outline" size={18} color="#ef4444" />
+              <Text style={styles.cartHeaderClearText}>Clear All</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Scrollable Items List */}
           <ScrollView
             style={styles.cartItemsScrollView}
             contentContainerStyle={styles.cartScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {cart.map((item, index) => (
-              <View key={String(index)} style={styles.cartItemRow}>
-                <View style={styles.cartItemLeft}>
-                  <Text style={styles.cartItemName}>
-                    {item.Name || item.name}
-                  </Text>
-                  {item.selectedMods?.length > 0 && (
-                    <Text style={styles.cartItemMods}>
-                      {item.selectedMods
-                        .map((m: any) => m.ModifierName)
-                        .join(", ")}
-                    </Text>
-                  )}
-                  {item.comboSelections?.length > 0 && (
-                    <View style={styles.comboSelectionsCartBox}>
-                      {item.comboSelections.map((grp: any, gIdx: number) => (
-                        <View key={gIdx} style={{ marginTop: 3 }}>
-                          <Text style={styles.comboGroupNameCart}>
-                            {grp.groupName}:
-                          </Text>
-                          {(grp.items || []).map((opt: any, oIdx: number) => (
-                            <Text key={oIdx} style={styles.comboItemNameCart}>
-                              ↳ {opt.name}
-                              {Number(opt.surcharge || 0) +
-                                Number(opt.dishPrice || 0) >
-                              0
-                                ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
-                                : ""}
-                            </Text>
-                          ))}
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
+            {cart.map((item, index) => {
+              const matchedDish = !item.Image && item.DishId
+                ? dishes.find((d) => String(d.DishId || d.id) === String(item.DishId))
+                : null;
+              const imageFilename = item.Image || matchedDish?.Image;
 
-                <View style={styles.cartItemCenter}>
-                  <View style={styles.qtyControlsContainer}>
-                    <Text
-                      style={[
-                        styles.qtyVal,
-                        { fontSize: 16, fontWeight: "700" },
-                      ]}
-                    >
-                      {item.qty || 1}
+              return (
+                <View key={String(index)} style={styles.cartItemRow}>
+                  {/* Dish Thumbnail on Left */}
+                  <View style={styles.cartItemThumbWrap}>
+                    {imageFilename ? (
+                      <Image
+                        source={{ uri: `${API}/image/${imageFilename}` }}
+                        style={styles.cartItemThumb}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.cartItemThumbPlaceholder}>
+                        <Ionicons
+                          name="restaurant-outline"
+                          size={26}
+                          color="#f97316"
+                        />
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.cartItemLeft}>
+                    <Text style={styles.cartItemName}>
+                      {item.Name || item.name}
                     </Text>
+                    {item.selectedMods?.length > 0 && (
+                      <Text style={styles.cartItemMods}>
+                        {item.selectedMods
+                          .map((m: any) => m.ModifierName)
+                          .join(", ")}
+                      </Text>
+                    )}
+                    {item.comboSelections?.length > 0 && (
+                      <View style={styles.comboSelectionsCartBox}>
+                        {item.comboSelections.map((grp: any, gIdx: number) => (
+                          <View key={gIdx} style={{ marginTop: 3 }}>
+                            <Text style={styles.comboGroupNameCart}>
+                              {grp.groupName}:
+                            </Text>
+                            {(grp.items || []).map((opt: any, oIdx: number) => (
+                              <Text key={oIdx} style={styles.comboItemNameCart}>
+                                ↳ {opt.name}
+                                {Number(opt.surcharge || 0) +
+                                  Number(opt.dishPrice || 0) >
+                                0
+                                  ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
+                                  : ""}
+                              </Text>
+                            ))}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.cartItemCenter}>
+                    <View style={styles.qtyControlsContainer}>
+                      <Text
+                        style={[
+                          styles.qtyVal,
+                          { fontSize: 16, fontWeight: "700" },
+                        ]}
+                      >
+                        {item.qty || 1}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.cartItemRight}>
+                    <Text style={styles.cartItemPrice}>
+                      $
+                      {(
+                        Number(item.Price || item.finalPrice || 0) *
+                        Number(item.qty || 1)
+                      ).toFixed(2)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.cartItemDeleteBtn}
+                      onPress={() => decreaseQty(index)}
+                      hitSlop={8}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={19} color="#ef4444" />
+                    </TouchableOpacity>
                   </View>
                 </View>
-
-                <View style={styles.cartItemRight}>
-                  <Text style={styles.cartItemPrice}>
-                    $
-                    {(
-                      Number(item.Price || item.finalPrice || 0) *
-                      Number(item.qty || 1)
-                    ).toFixed(2)}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.cartItemDeleteBtn}
-                    onPress={() => decreaseQty(index)}
-                    hitSlop={8}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="trash-outline" size={19} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </ScrollView>
 
           {/* Fixed Down Summary & Actions Card */}
@@ -3730,6 +3831,72 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           <Text style={styles.loadingOverlayText}>Processing Order...</Text>
         </View>
       </Modal>
+
+      {/* ── Inactivity Warning Modal (75s idle + 15s countdown = 90s total, strictly suppressed during screensaver) ── */}
+      {/* Placed at top-most overlay layer so it appears over Menu, Modifier Customizer, and Cart Modal */}
+      <Modal
+        visible={showInactivityModal && !showAttractLoop}
+        transparent
+        animationType="fade"
+        onRequestClose={resetIdleTimer}
+      >
+        <View style={styles.inactivityModalOverlay}>
+          <View style={styles.inactivityModalCard}>
+            {/* Soft Ambient Icon Header */}
+            <View style={styles.inactivityIconCircle}>
+              <Ionicons name="hourglass-outline" size={38} color="#ea580c" />
+            </View>
+
+            <Text style={styles.inactivityTitle}>Are you still there?</Text>
+            <Text style={styles.inactivitySubtitle}>
+              Your order session will automatically reset in
+            </Text>
+
+            {/* Aesthetic Countdown Ring with Progress Pill */}
+            <View style={styles.inactivityCountdownOuter}>
+              <View style={styles.inactivityCountdownCircle}>
+                <Text style={styles.inactivityCountdownNumber}>
+                  {inactivityCountdown}
+                </Text>
+                <Text style={styles.inactivityCountdownUnit}>sec</Text>
+              </View>
+            </View>
+
+            {/* Action Buttons styled like modern Kiosk touch elements */}
+            <View style={styles.inactivityBtnRow}>
+              <TouchableOpacity
+                style={styles.inactivityResetBtn}
+                onPress={resetAllKioskState}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name="refresh"
+                  size={18}
+                  color="#64748b"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.inactivityResetBtnText}>Start Over</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.inactivityContinueBtn}
+                onPress={resetIdleTimer}
+                activeOpacity={0.88}
+              >
+                <Ionicons
+                  name="hand-left"
+                  size={20}
+                  color="#ffffff"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.inactivityContinueBtnText}>
+                  Continue Ordering
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -3779,7 +3946,12 @@ const styles = StyleSheet.create({
   logoutBtn: { paddingHorizontal: 12, paddingVertical: 8 },
   logoutBtnText: { color: "#ef4444", fontWeight: "700", fontSize: 13 },
 
-  mainLayout: { flex: 1, flexDirection: "row", backgroundColor: "#f3f7fd" },
+  mainLayout: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: "#faf8f2",
+    position: "relative",
+  },
   sidebar: {
     width: 330,
     backgroundColor: "#ffffff",
@@ -4029,7 +4201,13 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
 
-  contentArea: { flex: 1, padding: 20, backgroundColor: "#f3f7fd" },
+  contentArea: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: "transparent",
+    position: "relative",
+    zIndex: 1,
+  },
   groupTabsContainer: {
     flexShrink: 0,
     marginBottom: 22,
@@ -4756,13 +4934,70 @@ const styles = StyleSheet.create({
   /* CART MODAL - Clean, Card-Based Layout with Fixed Bottom Card */
   cartModalContainer: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#faf8f2",
+    position: "relative",
+  },
+  cartModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: Platform.OS === "ios" ? 54 : 32,
+    paddingBottom: 16,
+    paddingHorizontal: 24,
+    maxWidth: 960,
+    width: "100%",
+    alignSelf: "center",
+    zIndex: 2,
+  },
+  cartHeaderBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  cartHeaderTitleWrap: {
+    flex: 1,
+    alignItems: "center",
+  },
+  cartHeaderTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.3,
+  },
+  cartHeaderSubtitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ea580c",
+    marginTop: 2,
+  },
+  cartHeaderClearBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: "#fee2e2",
+  },
+  cartHeaderClearText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#ef4444",
   },
   cartItemsScrollView: {
     flex: 1,
+    zIndex: 2,
   },
   cartScrollContent: {
-    paddingTop: 36,
+    paddingTop: 16,
     paddingBottom: 24,
     paddingHorizontal: 24,
     maxWidth: 960,
@@ -4773,23 +5008,44 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 24,
-    paddingHorizontal: 32,
-    backgroundColor: "#ffffff",
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
     borderRadius: 20,
-    marginBottom: 20,
-    shadowColor: "#000",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(234, 88, 12, 0.12)",
+    shadowColor: "#f97316",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 12,
     elevation: 3,
   },
+  cartItemThumbWrap: {
+    marginRight: 16,
+  },
+  cartItemThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 16,
+    backgroundColor: "#fff7ed",
+  },
+  cartItemThumbPlaceholder: {
+    width: 68,
+    height: 68,
+    borderRadius: 16,
+    backgroundColor: "#fff7ed",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+  },
   cartItemLeft: {
-    flex: 1.2,
+    flex: 1.4,
     alignItems: "flex-start",
   },
   cartItemCenter: {
-    flex: 1,
+    flex: 0.8,
     alignItems: "center",
     justifyContent: "center",
   },
