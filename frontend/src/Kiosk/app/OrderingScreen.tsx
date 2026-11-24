@@ -1586,6 +1586,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             isTakeaway: isTakeaway,
             items: cart,
             userId: "00000000-0000-0000-0000-000000000000",
+            isKiosk: true,
+            entryStatus: "K",
           }),
         });
         const saveJson = await saveRes.json();
@@ -1806,6 +1808,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           paymentMethod: method,
           extraCharge: parseFloat(String(extraCharge)),
           cart,
+          isKiosk: true,
+          entryStatus: "K",
         }),
       });
 

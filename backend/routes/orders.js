@@ -407,7 +407,16 @@ async function syncToProfessionalTables(
   mobileNo = null,
   customerName = null,
   customerId = null,
+  entryStatusOverride = null,
 ) {
+  let finalEntryStatus = null;
+  if (entryStatusOverride) {
+    finalEntryStatus = String(entryStatusOverride).trim();
+  } else if (typeof isQROrder === "string") {
+    finalEntryStatus = isQROrder.trim();
+  } else if (isQROrder === true) {
+    finalEntryStatus = "q";
+  }
   const isTakeaway =
     !tableId ||
     tableId === "undefined" ||
@@ -492,7 +501,7 @@ async function syncToProfessionalTables(
       .input("isTakeaway", sql.Bit, isTakeaway ? 1 : 0)
       .input("discAmt", sql.Decimal(18, 2), discountAmount || 0)
       .input("discRemarks", sql.NVarChar(250), discountRemarks || null)
-      .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
+      .input("entryStatus", sql.NVarChar(10), finalEntryStatus)
       .input("mobileNo", sql.NVarChar(50), mobileNo || null)
       .input("customerName", sql.NVarChar(9), customerName ? String(customerName).substring(0, 9) : null)
       .input("rawCustomerId", sql.VarChar(50), rawCustIdStr)
@@ -519,7 +528,7 @@ async function syncToProfessionalTables(
             IsTakeAway = @isTakeaway,
             DiscountAmount = CASE WHEN @discAmt > 0 THEN @discAmt ELSE DiscountAmount END,
             DiscountRemarks = CASE WHEN @discRemarks IS NOT NULL THEN @discRemarks ELSE DiscountRemarks END,
-            entry_status = @entryStatus,
+            entry_status = COALESCE(@entryStatus, entry_status),
             MobileNo = COALESCE(@mobileNo, MobileNo),
             CustomerName = CASE 
                             WHEN @ResolvedCustomerName IS NOT NULL AND @ResolvedCustomerName <> '' AND @ResolvedCustomerName <> 'Guest' THEN @ResolvedCustomerName
@@ -561,7 +570,7 @@ async function syncToProfessionalTables(
       .input("startDate", sql.Date, startDate)
       .input("discAmt", sql.Decimal(18, 2), discountAmount || 0)
       .input("discRemarks", sql.NVarChar(250), discountRemarks || null)
-      .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
+      .input("entryStatus", sql.NVarChar(10), finalEntryStatus)
       .input("mobileNo", sql.NVarChar(50), mobileNo || null)
       .input("rawCustomerId", sql.VarChar(50), rawCustIdStr)
       .query(`
@@ -1329,6 +1338,13 @@ router.post("/save-cart", async (req, res) => {
       }
     }
 
+    const isKioskOrder =
+      req.body.isKiosk === true ||
+      req.body.isKiosk === "true" ||
+      req.body.entryStatus === "K" ||
+      req.body.orderSource === "kiosk";
+    const resolvedEntryStatus = isKioskOrder ? "K" : (entryStatus === "q" ? "q" : (entryStatus || null));
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
     try {
@@ -1343,11 +1359,13 @@ router.post("/save-cart", async (req, res) => {
           items || [],
           userId,
           formattedStartDate,
-          entryStatus === "q",
+          resolvedEntryStatus,
           0,
           null,
           mobileNo,
           customerName,
+          null,
+          resolvedEntryStatus
         );
       } else {
         console.log(`[TRACE] [${now}] [SAVE-CART] Skipping syncToProfessionalTables — nuclear clear was blocked, order ${currentOrderId} has active SENT items, preserving DB state.`);
@@ -1374,11 +1392,13 @@ router.post("/save-cart", async (req, res) => {
           WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
         `);
 
-      // 🔹 QR ORDER: If entryStatus is 'q', set table to Status 1 (Dining/Active)
-      if (entryStatus === "q" && hasItems) {
-        await transaction.request().input("tid", sql.VarChar(50), cleanId)
+      // 🔹 QR / KIOSK ORDER: If entryStatus is 'q' or 'K', set table to Status 1 (Dining/Active)
+      if (resolvedEntryStatus && hasItems) {
+        await transaction.request()
+          .input("tid", sql.VarChar(50), cleanId)
+          .input("entryStatus", sql.VarChar(10), resolvedEntryStatus)
           .query(`
-            UPDATE TableMaster SET Status = 1, entry_status = 'q', PAYMENT_STATUS = 0 WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+            UPDATE TableMaster SET Status = 1, entry_status = @entryStatus, PAYMENT_STATUS = 0 WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
           `);
       }
 
@@ -3537,17 +3557,18 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
       .input('serviceCharge', sql.Money, serviceCharge)
       .input('roundedBy', sql.Money, roundedBy)
       .input('startDate', sql.Date, formattedStartDate)
+      .input('entryStatus', sql.VarChar(50), order.entry_status || null)
       .query(`
         INSERT INTO SettlementHeader (
           SettlementID, LastSettlementDate, LastDayEndDate, SubTotal, TotalTax, DiscountAmount, DiscountType, 
           BillNo, OrderType, TableNo, Section, CashierID, BusinessUnitId, 
           SysAmount, ManualAmount, CreatedBy, CreatedOn, 
-          VoidItemQty, VoidItemAmount, RoundedBy, ServiceCharge, GuestName, Pax, TotalPax, TakeawayCharge, start_date, IsCancelled
+          VoidItemQty, VoidItemAmount, RoundedBy, ServiceCharge, GuestName, Pax, TotalPax, TakeawayCharge, start_date, IsCancelled, entry_status
         ) VALUES (
           @sid, GETDATE(), GETDATE(), @subTotal, @totalTax, @discountAmount, 'fixed', 
           @billNo, @orderType, @tableNo, @section, @cashierId, @bizId, 
           @sysAmount, @sysAmount, @cashierId, GETDATE(), 
-          0, 0, @roundedBy, @serviceCharge, @guestName, 1, 1, @takeawayCharge, @startDate, 0
+          0, 0, @roundedBy, @serviceCharge, @guestName, 1, 1, @takeawayCharge, @startDate, 0, @entryStatus
         )
       `);
 
@@ -3831,8 +3852,15 @@ router.post("/payment-status", async (req, res) => {
 
 router.post("/complete-online-payment", async (req, res) => {
   try {
-    const { orderId, tableNo, tableId, paymentMethod, cart, totalAmount, paidAmount, kioskOrderType } = req.body;
+    const { orderId, tableNo, tableId, paymentMethod, cart, totalAmount, paidAmount, kioskOrderType, isKiosk, entryStatus } = req.body;
     const pool = await poolPromise;
+    const isKioskOrder =
+      isKiosk === true ||
+      isKiosk === "true" ||
+      entryStatus === "K" ||
+      !!kioskOrderType ||
+      req.body.orderSource === "kiosk";
+    const resolvedEntryStatus = isKioskOrder ? "K" : "q";
     const cleanId = String(tableId || tableNo || "TAKEAWAY").replace(/^\{|\}$/g, "").trim();
     let orderNo = orderId;
     if (!orderNo || orderNo === "NEW" || orderNo === "#NEW" || orderNo === "PENDING" || orderNo.length < 5) {
@@ -3877,11 +3905,12 @@ router.post("/complete-online-payment", async (req, res) => {
               paidCart,
               "00000000-0000-0000-0000-000000000000",
               formattedStartDate,
-              true,
+              resolvedEntryStatus,
               0,
               null,
               null,
-              null
+              null,
+              resolvedEntryStatus
             );
             await syncTx.commit();
             console.log(`✅ [complete-online-payment] Cart successfully synced to RestaurantOrderDetailCur`);
@@ -3893,6 +3922,22 @@ router.post("/complete-online-payment", async (req, res) => {
         }
       } catch (checkErr) {
         console.error("⚠️ [complete-online-payment] Error checking/saving cart items:", checkErr.message);
+      }
+    }
+
+    // 🛡️ Ensure Kiosk orders have entry_status = 'K' in RestaurantOrderCur
+    if (orderNo && isKioskOrder) {
+      try {
+        await pool.request()
+          .input("orderNo", sql.NVarChar(50), orderNo)
+          .query(`
+            UPDATE RestaurantOrderCur 
+            SET entry_status = 'K' 
+            WHERE (OrderNumber = @orderNo OR (TRY_CAST(@orderNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@orderNo AS UNIQUEIDENTIFIER)))
+              AND (entry_status IS NULL OR entry_status = '' OR entry_status <> 'K')
+          `);
+      } catch (kErr) {
+        console.warn("⚠️ [complete-online-payment] Failed to ensure entry_status='K':", kErr.message);
       }
     }
 
@@ -3916,7 +3961,7 @@ router.post("/complete-online-payment", async (req, res) => {
           tableNo: updatedTable?.tableNo,
           orderId: updatedTable?.CurrentOrderId || orderNo,
           paymentStatus: 1,
-          entryStatus: updatedTable?.entryStatus || 'q',
+          entryStatus: updatedTable?.entryStatus || resolvedEntryStatus,
         });
       }
 
@@ -4384,7 +4429,7 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
             UPDATE TableMaster
             SET Status = 1,
                 CurrentOrderId = @oid,
-                entry_status = 'q',
+                entry_status = 'K',
                 StartTime = ISNULL(StartTime, GETDATE()),
                 ModifiedOn = GETDATE()
             WHERE TableId = @targetTid
@@ -4404,7 +4449,7 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
               SET TableNumber = @newTable,
                   Status = 1,
                   CurrentOrderId = @oid,
-                  entry_status = 'q',
+                  entry_status = 'K',
                   StartTime = ISNULL(StartTime, GETDATE()),
                   ModifiedOn = GETDATE()
               WHERE TableId = @targetTid
@@ -4420,6 +4465,7 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
         .query(`
           UPDATE RestaurantOrderCur
           SET Tableno = LTRIM(RTRIM(@newTable)),
+              entry_status = 'K',
               ModifiedOn = GETDATE()
           WHERE OrderNumber = @oid
         `);
