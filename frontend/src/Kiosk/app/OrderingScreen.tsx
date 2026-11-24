@@ -360,10 +360,33 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   useEffect(() => {
     resetIdleTimer();
+
+    // Attach global user interaction listeners on web so touches/clicks inside Modals, Keypads, etc. always reset idle timer
+    const handleGlobalInteraction = () => {
+      resetIdleTimer();
+    };
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.addEventListener("pointerdown", handleGlobalInteraction, true);
+      window.addEventListener("touchstart", handleGlobalInteraction, true);
+      window.addEventListener("mousedown", handleGlobalInteraction, true);
+      window.addEventListener("keydown", handleGlobalInteraction, true);
+    }
+
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (countdownIntervalRef.current)
         clearInterval(countdownIntervalRef.current);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.removeEventListener(
+          "pointerdown",
+          handleGlobalInteraction,
+          true,
+        );
+        window.removeEventListener("touchstart", handleGlobalInteraction, true);
+        window.removeEventListener("mousedown", handleGlobalInteraction, true);
+        window.removeEventListener("keydown", handleGlobalInteraction, true);
+      }
     };
   }, []);
 
@@ -3052,7 +3075,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         animationType="slide"
         onRequestClose={() => setShowCartPage(false)}
       >
-        <View style={styles.cartModalContainer}>
+        <View
+          style={styles.cartModalContainer}
+          onStartShouldSetResponderCapture={() => {
+            resetIdleTimer();
+            return false;
+          }}
+        >
           {/* Floor Plan Style Background (Matching POS Category Champagne Aura) */}
           {Platform.OS === "web" ? (
             <>
@@ -3415,7 +3444,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         animationType="fade"
         onRequestClose={() => setShowTableModal(false)}
       >
-        <View style={styles.tableModalOverlay}>
+        <View
+          style={styles.tableModalOverlay}
+          onStartShouldSetResponderCapture={() => {
+            resetIdleTimer();
+            return false;
+          }}
+        >
           <View style={styles.tableModalContainer}>
             <View style={styles.tableModalHeader}>
               <View>
@@ -3766,7 +3801,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         animationType="fade"
         onRequestClose={() => setShowPaymentPopup(false)}
       >
-        <View style={styles.paymentModal}>
+        <View
+          style={styles.paymentModal}
+          onStartShouldSetResponderCapture={() => {
+            resetIdleTimer();
+            return false;
+          }}
+        >
           <TouchableOpacity
             style={styles.paymentCloseBtn}
             onPress={() => setShowPaymentPopup(false)}

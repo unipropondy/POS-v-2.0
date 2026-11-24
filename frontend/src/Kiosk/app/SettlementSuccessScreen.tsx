@@ -223,7 +223,7 @@ export default function SettlementSuccessScreen({
   const [showPrintPrompt, setShowPrintPrompt] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isShareLoading, setIsShareLoading] = useState(false);
-  const [countdown, setCountdown] = useState(10);
+  const [countdown, setCountdown] = useState(15);
   const autoReturnTimerRef = useRef<any>(null);
   const countdownIntervalRef = useRef<any>(null);
   const hasReturnedRef = useRef(false);
@@ -485,7 +485,7 @@ export default function SettlementSuccessScreen({
     };
   }, [orderId, orderNumber]);
 
-  // Fast polling fallback & Auto-return countdown timer (10 seconds)
+  // Fast polling fallback & Auto-return countdown timer (15 seconds)
   useEffect(() => {
     loadOrderDetails();
     loadOrderItems();
@@ -493,8 +493,8 @@ export default function SettlementSuccessScreen({
     // Fast 3-second polling ensures status updates even if socket drops
     const interval = setInterval(loadOrderDetails, 3000);
 
-    // 10-second countdown tick for UI
-    setCountdown(10);
+    // 15-second countdown tick for UI
+    setCountdown(15);
     countdownIntervalRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -505,10 +505,10 @@ export default function SettlementSuccessScreen({
       });
     }, 1000);
 
-    // Exactly 10-second auto-return timer to Start Over
+    // Exactly 15-second auto-return timer to Start Over
     autoReturnTimerRef.current = setTimeout(() => {
       handleReturn();
-    }, 10000);
+    }, 15000);
 
     return () => {
       clearInterval(interval);
