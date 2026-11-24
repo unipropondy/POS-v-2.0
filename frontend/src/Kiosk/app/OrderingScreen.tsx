@@ -3145,8 +3145,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           {/* Fixed Down Summary & Actions Card */}
           <View style={styles.cartBottomFixedContainer}>
             <View style={styles.cartSummaryCard}>
+              {/* Subtotal Row with Icon */}
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Subtotal</Text>
+                <View style={styles.totalLabelGroup}>
+                  <View style={styles.totalRowIconWrap}>
+                    <Ionicons name="receipt-outline" size={17} color="#64748b" />
+                  </View>
+                  <Text style={styles.totalLabel}>Subtotal</Text>
+                </View>
                 <Text style={styles.totalValue}>
                   {currencySymbol}
                   {subTotal.toFixed(2)}
@@ -3155,7 +3161,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
               {takeawayCharge > 0 && (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Takeaway Charge</Text>
+                  <View style={styles.totalLabelGroup}>
+                    <View style={styles.totalRowIconWrap}>
+                      <Ionicons name="bag-handle-outline" size={17} color="#64748b" />
+                    </View>
+                    <Text style={styles.totalLabel}>Takeaway Charge</Text>
+                  </View>
                   <Text style={styles.totalValue}>
                     {currencySymbol}
                     {takeawayCharge.toFixed(2)}
@@ -3165,9 +3176,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
               {serviceCharge > 0 && (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>
-                    Service Charge ({applicableScPercent}%)
-                  </Text>
+                  <View style={styles.totalLabelGroup}>
+                    <View style={styles.totalRowIconWrap}>
+                      <Ionicons name="restaurant-outline" size={17} color="#64748b" />
+                    </View>
+                    <Text style={styles.totalLabel}>
+                      Service Charge ({applicableScPercent}%)
+                    </Text>
+                  </View>
                   <Text style={styles.totalValue}>
                     {currencySymbol}
                     {serviceCharge.toFixed(2)}
@@ -3177,10 +3193,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
               {gstPercent > 0 && (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>
-                    GST ({gstPercent}%){" "}
-                    {taxMode === "inclusive" ? "(Incl)" : ""}
-                  </Text>
+                  <View style={styles.totalLabelGroup}>
+                    <View style={styles.totalRowIconWrap}>
+                      <Ionicons name="pricetag-outline" size={17} color="#64748b" />
+                    </View>
+                    <Text style={styles.totalLabel}>
+                      GST ({gstPercent}%){" "}
+                      {taxMode === "inclusive" ? "(Incl)" : ""}
+                    </Text>
+                  </View>
                   <Text style={styles.totalValue}>
                     {currencySymbol}
                     {gstAmount.toFixed(2)}
@@ -3188,30 +3209,53 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </View>
               )}
 
+              {/* Grand Total Row with Badge & Accent Color */}
               <View style={[styles.totalRow, styles.grandTotalRow]}>
-                <Text style={styles.grandTotalLabel}>Total</Text>
+                <View style={styles.grandTotalLabelWrap}>
+                  <Text style={styles.grandTotalLabel}>Total</Text>
+                  <View style={styles.grandTotalItemsBadge}>
+                    <Text style={styles.grandTotalItemsBadgeText}>
+                      {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0)} items
+                    </Text>
+                  </View>
+                </View>
                 <Text style={styles.grandTotalValue}>
                   {currencySymbol}
                   {calculatedTotal}
                 </Text>
               </View>
 
+              {/* Primary Action Button: Proceed to Checkout */}
               <TouchableOpacity
                 style={styles.checkoutBtn}
                 onPress={handleCheckoutClick}
                 disabled={cart.length === 0}
-                activeOpacity={0.85}
+                activeOpacity={0.88}
               >
-                <Text style={styles.checkoutBtnText}>Checkout</Text>
+                <View style={styles.checkoutBtnInner}>
+                  <Ionicons name="card-outline" size={22} color="#ffffff" style={{ marginRight: 8 }} />
+                  <Text style={styles.checkoutBtnText}>Proceed to Checkout</Text>
+                  <Ionicons name="arrow-forward" size={20} color="#ffffff" style={{ marginLeft: 8 }} />
+                </View>
               </TouchableOpacity>
 
+              {/* Secondary Action Button: Back to Menu */}
               <TouchableOpacity
                 style={styles.backToMenuBtn}
                 onPress={() => setShowCartPage(false)}
                 activeOpacity={0.85}
               >
-                <Text style={styles.backToMenuText}>← Back to Menu</Text>
+                <Ionicons name="arrow-back" size={18} color="#ea580c" style={{ marginRight: 6 }} />
+                <Text style={styles.backToMenuText}>Add More Items / Back to Menu</Text>
               </TouchableOpacity>
+
+              {/* Bottom Subtle Guarantee Badge */}
+              <View style={styles.cartSecurityPill}>
+                <Ionicons name="shield-checkmark-outline" size={14} color="#94a3b8" />
+                <Text style={styles.cartSecurityText}>
+                  Fast & Contactless Self-Ordering
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -5123,82 +5167,136 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   cartSummaryCard: {
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 36,
-    paddingTop: 28,
-    paddingBottom: 28,
-    borderRadius: 22,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    paddingHorizontal: 28,
+    paddingTop: 24,
+    paddingBottom: 22,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: "rgba(234, 88, 12, 0.14)",
+    shadowColor: "#f97316",
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
+    shadowRadius: 18,
+    elevation: 5,
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 7,
+  },
+  totalLabelGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  totalRowIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+    justifyContent: "center",
   },
   totalLabel: {
-    fontSize: 19,
+    fontSize: 17,
     color: "#64748b",
     fontWeight: "600",
   },
   totalValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
     color: "#334155",
   },
   grandTotalRow: {
     paddingVertical: 14,
-    marginTop: 4,
-    marginBottom: 12,
+    marginTop: 6,
+    marginBottom: 10,
     borderTopWidth: 1.5,
-    borderTopColor: "#f1f5f9",
+    borderTopColor: "rgba(226, 232, 240, 0.9)",
+    borderStyle: "dashed",
+  },
+  grandTotalLabelWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   grandTotalLabel: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "900",
     color: "#0f172a",
+    letterSpacing: -0.2,
+  },
+  grandTotalItemsBadge: {
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#ffedd5",
+  },
+  grandTotalItemsBadgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#ea580c",
   },
   grandTotalValue: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: "900",
-    color: "#0f172a",
+    color: "#ea580c",
   },
   checkoutBtn: {
-    marginTop: 14,
-    height: 62,
+    marginTop: 8,
+    height: 60,
     backgroundColor: "#f97316",
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#f97316",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.28,
     shadowRadius: 10,
     elevation: 4,
   },
+  checkoutBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   checkoutBtnText: {
     color: "#ffffff",
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "900",
+    letterSpacing: 0.3,
   },
   backToMenuBtn: {
-    marginTop: 14,
-    height: 60,
-    backgroundColor: "#ffffff",
+    marginTop: 10,
+    height: 52,
+    backgroundColor: "#fff7ed",
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "#cbd5e1",
+    borderWidth: 1.5,
+    borderColor: "#ffedd5",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
   backToMenuText: {
-    color: "#1e293b",
-    fontSize: 19,
+    color: "#ea580c",
+    fontSize: 16,
     fontWeight: "800",
+  },
+  cartSecurityPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 12,
+  },
+  cartSecurityText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#94a3b8",
   },
 
   /* PAYMENT FULL MODAL (.full-screen-payment) */
