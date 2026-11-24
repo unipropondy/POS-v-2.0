@@ -1,10 +1,11 @@
 import { API } from "@/config";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   Modal,
@@ -168,6 +169,252 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   // Extra Charge Confirmation Modal
   const [showExtraChargeModal, setShowExtraChargeModal] = useState(false);
+
+  // ── Inactivity Auto-Reset Timer (65s idle + 15s warning) ──
+  const [showInactivityModal, setShowInactivityModal] = useState(false);
+  const [inactivityCountdown, setInactivityCountdown] = useState(15);
+  const idleTimerRef = useRef<any>(null);
+  const countdownIntervalRef = useRef<any>(null);
+
+  // ── Promo Slideshow Attract Loop Screensaver (dbo.PromoCodeMaster) ──
+  const [promoSlides, setPromoSlides] = useState<any[]>([]);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [showAttractLoop, setShowAttractLoop] = useState(false);
+  const slideAnim = useRef(new Animated.Value(1)).current;
+  const pulseTouchAnim = useRef(new Animated.Value(1)).current;
+
+  // Fetch Promo Images from PromoCodeMaster via /api/auth/promo-image
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPromoImages = async () => {
+      try {
+        const res = await fetch(`${API}/auth/promo-image`);
+        const data = await res.json();
+        if (isMounted && data.success && Array.isArray(data.promoImages) && data.promoImages.length > 0) {
+          const valid = data.promoImages.filter((p: any) => p.PromoImage);
+          if (valid.length > 0) {
+            setPromoSlides(valid);
+          }
+        }
+      } catch (err) {
+        console.log("Promo slideshow load error:", err);
+      }
+    };
+    fetchPromoImages();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Auto-advance slides every 4 seconds when in Attract Loop
+  useEffect(() => {
+    if (!showAttractLoop || promoSlides.length <= 1) return;
+
+    const slideTimer = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(slideAnim, {
+          toValue: 0.2,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      setCurrentSlideIndex((prev) => (prev + 1) % promoSlides.length);
+    }, 4500);
+
+    return () => clearInterval(slideTimer);
+  }, [showAttractLoop, promoSlides.length]);
+
+  // Pulse animation for "Touch Anywhere to Order"
+  useEffect(() => {
+    if (!showAttractLoop) return;
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseTouchAnim, {
+          toValue: 1.08,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseTouchAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [showAttractLoop]);
+
+  const resetAllKioskState = () => {
+    setShowInactivityModal(false);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+
+    setCart([]);
+    setShowCartPage(false);
+    setShowModifier(false);
+    setShowComboCustomizer(false);
+    setShowPaymentPopup(false);
+    setShowTableModal(false);
+    setShowExtraChargeModal(false);
+    setSelectedDish(null);
+
+    // If promo slides exist, enter Attract Loop screensaver!
+    if (promoSlides.length > 0) {
+      setShowAttractLoop(true);
+      setCurrentSlideIndex(0);
+    } else if (onLogout) {
+      onLogout();
+    }
+  };
+
+  const dismissAttractLoop = () => {
+    setShowAttractLoop(false);
+    // Return directly to Start (Dine In / Takeaway) page
+    if (onLogout) {
+      onLogout();
+    }
+  };
+
+  const startInactivityCountdown = () => {
+    // NEVER show inactivity modal if screensaver (Attract Loop) is already active!
+    if (showAttractLoop) {
+      return;
+    }
+
+    setShowInactivityModal(true);
+    setInactivityCountdown(15);
+
+    let remaining = 15;
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    countdownIntervalRef.current = setInterval(() => {
+      remaining -= 1;
+      setInactivityCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(countdownIntervalRef.current);
+        resetAllKioskState();
+      }
+    }, 1000);
+  };
+
+  const resetIdleTimer = () => {
+    // If the warning modal is up, touching anywhere cancels it and resets the timer
+    if (showInactivityModal) {
+      setShowInactivityModal(false);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    }
+
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+
+    // If screensaver is currently active, do NOT start the countdown timer
+    if (showAttractLoop) {
+      return;
+    }
+
+    // 65 seconds idle before showing the warning
+    idleTimerRef.current = setTimeout(() => {
+      startInactivityCountdown();
+    }, 65000);
+  };
+
+  useEffect(() => {
+    resetIdleTimer();
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    };
+  }, []);
+
+  // ── Aesthetic Cart Toast Notification & Animation State ──
+  const [toastNotification, setToastNotification] = useState<{
+    visible: boolean;
+    itemName: string;
+    qty: number;
+    price: number;
+  }>({
+    visible: false,
+    itemName: "",
+    qty: 1,
+    price: 0,
+  });
+  const toastSlideY = useRef(new Animated.Value(-100)).current;
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimeoutRef = useRef<any>(null);
+
+  // Badge pop animation scale mapped by DishId
+  const badgeAnimMap = useRef<{ [key: string]: Animated.Value }>({}).current;
+  const getBadgeAnim = (dishId: any) => {
+    const key = String(dishId);
+    if (!badgeAnimMap[key]) {
+      badgeAnimMap[key] = new Animated.Value(1);
+    }
+    return badgeAnimMap[key];
+  };
+
+  const triggerBadgePop = (dishId: any) => {
+    const anim = getBadgeAnim(dishId);
+    anim.setValue(0.6);
+    Animated.spring(anim, {
+      toValue: 1,
+      friction: 4,
+      tension: 180,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const showCartToast = (itemName: string, qty: number, price: number, dishId?: any) => {
+    if (dishId) {
+      triggerBadgePop(dishId);
+    }
+
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+
+    setToastNotification({
+      visible: true,
+      itemName,
+      qty,
+      price,
+    });
+
+    Animated.parallel([
+      Animated.spring(toastSlideY, {
+        toValue: 0,
+        friction: 6,
+        tension: 120,
+        useNativeDriver: true,
+      }),
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    toastTimeoutRef.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(toastSlideY, {
+          toValue: -100,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setToastNotification((prev) => ({ ...prev, visible: false }));
+      });
+    }, 2200);
+  };
   const [pendingPaymentAction, setPendingPaymentAction] = useState<any>(null);
 
   // YeahPay Cloud POS Terminal States
@@ -811,6 +1058,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     });
 
     setShowComboCustomizer(false);
+    showCartToast(
+      selectedDish.Name || selectedDish.name,
+      comboQty,
+      calculateComboTotal(),
+      selectedDish.DishId || selectedDish.id
+    );
   };
 
   const addToCartSimple = (dish: any) => {
@@ -820,6 +1073,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const existing = prev.find(
         (item) => (item.DishId || item.id) === dish.DishId && item.status !== "SENT"
       );
+
+      const nextQty = existing ? (existing.qty || 1) + 1 : 1;
+      showCartToast(dish.Name || dish.name, nextQty, basePrice, dish.DishId || dish.id);
 
       if (existing) {
         return prev.map((item) =>
@@ -895,6 +1151,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     ]);
 
     setShowModifier(false);
+    showCartToast(
+      selectedDish.Name || selectedDish.name,
+      comboQty,
+      finalPrice,
+      selectedDish.DishId || selectedDish.id
+    );
   };
 
   const isServiceCategoryItem = (item: any) => {
@@ -1364,7 +1626,45 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      onStartShouldSetResponderCapture={() => {
+        resetIdleTimer();
+        return false;
+      }}
+    >
+      {/* ── Aesthetic Top Center Toast Notification (Like Cafe POS) ── */}
+      {toastNotification.visible && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.kioskToastContainer,
+            {
+              transform: [{ translateY: toastSlideY }],
+              opacity: toastOpacity,
+            },
+          ]}
+        >
+          <View style={styles.kioskToastPill}>
+            <View style={styles.kioskToastIconWrap}>
+              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+            </View>
+            <View style={styles.kioskToastTextWrap}>
+              <Text style={styles.kioskToastTitle} numberOfLines={1}>
+                {toastNotification.itemName}
+              </Text>
+              <Text style={styles.kioskToastSubtitle}>
+                Added to cart {toastNotification.qty > 1 ? `(Qty: ${toastNotification.qty})` : ""} • {currencySymbol}{Number(toastNotification.price).toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.kioskToastBadge}>
+              <Ionicons name="cart" size={14} color="#ffffff" style={{ marginRight: 3 }} />
+              <Text style={styles.kioskToastBadgeText}>{cart.length}</Text>
+            </View>
+          </View>
+        </Animated.View>
+      )}
+
       {/* ── Main Layout: Sidebar & Content ── */}
       <View style={styles.mainLayout}>
         {/* Categories Sidebar with Accordion Dropdown for Dish Groups */}
@@ -1873,6 +2173,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       totalPrice = (unitPrice * comboQty).toFixed(2);
                     }
 
+                    const totalCartCount = cart.length;
+
                     return (
                       <TouchableOpacity
                         style={styles.customizeAddToCartBtn}
@@ -1885,6 +2187,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         }}
                         activeOpacity={0.88}
                       >
+                        {/* Circular/Pill Badge showing total cart item count if cart has items */}
+                        {totalCartCount > 0 && (
+                          <View style={styles.customizeAddToCartBadge}>
+                            <Text style={styles.customizeAddToCartBadgeText}>
+                              {totalCartCount}
+                            </Text>
+                          </View>
+                        )}
                         <Ionicons
                           name="cart-outline"
                           size={24}
@@ -1943,11 +2253,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       onPress={() => handleDishClick(item)}
                       activeOpacity={0.88}
                     >
-                      {/* Top Right Badge: Shows quantity (e.g. 1) if added to cart, otherwise heart outline */}
+                      {/* Top Right Badge: Shows quantity (e.g. 1) with scale pop animation if added to cart, otherwise heart outline */}
                       {dishQty > 0 ? (
-                        <View style={styles.dishCardQtyBadge}>
+                        <Animated.View
+                          style={[
+                            styles.dishCardQtyBadge,
+                            {
+                              transform: [{ scale: getBadgeAnim(item.DishId || item.id) }],
+                            },
+                          ]}
+                        >
                           <Text style={styles.dishCardQtyBadgeText}>{dishQty}</Text>
-                        </View>
+                        </Animated.View>
                       ) : (
                         <View style={styles.dishCardHeartWrap}>
                           <Text style={styles.dishCardHeartIcon}>♡</Text>
@@ -1996,49 +2313,196 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   </View>
                 }
               />
-
-              {/* Bottom Right Start Over Button (straight opposite from sidebar bottom) */}
-              {!!onLogout && (
-                <View style={styles.contentBottomRightLogoutWrap}>
-                  <TouchableOpacity
-                    style={styles.sidebarLogoutBtn}
-                    onPress={onLogout}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.sidebarLogoutIconWrap}>
-                      <Ionicons name="refresh-outline" size={22} color="#ea580c" />
-                    </View>
-                    <Text style={styles.sidebarLogoutText}>Start Over</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
             </>
           )}
         </View>
       </View>
 
-      {/* Floating Bottom Cart Bar */}
-      {cart.length > 0 && !showCartPage && !showModifier && !showComboCustomizer && (
+      {/* Unified Full-Width 4-Section Bottom Navigation Action Bar */}
+      {!showCartPage && !showModifier && !showComboCustomizer && (
         <View style={styles.floatingCartBar}>
-          <TouchableOpacity style={styles.cartClearBtn} onPress={handleClearCart}>
-            <Text style={styles.cartClearText}>Clear</Text>
-          </TouchableOpacity>
-
-          <View style={styles.cartBarCenter}>
-            <Text style={styles.cartBarCount}>
-              {cart.length} Item{cart.length > 1 ? "s" : ""}
-            </Text>
-            <Text style={styles.cartBarPrice}>{currencySymbol}{calculatedTotal}</Text>
+          {/* Section 1: Start Over with Reset Icon (25%) */}
+          <View style={styles.bottomBarCol}>
+            <TouchableOpacity
+              style={styles.bottomBarStartOverBtn}
+              onPress={onLogout}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="refresh-outline" size={24} color="#ea580c" />
+              <Text style={styles.bottomBarStartOverText} numberOfLines={1}>Start Over</Text>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.cartViewBtn}
-            onPress={() => setShowCartPage(true)}
-          >
-            <Text style={styles.cartViewText}>View Cart →</Text>
-          </TouchableOpacity>
+          {/* Section 2: Clear Cart with Trash Icon (25%) */}
+          <View style={styles.bottomBarCol}>
+            <TouchableOpacity
+              style={[styles.cartClearBtn, cart.length === 0 && styles.cartActionBtnDisabled]}
+              onPress={handleClearCart}
+              disabled={cart.length === 0}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={22}
+                color={cart.length === 0 ? "#cbd5e1" : "#e11d48"}
+              />
+              <Text
+                style={[styles.cartClearText, cart.length === 0 && styles.cartClearTextDisabled]}
+                numberOfLines={1}
+              >
+                Clear Cart
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Section 3: Item count and total amount vertically stacked and centered (25%) */}
+          <View style={styles.bottomBarCol}>
+            <View style={styles.cartBarCenter}>
+              <Text style={styles.cartBarCount} numberOfLines={1}>
+                {cart.length} {cart.length === 1 ? "ITEM" : "ITEMS"}
+              </Text>
+              <Text style={styles.cartBarPrice} numberOfLines={1}>
+                {currencySymbol}{calculatedTotal}
+              </Text>
+            </View>
+          </View>
+
+          {/* Section 4: View Cart with Shopping Cart Icon (25%) */}
+          <View style={styles.bottomBarCol}>
+            <TouchableOpacity
+              style={[styles.cartViewBtn, cart.length === 0 && styles.cartViewBtnDisabled]}
+              onPress={() => cart.length > 0 && setShowCartPage(true)}
+              disabled={cart.length === 0}
+              activeOpacity={0.88}
+            >
+              <Ionicons
+                name="cart-outline"
+                size={24}
+                color={cart.length === 0 ? "#94a3b8" : "#ffffff"}
+              />
+              <Text
+                style={[styles.cartViewText, cart.length === 0 && styles.cartViewTextDisabled]}
+                numberOfLines={1}
+              >
+                View Cart
+              </Text>
+              {cart.length > 0 && (
+                <View style={styles.cartViewBadge}>
+                  <Text style={styles.cartViewBadgeText}>{cart.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       )}
+
+      {/* ── Attractive Promo Slideshow Attract Loop Screensaver (dbo.PromoCodeMaster) ── */}
+      {showAttractLoop && promoSlides.length > 0 && (
+        <TouchableOpacity
+          style={styles.attractLoopContainer}
+          activeOpacity={1}
+          onPress={dismissAttractLoop}
+        >
+          {/* Slideshow Image with crossfade scale animation */}
+          <Animated.View
+            style={[
+              styles.attractLoopImageWrap,
+              {
+                opacity: slideAnim,
+              },
+            ]}
+          >
+            <Image
+              source={{ uri: promoSlides[currentSlideIndex]?.PromoImage }}
+              style={styles.attractLoopImage}
+              resizeMode="cover"
+            />
+          </Animated.View>
+
+          {/* Minimal Clean Overlay: pure poster showcase with bottom pagination & glass CTA */}
+          <View style={styles.attractLoopOverlay}>
+            <View style={{ flex: 1 }} />
+
+            {/* Slide Pagination Dots (Only if multiple promo posters exist) */}
+            {promoSlides.length > 1 && (
+              <View style={styles.attractLoopDotsRow}>
+                {promoSlides.map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.attractLoopDot,
+                      idx === currentSlideIndex && styles.attractLoopDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Minimalist Frosted Glass CTA */}
+            <Animated.View
+              style={[
+                styles.attractLoopCtaWrap,
+                { transform: [{ scale: pulseTouchAnim }] },
+              ]}
+            >
+              <View style={styles.attractLoopCtaBtn}>
+                <Text style={styles.attractLoopCtaText}>TOUCH SCREEN TO ORDER</Text>
+              </View>
+            </Animated.View>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Inactivity Warning Modal (65s idle + 15s countdown, strictly suppressed during screensaver) ── */}
+      <Modal
+        visible={showInactivityModal && !showAttractLoop}
+        transparent
+        animationType="fade"
+        onRequestClose={resetIdleTimer}
+      >
+        <View style={styles.inactivityModalOverlay}>
+          <View style={styles.inactivityModalCard}>
+            {/* Soft Ambient Icon Header */}
+            <View style={styles.inactivityIconCircle}>
+              <Ionicons name="hourglass-outline" size={38} color="#ea580c" />
+            </View>
+
+            <Text style={styles.inactivityTitle}>Are you still there?</Text>
+            <Text style={styles.inactivitySubtitle}>
+              Your order session will automatically reset in
+            </Text>
+
+            {/* Aesthetic Countdown Ring with Progress Pill */}
+            <View style={styles.inactivityCountdownOuter}>
+              <View style={styles.inactivityCountdownCircle}>
+                <Text style={styles.inactivityCountdownNumber}>{inactivityCountdown}</Text>
+                <Text style={styles.inactivityCountdownUnit}>sec</Text>
+              </View>
+            </View>
+
+            {/* Action Buttons styled like modern Kiosk touch elements */}
+            <View style={styles.inactivityBtnRow}>
+              <TouchableOpacity
+                style={styles.inactivityResetBtn}
+                onPress={resetAllKioskState}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="refresh" size={18} color="#64748b" style={{ marginRight: 6 }} />
+                <Text style={styles.inactivityResetBtnText}>Start Over</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.inactivityContinueBtn}
+                onPress={resetIdleTimer}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="hand-left" size={20} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.inactivityContinueBtnText}>Continue Ordering</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Cart Full-Screen View ── */}
       <Modal
@@ -2745,46 +3209,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderColor: "#eef2f6",
   },
-  sidebarContent: { paddingVertical: 22, paddingHorizontal: 16, gap: 16 },
-  contentBottomRightLogoutWrap: {
-    alignSelf: "flex-end",
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  sidebarLogoutBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fffdfa",
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: "#fed7aa",
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    gap: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  sidebarLogoutIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  sidebarLogoutText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#ea580c",
-  },
+  sidebarContent: { paddingVertical: 22, paddingHorizontal: 16, gap: 16, paddingBottom: 110 },
 
   /* Card styling matching the reference image */
   catCard: {
@@ -3138,6 +3563,330 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textAlign: "center",
   },
+
+  // ── Promo Slideshow Attract Loop Screensaver Styles ──
+  attractLoopContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999999,
+    backgroundColor: "#0f172a",
+  },
+  attractLoopImageWrap: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  attractLoopImage: {
+    width: "100%",
+    height: "100%",
+  },
+  attractLoopOverlay: {
+    flex: 1,
+    backgroundColor: "transparent",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingBottom: 48,
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  attractLoopHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  attractLoopLogoBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fff7ed",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  attractLoopShopName: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: 0.5,
+  },
+  attractLoopCaptionCard: {
+    backgroundColor: "rgba(15, 23, 42, 0.78)",
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 20,
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  attractLoopCaptionTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#ffffff",
+    textAlign: "center",
+  },
+  attractLoopCaptionCode: {
+    fontSize: 14,
+    color: "#fed7aa",
+    fontWeight: "700",
+    marginTop: 4,
+    letterSpacing: 1,
+  },
+  attractLoopDotsRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  attractLoopDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+  },
+  attractLoopDotActive: {
+    width: 28,
+    backgroundColor: "#ffffff",
+    shadowColor: "#ffffff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  attractLoopCtaWrap: {
+    alignItems: "center",
+  },
+  attractLoopCtaBtn: {
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    paddingVertical: 18,
+    paddingHorizontal: 44,
+    borderRadius: 36,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attractLoopCtaText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#ffffff",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+
+  // ── Inactivity Warning Modal Styles (Sleek Aesthetic Kiosk Proportion) ──
+  inactivityModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    zIndex: 999999,
+  },
+  inactivityModalCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 32,
+    paddingVertical: 38,
+    paddingHorizontal: 36,
+    alignItems: "center",
+    maxWidth: 440,
+    width: "92%",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.22,
+    shadowRadius: 36,
+    elevation: 24,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.8)",
+  },
+  inactivityIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#fff7ed",
+    borderWidth: 2,
+    borderColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  inactivityTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#0f172a",
+    marginBottom: 6,
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  inactivitySubtitle: {
+    fontSize: 14,
+    color: "#64748b",
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
+    maxWidth: 280,
+  },
+  inactivityCountdownOuter: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: "#fff7ed",
+    padding: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 32,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  inactivityCountdownCircle: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 46,
+    backgroundColor: "#ffffff",
+    borderWidth: 3,
+    borderColor: "#ea580c",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inactivityCountdownNumber: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: "#ea580c",
+    lineHeight: 38,
+  },
+  inactivityCountdownUnit: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#9a3412",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: -2,
+  },
+  inactivityBtnRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  inactivityResetBtn: {
+    flex: 1,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inactivityResetBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  inactivityContinueBtn: {
+    flex: 1.5,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: "#ea580c",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  inactivityContinueBtnText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: 0.2,
+  },
+
+  // ── Kiosk Aesthetic Toast Notification Styles ──
+  kioskToastContainer: {
+    position: "absolute",
+    top: 24,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 99999,
+  },
+  kioskToastPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 10,
+    maxWidth: 440,
+    minWidth: 260,
+  },
+  kioskToastIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#ecfdf5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  kioskToastTextWrap: {
+    flex: 1,
+    marginRight: 8,
+  },
+  kioskToastTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  kioskToastSubtitle: {
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  kioskToastBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ff641f",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+  },
+  kioskToastBadgeText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   dishCircularBox: {
     width: 180,
     height: 180,
@@ -3231,34 +3980,178 @@ const styles = StyleSheet.create({
   emptyDishes: { padding: 40, alignItems: "center" },
   emptyDishesText: { color: "#9ca3af", fontSize: 15 },
 
-  /* Floating Bottom Cart Bar (.view-cart-bar / .kiosk-floating-cart-bar) */
+  /* Full-Width Bottom Bar spanning 100% of screen width with 4 equal 25% columns */
   floatingCartBar: {
     position: "absolute",
-    bottom: 24,
-    left: 350,
-    right: 210,
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: "#ffffff",
-    borderRadius: 16,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     paddingVertical: 14,
-    paddingHorizontal: 22,
+    paddingHorizontal: 16,
+    minHeight: 104,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: "#f3f4f6",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
-    elevation: 10,
+    borderTopWidth: 2,
+    borderColor: "#e2e8f0",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 20,
+    zIndex: 90,
   },
-  cartClearBtn: { backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  cartClearText: { color: "#ef4444", fontSize: 14, fontWeight: "700" },
-  cartBarCenter: { alignItems: "center" },
-  cartBarCount: { color: "#6b7280", fontSize: 13, fontWeight: "600" },
-  cartBarPrice: { color: "#111827", fontSize: 20, fontWeight: "800" },
-  cartViewBtn: { backgroundColor: "#f97316", paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
-  cartViewText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
+  bottomBarCol: {
+    flex: 1,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomBarStartOverBtn: {
+    width: "100%",
+    height: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff7ed",
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#fed7aa",
+    paddingHorizontal: 14,
+    gap: 10,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  bottomBarStartOverText: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#ea580c",
+    letterSpacing: 0.3,
+  },
+  cartClearBtn: {
+    width: "100%",
+    height: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff1f2",
+    borderWidth: 2,
+    borderColor: "#fecdd3",
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    gap: 10,
+    shadowColor: "#e11d48",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cartClearText: {
+    color: "#e11d48",
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  cartClearTextDisabled: {
+    color: "#94a3b8",
+  },
+  cartActionBtnDisabled: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  cartBarCenter: {
+    width: "100%",
+    height: 72,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#e2e8f0",
+    paddingHorizontal: 10,
+  },
+  cartBarCount: {
+    color: "#64748b",
+    fontSize: 13,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  cartBarPrice: {
+    color: "#0f172a",
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+    lineHeight: 32,
+  },
+  cartViewBtn: {
+    width: "100%",
+    height: 72,
+    backgroundColor: "#ea580c",
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#c2410c",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    gap: 10,
+    position: "relative",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cartViewBtnDisabled: {
+    backgroundColor: "#e2e8f0",
+    borderColor: "#cbd5e1",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  cartViewBadge: {
+    position: "absolute",
+    top: -10,
+    right: 8,
+    backgroundColor: "#ffffff",
+    minWidth: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: "#c2410c",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  cartViewBadgeText: {
+    color: "#ea580c",
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  cartViewText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  cartViewTextDisabled: {
+    color: "#94a3b8",
+  },
 
   /* CART MODAL - Clean, Card-Based Layout with Fixed Bottom Card */
   cartModalContainer: {
@@ -4537,11 +5430,37 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
     shadowColor: "#ea580c",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
+  },
+  customizeAddToCartBadge: {
+    position: "absolute",
+    top: -10,
+    right: -6,
+    backgroundColor: "#ffffff",
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 7,
+    borderWidth: 2,
+    borderColor: "#ea580c",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  customizeAddToCartBadgeText: {
+    color: "#ea580c",
+    fontSize: 14,
+    fontWeight: "900",
+    textAlign: "center",
   },
   customizeAddToCartBtnText: {
     color: "#ffffff",

@@ -389,15 +389,16 @@ export default function LoginScreen() {
                 )}
               </View>
 
-              {/* ════════════ RIGHT FLOATING SIGN IN CARD ════════════ */}
-              <Animated.View
-                style={[
-                  styles.rightLoginCard,
-                  { transform: [{ translateX: shakeAnim }] },
-                  isDesktop ? styles.rightWide : styles.rightStacked,
-                  !isDesktop && styles.rightCardMobile,
-                ]}
-              >
+              {/* ════════════ RIGHT FLOATING SIGN IN COLUMN ════════════ */}
+              <View style={[styles.rightColWrap, isDesktop ? styles.rightWide : styles.rightStacked]}>
+                <Animated.View
+                  style={[
+                    styles.rightLoginCard,
+                    { transform: [{ translateX: shakeAnim }] },
+                    { width: "100%" },
+                    !isDesktop && styles.rightCardMobile,
+                  ]}
+                >
                 {/* Top Orange Horizontal Accent Pill */}
                 <View style={[styles.cardTopAccent, !isDesktop && styles.cardTopAccentMobile]} />
 
@@ -559,6 +560,14 @@ export default function LoginScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
               </Animated.View>
+
+              {/* 6. Footer Copyright (Cleanly placed outside & below the white card) */}
+              <View style={styles.copyrightContainer}>
+                <Text style={styles.copyrightText}>
+                  © 2026 Unipro Softwares SG Pte Ltd
+                </Text>
+              </View>
+            </View>
             </Animated.View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -1219,5 +1228,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Fonts.black,
     letterSpacing: 0.2,
+  },
+  copyrightContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+    paddingTop: 4,
+  },
+  rightColWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyrightText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    fontFamily: Fonts.medium,
+    letterSpacing: 0.2,
+    textAlign: "center",
   },
 });

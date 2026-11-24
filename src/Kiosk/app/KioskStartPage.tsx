@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -81,6 +82,132 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
 
   // Pulse animation for footer text
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // ── Promo Slideshow Attract Loop Screensaver (dbo.PromoCodeMaster) ──
+  const [promoSlides, setPromoSlides] = useState<any[]>([]);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [showAttractLoop, setShowAttractLoop] = useState(false);
+  const slideAnim = useRef(new Animated.Value(1)).current;
+  const pulseTouchAnim = useRef(new Animated.Value(1)).current;
+  const idleTimerRef = useRef<any>(null);
+
+  const [companyName, setCompanyName] = useState<string>("RESTAURANT");
+
+  // Fetch Company Name dynamically from dbo.CompanySettings
+  useEffect(() => {
+    let isMounted = true;
+    const loadCompanySettings = async () => {
+      try {
+        const res = await fetch(`${API}/company-settings/1`);
+        const data = await res.json();
+        const settings = data?.settings || data;
+        const resolvedName = settings?.CompanyName || settings?.name || settings?.companyName;
+        if (isMounted && resolvedName) {
+          setCompanyName(String(resolvedName).trim());
+        }
+      } catch (err) {
+        console.log("Failed to fetch company settings for kiosk start page:", err);
+      }
+    };
+    loadCompanySettings();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Fetch Promo Images from PromoCodeMaster via /api/auth/promo-image
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPromoImages = async () => {
+      try {
+        const res = await fetch(`${API}/auth/promo-image`);
+        const data = await res.json();
+        if (isMounted && data.success && Array.isArray(data.promoImages) && data.promoImages.length > 0) {
+          const valid = data.promoImages.filter((p: any) => p.PromoImage);
+          if (valid.length > 0) {
+            setPromoSlides(valid);
+          }
+        }
+      } catch (err) {
+        console.log("Promo slideshow load error:", err);
+      }
+    };
+    fetchPromoImages();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Idle Timer: Enter Attract Loop after 50 seconds of inactivity on Welcome screen
+  const resetIdleTimer = () => {
+    if (showAttractLoop) {
+      setShowAttractLoop(false);
+    }
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => {
+      if (promoSlides.length > 0 && !showCustomerPopup && !showCustomerListPopup) {
+        setShowAttractLoop(true);
+        setCurrentSlideIndex(0);
+      }
+    }, 50000);
+  };
+
+  useEffect(() => {
+    resetIdleTimer();
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [promoSlides.length, showCustomerPopup, showCustomerListPopup]);
+
+  // Slideshow auto-advance every 4.5 seconds
+  useEffect(() => {
+    if (!showAttractLoop || promoSlides.length <= 1) return;
+
+    const slideTimer = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(slideAnim, {
+          toValue: 0.2,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      setCurrentSlideIndex((prev) => (prev + 1) % promoSlides.length);
+    }, 4500);
+
+    return () => clearInterval(slideTimer);
+  }, [showAttractLoop, promoSlides.length]);
+
+  // Pulse animation for TOUCH SCREEN TO ORDER
+  useEffect(() => {
+    if (!showAttractLoop) return;
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseTouchAnim, {
+          toValue: 1.08,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseTouchAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [showAttractLoop]);
+
+  const dismissAttractLoop = () => {
+    setShowAttractLoop(false);
+    resetIdleTimer();
+  };
 
   useEffect(() => {
     const pulseLoop = Animated.loop(
@@ -260,10 +387,71 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
       source={require("./assets/images/start_page_bg.jpg")}
       style={styles.container}
       resizeMode="cover"
+      onStartShouldSetResponderCapture={() => {
+        resetIdleTimer();
+        return false;
+      }}
     >
+      {/* ── Fullscreen Promo Slideshow Attract Loop Screensaver (dbo.PromoCodeMaster) ── */}
+      {showAttractLoop && promoSlides.length > 0 && (
+        <TouchableOpacity
+          style={styles.attractLoopContainer}
+          activeOpacity={1}
+          onPress={dismissAttractLoop}
+        >
+          {/* Slideshow Image */}
+          <Animated.View
+            style={[
+              styles.attractLoopImageWrap,
+              {
+                opacity: slideAnim,
+              },
+            ]}
+          >
+            <Image
+              source={{ uri: promoSlides[currentSlideIndex]?.PromoImage }}
+              style={styles.attractLoopImage}
+              resizeMode="cover"
+            />
+          </Animated.View>
+
+          {/* Minimal Clean Overlay: pure poster showcase with bottom pagination & glass CTA */}
+          <View style={styles.attractLoopOverlay}>
+            <View style={{ flex: 1 }} />
+
+            {/* Slide Pagination Dots (Only if multiple promo posters exist) */}
+            {promoSlides.length > 1 && (
+              <View style={styles.attractLoopDotsRow}>
+                {promoSlides.map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.attractLoopDot,
+                      idx === currentSlideIndex && styles.attractLoopDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Minimalist Frosted Glass CTA */}
+            <Animated.View
+              style={[
+                styles.attractLoopCtaWrap,
+                { transform: [{ scale: pulseTouchAnim }] },
+              ]}
+            >
+              <View style={styles.attractLoopCtaBtn}>
+                <Text style={styles.attractLoopCtaText}>TOUCH SCREEN TO ORDER</Text>
+              </View>
+            </Animated.View>
+          </View>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.overlay} />
 
-      {/* Top Header */}
+      {/* Top Header - Restored to Smart Cafe */}
       <View style={[styles.header, isSmallScreen && styles.compactHeader]}>
         <View style={styles.logoRow}>
           <View style={styles.logoCircle}>
@@ -290,73 +478,72 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero Text */}
+        {/* Hero Section: Centered & Balanced */}
         <View style={styles.heroSection}>
-          <View style={styles.heroHighlightRow}>
-            <View style={[styles.spark, styles.sparkLeft]} />
-            <Text
-              style={[
-                styles.heroWelcomeText,
-                isWide ? styles.heroWelcomeWide : isTablet ? styles.heroWelcomeTablet : null,
-              ]}
-            >
-              WELCOME
-            </Text>
-            <View style={[styles.spark, styles.sparkRight]} />
-          </View>
-          <Text style={styles.heroSubtitle}>Fresh. Tasty. Delightful.</Text>
+          <Text style={styles.heroWelcomeLead}>Welcome to</Text>
+          <Text
+            style={[
+              styles.heroCompanyName,
+              isWide ? styles.heroCompanyWide : isTablet ? styles.heroCompanyTablet : null,
+            ]}
+          >
+            {companyName ? companyName.toUpperCase() : "OUR RESTAURANT"}
+          </Text>
+          <Text style={styles.heroTagline}>Where good taste begins</Text>
         </View>
 
-        {/* Cards Container */}
+        {/* Cards Container: Style B (Ultra-Clean Frosted Glass Cards) */}
         <View
           style={[
             styles.cardsContainer,
             isWide || isTablet ? styles.cardsRow : styles.cardsColumn,
           ]}
         >
-          {/* DINE IN Card */}
+          {/* DINE IN Glass Card */}
           <TouchableOpacity
             style={[
-              styles.card,
-              isWide ? styles.cardWide : isTablet ? styles.cardTablet : styles.cardMobile,
+              styles.glassCard,
+              isWide ? styles.glassCardWide : isTablet ? styles.glassCardTablet : styles.glassCardMobile,
             ]}
             onPress={() => chooseService("DINE_IN")}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
             disabled={loading}
           >
-            <View style={styles.cardIconWrap}>
-              <Text style={styles.cardEmoji}>🍽️</Text>
+            <View style={styles.glassIconCircle}>
+              <Ionicons name="restaurant-outline" size={38} color="#ea580c" />
             </View>
-            <Text style={styles.cardTitle}>DINE IN</Text>
-            <View style={styles.cardDivider} />
-            <Text style={styles.cardDescription}>
-              Enjoy your meal{"\n"}at our restaurant
+            <Text style={styles.glassCardTitle}>DINE IN</Text>
+            <View style={styles.glassDivider} />
+            <Text style={styles.glassCardSubtitle}>
+              Enjoy your meal hot{"\n"}served at your table
             </Text>
-            <View style={styles.cardArrowBtn}>
-              <Text style={styles.arrowText}>→</Text>
+            <View style={styles.glassActionBtn}>
+              <Text style={styles.glassActionText}>Select</Text>
+              <Ionicons name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 6 }} />
             </View>
           </TouchableOpacity>
 
-          {/* TAKEAWAY Card */}
+          {/* TAKEAWAY Glass Card */}
           <TouchableOpacity
             style={[
-              styles.card,
-              isWide ? styles.cardWide : isTablet ? styles.cardTablet : styles.cardMobile,
+              styles.glassCard,
+              isWide ? styles.glassCardWide : isTablet ? styles.glassCardTablet : styles.glassCardMobile,
             ]}
             onPress={() => chooseService("TAKEAWAY")}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
             disabled={loading}
           >
-            <View style={styles.cardIconWrap}>
-              <Text style={styles.cardEmoji}>🥡</Text>
+            <View style={styles.glassIconCircle}>
+              <Ionicons name="bag-handle-outline" size={38} color="#ea580c" />
             </View>
-            <Text style={styles.cardTitle}>TAKEAWAY</Text>
-            <View style={styles.cardDivider} />
-            <Text style={styles.cardDescription}>
-              Packed & ready{"\n"}to take home
+            <Text style={styles.glassCardTitle}>TAKEAWAY</Text>
+            <View style={styles.glassDivider} />
+            <Text style={styles.glassCardSubtitle}>
+              Packed & ready{"\n"}to take on the go
             </Text>
-            <View style={styles.cardArrowBtn}>
-              <Text style={styles.arrowText}>→</Text>
+            <View style={styles.glassActionBtn}>
+              <Text style={styles.glassActionText}>Select</Text>
+              <Ionicons name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 6 }} />
             </View>
           </TouchableOpacity>
         </View>
@@ -371,10 +558,9 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
 
       {/* Footer Area */}
       <View style={styles.footer}>
-        <Animated.View style={[styles.footerContent, { opacity: pulseAnim }]}>
-          <Text style={styles.handIcon}>👆</Text>
-          <Text style={styles.footerText}>Tap to start your order</Text>
-        </Animated.View>
+        <Text style={styles.footerCopyrightText}>
+          © 2026 Unipro Softwares SG Pte Ltd
+        </Text>
       </View>
 
       {/* CUSTOMER ENTRY POPUP MODAL */}
@@ -636,6 +822,82 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(16, 32, 51, 0.45)",
   },
+
+  // ── Promo Slideshow Attract Loop Screensaver Styles ──
+  attractLoopContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999999,
+    backgroundColor: "#0f172a",
+  },
+  attractLoopImageWrap: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  attractLoopImage: {
+    width: "100%",
+    height: "100%",
+  },
+  attractLoopOverlay: {
+    flex: 1,
+    backgroundColor: "transparent",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingBottom: 48,
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  attractLoopDotsRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  attractLoopDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+  },
+  attractLoopDotActive: {
+    width: 28,
+    backgroundColor: "#ffffff",
+    shadowColor: "#ffffff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  attractLoopCtaWrap: {
+    alignItems: "center",
+  },
+  attractLoopCtaBtn: {
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    paddingVertical: 18,
+    paddingHorizontal: 44,
+    borderRadius: 36,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attractLoopCtaText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#ffffff",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -683,18 +945,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   brandTitle: {
-    fontSize: 24,
-    fontWeight: "900",
+    fontSize: 22,
+    fontWeight: "800",
     color: "#ffffff",
-    letterSpacing: -0.3,
+    letterSpacing: 0.3,
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   brandTitleAccent: {
-    color: "#ff641f",
+    color: "#fbbf24", // refined warm golden honey amber instead of harsh neon orange
+    fontWeight: "800",
   },
   brandSubtitle: {
     fontSize: 12,
-    color: "#e5e7eb",
-    fontWeight: "600",
+    color: "#e2e8f0",
+    fontWeight: "500",
+    letterSpacing: 0.2,
+    marginTop: 1,
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   backBtn: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
@@ -723,42 +994,130 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  heroHighlightRow: {
+  heroWelcomeLead: {
+    fontSize: 16,
+    color: "#ffedd5",
+    fontWeight: "700",
+    letterSpacing: 2.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  heroCompanyName: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: "#ffffff",
+    letterSpacing: 1.5,
+    textAlign: "center",
+    lineHeight: 40,
+    textShadowColor: "rgba(0, 0, 0, 0.6)",
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 10,
+  },
+  heroCompanyWide: {
+    fontSize: 48,
+    lineHeight: 54,
+  },
+  heroCompanyTablet: {
+    fontSize: 40,
+    lineHeight: 46,
+  },
+  heroTagline: {
+    fontSize: 16,
+    color: "#cbd5e1",
+    fontWeight: "500",
+    fontStyle: "italic",
+    marginTop: 8,
+    letterSpacing: 0.5,
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+
+  // ── Style B: Ultra-Clean Frosted Glass Cards (Apple / Modern Kiosk Aesthetic) ──
+  glassCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 36,
+    paddingHorizontal: 28,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 30,
+    elevation: 10,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.9)",
+  },
+  glassCardWide: {
+    width: 290,
+  },
+  glassCardTablet: {
+    width: 250,
+  },
+  glassCardMobile: {
+    width: "100%",
+  },
+  glassIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#fff7ed",
+    borderWidth: 1.5,
+    borderColor: "#fed7aa",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  glassCardTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#0f172a",
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  glassDivider: {
+    width: 32,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "#f97316",
+    marginBottom: 12,
+  },
+  glassCardSubtitle: {
+    fontSize: 14,
+    color: "#64748b",
+    fontWeight: "500",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  glassActionBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
+    backgroundColor: "#f97316",
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 24,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  heroWelcomeText: {
-    fontSize: 54,
-    fontWeight: "900",
-    color: "#ff641f",
-    letterSpacing: 2,
-    lineHeight: 60,
-  },
-  heroWelcomeWide: {
-    fontSize: 88,
-    lineHeight: 94,
-    letterSpacing: 4,
-  },
-  heroWelcomeTablet: {
-    fontSize: 70,
-    lineHeight: 74,
-  },
-  spark: {
-    width: 34,
-    height: 4,
-    backgroundColor: "#ff641f",
-    borderRadius: 2,
-  },
-  sparkLeft: {},
-  sparkRight: {},
-  heroSubtitle: {
-    fontSize: 18,
+  glassActionText: {
     color: "#ffffff",
+    fontSize: 15,
     fontWeight: "700",
-    marginTop: 10,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   cardsContainer: {
     gap: 22,
@@ -855,32 +1214,20 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   footer: {
-    backgroundColor: "#ff641f",
-    paddingVertical: 18,
+    paddingVertical: 14,
     paddingHorizontal: 24,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#ff641f",
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
   },
-  footerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  handIcon: {
-    fontSize: 20,
-  },
-  footerText: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: 0.5,
+  footerCopyrightText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.75)",
+    fontWeight: "500",
+    letterSpacing: 0.4,
+    textAlign: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   errorBox: {
     position: "absolute",
