@@ -1273,7 +1273,16 @@ router.post("/save-cart", async (req, res) => {
     const activeStartDate = activeDayRes.recordset[0].StartDate;
     const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : activeStartDate;
 
-    const cleanId = await getCleanTableId(pool, tableId);
+    const isTakeawayOrder = isTakeaway === true || isTakeaway === "true" || orderType === "TAKEAWAY";
+    let resolvedTableId = tableId;
+    if (isTakeawayOrder && (!resolvedTableId || resolvedTableId === "TAKEAWAY" || resolvedTableId === "NEW" || resolvedTableId === "undefined")) {
+      const foundTw = await findAvailableKioskTable(pool, true, req.app?.get("io"));
+      if (foundTw && foundTw.tableId) {
+        resolvedTableId = foundTw.tableId;
+      }
+    }
+
+    const cleanId = await getCleanTableId(pool, resolvedTableId);
     const now = Date.now();
 
     console.log(
@@ -3861,7 +3870,15 @@ router.post("/complete-online-payment", async (req, res) => {
       !!kioskOrderType ||
       req.body.orderSource === "kiosk";
     const resolvedEntryStatus = isKioskOrder ? "K" : "q";
-    const cleanId = String(tableId || tableNo || "TAKEAWAY").replace(/^\{|\}$/g, "").trim();
+    let resolvedCleanId = String(tableId || tableNo || "").replace(/^\{|\}$/g, "").trim();
+    const isTakeawayOrder = (kioskOrderType && String(kioskOrderType).toUpperCase().includes("TAKEAWAY")) || req.body.isTakeaway;
+    if (isTakeawayOrder && (!resolvedCleanId || resolvedCleanId === "TAKEAWAY" || resolvedCleanId === "NEW" || resolvedCleanId === "undefined")) {
+      const foundTw = await findAvailableKioskTable(pool, true, req.app?.get("io"));
+      if (foundTw && foundTw.tableId) {
+        resolvedCleanId = String(foundTw.tableId);
+      }
+    }
+    const cleanId = resolvedCleanId || "TAKEAWAY";
     let orderNo = orderId;
     if (!orderNo || orderNo === "NEW" || orderNo === "#NEW" || orderNo === "PENDING" || orderNo.length < 5) {
       orderNo = cleanId ? await resolveTableOrderNo(pool, cleanId) : null;
@@ -4199,11 +4216,118 @@ router.get("/:orderId/takeaway-charge", async (req, res) => {
    KIOSK MODULE ENDPOINTS
    ========================================================================== */
 
-async function findAvailableKioskTable(poolOrTx, isTakeaway = false) {
-  const sectionCondition = isTakeaway
-    ? "tm.DiningSection = '4'"
-    : "tm.DiningSection IN ('1', '2', '3')";
+async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) {
+  if (isTakeaway) {
+    // 🛡️ TAKEAWAY FLOW: Concurrency-safe lookup with automatic table creation when all takeaway tables are full
+    const query = `
+      SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+      BEGIN TRANSACTION;
 
+      DECLARE @FoundTableId UNIQUEIDENTIFIER = NULL;
+      DECLARE @FoundTableNo VARCHAR(50) = NULL;
+      DECLARE @FoundSection VARCHAR(10) = NULL;
+      DECLARE @WasAutoCreated BIT = 0;
+
+      -- 1. Check for an existing unoccupied Takeaway table (DiningSection = '4')
+      SELECT TOP 1 
+        @FoundTableId = tm.TableId, 
+        @FoundTableNo = tm.TableNumber,
+        @FoundSection = tm.DiningSection
+      FROM TableMaster tm WITH (UPDLOCK, HOLDLOCK)
+      WHERE tm.DiningSection = '4'
+        AND ISNULL(tm.Status, 0) = 0
+        AND tm.CurrentOrderId IS NULL
+        AND NOT EXISTS (
+          SELECT 1 
+          FROM RestaurantOrderCur ro 
+          WHERE LTRIM(RTRIM(ro.Tableno)) = LTRIM(RTRIM(tm.TableNumber))
+            AND (ro.isOrderClosed = 0 OR ro.isOrderClosed IS NULL)
+            AND ro.StatusCode NOT IN (0, 3, 4)
+        )
+      ORDER BY 
+        tm.SortCode ASC,
+        CASE 
+          WHEN tm.TableNumber LIKE 'TW%' AND ISNUMERIC(SUBSTRING(tm.TableNumber, 3, 20)) = 1 
+            THEN CAST(SUBSTRING(tm.TableNumber, 3, 20) AS INT)
+          WHEN ISNUMERIC(tm.TableNumber) = 1 THEN CAST(tm.TableNumber AS INT)
+          ELSE 99999
+        END ASC,
+        tm.TableNumber ASC;
+
+      -- 2. If all existing takeaway tables are occupied, automatically create the next TW table (TW41, TW42, ...)
+      IF @FoundTableId IS NULL
+      BEGIN
+        DECLARE @MaxTwNum INT = 0;
+        SELECT @MaxTwNum = ISNULL(MAX(
+          CASE 
+            WHEN ISNUMERIC(SUBSTRING(TableNumber, 3, 20)) = 1 
+            THEN CAST(SUBSTRING(TableNumber, 3, 20) AS INT) 
+            ELSE 0 
+          END
+        ), 0)
+        FROM TableMaster WITH (UPDLOCK, HOLDLOCK)
+        WHERE TableNumber LIKE 'TW%';
+
+        DECLARE @NextNum INT;
+        IF @MaxTwNum < 40
+          SET @NextNum = 41;
+        ELSE
+          SET @NextNum = @MaxTwNum + 1;
+
+        DECLARE @CandidateTableNo VARCHAR(50);
+        SET @CandidateTableNo = 'TW' + CAST(@NextNum AS VARCHAR(20));
+
+        WHILE EXISTS (SELECT 1 FROM TableMaster WHERE TableNumber = @CandidateTableNo)
+        BEGIN
+          SET @NextNum = @NextNum + 1;
+          SET @CandidateTableNo = 'TW' + CAST(@NextNum AS VARCHAR(20));
+        END
+
+        SET @FoundTableId = NEWID();
+        SET @FoundTableNo = @CandidateTableNo;
+        SET @FoundSection = '4';
+        SET @WasAutoCreated = 1;
+
+        INSERT INTO TableMaster (
+          TableId, TableNumber, Seats, ReservationAllowed, DiningSection,
+          IstakeAway, Status, SortCode, PrintSection, TotalAmount, CreatedOn, ModifiedOn
+        ) VALUES (
+          @FoundTableId, @FoundTableNo, 4, 0, '4',
+          1, 0, @NextNum, 1, 0, GETDATE(), GETDATE()
+        );
+      END
+
+      COMMIT TRANSACTION;
+
+      SELECT 
+        @FoundTableId AS TableId, 
+        @FoundTableNo AS TableNo, 
+        @FoundSection AS DiningSection,
+        @WasAutoCreated AS WasAutoCreated;
+    `;
+
+    const res = await poolOrTx.request().query(query);
+    if (res.recordset && res.recordset.length > 0 && res.recordset[0].TableId) {
+      const row = res.recordset[0];
+      if (row.WasAutoCreated) {
+        console.log(`[Kiosk Takeaway] Auto-created new Takeaway table: ${row.TableNo} (${row.TableId}) in DiningSection 4`);
+        if (io) {
+          io.emit("table_config_updated", {});
+          io.emit("tables_updated", {});
+        }
+      }
+      return {
+        tableId: row.TableId,
+        tableNo: row.TableNo,
+        section: row.DiningSection || "4",
+        isNewlyCreated: !!row.WasAutoCreated
+      };
+    }
+    return null;
+  }
+
+  // DINE-IN FLOW: Keep existing Dine-in behavior completely untouched
+  const sectionCondition = "tm.DiningSection IN ('1', '2', '3')";
   let res = await poolOrTx.request().query(`
     SELECT TOP 1 
       tm.TableId, 
@@ -4225,7 +4349,6 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false) {
         WHEN tm.DiningSection = '1' THEN 1
         WHEN tm.DiningSection = '2' THEN 2
         WHEN tm.DiningSection = '3' THEN 3
-        WHEN tm.DiningSection = '4' THEN 4
         ELSE 5
       END ASC,
       tm.SortCode ASC,
@@ -4256,7 +4379,6 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false) {
         WHEN tm.DiningSection = '1' THEN 1
         WHEN tm.DiningSection = '2' THEN 2
         WHEN tm.DiningSection = '3' THEN 3
-        WHEN tm.DiningSection = '4' THEN 4
         ELSE 5
       END ASC,
       tm.SortCode ASC,
@@ -4284,7 +4406,7 @@ router.get("/kiosk/tables", async (req, res) => {
     const { section, orderType } = req.query;
 
     const isTakeaway = (orderType && String(orderType).toUpperCase().includes("TAKEAWAY")) || String(section) === "4";
-    const found = await findAvailableKioskTable(pool, isTakeaway);
+    const found = await findAvailableKioskTable(pool, isTakeaway, req.app?.get("io"));
     res.json({ success: true, table: found || null, tables: found ? [found] : [] });
   } catch (err) {
     console.error("[Kiosk] /kiosk/tables ERROR:", err.message);
@@ -4302,7 +4424,7 @@ router.get("/kiosk/available-tables", async (req, res) => {
       ? "tm.DiningSection = '4'"
       : "tm.DiningSection IN ('1', '2', '3')";
 
-    const result = await pool.request().query(`
+    let result = await pool.request().query(`
       SELECT 
         tm.TableId, 
         tm.TableNumber AS TableNo,
@@ -4334,6 +4456,23 @@ router.get("/kiosk/available-tables", async (req, res) => {
         tm.TableNumber ASC
     `);
 
+    // If takeaway and all takeaway tables are occupied, auto-create via findAvailableKioskTable
+    if (isTakeaway && (!result.recordset || result.recordset.length === 0)) {
+      const autoCreated = await findAvailableKioskTable(pool, true, req.app?.get("io"));
+      if (autoCreated) {
+        result = {
+          recordset: [{
+            TableId: autoCreated.tableId,
+            TableNo: autoCreated.tableNo,
+            DiningSection: autoCreated.section,
+            SortCode: 41,
+            Seats: 4,
+            Status: 0
+          }]
+        };
+      }
+    }
+
     res.json({ success: true, tables: result.recordset || [] });
   } catch (err) {
     console.error("[Kiosk] /kiosk/available-tables ERROR:", err.message);
@@ -4349,7 +4488,7 @@ router.post("/kiosk/start", async (req, res) => {
     const isTakeaway = (orderType && String(orderType).toUpperCase().includes("TAKEAWAY"));
 
     if (!tableId || !tableNo || tableNo === "DINE_IN" || tableNo === "TAKEAWAY") {
-      const found = await findAvailableKioskTable(pool, isTakeaway);
+      const found = await findAvailableKioskTable(pool, isTakeaway, req.app?.get("io"));
       if (found) {
         tableId = found.tableId;
         tableNo = found.tableNo;
