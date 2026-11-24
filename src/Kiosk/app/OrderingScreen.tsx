@@ -15,7 +15,7 @@ import {
   Text,
   TouchableOpacity,
   useWindowDimensions,
-  View
+  View,
 } from "react-native";
 
 const generateBizOrderId = (orderId: string | null) =>
@@ -97,7 +97,7 @@ type Props = {
       gst?: number;
       total?: number;
       [key: string]: any;
-    }
+    },
   ) => void;
   onLogout?: () => void;
 };
@@ -130,7 +130,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [enableKioskTable, setEnableKioskTable] = useState<number>(0);
   const [showTableModal, setShowTableModal] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<"CHOICE" | "ENTER_TENT">("CHOICE");
+  const [checkoutStep, setCheckoutStep] = useState<"CHOICE" | "ENTER_TENT">(
+    "CHOICE",
+  );
   const [availableTables, setAvailableTables] = useState<any[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
@@ -148,11 +150,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Combo Customizer States
   const [showComboCustomizer, setShowComboCustomizer] = useState(false);
   const [comboConfig, setComboConfig] = useState<any>(null);
-  const [comboSelections, setComboSelections] = useState<{ [groupId: string]: any[] }>({});
+  const [comboSelections, setComboSelections] = useState<{
+    [groupId: string]: any[];
+  }>({});
   const [comboError, setComboError] = useState<string | null>(null);
   const [comboLoading, setComboLoading] = useState(false);
   const [comboDishModifiers, setComboDishModifiers] = useState<any[]>([]);
-  const [selectedComboModifierIds, setSelectedComboModifierIds] = useState<string[]>([]);
+  const [selectedComboModifierIds, setSelectedComboModifierIds] = useState<
+    string[]
+  >([]);
 
   // Payment Modal State
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
@@ -162,7 +168,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [twServiceChargePercent, setTwServiceChargePercent] = useState(0);
   const [takeawayChargeRate, setTakeawayChargeRate] = useState(0);
   const [gstPercent, setGstPercent] = useState(0);
-  const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">("exclusive");
+  const [taxMode, setTaxMode] = useState<"exclusive" | "inclusive">(
+    "exclusive",
+  );
   const [currencySymbol, setCurrencySymbol] = useState("$");
   const [orderType, setOrderType] = useState<string>("DINE_IN");
   const [paymodesList, setPaymodesList] = useState<any[]>([]);
@@ -190,7 +198,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       try {
         const res = await fetch(`${API}/auth/promo-image`);
         const data = await res.json();
-        if (isMounted && data.success && Array.isArray(data.promoImages) && data.promoImages.length > 0) {
+        if (
+          isMounted &&
+          data.success &&
+          Array.isArray(data.promoImages) &&
+          data.promoImages.length > 0
+        ) {
           const valid = data.promoImages.filter((p: any) => p.PromoImage);
           if (valid.length > 0) {
             setPromoSlides(valid);
@@ -245,7 +258,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           duration: 900,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
     pulseLoop.start();
     return () => pulseLoop.stop();
@@ -253,7 +266,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const resetAllKioskState = () => {
     setShowInactivityModal(false);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    if (countdownIntervalRef.current)
+      clearInterval(countdownIntervalRef.current);
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
     setCart([]);
@@ -292,7 +306,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setInactivityCountdown(15);
 
     let remaining = 15;
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    if (countdownIntervalRef.current)
+      clearInterval(countdownIntervalRef.current);
     countdownIntervalRef.current = setInterval(() => {
       remaining -= 1;
       setInactivityCountdown(remaining);
@@ -307,7 +322,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     // If the warning modal is up, touching anywhere cancels it and resets the timer
     if (showInactivityModal) {
       setShowInactivityModal(false);
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      if (countdownIntervalRef.current)
+        clearInterval(countdownIntervalRef.current);
     }
 
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -327,21 +343,24 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     resetIdleTimer();
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      if (countdownIntervalRef.current)
+        clearInterval(countdownIntervalRef.current);
     };
   }, []);
 
-  // ── Aesthetic Cart Toast Notification & Animation State ──
+  // ── Aesthetic Cart & Validation Toast Notification & Animation State ──
   const [toastNotification, setToastNotification] = useState<{
     visible: boolean;
     itemName: string;
     qty: number;
     price: number;
+    type?: "success" | "error";
   }>({
     visible: false,
     itemName: "",
     qty: 1,
     price: 0,
+    type: "success",
   });
   const toastSlideY = useRef(new Animated.Value(-100)).current;
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -368,7 +387,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }).start();
   };
 
-  const showCartToast = (itemName: string, qty: number, price: number, dishId?: any) => {
+  const showCartToast = (
+    itemName: string,
+    qty: number,
+    price: number,
+    dishId?: any,
+  ) => {
     if (dishId) {
       triggerBadgePop(dishId);
     }
@@ -415,17 +439,64 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       });
     }, 2200);
   };
+
+  const showErrorToast = (message: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastNotification({
+      visible: true,
+      itemName: message,
+      qty: 0,
+      price: 0,
+      type: "error",
+    });
+    Animated.parallel([
+      Animated.spring(toastSlideY, {
+        toValue: 0,
+        friction: 5,
+        tension: 130,
+        useNativeDriver: true,
+      }),
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    toastTimeoutRef.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(toastSlideY, {
+          toValue: -100,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setToastNotification((prev) => ({ ...prev, visible: false }));
+      });
+    }, 3200);
+  };
   const [pendingPaymentAction, setPendingPaymentAction] = useState<any>(null);
 
   // YeahPay Cloud POS Terminal States
   const [showYeahPayModal, setShowYeahPayModal] = useState(false);
-  const [yeahPayStatus, setYeahPayStatus] = useState<"INIT" | "PROCESSING" | "SUCCESS" | "FAILED">("INIT");
+  const [yeahPayStatus, setYeahPayStatus] = useState<
+    "INIT" | "PROCESSING" | "SUCCESS" | "FAILED"
+  >("INIT");
   const [yeahPayMsg, setYeahPayMsg] = useState("");
   const [yeahPayDetails, setYeahPayDetails] = useState<any>(null);
   const [yeahPayPayableAmount, setYeahPayPayableAmount] = useState("0.00");
 
   // Kiosk Thank You Overlay
-  const [kioskThankYouOrderId, setKioskThankYouOrderId] = useState<string | null>(null);
+  const [kioskThankYouOrderId, setKioskThankYouOrderId] = useState<
+    string | null
+  >(null);
 
   const normalizeGuid = (val: any) =>
     String(val || "")
@@ -439,12 +510,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (typeof target === "object") {
       return (
         (target.KitchenTypeName || "").trim().toLowerCase() === "previous" ||
-        normalizeGuid(target.CategoryId) === "3D43329E-B2C9-4C01-BDB7-5F65D67E61C5"
+        normalizeGuid(target.CategoryId) ===
+          "3D43329E-B2C9-4C01-BDB7-5F65D67E61C5"
       );
     }
     const targetClean = normalizeGuid(target);
     const catObj = categories.find(
-      (c) => normalizeGuid(c.CategoryId) === targetClean
+      (c) => normalizeGuid(c.CategoryId) === targetClean,
     );
     return (
       (catObj?.KitchenTypeName || "").trim().toLowerCase() === "previous" ||
@@ -470,13 +542,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       // If not in storage or empty, attempt fresh customer search from backend
       if (!savedDishId && carNumber) {
         try {
-          const custRes = await fetch(`${API}/order/kiosk/customer/${encodeURIComponent(carNumber.trim())}`);
+          const custRes = await fetch(
+            `${API}/order/kiosk/customer/${encodeURIComponent(carNumber.trim())}`,
+          );
           const custData = await custRes.json();
           if (custData?.success && custData?.customer?.DefaultDishId) {
             savedDishId = String(custData.customer.DefaultDishId);
             await AsyncStorage.setItem("kioskDefaultDishId", savedDishId);
           }
-        } catch (_) { }
+        } catch (_) {}
       }
 
       // If still not in storage, search in all customers
@@ -487,18 +561,22 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           if (allData?.success && Array.isArray(allData.customers)) {
             const cleanCar = carNumber.trim().toUpperCase();
             const match = allData.customers.find(
-              (c: any) => (c.CarNumber || "").trim().toUpperCase() === cleanCar
+              (c: any) => (c.CarNumber || "").trim().toUpperCase() === cleanCar,
             );
             if (match?.DefaultDishId) {
               savedDishId = String(match.DefaultDishId);
               await AsyncStorage.setItem("kioskDefaultDishId", savedDishId);
             }
           }
-        } catch (_) { }
+        } catch (_) {}
       }
 
       // Specific fallback for existing record
-      if (!savedDishId && carNumber && carNumber.trim().toUpperCase() === "ABC67899") {
+      if (
+        !savedDishId &&
+        carNumber &&
+        carNumber.trim().toUpperCase() === "ABC67899"
+      ) {
         savedDishId = "98373187-009C-440F-A196-53A205DCA997";
         await AsyncStorage.setItem("kioskDefaultDishId", savedDishId);
       }
@@ -516,7 +594,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       if (Array.isArray(allDishes)) {
         const matched = allDishes.find(
-          (d: any) => normalizeGuid(d.DishId) === targetDishGuid
+          (d: any) => normalizeGuid(d.DishId) === targetDishGuid,
         );
         if (matched) {
           setDishes([matched]);
@@ -577,32 +655,46 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           Name: item.Name || item.DishName || item.name || "Item",
           qty: Number(item.qty || item.Quantity || 1),
           Price: Number(item.price || item.Price || item.PricePerUnit || 0),
-          finalPrice: Number(item.price || item.Price || item.PricePerUnit || 0),
-          isServiceCharge: item.isServiceCharge !== undefined ? item.isServiceCharge : (item.IsServiceCharge !== undefined ? item.IsServiceCharge : true),
-          takeawayCharge: Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0),
-          isTakeaway: !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway),
+          finalPrice: Number(
+            item.price || item.Price || item.PricePerUnit || 0,
+          ),
+          isServiceCharge:
+            item.isServiceCharge !== undefined
+              ? item.isServiceCharge
+              : item.IsServiceCharge !== undefined
+                ? item.IsServiceCharge
+                : true,
+          takeawayCharge: Number(
+            item.takeawayCharge ?? item.TakeawayCharge ?? 0,
+          ),
+          isTakeaway: !!(
+            item.isTakeaway ||
+            item.IsTakeaway ||
+            item.isTakeAway ||
+            item.IsTakeAway
+          ),
           status: item.status || (item.StatusCode === 1 ? "NEW" : "SENT"),
           selectedMods:
             item.modifiers ||
             (item.ModifiersJSON
               ? (() => {
-                try {
-                  return JSON.parse(item.ModifiersJSON);
-                } catch {
-                  return [];
-                }
-              })()
+                  try {
+                    return JSON.parse(item.ModifiersJSON);
+                  } catch {
+                    return [];
+                  }
+                })()
               : []),
           comboSelections:
             item.comboSelections ||
             (item.ComboDetailsJSON
               ? (() => {
-                try {
-                  return JSON.parse(item.ComboDetailsJSON);
-                } catch {
-                  return [];
-                }
-              })()
+                  try {
+                    return JSON.parse(item.ComboDetailsJSON);
+                  } catch {
+                    return [];
+                  }
+                })()
               : []),
         }));
         setCart(fromDB);
@@ -625,30 +717,53 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         setTableId(storedTableId || "");
 
         // Fetch settings, paymodes, kitchens and orderType
-        const [settingsRes, paymodesRes, kitchensRes, storedOrderType] = await Promise.all([
-          fetch(`${API}/company-settings/1`)
-            .then((r) => r.json())
-            .catch(() =>
-              fetch(`${API}/company/settings`)
-                .then((r) => r.json())
-                .catch(() => ({}))
+        const [settingsRes, paymodesRes, kitchensRes, storedOrderType] =
+          await Promise.all([
+            fetch(`${API}/company-settings/1`)
+              .then((r) => r.json())
+              .catch(() =>
+                fetch(`${API}/company/settings`)
+                  .then((r) => r.json())
+                  .catch(() => ({})),
+              ),
+            fetch(`${API}/paymodes/list`)
+              .then((r) => r.json())
+              .catch(() => []),
+            fetch(`${API}/kitchens`)
+              .then((r) => r.json())
+              .catch(() => []),
+            AsyncStorage.getItem("kioskOrderType").then(
+              (t) =>
+                t ||
+                AsyncStorage.getItem("orderType").then((ot) => ot || "DINE_IN"),
             ),
-          fetch(`${API}/paymodes/list`).then((r) => r.json()).catch(() => []),
-          fetch(`${API}/kitchens`).then((r) => r.json()).catch(() => []),
-          AsyncStorage.getItem("kioskOrderType").then(
-            (t) => t || AsyncStorage.getItem("orderType").then((ot) => ot || "DINE_IN")
-          ),
-        ]);
+          ]);
 
         const rawSettings = settingsRes?.settings || settingsRes || {};
         setCompanySettings(rawSettings);
 
-        const sc = Number(rawSettings.ServiceChargePercentage ?? rawSettings.serviceChargePercentage ?? 0);
-        const twSc = Number(rawSettings.TWServiceChargePercentage ?? rawSettings.twServiceChargePercentage ?? 0);
-        const twRate = Number(rawSettings.TakeawayCharges ?? rawSettings.takeawayCharges ?? 0);
-        const gst = Number(rawSettings.GSTPercentage ?? rawSettings.gstPercentage ?? 0);
-        const tMode = String(rawSettings.TaxMode ?? rawSettings.taxMode ?? "exclusive").toLowerCase();
-        const sym = String(rawSettings.CurrencySymbol ?? rawSettings.currencySymbol ?? "$");
+        const sc = Number(
+          rawSettings.ServiceChargePercentage ??
+            rawSettings.serviceChargePercentage ??
+            0,
+        );
+        const twSc = Number(
+          rawSettings.TWServiceChargePercentage ??
+            rawSettings.twServiceChargePercentage ??
+            0,
+        );
+        const twRate = Number(
+          rawSettings.TakeawayCharges ?? rawSettings.takeawayCharges ?? 0,
+        );
+        const gst = Number(
+          rawSettings.GSTPercentage ?? rawSettings.gstPercentage ?? 0,
+        );
+        const tMode = String(
+          rawSettings.TaxMode ?? rawSettings.taxMode ?? "exclusive",
+        ).toLowerCase();
+        const sym = String(
+          rawSettings.CurrencySymbol ?? rawSettings.currencySymbol ?? "$",
+        );
 
         setServiceChargePercent(sc);
         setTwServiceChargePercent(twSc);
@@ -660,7 +775,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         const activeOrderType = storedOrderType || "DINE_IN";
         setOrderType(activeOrderType);
 
-        setEnableCombo(Number(rawSettings.EnableCombo ?? rawSettings.enableCombo ?? 0));
+        setEnableCombo(
+          Number(rawSettings.EnableCombo ?? rawSettings.enableCombo ?? 0),
+        );
         const isKioskTableEnabled =
           rawSettings.Enablekiosktable === 1 ||
           rawSettings.Enablekiosktable === true ||
@@ -709,37 +826,70 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   // 1. Subtotal
   const subTotal = cart.reduce(
-    (sum, item) => sum + Number(item.Price || item.finalPrice || item.price || 0) * Number(item.qty || 1),
-    0
+    (sum, item) =>
+      sum +
+      Number(item.Price || item.finalPrice || item.price || 0) *
+        Number(item.qty || 1),
+    0,
   );
 
   // 2. Takeaway Charges (per-item packing charge for takeaway orders or individual takeaway items)
   const takeawayCharge = cart.reduce((sum, item) => {
-    const isItemTW = isTakeawayOrder || !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
+    const isItemTW =
+      isTakeawayOrder ||
+      !!(
+        item.isTakeaway ||
+        item.IsTakeaway ||
+        item.isTakeAway ||
+        item.IsTakeAway
+      );
     if (!isItemTW) return sum;
-    const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
-    const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayChargeRate;
+    const dishSpecificTW = Number(
+      item.takeawayCharge ?? item.TakeawayCharge ?? 0,
+    );
+    const effectiveTWRate =
+      dishSpecificTW > 0 ? dishSpecificTW : takeawayChargeRate;
     return sum + Number(item.qty || 1) * effectiveTWRate;
   }, 0);
 
   // 3. Service Charge (SVC) - applies only if dish has isServiceCharge flag enabled
-  const applicableScPercent = isTakeawayOrder ? twServiceChargePercent : serviceChargePercent;
+  const applicableScPercent = isTakeawayOrder
+    ? twServiceChargePercent
+    : serviceChargePercent;
 
   const scEligibleSubtotal = cart.reduce((sum, item) => {
-    const isItemTW = isTakeawayOrder || !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
+    const isItemTW =
+      isTakeawayOrder ||
+      !!(
+        item.isTakeaway ||
+        item.IsTakeaway ||
+        item.isTakeAway ||
+        item.IsTakeAway
+      );
     if (isTakeawayOrder && twServiceChargePercent <= 0) return sum;
 
     const isSC = item.isServiceCharge ?? item.IsServiceCharge;
-    const isSCActive = isSC === true || Number(isSC) === 1 || String(isSC) === "true" || String(isSC) === "1" || isSC === undefined || isSC === null;
+    const isSCActive =
+      isSC === true ||
+      Number(isSC) === 1 ||
+      String(isSC) === "true" ||
+      String(isSC) === "1" ||
+      isSC === undefined ||
+      isSC === null;
     if (isSCActive && (!isItemTW || twServiceChargePercent > 0)) {
-      return sum + Number(item.Price || item.finalPrice || item.price || 0) * Number(item.qty || 1);
+      return (
+        sum +
+        Number(item.Price || item.finalPrice || item.price || 0) *
+          Number(item.qty || 1)
+      );
     }
     return sum;
   }, 0);
 
-  const serviceCharge = (applicableScPercent > 0 && scEligibleSubtotal > 0)
-    ? scEligibleSubtotal * (applicableScPercent / 100)
-    : 0;
+  const serviceCharge =
+    applicableScPercent > 0 && scEligibleSubtotal > 0
+      ? scEligibleSubtotal * (applicableScPercent / 100)
+      : 0;
 
   // 4. Taxable Base for GST
   const taxableBase = subTotal + serviceCharge + takeawayCharge;
@@ -748,7 +898,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   let gstAmount = 0;
   if (gstPercent > 0 && taxableBase > 0) {
     if (taxMode === "inclusive") {
-      gstAmount = taxableBase - (taxableBase / (1 + gstPercent / 100));
+      gstAmount = taxableBase - taxableBase / (1 + gstPercent / 100);
     } else {
       gstAmount = taxableBase * (gstPercent / 100);
     }
@@ -827,7 +977,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         if (modRes && modRes.ok) {
           const modData = await modRes.json();
           if (Array.isArray(modData)) {
-            const realMods = modData.filter((m: any) => m.ModifierName?.toUpperCase() !== "OPEN");
+            const realMods = modData.filter(
+              (m: any) => m.ModifierName?.toUpperCase() !== "OPEN",
+            );
             setComboDishModifiers(realMods);
           }
         }
@@ -867,7 +1019,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     groupId: string,
     option: any,
     isMulti: boolean,
-    maxSelect: number
+    maxSelect: number,
   ) => {
     setComboError(null);
     setComboSelections((prev) => {
@@ -898,7 +1050,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const handleToggleComboModifier = (modId: string) => {
     setSelectedComboModifierIds((prev) =>
-      prev.includes(modId) ? prev.filter((id) => id !== modId) : [...prev, modId]
+      prev.includes(modId)
+        ? prev.filter((id) => id !== modId)
+        : [...prev, modId],
     );
   };
 
@@ -909,7 +1063,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     (comboConfig?.groups || []).forEach((group: any) => {
       const selectedIds = comboSelections[group.comboGroupId] || [];
       const selectedOptions = (group.options || []).filter((o: any) =>
-        selectedIds.includes(o.dishId)
+        selectedIds.includes(o.dishId),
       );
       selectedOptions.forEach((opt: any) => {
         totalSurcharge +=
@@ -918,15 +1072,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     });
 
     const chosenModifiers = comboDishModifiers.filter((m: any) =>
-      selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || ""))
+      selectedComboModifierIds.includes(
+        String(m.ModifierID || m.ModifierId || ""),
+      ),
     );
     const modifierPriceTotal = chosenModifiers.reduce(
       (sum: number, m: any) => sum + (Number(m.Price) || 0),
-      0
+      0,
     );
 
     const basePrice = Number(
-      comboConfig?.basePrice || selectedDish?.Price || selectedDish?.price || 0
+      comboConfig?.basePrice || selectedDish?.Price || selectedDish?.price || 0,
     );
 
     return basePrice + totalSurcharge + modifierPriceTotal;
@@ -941,9 +1097,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const effectiveMin =
         group.options && group.options.length > 0 ? group.minSelection : 0;
       if (selectedIds.length < effectiveMin) {
-        setComboError(
-          `Please pick at least ${group.minSelection} choice(s) for "${group.groupName}"`
-        );
+        const missingCount = effectiveMin - selectedIds.length;
+        const errMsg = `Please select ${missingCount} more item(s) for "${group.groupName}"`;
+        setComboError(errMsg);
+        showErrorToast(errMsg);
         return;
       }
     }
@@ -951,7 +1108,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     // Build selected modifiers list
     const chosenModifiers = comboDishModifiers
       .filter((m: any) =>
-        selectedComboModifierIds.includes(String(m.ModifierID || m.ModifierId || ""))
+        selectedComboModifierIds.includes(
+          String(m.ModifierID || m.ModifierId || ""),
+        ),
       )
       .map((m: any) => ({
         ModifierID: String(m.ModifierID || m.ModifierId || ""),
@@ -964,7 +1123,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     const chosenSelections = comboConfig.groups.map((group: any) => {
       const selectedIds = comboSelections[group.comboGroupId] || [];
       const selectedOptions = (group.options || []).filter((o: any) =>
-        selectedIds.includes(o.dishId)
+        selectedIds.includes(o.dishId),
       );
       return {
         groupId: group.comboGroupId,
@@ -992,12 +1151,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
     const modifierPriceTotal = chosenModifiers.reduce(
       (sum: number, m: any) => sum + (Number(m.Price) || 0),
-      0
+      0,
     );
 
     const comboBasePrice = Number(comboConfig.basePrice);
     const dishBasePrice = Number(
-      selectedDish?.Price ?? selectedDish?.price ?? 0
+      selectedDish?.Price ?? selectedDish?.price ?? 0,
     );
 
     const finalPrice =
@@ -1009,11 +1168,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       ...selectedDish,
       DishId: selectedDish.DishId || selectedDish.id,
       id: selectedDish.DishId || selectedDish.id,
-      lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-        const r = (Math.random() * 16) | 0;
-        const v = c === "x" ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-      }),
+      lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+        /[xy]/g,
+        (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        },
+      ),
       Name: selectedDish.Name || selectedDish.name,
       name: selectedDish.Name || selectedDish.name,
       dishName: selectedDish.Name || selectedDish.name,
@@ -1023,8 +1185,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       Price: finalPrice,
       finalPrice: finalPrice,
       basePrice: comboConfig.basePrice,
-      isServiceCharge: selectedDish.isServiceCharge !== undefined ? selectedDish.isServiceCharge : (selectedDish.IsServiceCharge !== undefined ? selectedDish.IsServiceCharge : true),
-      takeawayCharge: Number(selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge ?? 0),
+      isServiceCharge:
+        selectedDish.isServiceCharge !== undefined
+          ? selectedDish.isServiceCharge
+          : selectedDish.IsServiceCharge !== undefined
+            ? selectedDish.IsServiceCharge
+            : true,
+      takeawayCharge: Number(
+        selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge ?? 0,
+      ),
       isTakeaway: isTakeawayOrder,
       comboSelections: chosenSelections,
       selectedMods: chosenModifiers,
@@ -1035,22 +1204,23 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setCart((prev) => {
       const existing = prev.find(
         (item) =>
-          (item.DishId || item.id) === (selectedDish.DishId || selectedDish.id) &&
+          (item.DishId || item.id) ===
+            (selectedDish.DishId || selectedDish.id) &&
           (item.comboSelections || []).length === 0 &&
           JSON.stringify(item.selectedMods || []) ===
-          JSON.stringify(chosenModifiers) &&
-          item.status !== "SENT"
+            JSON.stringify(chosenModifiers) &&
+          item.status !== "SENT",
       );
 
       if (existing) {
         return prev.map((item) =>
           item === existing
             ? {
-              ...item,
-              qty: (item.qty || 1) + comboQty,
-              status: "NEW",
-            }
-            : item
+                ...item,
+                qty: (item.qty || 1) + comboQty,
+                status: "NEW",
+              }
+            : item,
         );
       }
 
@@ -1062,7 +1232,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       selectedDish.Name || selectedDish.name,
       comboQty,
       calculateComboTotal(),
-      selectedDish.DishId || selectedDish.id
+      selectedDish.DishId || selectedDish.id,
     );
   };
 
@@ -1071,17 +1241,21 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
     setCart((prev) => {
       const existing = prev.find(
-        (item) => (item.DishId || item.id) === dish.DishId && item.status !== "SENT"
+        (item) =>
+          (item.DishId || item.id) === dish.DishId && item.status !== "SENT",
       );
 
       const nextQty = existing ? (existing.qty || 1) + 1 : 1;
-      showCartToast(dish.Name || dish.name, nextQty, basePrice, dish.DishId || dish.id);
+      showCartToast(
+        dish.Name || dish.name,
+        nextQty,
+        basePrice,
+        dish.DishId || dish.id,
+      );
 
       if (existing) {
         return prev.map((item) =>
-          item === existing
-            ? { ...item, qty: (item.qty || 1) + 1 }
-            : item
+          item === existing ? { ...item, qty: (item.qty || 1) + 1 } : item,
         );
       }
 
@@ -1091,11 +1265,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           ...dish,
           DishId: dish.DishId,
           id: dish.DishId,
-          lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0;
-            const v = c === "x" ? r : (r & 0x3) | 0x8;
-            return v.toString(16);
-          }),
+          lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+            /[xy]/g,
+            (c) => {
+              const r = (Math.random() * 16) | 0;
+              const v = c === "x" ? r : (r & 0x3) | 0x8;
+              return v.toString(16);
+            },
+          ),
           Name: dish.Name,
           name: dish.Name,
           dishName: dish.Name,
@@ -1103,8 +1280,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           Price: basePrice,
           price: basePrice,
           finalPrice: basePrice,
-          isServiceCharge: dish.isServiceCharge !== undefined ? dish.isServiceCharge : (dish.IsServiceCharge !== undefined ? dish.IsServiceCharge : true),
-          takeawayCharge: Number(dish.takeawayCharge ?? dish.TakeawayCharge ?? 0),
+          isServiceCharge:
+            dish.isServiceCharge !== undefined
+              ? dish.isServiceCharge
+              : dish.IsServiceCharge !== undefined
+                ? dish.IsServiceCharge
+                : true,
+          takeawayCharge: Number(
+            dish.takeawayCharge ?? dish.TakeawayCharge ?? 0,
+          ),
           isTakeaway: isTakeawayOrder,
           selectedMods: [],
           comboSelections: [],
@@ -1118,10 +1302,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (!selectedDish) return;
 
     const chosenMods = modifiers.filter((m) =>
-      selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
+      selectedModifierIds.includes(String(m.ModifierID || m.ModifierId)),
     );
     const extra = chosenMods.reduce((s, m) => s + Number(m.Price || 0), 0);
-    const finalPrice = Number(selectedDish.Price || selectedDish.price || 0) + extra;
+    const finalPrice =
+      Number(selectedDish.Price || selectedDish.price || 0) + extra;
 
     setCart((prev) => [
       ...prev,
@@ -1129,11 +1314,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         ...selectedDish,
         DishId: selectedDish.DishId,
         id: selectedDish.DishId,
-        lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0;
-          const v = c === "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        }),
+        lineItemId: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+          /[xy]/g,
+          (c) => {
+            const r = (Math.random() * 16) | 0;
+            const v = c === "x" ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+          },
+        ),
         Name: selectedDish.Name,
         name: selectedDish.Name,
         dishName: selectedDish.Name,
@@ -1141,8 +1329,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         Price: finalPrice,
         price: finalPrice,
         finalPrice: finalPrice,
-        isServiceCharge: selectedDish.isServiceCharge !== undefined ? selectedDish.isServiceCharge : (selectedDish.IsServiceCharge !== undefined ? selectedDish.IsServiceCharge : true),
-        takeawayCharge: Number(selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge ?? 0),
+        isServiceCharge:
+          selectedDish.isServiceCharge !== undefined
+            ? selectedDish.isServiceCharge
+            : selectedDish.IsServiceCharge !== undefined
+              ? selectedDish.IsServiceCharge
+              : true,
+        takeawayCharge: Number(
+          selectedDish.takeawayCharge ?? selectedDish.TakeawayCharge ?? 0,
+        ),
         isTakeaway: isTakeawayOrder,
         selectedMods: chosenMods,
         comboSelections: [],
@@ -1155,23 +1350,35 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       selectedDish.Name || selectedDish.name,
       comboQty,
       finalPrice,
-      selectedDish.DishId || selectedDish.id
+      selectedDish.DishId || selectedDish.id,
     );
   };
 
   const isServiceCategoryItem = (item: any) => {
     if (!item) return false;
-    const catName = String(item.KitchenTypeName || item.kitchenTypeName || item.CategoryName || item.categoryName || '').toLowerCase();
-    const groupName = String(item.DishGroupName || item.dishGroupName || '').toLowerCase();
-    const name = String(item.Name || item.name || '').toLowerCase();
-    return catName.includes('service') || groupName.includes('service') || name.includes('package');
+    const catName = String(
+      item.KitchenTypeName ||
+        item.kitchenTypeName ||
+        item.CategoryName ||
+        item.categoryName ||
+        "",
+    ).toLowerCase();
+    const groupName = String(
+      item.DishGroupName || item.dishGroupName || "",
+    ).toLowerCase();
+    const name = String(item.Name || item.name || "").toLowerCase();
+    return (
+      catName.includes("service") ||
+      groupName.includes("service") ||
+      name.includes("package")
+    );
   };
 
   const increaseQty = (index: number) => {
     setCart((prev) =>
       prev.map((item, i) =>
-        i === index ? { ...item, qty: Number(item.qty || 1) + 1 } : item
-      )
+        i === index ? { ...item, qty: Number(item.qty || 1) + 1 } : item,
+      ),
     );
   };
 
@@ -1182,7 +1389,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         return prev.filter((_, i) => i !== index);
       }
       return prev.map((it, i) =>
-        i === index ? { ...it, qty: Number(it.qty) - 1 } : it
+        i === index ? { ...it, qty: Number(it.qty) - 1 } : it,
       );
     });
   };
@@ -1195,7 +1402,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const fetchAvailableTables = async () => {
     setLoadingTables(true);
     try {
-      const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+      const storedOrderType =
+        (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
       const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
       const url = `${API}/order/kiosk/available-tables?orderType=${encodeURIComponent(storedOrderType)}&section=${isTakeaway ? "4" : "1"}`;
       const res = await fetch(url);
@@ -1216,8 +1424,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Checkout button click handler
   const handleCheckoutClick = async () => {
     // Check if order is Takeaway (TW) -> Skip table/tent prompt completely
-    const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
-    const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY") || storedOrderType.toUpperCase() === "TW";
+    const storedOrderType =
+      (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+    const isTakeaway =
+      storedOrderType.toUpperCase().includes("TAKEAWAY") ||
+      storedOrderType.toUpperCase() === "TW";
     if (isTakeaway) {
       handleProceedToPayment();
       return;
@@ -1226,13 +1437,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     // Dynamically check latest Enablekiosktable from AppSettings
     let shouldPromptTable = enableKioskTable === 1;
     try {
-      const checkRes = await fetch(`${API}/app-settings`).then((r) => r.json()).catch(() => null);
+      const checkRes = await fetch(`${API}/app-settings`)
+        .then((r) => r.json())
+        .catch(() => null);
       if (checkRes && checkRes.success !== undefined) {
         const val = checkRes.Enablekiosktable ?? checkRes.enablekiosktable;
-        shouldPromptTable = (val === 1 || val === true || String(val) === "1" || String(val).toLowerCase() === "true");
+        shouldPromptTable =
+          val === 1 ||
+          val === true ||
+          String(val) === "1" ||
+          String(val).toLowerCase() === "true";
         setEnableKioskTable(shouldPromptTable ? 1 : 0);
       }
-    } catch (_) { }
+    } catch (_) {}
 
     if (shouldPromptTable) {
       // If Enablekiosktable = 1 and Dine In, display popup with two options: Self Collect & Enter Tent Number
@@ -1278,7 +1495,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setTableInputError(null);
 
     try {
-      const activeOrderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
+      const activeOrderId =
+        currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
       const storedTableId = tableId || (await AsyncStorage.getItem("tableId"));
 
       // Call backend to validate availability and update TableMaster & RestaurantOrderCur
@@ -1295,7 +1513,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const data = await res.json();
 
       if (!data.success) {
-        setTableInputError(data.error || `Table / Tent number ${rawVal} is unavailable or occupied.`);
+        setTableInputError(
+          data.error ||
+            `Table / Tent number ${rawVal} is unavailable or occupied.`,
+        );
         setIsUpdatingTent(false);
         return;
       }
@@ -1317,7 +1538,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       handleProceedToPayment(updatedTableId);
     } catch (err: any) {
       console.error("Tent number update error:", err);
-      setTableInputError(err?.message || "Failed to update tent number. Please try again.");
+      setTableInputError(
+        err?.message || "Failed to update tent number. Please try again.",
+      );
     } finally {
       setIsUpdatingTent(false);
     }
@@ -1335,10 +1558,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     // Save cart items to database (RestaurantOrderCur & RestaurantOrderDetailCur) immediately
     if (cart.length > 0) {
       try {
-        const orderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
-        const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+        const orderId =
+          currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
+        const storedOrderType =
+          (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
         const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
-        console.log(`[Checkout] Saving cart for table: ${activeTableId}, order: ${orderId}, items: ${cart.length}`);
+        console.log(
+          `[Checkout] Saving cart for table: ${activeTableId}, order: ${orderId}, items: ${cart.length}`,
+        );
         const saveRes = await fetch(`${API}/order/save-cart`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1367,7 +1594,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const getExtraChargeForPaymode = (modeName: string) => {
     const match = paymodesList.find(
-      (p) => p.PayMode?.toUpperCase().trim() === modeName?.toUpperCase().trim()
+      (p) => p.PayMode?.toUpperCase().trim() === modeName?.toUpperCase().trim(),
     );
     return match ? Number(match.ExtraCharges || 0) : 0;
   };
@@ -1383,7 +1610,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const executePaymentDecision = (method: string, extraCharge = 0) => {
-    const finalPayable = (Number(calculatedTotal) + Number(extraCharge)).toFixed(2);
+    const finalPayable = (
+      Number(calculatedTotal) + Number(extraCharge)
+    ).toFixed(2);
     setYeahPayPayableAmount(finalPayable);
 
     if (method === "CARD" || method === "PAYNOW") {
@@ -1393,11 +1622,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
-  const handleYeahPayPayment = async (payWay: "CARD" | "PAYNOW", extraCharge = 0) => {
-    const finalPayable = (Number(calculatedTotal) + Number(extraCharge)).toFixed(2);
+  const handleYeahPayPayment = async (
+    payWay: "CARD" | "PAYNOW",
+    extraCharge = 0,
+  ) => {
+    const finalPayable = (
+      Number(calculatedTotal) + Number(extraCharge)
+    ).toFixed(2);
     setYeahPayPayableAmount(finalPayable);
 
-    const action = payWay === "PAYNOW" ? "TRADE.QRCODE.PayNowPay" : "TRADE.CARD.CONSUME";
+    const action =
+      payWay === "PAYNOW" ? "TRADE.QRCODE.PayNowPay" : "TRADE.CARD.CONSUME";
 
     setShowPaymentPopup(false);
     setShowYeahPayModal(true);
@@ -1405,7 +1640,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setYeahPayMsg(
       payWay === "PAYNOW"
         ? "Initiating PayNow QR on YeahPay Terminal..."
-        : "Initiating YeahPay Cloud POS terminal transaction..."
+        : "Initiating YeahPay Cloud POS terminal transaction...",
     );
     setYeahPayDetails(null);
 
@@ -1430,7 +1665,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         data = JSON.parse(rawText);
       } catch (e) {
         console.error("Non-JSON Response from YeahPay endpoint:", rawText);
-        throw new Error(rawText.includes("<!DOCTYPE") ? "Backend server error (HTML returned). Please ensure backend is running." : rawText);
+        throw new Error(
+          rawText.includes("<!DOCTYPE")
+            ? "Backend server error (HTML returned). Please ensure backend is running."
+            : rawText,
+        );
       }
       console.log("💳 YeahPay Pay API Response:", data);
 
@@ -1447,7 +1686,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         setYeahPayMsg(
           payWay === "PAYNOW"
             ? "Please scan PayNow QR code on YeahPay Terminal screen..."
-            : "Please tap or insert card on YeahPay Terminal..."
+            : "Please tap or insert card on YeahPay Terminal...",
         );
 
         let pollCount = 0;
@@ -1489,7 +1728,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             } else if (queryData.status === 105 || queryData.status === -1) {
               clearInterval(pollInterval);
               setYeahPayStatus("FAILED");
-              setYeahPayMsg(queryData.msg || "Payment Failed or Cancelled on POS terminal.");
+              setYeahPayMsg(
+                queryData.msg || "Payment Failed or Cancelled on POS terminal.",
+              );
             }
           } catch (e) {
             console.error("YeahPay query error:", e);
@@ -1497,12 +1738,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         }, 2000);
       } else {
         setYeahPayStatus("FAILED");
-        setYeahPayMsg(data.msg || "Failed to initiate payment on YeahPay terminal.");
+        setYeahPayMsg(
+          data.msg || "Failed to initiate payment on YeahPay terminal.",
+        );
       }
     } catch (err: any) {
       console.error("handleYeahPayPayment Error:", err);
       setYeahPayStatus("FAILED");
-      setYeahPayMsg(err?.message || "Network error connecting to YeahPay gateway.");
+      setYeahPayMsg(
+        err?.message || "Network error connecting to YeahPay gateway.",
+      );
     }
   };
 
@@ -1511,20 +1756,27 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setShowPaymentPopup(false);
 
     try {
-      const orderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
+      const orderId =
+        currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
       const carNumber = await AsyncStorage.getItem("kioskCarNumber");
       const customerName = await AsyncStorage.getItem("kioskCustomerName");
-      const customerVehicleId = await AsyncStorage.getItem("kioskCustomerVehicleId");
+      const customerVehicleId = await AsyncStorage.getItem(
+        "kioskCustomerVehicleId",
+      );
       const orderType = await AsyncStorage.getItem("kioskOrderType");
       const storedTableId = await AsyncStorage.getItem("tableId");
       const storedTableNo = await AsyncStorage.getItem("tableNo");
       const resolvedTableId = tableId || storedTableId || "TAKEAWAY";
-      const resolvedTableNo = tableNo || storedTableNo || resolvedTableId || "TAKEAWAY";
+      const resolvedTableNo =
+        tableNo || storedTableNo || resolvedTableId || "TAKEAWAY";
 
       // Retain selected dish ID from cart throughout checkout
-      const selectedDishId = cart.length > 0 ? (cart[0]?.DishId || cart[0]?.id) : null;
+      const selectedDishId =
+        cart.length > 0 ? cart[0]?.DishId || cart[0]?.id : null;
 
-      const finalPayable = (Number(calculatedTotal) + Number(extraCharge)).toFixed(2);
+      const finalPayable = (
+        Number(calculatedTotal) + Number(extraCharge)
+      ).toFixed(2);
 
       const res = await fetch(`${API}/order/complete-online-payment`, {
         method: "POST",
@@ -1565,7 +1817,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             }),
           });
           // Update cached default dish ID for this session
-          await AsyncStorage.setItem("kioskDefaultDishId", String(selectedDishId));
+          await AsyncStorage.setItem(
+            "kioskDefaultDishId",
+            String(selectedDishId),
+          );
         } catch (saveErr) {
           console.warn("Kiosk customer save endpoint error:", saveErr);
         }
@@ -1613,7 +1868,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const filteredDishes = dishes.filter((d) =>
-    (d.Name || "").toLowerCase().includes(search.toLowerCase())
+    (d.Name || "").toLowerCase().includes(search.toLowerCase()),
   );
 
   if (loading) {
@@ -1645,22 +1900,40 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             },
           ]}
         >
-          <View style={styles.kioskToastPill}>
-            <View style={styles.kioskToastIconWrap}>
-              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+          <View style={[styles.kioskToastPill, toastNotification.type === "error" && styles.kioskToastPillError]}>
+            <View style={[styles.kioskToastIconWrap, toastNotification.type === "error" && styles.kioskToastIconWrapError]}>
+              <Ionicons
+                name={toastNotification.type === "error" ? "alert-circle" : "checkmark-circle"}
+                size={30}
+                color={toastNotification.type === "error" ? "#ef4444" : "#10b981"}
+              />
             </View>
             <View style={styles.kioskToastTextWrap}>
-              <Text style={styles.kioskToastTitle} numberOfLines={1}>
+              <Text style={[styles.kioskToastTitle, toastNotification.type === "error" && styles.kioskToastTitleError]} numberOfLines={2}>
                 {toastNotification.itemName}
               </Text>
-              <Text style={styles.kioskToastSubtitle}>
-                Added to cart {toastNotification.qty > 1 ? `(Qty: ${toastNotification.qty})` : ""} • {currencySymbol}{Number(toastNotification.price).toFixed(2)}
-              </Text>
+              {toastNotification.type !== "error" && (
+                <Text style={styles.kioskToastSubtitle}>
+                  Added to cart{" "}
+                  {toastNotification.qty > 1
+                    ? `(Qty: ${toastNotification.qty})`
+                    : ""}{" "}
+                  • {currencySymbol}
+                  {Number(toastNotification.price).toFixed(2)}
+                </Text>
+              )}
             </View>
-            <View style={styles.kioskToastBadge}>
-              <Ionicons name="cart" size={14} color="#ffffff" style={{ marginRight: 3 }} />
-              <Text style={styles.kioskToastBadgeText}>{cart.length}</Text>
-            </View>
+            {toastNotification.type !== "error" && (
+              <View style={styles.kioskToastBadge}>
+                <Ionicons
+                  name="cart"
+                  size={18}
+                  color="#ffffff"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.kioskToastBadgeText}>{cart.length}</Text>
+              </View>
+            )}
           </View>
         </Animated.View>
       )}
@@ -1669,17 +1942,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       <View style={styles.mainLayout}>
         {/* Categories Sidebar with Accordion Dropdown for Dish Groups */}
         <View style={styles.sidebar}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sidebarContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.sidebarContent}
+          >
             {categories.map((cat) => {
               const isActive = activeCategory === cat.CategoryId;
               const isExpanded = expandedCategoryId === cat.CategoryId;
               return (
                 <View key={cat.CategoryId} style={styles.catGroupAccordionWrap}>
                   <TouchableOpacity
-                    style={[
-                      styles.catCard,
-                      isActive && styles.catCardActive,
-                    ]}
+                    style={[styles.catCard, isActive && styles.catCardActive]}
                     onPress={() => {
                       setShowModifier(false);
                       setShowComboCustomizer(false);
@@ -1710,7 +1983,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                     {/* Category Food Icon */}
                     <View style={styles.catIconWrap}>
-                      <Ionicons name="restaurant-outline" size={28} color="#f97316" />
+                      <Ionicons
+                        name="restaurant-outline"
+                        size={28}
+                        color="#f97316"
+                      />
                     </View>
 
                     {/* Info: Title & 3 dashed dots */}
@@ -1725,7 +2002,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         {cat.KitchenTypeName}
                       </Text>
                       <View style={styles.catDotRow}>
-                        <View style={[styles.catDot, { backgroundColor: "#f97316" }]} />
+                        <View
+                          style={[
+                            styles.catDot,
+                            { backgroundColor: "#f97316" },
+                          ]}
+                        />
                         <View style={styles.catDot} />
                         <View style={styles.catDot} />
                       </View>
@@ -1733,7 +2015,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                     {/* Chevron Arrow: Rotates down if active */}
                     <View style={styles.catArrowWrap}>
-                      <Text style={[styles.catArrowText, isExpanded && styles.catArrowTextActive]}>
+                      <Text
+                        style={[
+                          styles.catArrowText,
+                          isExpanded && styles.catArrowTextActive,
+                        ]}
+                      >
                         {isExpanded ? "▼" : "›"}
                       </Text>
                     </View>
@@ -1765,10 +2052,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             activeOpacity={0.8}
                           >
                             {/* Subtle clean vertical indicator pip */}
-                            <View style={[
-                              styles.sidebarSubgroupBar,
-                              isGrpActive && styles.sidebarSubgroupBarActive
-                            ]} />
+                            <View
+                              style={[
+                                styles.sidebarSubgroupBar,
+                                isGrpActive && styles.sidebarSubgroupBarActive,
+                              ]}
+                            />
 
                             <Text
                               style={[
@@ -1780,12 +2069,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               {grp.DishGroupName}
                             </Text>
 
-                            <View style={[
-                              styles.sidebarSubgroupIndicator,
-                              isGrpActive && styles.sidebarSubgroupIndicatorActive
-                            ]}>
+                            <View
+                              style={[
+                                styles.sidebarSubgroupIndicator,
+                                isGrpActive &&
+                                  styles.sidebarSubgroupIndicatorActive,
+                              ]}
+                            >
                               <Ionicons
-                                name={isGrpActive ? "chevron-forward" : "chevron-forward-outline"}
+                                name={
+                                  isGrpActive
+                                    ? "chevron-forward"
+                                    : "chevron-forward-outline"
+                                }
                                 size={16}
                                 color={isGrpActive ? "#ea580c" : "#94a3b8"}
                               />
@@ -1812,11 +2108,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                 <View style={styles.customizeTopTitleWrap}>
                   <View style={styles.customizeChefHatWrap}>
-                    <Ionicons name="restaurant-outline" size={22} color="#0f172a" />
+                    <Ionicons
+                      name="restaurant-outline"
+                      size={22}
+                      color="#0f172a"
+                    />
                   </View>
-                  <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                  <View
+                    style={{ flexDirection: "row", alignItems: "baseline" }}
+                  >
                     <Text style={styles.customizeTopTitleBold}>Customize </Text>
-                    <Text style={styles.customizeTopTitleOrange}>Your Item</Text>
+                    <Text style={styles.customizeTopTitleOrange}>
+                      Your Item
+                    </Text>
                   </View>
                   <View style={styles.customizeTopOrangeSwoosh} />
                 </View>
@@ -1872,7 +2176,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                     <Text style={styles.customizeHeroSubtitle}>
                       {selectedDish?.Description
-                        ? parseDescriptionBullets(selectedDish.Description).slice(0, 3).join(", ")
+                        ? parseDescriptionBullets(selectedDish.Description)
+                            .slice(0, 3)
+                            .join(", ")
                         : "Fresh Apple, No Added Colors, No Preservatives"}
                     </Text>
 
@@ -1880,7 +2186,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       <Text style={styles.customizePriceText}>
                         $
                         {Number(
-                          selectedDish?.Price || selectedDish?.price || 0
+                          selectedDish?.Price || selectedDish?.price || 0,
                         ).toFixed(2)}
                       </Text>
                     </View>
@@ -1891,7 +2197,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 {comboLoading && (
                   <View style={styles.comboLoadingBox}>
                     <ActivityIndicator size="large" color="#ea580c" />
-                    <Text style={styles.comboLoadingText}>Loading options...</Text>
+                    <Text style={styles.comboLoadingText}>
+                      Loading options...
+                    </Text>
                   </View>
                 )}
 
@@ -1901,9 +2209,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   const minSel = Number(group.minSelection || 0);
                   const maxSel = Number(group.maxSelection || 1);
                   const isRequired = minSel > 0;
+                  const isGroupIncomplete = !!comboError && selectedIds.length < minSel;
 
                   return (
-                    <View key={group.comboGroupId} style={styles.customizeSectionCard}>
+                    <View
+                      key={group.comboGroupId}
+                      style={[styles.customizeSectionCard, isGroupIncomplete && styles.customizeSectionCardIncomplete]}
+                    >
                       <View style={styles.customizeSectionHeaderRow}>
                         <View style={styles.customizeSectionOrangeTab}>
                           <Text style={styles.customizeSectionOrangeTabText}>
@@ -1923,7 +2235,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         {(group.options || []).map((opt: any) => {
                           const isSelected = selectedIds.includes(opt.dishId);
                           const totalOptSurcharge =
-                            (Number(opt.surcharge) || 0) + (Number(opt.dishPrice) || 0);
+                            (Number(opt.surcharge) || 0) +
+                            (Number(opt.dishPrice) || 0);
 
                           return (
                             <TouchableOpacity
@@ -1937,7 +2250,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                   group.comboGroupId,
                                   opt,
                                   group.isMultiSelect,
-                                  group.maxSelection
+                                  group.maxSelection,
                                 )
                               }
                               activeOpacity={0.85}
@@ -1945,19 +2258,25 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               <View
                                 style={[
                                   styles.customizeTileCheckSquare,
-                                  isSelected && styles.customizeTileCheckSquareSelected,
+                                  isSelected &&
+                                    styles.customizeTileCheckSquareSelected,
                                   !group.isMultiSelect && { borderRadius: 12 },
                                 ]}
                               >
                                 {isSelected && (
-                                  <Ionicons name="checkmark" size={14} color="#ffffff" />
+                                  <Ionicons
+                                    name="checkmark"
+                                    size={14}
+                                    color="#ffffff"
+                                  />
                                 )}
                               </View>
 
                               <Text
                                 style={[
                                   styles.customizeTileName,
-                                  isSelected && styles.customizeTileNameSelected,
+                                  isSelected &&
+                                    styles.customizeTileNameSelected,
                                 ]}
                                 numberOfLines={2}
                               >
@@ -1967,13 +2286,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               <View
                                 style={[
                                   styles.customizeTilePriceBadge,
-                                  isSelected && styles.customizeTilePriceBadgeSelected,
+                                  isSelected &&
+                                    styles.customizeTilePriceBadgeSelected,
                                 ]}
                               >
                                 <Text
                                   style={[
                                     styles.customizeTilePriceText,
-                                    isSelected && styles.customizeTilePriceTextSelected,
+                                    isSelected &&
+                                      styles.customizeTilePriceTextSelected,
                                   ]}
                                 >
                                   {totalOptSurcharge > 0
@@ -1992,11 +2313,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 {/* Modifiers / Add-ons Section (if any modifiers exist) */}
                 {(() => {
                   const activeModifiers =
-                    (comboDishModifiers && comboDishModifiers.length > 0)
+                    comboDishModifiers && comboDishModifiers.length > 0
                       ? comboDishModifiers
                       : modifiers;
 
-                  if (!activeModifiers || activeModifiers.length === 0) return null;
+                  if (!activeModifiers || activeModifiers.length === 0)
+                    return null;
 
                   const modGroups: { [title: string]: any[] } = {};
                   activeModifiers.forEach((m) => {
@@ -2016,7 +2338,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           </Text>
                         </View>
                         <View style={styles.customizeOptionalBadge}>
-                          <Text style={styles.customizeOptionalText}>Optional</Text>
+                          <Text style={styles.customizeOptionalText}>
+                            Optional
+                          </Text>
                         </View>
                       </View>
 
@@ -2024,7 +2348,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         const groupItems = modGroups[groupKey];
                         const getGroupIcon = (title: string) => {
                           const t = title.toLowerCase();
-                          if (t.includes("flavor") || t.includes("syrup") || t.includes("drink"))
+                          if (
+                            t.includes("flavor") ||
+                            t.includes("syrup") ||
+                            t.includes("drink")
+                          )
                             return "water-outline";
                           if (t.includes("topping") || t.includes("sauce"))
                             return "restaurant-outline";
@@ -2032,7 +2360,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         };
 
                         return (
-                          <View key={groupKey} style={styles.customizeGroupBlock}>
+                          <View
+                            key={groupKey}
+                            style={styles.customizeGroupBlock}
+                          >
                             <View style={styles.customizeGroupSubHeader}>
                               <View style={styles.customizeGroupSubHeaderLeft}>
                                 <View style={styles.customizeGroupIconBadge}>
@@ -2042,15 +2373,25 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                     color="#ea580c"
                                   />
                                 </View>
-                                <Text style={styles.customizeGroupTitleText}>{groupKey}</Text>
+                                <Text style={styles.customizeGroupTitleText}>
+                                  {groupKey}
+                                </Text>
                               </View>
-                              <Ionicons name="chevron-up" size={20} color="#ea580c" />
+                              <Ionicons
+                                name="chevron-up"
+                                size={20}
+                                color="#ea580c"
+                              />
                             </View>
 
                             <View style={styles.customizeTilesGridContainer}>
                               {groupItems.map((item) => {
-                                const id = String(item.ModifierID || item.ModifierId);
-                                const isComboActive = !!(comboConfig?.groups?.length > 0);
+                                const id = String(
+                                  item.ModifierID || item.ModifierId,
+                                );
+                                const isComboActive = !!(
+                                  comboConfig?.groups?.length > 0
+                                );
                                 const isSelected = isComboActive
                                   ? selectedComboModifierIds.includes(id)
                                   : selectedModifierIds.includes(id);
@@ -2061,7 +2402,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                     key={id}
                                     style={[
                                       styles.customizeTileCard,
-                                      isSelected && styles.customizeTileCardSelected,
+                                      isSelected &&
+                                        styles.customizeTileCardSelected,
                                     ]}
                                     onPress={() => {
                                       if (isComboActive) {
@@ -2070,7 +2412,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                         setSelectedModifierIds((prev) =>
                                           prev.includes(id)
                                             ? prev.filter((x) => x !== id)
-                                            : [...prev, id]
+                                            : [...prev, id],
                                         );
                                       }
                                     }}
@@ -2079,18 +2421,24 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                     <View
                                       style={[
                                         styles.customizeTileCheckSquare,
-                                        isSelected && styles.customizeTileCheckSquareSelected,
+                                        isSelected &&
+                                          styles.customizeTileCheckSquareSelected,
                                       ]}
                                     >
                                       {isSelected && (
-                                        <Ionicons name="checkmark" size={14} color="#ffffff" />
+                                        <Ionicons
+                                          name="checkmark"
+                                          size={14}
+                                          color="#ffffff"
+                                        />
                                       )}
                                     </View>
 
                                     <Text
                                       style={[
                                         styles.customizeTileName,
-                                        isSelected && styles.customizeTileNameSelected,
+                                        isSelected &&
+                                          styles.customizeTileNameSelected,
                                       ]}
                                       numberOfLines={2}
                                     >
@@ -2100,16 +2448,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                     <View
                                       style={[
                                         styles.customizeTilePriceBadge,
-                                        isSelected && styles.customizeTilePriceBadgeSelected,
+                                        isSelected &&
+                                          styles.customizeTilePriceBadgeSelected,
                                       ]}
                                     >
                                       <Text
                                         style={[
                                           styles.customizeTilePriceText,
-                                          isSelected && styles.customizeTilePriceTextSelected,
+                                          isSelected &&
+                                            styles.customizeTilePriceTextSelected,
                                         ]}
                                       >
-                                        {priceNum > 0 ? `+ $${priceNum.toFixed(2)}` : "$0.00"}
+                                        {priceNum > 0
+                                          ? `+ $${priceNum.toFixed(2)}`
+                                          : "$0.00"}
                                       </Text>
                                     </View>
                                   </TouchableOpacity>
@@ -2126,7 +2478,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 {/* Inline Combo Error Message */}
                 {!!comboError && (
                   <View style={styles.comboInlineErrorBox}>
-                    <Text style={styles.comboInlineErrorText}>{comboError}</Text>
+                    <Text style={styles.comboInlineErrorText}>
+                      {comboError}
+                    </Text>
                   </View>
                 )}
               </ScrollView>
@@ -2159,17 +2513,23 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     let totalPrice = "0.00";
 
                     if (isComboActive) {
-                      totalPrice = (calculateComboTotal() * comboQty).toFixed(2);
+                      totalPrice = (calculateComboTotal() * comboQty).toFixed(
+                        2,
+                      );
                     } else {
                       const chosenMods = modifiers.filter((m) =>
-                        selectedModifierIds.includes(String(m.ModifierID || m.ModifierId))
+                        selectedModifierIds.includes(
+                          String(m.ModifierID || m.ModifierId),
+                        ),
                       );
                       const extra = chosenMods.reduce(
                         (s, m) => s + Number(m.Price || 0),
-                        0
+                        0,
                       );
                       const unitPrice =
-                        Number(selectedDish?.Price || selectedDish?.price || 0) + extra;
+                        Number(
+                          selectedDish?.Price || selectedDish?.price || 0,
+                        ) + extra;
                       totalPrice = (unitPrice * comboQty).toFixed(2);
                     }
 
@@ -2219,15 +2579,22 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </View>
                 <View style={styles.heroTextWrap}>
                   <Text style={styles.heroCategoryTitle}>
-                    {categories.find((c) => c.CategoryId === activeCategory)?.KitchenTypeName || "Delicious Dishes"}
+                    {categories.find((c) => c.CategoryId === activeCategory)
+                      ?.KitchenTypeName || "Delicious Dishes"}
                   </Text>
-                  <Text style={styles.heroSubtitle}>Choose your favourite dish</Text>
+                  <Text style={styles.heroSubtitle}>
+                    Choose your favourite dish
+                  </Text>
                 </View>
               </View>
 
               {/* Dishes Grid */}
               <FlatList
-                data={numColumns > 1 ? formatData(filteredDishes, numColumns) : filteredDishes}
+                data={
+                  numColumns > 1
+                    ? formatData(filteredDishes, numColumns)
+                    : filteredDishes
+                }
                 keyExtractor={(d) => String(d.DishId)}
                 numColumns={numColumns}
                 key={`cols-${numColumns}`}
@@ -2244,12 +2611,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   }
 
                   const dishQty = cart
-                    .filter((c: any) => (c.DishId || c.id) === (item.DishId || item.id))
+                    .filter(
+                      (c: any) =>
+                        (c.DishId || c.id) === (item.DishId || item.id),
+                    )
                     .reduce((sum: number, c: any) => sum + (c.qty || 1), 0);
 
                   return (
                     <TouchableOpacity
-                      style={[styles.dishCard, item.IsSoldOut && styles.dishSoldOut]}
+                      style={[
+                        styles.dishCard,
+                        item.IsSoldOut && styles.dishSoldOut,
+                      ]}
                       onPress={() => handleDishClick(item)}
                       activeOpacity={0.88}
                     >
@@ -2259,11 +2632,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           style={[
                             styles.dishCardQtyBadge,
                             {
-                              transform: [{ scale: getBadgeAnim(item.DishId || item.id) }],
+                              transform: [
+                                { scale: getBadgeAnim(item.DishId || item.id) },
+                              ],
                             },
                           ]}
                         >
-                          <Text style={styles.dishCardQtyBadgeText}>{dishQty}</Text>
+                          <Text style={styles.dishCardQtyBadgeText}>
+                            {dishQty}
+                          </Text>
                         </Animated.View>
                       ) : (
                         <View style={styles.dishCardHeartWrap}>
@@ -2280,7 +2657,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             resizeMode="cover"
                           />
                         ) : (
-                          <Ionicons name="fast-food-outline" size={68} color="#94a3b8" />
+                          <Ionicons
+                            name="fast-food-outline"
+                            size={68}
+                            color="#94a3b8"
+                          />
                         )}
                         {item.IsSoldOut && (
                           <View style={styles.soldOutBadge}>
@@ -2294,11 +2675,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           <Text style={styles.dishName} numberOfLines={2}>
                             {item.Name}
                           </Text>
-
-
                         </View>
 
-                        <Text style={styles.dishPrice}>${Number(item.Price || 0).toFixed(2)}</Text>
+                        <Text style={styles.dishPrice}>
+                          ${Number(item.Price || 0).toFixed(2)}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -2329,14 +2710,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               activeOpacity={0.8}
             >
               <Ionicons name="refresh-outline" size={24} color="#ea580c" />
-              <Text style={styles.bottomBarStartOverText} numberOfLines={1}>Start Over</Text>
+              <Text style={styles.bottomBarStartOverText} numberOfLines={1}>
+                Start Over
+              </Text>
             </TouchableOpacity>
           </View>
 
           {/* Section 2: Clear Cart with Trash Icon (25%) */}
           <View style={styles.bottomBarCol}>
             <TouchableOpacity
-              style={[styles.cartClearBtn, cart.length === 0 && styles.cartActionBtnDisabled]}
+              style={[
+                styles.cartClearBtn,
+                cart.length === 0 && styles.cartActionBtnDisabled,
+              ]}
               onPress={handleClearCart}
               disabled={cart.length === 0}
               activeOpacity={0.8}
@@ -2347,7 +2733,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 color={cart.length === 0 ? "#cbd5e1" : "#e11d48"}
               />
               <Text
-                style={[styles.cartClearText, cart.length === 0 && styles.cartClearTextDisabled]}
+                style={[
+                  styles.cartClearText,
+                  cart.length === 0 && styles.cartClearTextDisabled,
+                ]}
                 numberOfLines={1}
               >
                 Clear Cart
@@ -2362,7 +2751,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 {cart.length} {cart.length === 1 ? "ITEM" : "ITEMS"}
               </Text>
               <Text style={styles.cartBarPrice} numberOfLines={1}>
-                {currencySymbol}{calculatedTotal}
+                {currencySymbol}
+                {calculatedTotal}
               </Text>
             </View>
           </View>
@@ -2370,7 +2760,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           {/* Section 4: View Cart with Shopping Cart Icon (25%) */}
           <View style={styles.bottomBarCol}>
             <TouchableOpacity
-              style={[styles.cartViewBtn, cart.length === 0 && styles.cartViewBtnDisabled]}
+              style={[
+                styles.cartViewBtn,
+                cart.length === 0 && styles.cartViewBtnDisabled,
+              ]}
               onPress={() => cart.length > 0 && setShowCartPage(true)}
               disabled={cart.length === 0}
               activeOpacity={0.88}
@@ -2381,7 +2774,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 color={cart.length === 0 ? "#94a3b8" : "#ffffff"}
               />
               <Text
-                style={[styles.cartViewText, cart.length === 0 && styles.cartViewTextDisabled]}
+                style={[
+                  styles.cartViewText,
+                  cart.length === 0 && styles.cartViewTextDisabled,
+                ]}
                 numberOfLines={1}
               >
                 View Cart
@@ -2446,7 +2842,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               ]}
             >
               <View style={styles.attractLoopCtaBtn}>
-                <Text style={styles.attractLoopCtaText}>TOUCH SCREEN TO ORDER</Text>
+                <Text style={styles.attractLoopCtaText}>
+                  TOUCH SCREEN TO ORDER
+                </Text>
               </View>
             </Animated.View>
           </View>
@@ -2475,7 +2873,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             {/* Aesthetic Countdown Ring with Progress Pill */}
             <View style={styles.inactivityCountdownOuter}>
               <View style={styles.inactivityCountdownCircle}>
-                <Text style={styles.inactivityCountdownNumber}>{inactivityCountdown}</Text>
+                <Text style={styles.inactivityCountdownNumber}>
+                  {inactivityCountdown}
+                </Text>
                 <Text style={styles.inactivityCountdownUnit}>sec</Text>
               </View>
             </View>
@@ -2487,7 +2887,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={resetAllKioskState}
                 activeOpacity={0.75}
               >
-                <Ionicons name="refresh" size={18} color="#64748b" style={{ marginRight: 6 }} />
+                <Ionicons
+                  name="refresh"
+                  size={18}
+                  color="#64748b"
+                  style={{ marginRight: 6 }}
+                />
                 <Text style={styles.inactivityResetBtnText}>Start Over</Text>
               </TouchableOpacity>
 
@@ -2496,8 +2901,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={resetIdleTimer}
                 activeOpacity={0.88}
               >
-                <Ionicons name="hand-left" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                <Text style={styles.inactivityContinueBtnText}>Continue Ordering</Text>
+                <Ionicons
+                  name="hand-left"
+                  size={20}
+                  color="#ffffff"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.inactivityContinueBtnText}>
+                  Continue Ordering
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2520,21 +2932,29 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             {cart.map((item, index) => (
               <View key={String(index)} style={styles.cartItemRow}>
                 <View style={styles.cartItemLeft}>
-                  <Text style={styles.cartItemName}>{item.Name || item.name}</Text>
+                  <Text style={styles.cartItemName}>
+                    {item.Name || item.name}
+                  </Text>
                   {item.selectedMods?.length > 0 && (
                     <Text style={styles.cartItemMods}>
-                      {item.selectedMods.map((m: any) => m.ModifierName).join(", ")}
+                      {item.selectedMods
+                        .map((m: any) => m.ModifierName)
+                        .join(", ")}
                     </Text>
                   )}
                   {item.comboSelections?.length > 0 && (
                     <View style={styles.comboSelectionsCartBox}>
                       {item.comboSelections.map((grp: any, gIdx: number) => (
                         <View key={gIdx} style={{ marginTop: 3 }}>
-                          <Text style={styles.comboGroupNameCart}>{grp.groupName}:</Text>
+                          <Text style={styles.comboGroupNameCart}>
+                            {grp.groupName}:
+                          </Text>
                           {(grp.items || []).map((opt: any, oIdx: number) => (
                             <Text key={oIdx} style={styles.comboItemNameCart}>
                               ↳ {opt.name}
-                              {(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)) > 0
+                              {Number(opt.surcharge || 0) +
+                                Number(opt.dishPrice || 0) >
+                              0
                                 ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
                                 : ""}
                             </Text>
@@ -2547,13 +2967,24 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                 <View style={styles.cartItemCenter}>
                   <View style={styles.qtyControlsContainer}>
-                    <Text style={[styles.qtyVal, { fontSize: 16, fontWeight: '700' }]}>{item.qty || 1}</Text>
+                    <Text
+                      style={[
+                        styles.qtyVal,
+                        { fontSize: 16, fontWeight: "700" },
+                      ]}
+                    >
+                      {item.qty || 1}
+                    </Text>
                   </View>
                 </View>
 
                 <View style={styles.cartItemRight}>
                   <Text style={styles.cartItemPrice}>
-                    ${(Number(item.Price || item.finalPrice || 0) * Number(item.qty || 1)).toFixed(2)}
+                    $
+                    {(
+                      Number(item.Price || item.finalPrice || 0) *
+                      Number(item.qty || 1)
+                    ).toFixed(2)}
                   </Text>
                   <TouchableOpacity
                     style={styles.cartItemDeleteBtn}
@@ -2573,35 +3004,53 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.cartSummaryCard}>
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Subtotal</Text>
-                <Text style={styles.totalValue}>{currencySymbol}{subTotal.toFixed(2)}</Text>
+                <Text style={styles.totalValue}>
+                  {currencySymbol}
+                  {subTotal.toFixed(2)}
+                </Text>
               </View>
 
               {takeawayCharge > 0 && (
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Takeaway Charge</Text>
-                  <Text style={styles.totalValue}>{currencySymbol}{takeawayCharge.toFixed(2)}</Text>
+                  <Text style={styles.totalValue}>
+                    {currencySymbol}
+                    {takeawayCharge.toFixed(2)}
+                  </Text>
                 </View>
               )}
 
               {serviceCharge > 0 && (
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Service Charge ({applicableScPercent}%)</Text>
-                  <Text style={styles.totalValue}>{currencySymbol}{serviceCharge.toFixed(2)}</Text>
+                  <Text style={styles.totalLabel}>
+                    Service Charge ({applicableScPercent}%)
+                  </Text>
+                  <Text style={styles.totalValue}>
+                    {currencySymbol}
+                    {serviceCharge.toFixed(2)}
+                  </Text>
                 </View>
               )}
 
               {gstPercent > 0 && (
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>
-                    GST ({gstPercent}%) {taxMode === "inclusive" ? "(Incl)" : ""}
+                    GST ({gstPercent}%){" "}
+                    {taxMode === "inclusive" ? "(Incl)" : ""}
                   </Text>
-                  <Text style={styles.totalValue}>{currencySymbol}{gstAmount.toFixed(2)}</Text>
+                  <Text style={styles.totalValue}>
+                    {currencySymbol}
+                    {gstAmount.toFixed(2)}
+                  </Text>
                 </View>
               )}
 
               <View style={[styles.totalRow, styles.grandTotalRow]}>
                 <Text style={styles.grandTotalLabel}>Total</Text>
-                <Text style={styles.grandTotalValue}>{currencySymbol}{calculatedTotal}</Text>
+                <Text style={styles.grandTotalValue}>
+                  {currencySymbol}
+                  {calculatedTotal}
+                </Text>
               </View>
 
               <TouchableOpacity
@@ -2637,7 +3086,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.tableModalHeader}>
               <View>
                 <Text style={styles.tableModalTitle}>
-                  {checkoutStep === "CHOICE" ? "Checkout Option" : "Enter Tent Number"}
+                  {checkoutStep === "CHOICE"
+                    ? "Checkout Option"
+                    : "Enter Tent Number"}
                 </Text>
                 <Text style={styles.tableModalSubtitle}>
                   {checkoutStep === "CHOICE"
@@ -2663,34 +3114,63 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   activeOpacity={0.85}
                 >
                   <View style={styles.checkoutChoiceCardTop}>
-                    <View style={[styles.checkoutChoiceIconWrap, { backgroundColor: "#fff7ed" }]}>
+                    <View
+                      style={[
+                        styles.checkoutChoiceIconWrap,
+                        { backgroundColor: "#fff7ed" },
+                      ]}
+                    >
                       <Ionicons name="card-outline" size={32} color="#ea580c" />
                     </View>
-                    <Ionicons name="chevron-forward" size={24} color="#94a3b8" />
+                    <Ionicons
+                      name="chevron-forward"
+                      size={24}
+                      color="#94a3b8"
+                    />
                   </View>
                   <View style={styles.checkoutChoiceTextWrap}>
                     <Text style={styles.checkoutChoiceTitle}>Self Collect</Text>
                     <Text style={styles.checkoutChoiceDescription}>
-                      Continue straight to payment and collect your food at the counter.
+                      Continue straight to payment and collect your food at the
+                      counter.
                     </Text>
                   </View>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.checkoutChoiceCard, styles.checkoutChoiceCardHighlight]}
+                  style={[
+                    styles.checkoutChoiceCard,
+                    styles.checkoutChoiceCardHighlight,
+                  ]}
                   onPress={handleChooseEnterTentNumber}
                   activeOpacity={0.85}
                 >
                   <View style={styles.checkoutChoiceCardTop}>
-                    <View style={[styles.checkoutChoiceIconWrap, { backgroundColor: "#f0fdf4" }]}>
-                      <Ionicons name="restaurant-outline" size={32} color="#16a34a" />
+                    <View
+                      style={[
+                        styles.checkoutChoiceIconWrap,
+                        { backgroundColor: "#f0fdf4" },
+                      ]}
+                    >
+                      <Ionicons
+                        name="restaurant-outline"
+                        size={32}
+                        color="#16a34a"
+                      />
                     </View>
-                    <Ionicons name="chevron-forward" size={24} color="#ea580c" />
+                    <Ionicons
+                      name="chevron-forward"
+                      size={24}
+                      color="#ea580c"
+                    />
                   </View>
                   <View style={styles.checkoutChoiceTextWrap}>
-                    <Text style={styles.checkoutChoiceTitle}>Enter Tent Number</Text>
+                    <Text style={styles.checkoutChoiceTitle}>
+                      Enter Tent Number
+                    </Text>
                     <Text style={styles.checkoutChoiceDescription}>
-                      Manually enter your table / tent stand number so staff can deliver your food.
+                      Manually enter your table / tent stand number so staff can
+                      deliver your food.
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -2698,11 +3178,23 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             ) : (
               /* ── Step 2: Tent Number Numberpad Input (Grid layout) ── */
               <View style={styles.tableDirectInputBody}>
-                <Text style={styles.tentKeypadTitle}>Grab a Table tent and enter the code.</Text>
+                <Text style={styles.tentKeypadTitle}>
+                  Grab a Table tent and enter the code.
+                </Text>
 
                 {/* Display Value Box */}
-                <View style={[styles.tentDisplayBox, !!tableInputError && styles.tableDirectInputBoxError]}>
-                  <Text style={[styles.tentDisplayText, !inputTableNo && styles.tentDisplayPlaceholder]}>
+                <View
+                  style={[
+                    styles.tentDisplayBox,
+                    !!tableInputError && styles.tableDirectInputBoxError,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tentDisplayText,
+                      !inputTableNo && styles.tentDisplayPlaceholder,
+                    ]}
+                  >
                     {inputTableNo || "Enter tent #"}
                   </Text>
                 </View>
@@ -2716,7 +3208,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "1");
+                          setInputTableNo((prev) => prev + "1");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2728,7 +3220,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "2");
+                          setInputTableNo((prev) => prev + "2");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2740,7 +3232,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "3");
+                          setInputTableNo((prev) => prev + "3");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2756,7 +3248,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "4");
+                          setInputTableNo((prev) => prev + "4");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2768,7 +3260,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "5");
+                          setInputTableNo((prev) => prev + "5");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2780,7 +3272,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "6");
+                          setInputTableNo((prev) => prev + "6");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2796,7 +3288,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "7");
+                          setInputTableNo((prev) => prev + "7");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2808,7 +3300,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "8");
+                          setInputTableNo((prev) => prev + "8");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2820,7 +3312,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "9");
+                          setInputTableNo((prev) => prev + "9");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2846,7 +3338,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (inputTableNo.length < 8) {
-                          setInputTableNo(prev => prev + "0");
+                          setInputTableNo((prev) => prev + "0");
                           if (tableInputError) setTableInputError(null);
                         }
                       }}
@@ -2857,31 +3349,44 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       style={[styles.tentKeypadKey, styles.tentKeypadActionKey]}
                       activeOpacity={0.7}
                       onPress={() => {
-                        setInputTableNo(prev => prev.slice(0, -1));
+                        setInputTableNo((prev) => prev.slice(0, -1));
                         if (tableInputError) setTableInputError(null);
                       }}
                     >
-                      <Ionicons name="backspace-outline" size={30} color="#475569" />
+                      <Ionicons
+                        name="backspace-outline"
+                        size={30}
+                        color="#475569"
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
 
                 {tableInputError ? (
                   <View style={styles.tableErrorBadge}>
-                    <Text style={styles.tableErrorBadgeText}>{tableInputError}</Text>
+                    <Text style={styles.tableErrorBadgeText}>
+                      {tableInputError}
+                    </Text>
                   </View>
                 ) : null}
 
                 <TouchableOpacity
-                  style={[styles.tentContinueBtn, isUpdatingTent && { opacity: 0.7 }]}
+                  style={[
+                    styles.tentContinueBtn,
+                    isUpdatingTent && { opacity: 0.7 },
+                  ]}
                   onPress={handleSubmitTentNumber}
                   activeOpacity={0.88}
                   disabled={isUpdatingTent || !inputTableNo.trim()}
                 >
                   <Text style={styles.tentContinueBtnText}>
-                    {isUpdatingTent ? "Checking Availability..." : "Continue to Payment"}
+                    {isUpdatingTent
+                      ? "Checking Availability..."
+                      : "Continue to Payment"}
                   </Text>
-                  {!isUpdatingTent && <Ionicons name="arrow-forward" size={22} color="#ffffff" />}
+                  {!isUpdatingTent && (
+                    <Ionicons name="arrow-forward" size={22} color="#ffffff" />
+                  )}
                 </TouchableOpacity>
               </View>
             )}
@@ -2898,7 +3403,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   }}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.tableBackToCartBtnText}>← Go to Cart</Text>
+                  <Text style={styles.tableBackToCartBtnText}>
+                    ← Go to Cart
+                  </Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
@@ -2909,7 +3416,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   }}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.tableBackToCartBtnText}>← Go to Cart</Text>
+                  <Text style={styles.tableBackToCartBtnText}>
+                    ← Go to Cart
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -2936,7 +3445,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <Text style={styles.paymentTotal}>TOTAL: {currencySymbol}{totalAmount}</Text>
+            <Text style={styles.paymentTotal}>
+              TOTAL: {currencySymbol}
+              {totalAmount}
+            </Text>
             <Text style={styles.paymentPrompt}>Choose your payment mode</Text>
 
             <View style={styles.paymentOptionsRow}>
@@ -2946,7 +3458,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={() => handlePaymodeClick("CARD")}
               >
                 <Text style={styles.paymentEmoji}>💳</Text>
-                <Text style={[styles.paymentModeLabel, { color: "#1d4ed8" }]}>Card</Text>
+                <Text style={[styles.paymentModeLabel, { color: "#1d4ed8" }]}>
+                  Card
+                </Text>
                 {getExtraChargeForPaymode("CARD") > 0 && (
                   <Text style={styles.extraFeeNotice}>
                     (+${getExtraChargeForPaymode("CARD").toFixed(2)} fee)
@@ -2960,7 +3474,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={() => handlePaymodeClick("PAYNOW")}
               >
                 <Text style={styles.paymentEmoji}>📱</Text>
-                <Text style={[styles.paymentModeLabel, { color: "#be185d" }]}>PayNow</Text>
+                <Text style={[styles.paymentModeLabel, { color: "#be185d" }]}>
+                  PayNow
+                </Text>
                 {getExtraChargeForPaymode("PAYNOW") > 0 && (
                   <Text style={styles.extraFeeNotice}>
                     (+${getExtraChargeForPaymode("PAYNOW").toFixed(2)} fee)
@@ -2974,7 +3490,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={() => handlePaymodeClick("CASH")}
               >
                 <Text style={styles.paymentEmoji}>💵</Text>
-                <Text style={[styles.paymentModeLabel, { color: "#15803d" }]}>Cash</Text>
+                <Text style={[styles.paymentModeLabel, { color: "#15803d" }]}>
+                  Cash
+                </Text>
                 {getExtraChargeForPaymode("CASH") > 0 && (
                   <Text style={styles.extraFeeNotice}>
                     (+${getExtraChargeForPaymode("CASH").toFixed(2)} fee)
@@ -2997,7 +3515,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           <View style={styles.extraChargeBox}>
             <Text style={styles.extraChargeTitle}>Extra Charge Notice</Text>
             <Text style={styles.extraChargeSubtitle}>
-              Paying with {pendingPaymentAction?.method} incurs a processing fee.
+              Paying with {pendingPaymentAction?.method} incurs a processing
+              fee.
             </Text>
 
             <View style={styles.extraChargeDetails}>
@@ -3011,11 +3530,26 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   +${Number(pendingPaymentAction?.extraCharge || 0).toFixed(2)}
                 </Text>
               </View>
-              <View style={[styles.chargeRow, { borderTopWidth: 1, paddingTop: 8, marginTop: 4 }]}>
-                <Text style={[styles.chargeLabel, { fontWeight: "800", color: "#111827" }]}>
+              <View
+                style={[
+                  styles.chargeRow,
+                  { borderTopWidth: 1, paddingTop: 8, marginTop: 4 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chargeLabel,
+                    { fontWeight: "800", color: "#111827" },
+                  ]}
+                >
                   Total Payable:
                 </Text>
-                <Text style={[styles.chargeVal, { fontWeight: "900", color: "#22c55e", fontSize: 18 }]}>
+                <Text
+                  style={[
+                    styles.chargeVal,
+                    { fontWeight: "900", color: "#22c55e", fontSize: 18 },
+                  ]}
+                >
                   $
                   {(
                     Number(calculatedTotal) +
@@ -3055,7 +3589,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         onRequestClose={async () => {
           try {
             await fetch(`${API}/yeahpay/cancel`, { method: "POST" });
-          } catch { }
+          } catch {}
           setShowYeahPayModal(false);
         }}
       >
@@ -3087,7 +3621,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             {/* Amount Box */}
             <View style={styles.yeahPayAmountBox}>
               <Text style={styles.yeahPayAmountLabel}>AMOUNT PAYABLE</Text>
-              <Text style={styles.yeahPayAmountVal}>${yeahPayPayableAmount}</Text>
+              <Text style={styles.yeahPayAmountVal}>
+                ${yeahPayPayableAmount}
+              </Text>
             </View>
 
             {/* Status Message */}
@@ -3132,7 +3668,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               onPress={async () => {
                 try {
                   await fetch(`${API}/yeahpay/cancel`, { method: "POST" });
-                } catch { }
+                } catch {}
                 setShowYeahPayModal(false);
               }}
               activeOpacity={0.8}
@@ -3145,14 +3681,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
-
-
       {/* Loading Modal */}
-      <Modal
-        visible={isCartLoading}
-        transparent={true}
-        animationType="fade"
-      >
+      <Modal visible={isCartLoading} transparent={true} animationType="fade">
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#ffffff" />
           <Text style={styles.loadingOverlayText}>Processing Order...</Text>
@@ -3164,7 +3694,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8f9fa" },
-  centerBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14 },
+  centerBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 14,
+  },
   loadingText: { fontSize: 16, fontWeight: "700", color: "#6b7280" },
 
   topHeader: {
@@ -3209,7 +3744,12 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderColor: "#eef2f6",
   },
-  sidebarContent: { paddingVertical: 22, paddingHorizontal: 16, gap: 16, paddingBottom: 110 },
+  sidebarContent: {
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    gap: 16,
+    paddingBottom: 110,
+  },
 
   /* Card styling matching the reference image */
   catCard: {
@@ -3833,58 +4373,76 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 99999,
   },
+  kioskToastPillError: {
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+    borderWidth: 2,
+  },
+  kioskToastIconWrapError: {
+    backgroundColor: "#fee2e2",
+  },
+  kioskToastTitleError: {
+    color: "#b91c1c",
+    fontSize: 19,
+    fontWeight: "800",
+  },
+  customizeSectionCardIncomplete: {
+    borderColor: "#ef4444",
+    borderWidth: 2.5,
+    backgroundColor: "#fff5f5",
+  },
   kioskToastPill: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ffffff",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 30,
-    borderWidth: 1.5,
+    paddingVertical: 16,
+    paddingHorizontal: 26,
+    borderRadius: 36,
+    borderWidth: 2,
     borderColor: "#e2e8f0",
     shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 10,
-    maxWidth: 440,
-    minWidth: 260,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 16,
+    maxWidth: 620,
+    minWidth: 360,
   },
   kioskToastIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: "#ecfdf5",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: 14,
   },
   kioskToastTextWrap: {
     flex: 1,
     marginRight: 8,
   },
   kioskToastTitle: {
-    fontSize: 15,
-    fontWeight: "800",
+    fontSize: 19,
+    fontWeight: "900",
     color: "#0f172a",
   },
   kioskToastSubtitle: {
-    fontSize: 12,
+    fontSize: 15,
     color: "#64748b",
-    fontWeight: "500",
-    marginTop: 1,
+    fontWeight: "600",
+    marginTop: 3,
   },
   kioskToastBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ff641f",
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
   },
   kioskToastBadgeText: {
     color: "#ffffff",
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: "800",
   },
   dishCircularBox: {
@@ -3996,12 +4554,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     borderTopWidth: 2,
-    borderColor: "#e2e8f0",
+    borderColor: "#cbd5e1",
     shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 20,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 24,
     zIndex: 90,
   },
   bottomBarCol: {
@@ -4375,10 +4933,37 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  paymentCloseText: { color: "#ffffff", fontSize: 22, fontWeight: "800", lineHeight: 24, textAlign: "center" },
-  paymentTotal: { fontSize: 40, fontWeight: "900", color: "#ffffff", marginBottom: 10, letterSpacing: -0.5, textAlign: "center" },
-  paymentPrompt: { fontSize: 24, fontWeight: "700", color: "#ffffff", opacity: 0.95, marginBottom: 40, textAlign: "center" },
-  paymentOptionsRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 24, maxWidth: 840, width: "100%" },
+  paymentCloseText: {
+    color: "#ffffff",
+    fontSize: 22,
+    fontWeight: "800",
+    lineHeight: 24,
+    textAlign: "center",
+  },
+  paymentTotal: {
+    fontSize: 40,
+    fontWeight: "900",
+    color: "#ffffff",
+    marginBottom: 10,
+    letterSpacing: -0.5,
+    textAlign: "center",
+  },
+  paymentPrompt: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#ffffff",
+    opacity: 0.95,
+    marginBottom: 40,
+    textAlign: "center",
+  },
+  paymentOptionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 24,
+    maxWidth: 840,
+    width: "100%",
+  },
   paymentCard: {
     width: 220,
     height: 220,
@@ -4398,7 +4983,12 @@ const styles = StyleSheet.create({
   cardPink: { backgroundColor: "#fdf2f8" },
   cardGreen: { backgroundColor: "#f0fdf4" },
   paymentEmoji: { fontSize: 56 },
-  paymentModeLabel: { fontSize: 18, fontWeight: "800", color: "#f97316", textAlign: "center" },
+  paymentModeLabel: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#f97316",
+    textAlign: "center",
+  },
   extraFeeNotice: { fontSize: 13, color: "#ea580c", fontWeight: "700" },
 
   /* THANK YOU OVERLAY */
@@ -4430,7 +5020,12 @@ const styles = StyleSheet.create({
   thankYouSubtitle: { fontSize: 18, fontWeight: "700", color: "#ffffff" },
 
   /* MODALS & OVERLAYS */
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 20 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 20,
+  },
   extraChargeBox: {
     backgroundColor: "#ffffff",
     borderRadius: 24,
@@ -4445,24 +5040,66 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 8,
   },
-  extraChargeTitle: { fontSize: 20, fontWeight: "900", color: "#111827", textAlign: "center" },
+  extraChargeTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#111827",
+    textAlign: "center",
+  },
   extraChargeSubtitle: { fontSize: 14, color: "#6b7280", textAlign: "center" },
-  extraChargeDetails: { backgroundColor: "#f9fafb", borderRadius: 14, padding: 14, gap: 8 },
+  extraChargeDetails: {
+    backgroundColor: "#f9fafb",
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+  },
   chargeRow: { flexDirection: "row", justifyContent: "space-between" },
   chargeLabel: { fontSize: 14, color: "#4b5563" },
   chargeVal: { fontSize: 14, fontWeight: "700", color: "#111827" },
   extraActions: { flexDirection: "row", gap: 12, marginTop: 8 },
-  extraCancelBtn: { flex: 1, height: 48, borderRadius: 12, backgroundColor: "#f3f4f6", alignItems: "center", justifyContent: "center" },
+  extraCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "#f3f4f6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   extraCancelText: { fontWeight: "700", color: "#4b5563" },
-  extraConfirmBtn: { flex: 1.5, height: 48, borderRadius: 12, backgroundColor: "#16a34a", alignItems: "center", justifyContent: "center" },
+  extraConfirmBtn: {
+    flex: 1.5,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "#16a34a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   extraConfirmText: { fontWeight: "800", color: "#ffffff" },
 
   /* Combo/Modifier Full Customizer */
-  modModalBox: { backgroundColor: "#ffffff", borderRadius: 24, padding: 24, maxHeight: "80%", width: "90%", maxWidth: 480, alignSelf: "center" },
-  modHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modModalBox: {
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    padding: 24,
+    maxHeight: "80%",
+    width: "90%",
+    maxWidth: 480,
+    alignSelf: "center",
+  },
+  modHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
   modTitle: { fontSize: 20, fontWeight: "800", color: "#1f2937" },
   modClose: { fontSize: 20, color: "#6b7280", fontWeight: "700" },
-  modPrompt: { fontSize: 14, fontWeight: "700", color: "#6b7280", marginBottom: 14 },
+  modPrompt: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#6b7280",
+    marginBottom: 14,
+  },
   modOption: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -4471,7 +5108,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#f5f5f5",
   },
-  modOptionActive: { backgroundColor: "#fff7ed", paddingHorizontal: 10, borderRadius: 8 },
+  modOptionActive: {
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
   modOptName: { fontSize: 16, fontWeight: "600", color: "#333333" },
   modOptPrice: { fontSize: 15, fontWeight: "700", color: "#f97316" },
   addModBtn: {
