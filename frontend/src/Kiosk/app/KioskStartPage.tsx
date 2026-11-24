@@ -517,10 +517,6 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
             <Text style={styles.glassCardSubtitle}>
               Enjoy your meal hot{"\n"}served at your table
             </Text>
-            <View style={styles.glassActionBtn}>
-              <Text style={styles.glassActionText}>Select</Text>
-              <Ionicons name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 6 }} />
-            </View>
           </TouchableOpacity>
 
           {/* TAKEAWAY Glass Card */}
@@ -541,10 +537,6 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
             <Text style={styles.glassCardSubtitle}>
               Packed & ready{"\n"}to take on the go
             </Text>
-            <View style={styles.glassActionBtn}>
-              <Text style={styles.glassActionText}>Select</Text>
-              <Ionicons name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 6 }} />
-            </View>
           </TouchableOpacity>
         </View>
       </ScrollView>

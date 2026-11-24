@@ -1,8 +1,8 @@
 import { API } from "@/config";
-import { LinearGradient } from "expo-linear-gradient";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Image as ExpoImage } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +19,10 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const cardPaymentImg = require("../assets/images/card_visa_mastercard.jpg");
+const payNowPaymentImg = require("../assets/images/paynow_logo.png");
 
 const generateBizOrderId = (orderId: string | null) =>
   orderId || `YP${Date.now()}`;
@@ -107,7 +111,10 @@ type Props = {
 export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const safeBottom = Math.max(insets.bottom, Platform.OS === "android" ? 28 : 0);
+  const safeBottom = Math.max(
+    insets.bottom,
+    Platform.OS === "android" ? 28 : 0,
+  );
 
   const isLandscape = screenWidth > screenHeight;
   const isWide = screenWidth >= 600;
@@ -189,6 +196,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [inactivityCountdown, setInactivityCountdown] = useState(15);
   const idleTimerRef = useRef<any>(null);
   const countdownIntervalRef = useRef<any>(null);
+
+  // ── Cart Clearance & Single Item Deletion Confirmations ──
+  const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
+  const [itemToDeleteIndex, setItemToDeleteIndex] = useState<number | null>(
+    null,
+  );
 
   // ── Promo Slideshow Attract Loop Screensaver (dbo.PromoCodeMaster) ──
   const [promoSlides, setPromoSlides] = useState<any[]>([]);
@@ -530,6 +543,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     );
   };
 
+  // Helper: Filter records where IsPublished = 0 or NULL
+  const isPublishedForKiosk = (val: any) => {
+    return val !== 1 && val !== true && String(val) !== "1";
+  };
+
   const loadPreviousCategory = async () => {
     try {
       setGroups([
@@ -595,12 +613,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const targetDishGuid = normalizeGuid(savedDishId);
 
       // 2. Fetch dishes master to find the one matching DefaultDishId
-      const dishesRes = await fetch(`${API}/dishes/all`);
+      const dishesRes = await fetch(`${API}/dishes/all?isKiosk=true`, {
+        headers: { "x-kiosk": "true" },
+      });
       const allDishes = await dishesRes.json();
 
       if (Array.isArray(allDishes)) {
         const matched = allDishes.find(
-          (d: any) => normalizeGuid(d.DishId) === targetDishGuid,
+          (d: any) =>
+            normalizeGuid(d.DishId) === targetDishGuid &&
+            isPublishedForKiosk(d.IsPublished) &&
+            isPublishedForKiosk(d.CategoryPublished) &&
+            isPublishedForKiosk(d.GroupPublished),
         );
         if (matched) {
           setDishes([matched]);
@@ -618,9 +642,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const loadDishes = async (groupId: any) => {
     try {
-      const res = await fetch(`${API}/dishes/group/${groupId}`);
+      const res = await fetch(`${API}/dishes/group/${groupId}?isKiosk=true`, {
+        headers: { "x-kiosk": "true" },
+      });
       const data = await res.json();
-      setDishes(Array.isArray(data) ? data : []);
+      const rawDishes = Array.isArray(data) ? data : [];
+      const safeDishes = rawDishes.filter(
+        (d: any) =>
+          isPublishedForKiosk(d.IsPublished) &&
+          isPublishedForKiosk(d.CategoryPublished) &&
+          isPublishedForKiosk(d.GroupPublished),
+      );
+      setDishes(safeDishes);
     } catch (e) {
       console.log("Error loading dishes:", e);
     }
@@ -633,9 +666,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
 
     try {
-      const res = await fetch(`${API}/dishgroups/${categoryId}`);
+      const res = await fetch(`${API}/dishgroups/${categoryId}?isKiosk=true`, {
+        headers: { "x-kiosk": "true" },
+      });
       const data = await res.json();
-      const safeGroups = Array.isArray(data) ? data : [];
+      const rawGroups = Array.isArray(data) ? data : [];
+      const safeGroups = rawGroups.filter((g: any) =>
+        isPublishedForKiosk(g.IsPublished),
+      );
       setGroups(safeGroups);
 
       if (safeGroups.length > 0) {
@@ -735,7 +773,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             fetch(`${API}/paymodes/list`)
               .then((r) => r.json())
               .catch(() => []),
-            fetch(`${API}/kitchens`)
+            fetch(`${API}/kitchens?isKiosk=true`, {
+              headers: { "x-kiosk": "true" },
+            })
               .then((r) => r.json())
               .catch(() => []),
             AsyncStorage.getItem("kioskOrderType").then(
@@ -797,7 +837,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           setPaymodesList(paymodesRes);
         }
 
-        const safeKitchens = Array.isArray(kitchensRes) ? kitchensRes : [];
+        const rawKitchens = Array.isArray(kitchensRes) ? kitchensRes : [];
+        const safeKitchens = rawKitchens.filter((k: any) =>
+          isPublishedForKiosk(k.IsPublished),
+        );
         setCategories(safeKitchens);
 
         if (safeKitchens.length > 0) {
@@ -1402,6 +1445,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const handleClearCart = () => {
     setCart([]);
+    setShowClearCartConfirm(false);
+  };
+
+  const confirmDeleteItem = () => {
+    if (itemToDeleteIndex !== null) {
+      setCart((prev) => prev.filter((_, i) => i !== itemToDeleteIndex));
+      setItemToDeleteIndex(null);
+    }
   };
 
   // Fetch available tables from TableMaster
@@ -1937,7 +1988,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     ? "alert-circle"
                     : "checkmark-circle"
                 }
-                size={30}
+                size={52}
                 color={
                   toastNotification.type === "error" ? "#ef4444" : "#10b981"
                 }
@@ -1969,9 +2020,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               <View style={styles.kioskToastBadge}>
                 <Ionicons
                   name="cart"
-                  size={18}
+                  size={32}
                   color="#ffffff"
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 10 }}
                 />
                 <Text style={styles.kioskToastBadgeText}>{cart.length}</Text>
               </View>
@@ -2253,10 +2304,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   <View style={styles.customizeHeroLeftOuter}>
                     <View style={styles.customizeHeroLeftInner}>
                       {selectedDish?.Image ? (
-                        <Image
+                        <ExpoImage
                           source={{ uri: `${API}/image/${selectedDish.Image}` }}
                           style={styles.customizeHeroImg}
-                          resizeMode="cover"
+                          contentFit="cover"
+                          cachePolicy="memory-disk"
                         />
                       ) : (
                         <View style={styles.customizeHeroImgPlaceholder}>
@@ -2589,7 +2641,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </ScrollView>
 
               {/* Bottom Floating Bar: Soft Peach Pill (-) Qty (+) | Vivid Orange "🛒 Add to Cart $X.XX" */}
-              <View style={[styles.customizeBottomBar, { paddingBottom: (Platform.OS === "ios" ? 34 : 20) + safeBottom }]}>
+              <View
+                style={[
+                  styles.customizeBottomBar,
+                  {
+                    paddingBottom:
+                      (Platform.OS === "ios" ? 34 : 20) + safeBottom,
+                  },
+                ]}
+              >
                 <View style={styles.customizeBottomBarInner}>
                   <View style={styles.customizeQtyControls}>
                     <TouchableOpacity
@@ -2754,10 +2814,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       {/* Circular dish image matching reference design */}
                       <View style={styles.dishCircularBox}>
                         {item.Image ? (
-                          <Image
+                          <ExpoImage
                             source={{ uri: `${API}/image/${item.Image}` }}
                             style={styles.dishImg}
-                            resizeMode="cover"
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                            transition={150}
                           />
                         ) : (
                           <Ionicons
@@ -2802,96 +2864,126 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </View>
 
-      {/* Unified Full-Width 4-Section Bottom Navigation Action Bar */}
+      {/* ── Unified Full-Width Professional Touchscreen Kiosk Bottom Action Bar ── */}
       {!showCartPage && !showModifier && !showComboCustomizer && (
-        <View style={[styles.floatingCartBar, { paddingBottom: 14 + safeBottom }]}>
-          {/* Section 1: Start Over with Reset Icon (25%) */}
-          <View style={styles.bottomBarCol}>
-            <TouchableOpacity
-              style={styles.bottomBarStartOverBtn}
-              onPress={onLogout}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="refresh-outline" size={24} color="#ea580c" />
-              <Text style={styles.bottomBarStartOverText} numberOfLines={1}>
-                Start Over
-              </Text>
-            </TouchableOpacity>
-          </View>
+        <View
+          style={[styles.floatingCartBar, { paddingBottom: 20 + safeBottom }]}
+        >
+          {/* 1) Start Over Button (1:1:3 ratio -> flex: 1) */}
+          <TouchableOpacity
+            style={styles.bottomBarStartOverBtn}
+            onPress={onLogout}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh-outline" size={30} color="#ea580c" />
+            <Text style={styles.bottomBarStartOverText} numberOfLines={1}>
+              Start Over
+            </Text>
+          </TouchableOpacity>
 
-          {/* Section 2: Clear Cart with Trash Icon (25%) */}
-          <View style={styles.bottomBarCol}>
-            <TouchableOpacity
+          {/* 2) Clear Cart Button (1:1:3 ratio -> flex: 1) */}
+          <TouchableOpacity
+            style={[
+              styles.cartClearBtn,
+              cart.length === 0 && styles.cartActionBtnDisabled,
+            ]}
+            onPress={() => cart.length > 0 && setShowClearCartConfirm(true)}
+            disabled={cart.length === 0}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name="trash-outline"
+              size={30}
+              color={cart.length === 0 ? "#a8a29e" : "#e11d48"}
+            />
+            <Text
               style={[
-                styles.cartClearBtn,
-                cart.length === 0 && styles.cartActionBtnDisabled,
+                styles.cartClearText,
+                cart.length === 0 && styles.cartClearTextDisabled,
               ]}
-              onPress={handleClearCart}
-              disabled={cart.length === 0}
-              activeOpacity={0.8}
+              numberOfLines={1}
             >
-              <Ionicons
-                name="trash-outline"
-                size={22}
-                color={cart.length === 0 ? "#cbd5e1" : "#e11d48"}
-              />
-              <Text
-                style={[
-                  styles.cartClearText,
-                  cart.length === 0 && styles.cartClearTextDisabled,
-                ]}
-                numberOfLines={1}
-              >
-                Clear Cart
-              </Text>
-            </TouchableOpacity>
-          </View>
+              Clear Cart
+            </Text>
+          </TouchableOpacity>
 
-          {/* Section 3: Item count and total amount vertically stacked and centered (25%) */}
-          <View style={styles.bottomBarCol}>
-            <View style={styles.cartBarCenter}>
-              <Text style={styles.cartBarCount} numberOfLines={1}>
-                {cart.length} {cart.length === 1 ? "ITEM" : "ITEMS"}
-              </Text>
-              <Text style={styles.cartBarPrice} numberOfLines={1}>
-                {currencySymbol}
-                {calculatedTotal}
-              </Text>
-            </View>
-          </View>
-
-          {/* Section 4: View Cart with Shopping Cart Icon (25%) */}
-          <View style={styles.bottomBarCol}>
-            <TouchableOpacity
-              style={[
-                styles.cartViewBtn,
-                cart.length === 0 && styles.cartViewBtnDisabled,
-              ]}
-              onPress={() => cart.length > 0 && setShowCartPage(true)}
-              disabled={cart.length === 0}
-              activeOpacity={0.88}
-            >
+          {/* 3) View Order Hero Banner (1:1:3 ratio -> flex: 3) */}
+          <TouchableOpacity
+            style={[
+              styles.cartViewBtn,
+              cart.length === 0 && styles.cartViewBtnDisabled,
+            ]}
+            onPress={() => cart.length > 0 && setShowCartPage(true)}
+            disabled={cart.length === 0}
+            activeOpacity={0.88}
+          >
+            {/* Left Info: Cart Icon + Title + Selected items subtitle */}
+            <View style={styles.cartBannerLeft}>
               <Ionicons
                 name="cart-outline"
-                size={24}
-                color={cart.length === 0 ? "#94a3b8" : "#ffffff"}
+                size={34}
+                color={cart.length === 0 ? "#a8a29e" : "#ffffff"}
               />
-              <Text
+              <View style={styles.cartBannerMeta}>
+                <Text
+                  style={[
+                    styles.cartViewTitle,
+                    cart.length === 0 && styles.cartViewTextDisabled,
+                  ]}
+                  numberOfLines={1}
+                >
+                  View Order
+                </Text>
+                <Text
+                  style={[
+                    styles.cartBannerSubtitle,
+                    cart.length === 0 && styles.cartBannerSubtitleDisabled,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {cart.length}{" "}
+                  {cart.length === 1 ? "item selected" : "items selected"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Right Info: TOTAL label + Amount + Forward Arrow */}
+            <View style={styles.cartBannerRight}>
+              <View style={styles.cartBannerPriceBlock}>
+                <Text
+                  style={[
+                    styles.cartBannerPriceLabel,
+                    cart.length === 0 && styles.cartBannerPriceLabelDisabled,
+                  ]}
+                >
+                  TOTAL
+                </Text>
+                <Text
+                  style={[
+                    styles.cartBannerPriceVal,
+                    cart.length === 0 && styles.cartBannerPriceValDisabled,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {currencySymbol}
+                  {calculatedTotal}
+                </Text>
+              </View>
+
+              <View
                 style={[
-                  styles.cartViewText,
-                  cart.length === 0 && styles.cartViewTextDisabled,
+                  styles.cartBannerArrowCircle,
+                  cart.length === 0 && styles.cartBannerArrowCircleDisabled,
                 ]}
-                numberOfLines={1}
               >
-                View Cart
-              </Text>
-              {cart.length > 0 && (
-                <View style={styles.cartViewBadge}>
-                  <Text style={styles.cartViewBadgeText}>{cart.length}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
+                <Ionicons
+                  name="arrow-forward"
+                  size={24}
+                  color={cart.length === 0 ? "#a8a29e" : "#ea580c"}
+                />
+              </View>
+            </View>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -3031,15 +3123,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.cartHeaderTitleWrap}>
               <Text style={styles.cartHeaderTitle}>Your Cart</Text>
               <Text style={styles.cartHeaderSubtitle}>
-                {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0)} {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0) === 1 ? "item" : "items"} selected
+                {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0)}{" "}
+                {cart.reduce((s, i) => s + (Number(i.qty) || 1), 0) === 1
+                  ? "item"
+                  : "items"}{" "}
+                selected
               </Text>
             </View>
             <TouchableOpacity
               style={styles.cartHeaderClearBtn}
-              onPress={handleClearCart}
-              activeOpacity={0.7}
+              onPress={() => cart.length > 0 && setShowClearCartConfirm(true)}
+              activeOpacity={0.8}
             >
-              <Ionicons name="trash-bin-outline" size={18} color="#ef4444" />
+              <Ionicons name="trash-bin-outline" size={20} color="#ef4444" />
               <Text style={styles.cartHeaderClearText}>Clear All</Text>
             </TouchableOpacity>
           </View>
@@ -3051,9 +3147,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             showsVerticalScrollIndicator={false}
           >
             {cart.map((item, index) => {
-              const matchedDish = !item.Image && item.DishId
-                ? dishes.find((d) => String(d.DishId || d.id) === String(item.DishId))
-                : null;
+              const matchedDish =
+                !item.Image && item.DishId
+                  ? dishes.find(
+                      (d) => String(d.DishId || d.id) === String(item.DishId),
+                    )
+                  : null;
               const imageFilename = item.Image || matchedDish?.Image;
 
               return (
@@ -3061,10 +3160,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   {/* Dish Thumbnail on Left */}
                   <View style={styles.cartItemThumbWrap}>
                     {imageFilename ? (
-                      <Image
+                      <ExpoImage
                         source={{ uri: `${API}/image/${imageFilename}` }}
                         style={styles.cartItemThumb}
-                        resizeMode="cover"
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
                       />
                     ) : (
                       <View style={styles.cartItemThumbPlaceholder}>
@@ -3134,11 +3234,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     </Text>
                     <TouchableOpacity
                       style={styles.cartItemDeleteBtn}
-                      onPress={() => decreaseQty(index)}
+                      onPress={() => setItemToDeleteIndex(index)}
                       hitSlop={8}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="trash-outline" size={19} color="#ef4444" />
+                      <Ionicons
+                        name="trash-outline"
+                        size={22}
+                        color="#ef4444"
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -3153,7 +3257,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               <View style={styles.totalRow}>
                 <View style={styles.totalLabelGroup}>
                   <View style={styles.totalRowIconWrap}>
-                    <Ionicons name="receipt-outline" size={17} color="#64748b" />
+                    <Ionicons
+                      name="receipt-outline"
+                      size={17}
+                      color="#64748b"
+                    />
                   </View>
                   <Text style={styles.totalLabel}>Subtotal</Text>
                 </View>
@@ -3167,7 +3275,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 <View style={styles.totalRow}>
                   <View style={styles.totalLabelGroup}>
                     <View style={styles.totalRowIconWrap}>
-                      <Ionicons name="bag-handle-outline" size={17} color="#64748b" />
+                      <Ionicons
+                        name="bag-handle-outline"
+                        size={17}
+                        color="#64748b"
+                      />
                     </View>
                     <Text style={styles.totalLabel}>Takeaway Charge</Text>
                   </View>
@@ -3182,7 +3294,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 <View style={styles.totalRow}>
                   <View style={styles.totalLabelGroup}>
                     <View style={styles.totalRowIconWrap}>
-                      <Ionicons name="restaurant-outline" size={17} color="#64748b" />
+                      <Ionicons
+                        name="restaurant-outline"
+                        size={17}
+                        color="#64748b"
+                      />
                     </View>
                     <Text style={styles.totalLabel}>
                       Service Charge ({applicableScPercent}%)
@@ -3199,7 +3315,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 <View style={styles.totalRow}>
                   <View style={styles.totalLabelGroup}>
                     <View style={styles.totalRowIconWrap}>
-                      <Ionicons name="pricetag-outline" size={17} color="#64748b" />
+                      <Ionicons
+                        name="pricetag-outline"
+                        size={17}
+                        color="#64748b"
+                      />
                     </View>
                     <Text style={styles.totalLabel}>
                       GST ({gstPercent}%){" "}
@@ -3237,9 +3357,21 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 activeOpacity={0.88}
               >
                 <View style={styles.checkoutBtnInner}>
-                  <Ionicons name="card-outline" size={22} color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={styles.checkoutBtnText}>Proceed to Checkout</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#ffffff" style={{ marginLeft: 8 }} />
+                  <Ionicons
+                    name="card-outline"
+                    size={22}
+                    color="#ffffff"
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.checkoutBtnText}>
+                    Proceed to Checkout
+                  </Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={20}
+                    color="#ffffff"
+                    style={{ marginLeft: 8 }}
+                  />
                 </View>
               </TouchableOpacity>
 
@@ -3249,13 +3381,24 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={() => setShowCartPage(false)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="arrow-back" size={18} color="#ea580c" style={{ marginRight: 6 }} />
-                <Text style={styles.backToMenuText}>Add More Items / Back to Menu</Text>
+                <Ionicons
+                  name="arrow-back"
+                  size={18}
+                  color="#ea580c"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.backToMenuText}>
+                  Add More Items / Back to Menu
+                </Text>
               </TouchableOpacity>
 
               {/* Bottom Subtle Guarantee Badge */}
               <View style={styles.cartSecurityPill}>
-                <Ionicons name="shield-checkmark-outline" size={14} color="#94a3b8" />
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={14}
+                  color="#94a3b8"
+                />
                 <Text style={styles.cartSecurityText}>
                   Fast & Contactless Self-Ordering
                 </Text>
@@ -3647,8 +3790,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               <TouchableOpacity
                 style={[styles.paymentCard, styles.cardBlue]}
                 onPress={() => handlePaymodeClick("CARD")}
+                activeOpacity={0.85}
               >
-                <Text style={styles.paymentEmoji}>💳</Text>
+                <View style={styles.paymentImgWrap}>
+                  <Image
+                    source={cardPaymentImg}
+                    style={styles.paymentCardImg}
+                    resizeMode="contain"
+                  />
+                </View>
                 <Text style={[styles.paymentModeLabel, { color: "#1d4ed8" }]}>
                   Card
                 </Text>
@@ -3663,8 +3813,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               <TouchableOpacity
                 style={[styles.paymentCard, styles.cardPink]}
                 onPress={() => handlePaymodeClick("PAYNOW")}
+                activeOpacity={0.85}
               >
-                <Text style={styles.paymentEmoji}>📱</Text>
+                <View style={styles.paymentImgWrap}>
+                  <Image
+                    source={payNowPaymentImg}
+                    style={styles.paymentCardImg}
+                    resizeMode="contain"
+                  />
+                </View>
                 <Text style={[styles.paymentModeLabel, { color: "#be185d" }]}>
                   PayNow
                 </Text>
@@ -3679,8 +3836,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               <TouchableOpacity
                 style={[styles.paymentCard, styles.cardGreen]}
                 onPress={() => handlePaymodeClick("CASH")}
+                activeOpacity={0.85}
               >
-                <Text style={styles.paymentEmoji}>💵</Text>
+                <View style={styles.paymentImgWrap}>
+                  <Text style={styles.paymentEmoji}>💵</Text>
+                </View>
                 <Text style={[styles.paymentModeLabel, { color: "#15803d" }]}>
                   Cash
                 </Text>
@@ -3945,11 +4105,184 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           </View>
         </View>
       </Modal>
+
+      {/* ── Clear Entire Cart Confirmation Modal ── */}
+      <Modal
+        visible={showClearCartConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClearCartConfirm(false)}
+      >
+        <View style={styles.confirmModalOverlay}>
+          <View style={styles.confirmModalBox}>
+            <View style={styles.confirmModalIconWrapDanger}>
+              <Ionicons name="trash-outline" size={44} color="#dc2626" />
+            </View>
+            <Text style={styles.confirmModalTitle}>Clear Entire Cart?</Text>
+            <Text style={styles.confirmModalDesc}>
+              This will remove all items from your order. Are you sure you want
+              to start over?
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={styles.confirmModalCancelBtn}
+                onPress={() => setShowClearCartConfirm(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.confirmModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmModalDangerBtn}
+                onPress={handleClearCart}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.confirmModalDangerText}>
+                  Yes, Clear Cart
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Delete Single Cart Item Confirmation Modal ── */}
+      <Modal
+        visible={itemToDeleteIndex !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setItemToDeleteIndex(null)}
+      >
+        <View style={styles.confirmModalOverlay}>
+          <View style={styles.confirmModalBox}>
+            <View style={styles.confirmModalIconWrapDanger}>
+              <Ionicons name="trash-bin-outline" size={44} color="#dc2626" />
+            </View>
+            <Text style={styles.confirmModalTitle}>Remove Item?</Text>
+            <Text style={styles.confirmModalDesc}>
+              Remove{" "}
+              <Text style={{ fontWeight: "800", color: "#0f172a" }}>
+                {itemToDeleteIndex !== null && cart[itemToDeleteIndex]
+                  ? cart[itemToDeleteIndex].Name || cart[itemToDeleteIndex].name
+                  : "this item"}
+              </Text>{" "}
+              from your cart?
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={styles.confirmModalCancelBtn}
+                onPress={() => setItemToDeleteIndex(null)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.confirmModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmModalDangerBtn}
+                onPress={confirmDeleteItem}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.confirmModalDangerText}>Yes, Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /* Touchscreen Confirmation Dialog Styles */
+  confirmModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    zIndex: 999999,
+  },
+  confirmModalBox: {
+    width: "100%",
+    maxWidth: 520,
+    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    paddingVertical: 36,
+    paddingHorizontal: 32,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.25,
+    shadowRadius: 32,
+    elevation: 24,
+  },
+  confirmModalIconWrapDanger: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: "#fee2e2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#fecdd3",
+  },
+  confirmModalTitle: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#0f172a",
+    textAlign: "center",
+    marginBottom: 10,
+    letterSpacing: -0.3,
+  },
+  confirmModalDesc: {
+    fontSize: 17,
+    fontWeight: "500",
+    color: "#64748b",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 28,
+    paddingHorizontal: 12,
+  },
+  confirmModalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    width: "100%",
+  },
+  confirmModalCancelBtn: {
+    flex: 1,
+    height: 64,
+    backgroundColor: "#f1f5f9",
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+  },
+  confirmModalCancelText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  confirmModalDangerBtn: {
+    flex: 1.2,
+    height: 64,
+    backgroundColor: "#dc2626",
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#dc2626",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  confirmModalDangerText: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#ffffff",
+  },
+
   container: { flex: 1, backgroundColor: "#f8f9fa" },
   centerBox: {
     flex: 1,
@@ -4001,26 +4334,26 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   sidebar: {
-    width: 330,
-    backgroundColor: "#ffffff",
-    borderRightWidth: 1,
-    borderColor: "#eef2f6",
+    width: 340,
+    backgroundColor: "#FBF7F2",
+    borderRightWidth: 1.5,
+    borderColor: "#EFE6DC",
   },
   sidebarContent: {
     paddingVertical: 22,
     paddingHorizontal: 16,
     gap: 16,
-    paddingBottom: 110,
+    paddingBottom: 170,
   },
 
   /* Card styling matching the reference image */
   catCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fffdfa",
+    backgroundColor: "#ffffff",
     borderRadius: 24,
     borderWidth: 1.8,
-    borderColor: "#fdf2e9",
+    borderColor: "#EFE6DC",
     paddingVertical: 20,
     paddingHorizontal: 18,
     gap: 16,
@@ -4033,10 +4366,11 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   catCardActive: {
-    borderColor: "#ffcca2",
+    borderWidth: 2,
+    borderColor: "#ea580c",
     backgroundColor: "#ffffff",
-    shadowColor: "#f97316",
-    shadowOpacity: 0.1,
+    shadowColor: "#ea580c",
+    shadowOpacity: 0.14,
   },
   catCardBar: {
     width: 5,
@@ -4117,67 +4451,79 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   sidebarSubgroupList: {
-    paddingLeft: 12,
-    gap: 8,
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 10,
+    backgroundColor: "rgba(255, 237, 213, 0.45)",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#fed7aa",
+    gap: 10,
+    marginTop: 2,
   },
   sidebarSubgroupItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: "#f8fafc",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: "#ffffff",
     borderWidth: 1.5,
-    borderColor: "#f1f5f9",
-    minHeight: 46,
-  },
-  sidebarSubgroupItemActive: {
-    backgroundColor: "#fff7ed",
-    borderColor: "#f97316",
-    borderWidth: 1.5,
-    shadowColor: "#f97316",
+    borderColor: "#fed7aa",
+    minHeight: 56,
+    shadowColor: "#ea580c",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
+  sidebarSubgroupItemActive: {
+    backgroundColor: "#EA580C",
+    borderColor: "#C2410C",
+    borderWidth: 1.5,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   sidebarSubgroupBar: {
     width: 4,
-    height: 18,
+    height: 22,
     borderRadius: 2,
-    backgroundColor: "#cbd5e1",
-    marginRight: 10,
+    backgroundColor: "#f97316",
+    marginRight: 12,
   },
   sidebarSubgroupBarActive: {
-    backgroundColor: "#f97316",
-    height: 22,
+    backgroundColor: "#ffffff",
+    height: 24,
     width: 4,
   },
   sidebarSubgroupText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#334155",
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#431407",
     flex: 1,
     letterSpacing: -0.2,
   },
   sidebarSubgroupTextActive: {
-    color: "#ea580c",
+    color: "#ffffff",
     fontWeight: "900",
-    fontSize: 16,
+    fontSize: 17,
   },
   sidebarSubgroupIndicator: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFF7ED",
     borderWidth: 1.5,
-    borderColor: "#f1f5f9",
+    borderColor: "#FDBA74",
   },
   sidebarSubgroupIndicatorActive: {
-    backgroundColor: "#ffedd5",
-    borderColor: "#fdba74",
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    borderColor: "rgba(255, 255, 255, 0.4)",
   },
 
   /* Hero Banner matching image */
@@ -4309,7 +4655,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
-  dishesList: { paddingTop: 2, paddingBottom: 140, paddingHorizontal: 2 },
+  dishesList: { paddingTop: 2, paddingBottom: 170, paddingHorizontal: 2 },
   dishCard: {
     flex: 1,
     margin: 10,
@@ -4635,7 +4981,7 @@ const styles = StyleSheet.create({
   // ── Kiosk Aesthetic Toast Notification Styles ──
   kioskToastContainer: {
     position: "absolute",
-    top: 24,
+    top: 110,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -4644,15 +4990,15 @@ const styles = StyleSheet.create({
   kioskToastPillError: {
     backgroundColor: "#fff1f2",
     borderColor: "#fecdd3",
-    borderWidth: 2,
+    borderWidth: 3,
   },
   kioskToastIconWrapError: {
     backgroundColor: "#fee2e2",
   },
   kioskToastTitleError: {
     color: "#b91c1c",
-    fontSize: 19,
-    fontWeight: "800",
+    fontSize: 28,
+    fontWeight: "900",
   },
   customizeSectionCardIncomplete: {
     borderColor: "#ef4444",
@@ -4663,55 +5009,61 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ffffff",
-    paddingVertical: 16,
-    paddingHorizontal: 26,
-    borderRadius: 36,
-    borderWidth: 2,
+    paddingVertical: 28,
+    paddingHorizontal: 44,
+    borderRadius: 60,
+    borderWidth: 3,
     borderColor: "#e2e8f0",
     shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 16,
-    maxWidth: 620,
-    minWidth: 360,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.28,
+    shadowRadius: 36,
+    elevation: 24,
+    maxWidth: 980,
+    minWidth: 700,
   },
   kioskToastIconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: "#ecfdf5",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 14,
+    marginRight: 24,
   },
   kioskToastTextWrap: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 24,
   },
   kioskToastTitle: {
-    fontSize: 19,
+    fontSize: 30,
     fontWeight: "900",
     color: "#0f172a",
+    letterSpacing: -0.3,
   },
   kioskToastSubtitle: {
-    fontSize: 15,
+    fontSize: 22,
     color: "#64748b",
-    fontWeight: "600",
-    marginTop: 3,
+    fontWeight: "700",
+    marginTop: 6,
   },
   kioskToastBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ff641f",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 32,
+    shadowColor: "#ff641f",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   kioskToastBadgeText: {
     color: "#ffffff",
-    fontSize: 17,
-    fontWeight: "800",
+    fontSize: 28,
+    fontWeight: "900",
   },
   dishCircularBox: {
     width: 180,
@@ -4806,141 +5158,180 @@ const styles = StyleSheet.create({
   emptyDishes: { padding: 40, alignItems: "center" },
   emptyDishesText: { color: "#9ca3af", fontSize: 15 },
 
-  /* Full-Width Bottom Bar spanning 100% of screen width with 4 equal 25% columns */
+  /* ── Unified Full-Width Professional Touchscreen Kiosk Bottom Action Bar ── */
   floatingCartBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFDFC2",
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    minHeight: 104,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    minHeight: 150,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderTopWidth: 2,
-    borderColor: "#cbd5e1",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 20,
-    elevation: 24,
+    gap: 16,
+    borderTopWidth: 1.5,
+    borderColor: "rgba(234, 88, 12, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 10,
     zIndex: 90,
   },
-  bottomBarCol: {
-    flex: 1,
-    paddingHorizontal: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   bottomBarStartOverBtn: {
-    width: "100%",
-    height: 72,
-    flexDirection: "row",
+    flex: 1,
+    height: 110,
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff7ed",
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#fed7aa",
-    paddingHorizontal: 14,
-    gap: 10,
+    backgroundColor: "#FFF7ED",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#FED7AA",
+    gap: 8,
     shadowColor: "#ea580c",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
   bottomBarStartOverText: {
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: "800",
     color: "#ea580c",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   cartClearBtn: {
-    width: "100%",
-    height: 72,
-    flexDirection: "row",
+    flex: 1,
+    height: 110,
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff1f2",
-    borderWidth: 2,
-    borderColor: "#fecdd3",
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    gap: 10,
+    backgroundColor: "#FFF1F2",
+    borderWidth: 1.5,
+    borderColor: "#FECDD3",
+    borderRadius: 20,
+    gap: 8,
     shadowColor: "#e11d48",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
   cartClearText: {
     color: "#e11d48",
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: "800",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   cartClearTextDisabled: {
-    color: "#94a3b8",
+    color: "#a8a29e",
   },
   cartActionBtnDisabled: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#e2e8f0",
+    backgroundColor: "#F5EBE1",
+    borderColor: "#E7D8C9",
     shadowOpacity: 0,
     elevation: 0,
   },
-  cartBarCenter: {
-    width: "100%",
-    height: 72,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#f8fafc",
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#e2e8f0",
-    paddingHorizontal: 10,
-  },
-  cartBarCount: {
-    color: "#64748b",
-    fontSize: 13,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 2,
-  },
-  cartBarPrice: {
-    color: "#0f172a",
-    fontSize: 28,
-    fontWeight: "900",
-    letterSpacing: -0.5,
-    lineHeight: 32,
-  },
+
+  /* Grand Checkout Hero Banner (flex: 3) */
   cartViewBtn: {
-    width: "100%",
-    height: 72,
-    backgroundColor: "#ea580c",
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#c2410c",
+    flex: 3,
+    height: 110,
+    backgroundColor: "#EA580C",
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "#C2410C",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 14,
-    gap: 10,
-    position: "relative",
+    justifyContent: "space-between",
+    paddingHorizontal: 26,
     shadowColor: "#ea580c",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     elevation: 5,
   },
   cartViewBtnDisabled: {
-    backgroundColor: "#e2e8f0",
-    borderColor: "#cbd5e1",
+    backgroundColor: "#F5EBE1",
+    borderColor: "#E7D8C9",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  cartBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  cartBannerMeta: {
+    justifyContent: "center",
+  },
+  cartViewTitle: {
+    color: "#ffffff",
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  cartViewTextDisabled: {
+    color: "#78716c",
+  },
+  cartBannerSubtitle: {
+    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 15,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  cartBannerSubtitleDisabled: {
+    color: "#a8a29e",
+  },
+  cartBannerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+  },
+  cartBannerPriceBlock: {
+    alignItems: "flex-end",
+  },
+  cartBannerPriceLabel: {
+    color: "rgba(255, 255, 255, 0.85)",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  cartBannerPriceLabelDisabled: {
+    color: "#a8a29e",
+  },
+  cartBannerPriceVal: {
+    color: "#ffffff",
+    fontSize: 34,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+    lineHeight: 38,
+  },
+  cartBannerPriceValDisabled: {
+    color: "#78716c",
+  },
+  cartBannerArrowCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cartBannerArrowCircleDisabled: {
+    backgroundColor: "#E7D8C9",
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -4974,9 +5365,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     letterSpacing: 0.3,
-  },
-  cartViewTextDisabled: {
-    color: "#94a3b8",
   },
 
   /* CART MODAL - Clean, Card-Based Layout with Fixed Bottom Card */
@@ -5029,16 +5417,24 @@ const styles = StyleSheet.create({
   cartHeaderClearBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 18,
     backgroundColor: "#fee2e2",
+    borderWidth: 1.5,
+    borderColor: "#fecdd3",
+    shadowColor: "#ef4444",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cartHeaderClearText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 16,
+    fontWeight: "800",
     color: "#ef4444",
+    letterSpacing: 0.3,
   },
   cartItemsScrollView: {
     flex: 1,
@@ -5152,9 +5548,9 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   cartItemDeleteBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "#fee2e2",
     alignItems: "center",
     justifyContent: "center",
@@ -5367,21 +5763,33 @@ const styles = StyleSheet.create({
   paymentCard: {
     width: 220,
     height: 220,
-    borderRadius: 16,
-    backgroundColor: "#e0f2fe",
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 30,
+    paddingVertical: 26,
     paddingHorizontal: 20,
+    borderWidth: 2,
+    borderColor: "#e2e8f0",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.1,
-    shadowRadius: 30,
+    shadowRadius: 20,
     elevation: 6,
   },
-  cardBlue: { backgroundColor: "#e0f2fe" },
-  cardPink: { backgroundColor: "#fdf2f8" },
-  cardGreen: { backgroundColor: "#f0fdf4" },
+  cardBlue: { backgroundColor: "#ffffff", borderColor: "#bae6fd" },
+  cardPink: { backgroundColor: "#ffffff", borderColor: "#fbcfe8" },
+  cardGreen: { backgroundColor: "#ffffff", borderColor: "#bbf7d0" },
+  paymentImgWrap: {
+    width: "100%",
+    height: 90,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  paymentCardImg: {
+    width: "85%",
+    height: "100%",
+  },
   paymentEmoji: { fontSize: 56 },
   paymentModeLabel: {
     fontSize: 18,

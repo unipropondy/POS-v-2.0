@@ -104,10 +104,12 @@ function buildKioskEscPosReceipt(order, company = {}) {
 
   // 3. Queue / Order Ticket Box
   text += '='.repeat(WIDTH) + LF;
-  text += 'SELF-SERVICE KIOSK ORDER' + LF;
+  text += 'OFFICIAL QUEUE TICKET' + LF;
   text += ESC + '!' + '\x38'; // Double size for order/bill number
   const orderNumber = String(order.orderNumber || order.orderId || order.invoiceNumber || order.billNumber || 'KIOSK-01').trim();
-  text += orderNumber + LF;
+  const cleanDigits = orderNumber.replace(/\D/g, '');
+  const queueSuffix = cleanDigits ? cleanDigits.slice(-4) : (orderNumber.length >= 4 ? orderNumber.slice(-4) : orderNumber);
+  text += `#${queueSuffix}` + LF;
   text += ESC + '!' + '\x00';
   text += '='.repeat(WIDTH) + LF;
 
@@ -118,8 +120,12 @@ function buildKioskEscPosReceipt(order, company = {}) {
   const timeStr = now.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' });
   text += padLine(`Date: ${dateStr}`, `Time: ${timeStr}`) + LF;
 
-  if (order.tableNo && String(order.tableNo).toUpperCase() !== 'KIOSK') {
-    text += `Table / Token: ${order.tableNo}` + LF;
+  const isSelfCollect = order.isSelfCollect === true;
+  const isTent = order.isTentNumber === true;
+  const tableLabel = isTent ? "TENT NO" : "TABLE";
+
+  if (!isSelfCollect && order.tableNo && String(order.tableNo).toUpperCase() !== 'KIOSK') {
+    text += `${tableLabel}: ${order.tableNo}` + LF;
   }
 
   // 5. Items Header

@@ -31,18 +31,21 @@ function setCache(key, data, req) {
 /* ================= KITCHENS / CATEGORIES ================= */
 router.get("/kitchens", async (req, res) => {
   try {
-    const cached = getCached("kitchens", req);
+    const isKiosk = req.query.isKiosk === 'true' || req.query.isKiosk === '1' || req.headers['x-kiosk'] === 'true';
+    const cacheKey = isKiosk ? "kitchens_kiosk" : "kitchens";
+    const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const filterClause = isKiosk ? "AND ISNULL(cm.IsPublished, 0) = 0" : "";
     const result = await pool.request().query(`
       SELECT cm.CategoryId, cm.CategoryName AS KitchenTypeName, ckt.KitchenTypeCode, cm.SortCode, ISNULL(cm.IsPublished, 0) AS IsPublished
       FROM CategoryMaster cm
       LEFT JOIN CategoryKitchenType ckt ON cm.CategoryId = ckt.CategoryId
-      WHERE cm.IsActive = 1
+      WHERE cm.IsActive = 1 ${filterClause}
       ORDER BY cm.SortCode ASC, cm.CategoryName ASC
     `);
-    setCache("kitchens", result.recordset, req);
+    setCache(cacheKey, result.recordset, req);
     res.json(result.recordset);
   } catch (err) {
     console.error("KITCHEN ERROR:", err);
@@ -52,18 +55,20 @@ router.get("/kitchens", async (req, res) => {
 
 router.get("/dishgroups/all", async (req, res) => {
   try {
-    const cacheKey = "dishgroups_all";
+    const isKiosk = req.query.isKiosk === 'true' || req.query.isKiosk === '1' || req.headers['x-kiosk'] === 'true';
+    const cacheKey = isKiosk ? "dishgroups_all_kiosk" : "dishgroups_all";
     const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const filterClause = isKiosk ? "AND ISNULL(IsPublished, 0) = 0" : "";
     const result = await pool.request().query(`
       SELECT 
         DishGroupId,
         DishGroupName,
         ISNULL(IsPublished, 0) AS IsPublished
       FROM DishGroupMaster
-      WHERE IsActive = 1
+      WHERE IsActive = 1 ${filterClause}
       ORDER BY DishGroupName ASC
     `);
     setCache(cacheKey, result.recordset, req);
@@ -76,11 +81,13 @@ router.get("/dishgroups/all", async (req, res) => {
 router.get("/dishgroups/:CategoryId", async (req, res) => {
   try {
     const categoryId = req.params.CategoryId;
-    const cacheKey = `dishgroups_${categoryId}`;
+    const isKiosk = req.query.isKiosk === 'true' || req.query.isKiosk === '1' || req.headers['x-kiosk'] === 'true';
+    const cacheKey = isKiosk ? `dishgroups_${categoryId}_kiosk` : `dishgroups_${categoryId}`;
     const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const filterClause = isKiosk ? "AND ISNULL(a.IsPublished, 0) = 0 AND ISNULL(cm.IsPublished, 0) = 0" : "";
     const result = await pool
       .request()
       .input("CategoryId", categoryId).query(`
@@ -94,7 +101,7 @@ router.get("/dishgroups/:CategoryId", async (req, res) => {
               ON a.DishGroupId = dkt.DishGroupId
           LEFT JOIN CategoryMaster cm
               ON cm.CategoryId = @CategoryId
-          WHERE a.IsActive = 1
+          WHERE a.IsActive = 1 ${filterClause}
           AND (
                 a.CategoryId = @CategoryId
                 OR dkt.KitchenTypeName = cm.CategoryName
@@ -112,11 +119,15 @@ router.get("/dishgroups/:CategoryId", async (req, res) => {
 /* ================= DISHES ================= */
 router.get("/dishes/all", async (req, res) => {
   try {
-    const cacheKey = "dishes_all";
+    const isKiosk = req.query.isKiosk === 'true' || req.query.isKiosk === '1' || req.headers['x-kiosk'] === 'true';
+    const cacheKey = isKiosk ? "dishes_all_kiosk" : "dishes_all";
     const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const filterClause = isKiosk
+      ? "AND ISNULL(d.IsPublished, 0) = 0 AND ISNULL(cat.IsPublished, 0) = 0 AND ISNULL(dgm.IsPublished, 0) = 0"
+      : "";
     const result = await pool.request().query(`
       SELECT 
         d.DishId, d.Name, d.DishGroupId, d.currentcost AS Price,
@@ -152,7 +163,7 @@ router.get("/dishes/all", async (req, res) => {
         SELECT *, ROW_NUMBER() OVER(PARTITION BY LOWER(TRIM(KitchenTypeName)) ORDER BY PrinterId) as rn 
         FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
       ) pm ON LOWER(TRIM(ISNULL(ckt.KitchenTypeName, cat.CategoryName))) = LOWER(TRIM(pm.KitchenTypeName)) AND pm.rn = 1
-      WHERE d.IsActive = 1 ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
+      WHERE d.IsActive = 1 ${filterClause} ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
     `);
     setCache(cacheKey, result.recordset, req);
     res.json(result.recordset);
@@ -230,11 +241,15 @@ router.post("/dishes/:DishId/toggle-favourite", async (req, res) => {
 router.get("/dishes/group/:DishGroupId", async (req, res) => {
   try {
     const dishGroupId = req.params.DishGroupId;
-    const cacheKey = `dishes_group_${dishGroupId}`;
+    const isKiosk = req.query.isKiosk === 'true' || req.query.isKiosk === '1' || req.headers['x-kiosk'] === 'true';
+    const cacheKey = isKiosk ? `dishes_group_${dishGroupId}_kiosk` : `dishes_group_${dishGroupId}`;
     const cached = getCached(cacheKey, req);
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const filterClause = isKiosk
+      ? "AND ISNULL(d.IsPublished, 0) = 0 AND ISNULL(cat.IsPublished, 0) = 0 AND ISNULL(dgm.IsPublished, 0) = 0"
+      : "";
     const result = await pool
       .request()
       .input("DishGroupId", dishGroupId).query(`
@@ -293,7 +308,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
           ON LOWER(TRIM(ISNULL(ckt.KitchenTypeName, cat.CategoryName))) = LOWER(TRIM(pm.KitchenTypeName))
           AND pm.rn = 1
  
-          WHERE d.IsActive = 1
+          WHERE d.IsActive = 1 ${filterClause}
           AND (
                 d.DishGroupId = @DishGroupId
                 OR dmap.DishGroupId = @DishGroupId

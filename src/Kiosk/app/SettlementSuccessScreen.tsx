@@ -223,7 +223,10 @@ export default function SettlementSuccessScreen({
   const [showPrintPrompt, setShowPrintPrompt] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isShareLoading, setIsShareLoading] = useState(false);
+  const [countdown, setCountdown] = useState(10);
   const autoReturnTimerRef = useRef<any>(null);
+  const countdownIntervalRef = useRef<any>(null);
+  const hasReturnedRef = useRef(false);
   const hasAutoPreviewedRef = useRef(false);
 
   // Read stored values if not passed as props
@@ -317,6 +320,11 @@ export default function SettlementSuccessScreen({
   }, [orderId, orderNumber]);
 
   const handleReturn = useCallback(async () => {
+    if (hasReturnedRef.current) return;
+    hasReturnedRef.current = true;
+    if (autoReturnTimerRef.current) clearTimeout(autoReturnTimerRef.current);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+
     try {
       await AsyncStorage.multiRemove([
         "kioskOrderId",
@@ -477,7 +485,7 @@ export default function SettlementSuccessScreen({
     };
   }, [orderId, orderNumber]);
 
-  // Fast polling fallback & Auto-return timer
+  // Fast polling fallback & Auto-return countdown timer (10 seconds)
   useEffect(() => {
     loadOrderDetails();
     loadOrderItems();
@@ -485,26 +493,29 @@ export default function SettlementSuccessScreen({
     // Fast 3-second polling ensures status updates even if socket drops
     const interval = setInterval(loadOrderDetails, 3000);
 
-    // Initial 60-second auto-return timer
+    // 10-second countdown tick for UI
+    setCountdown(10);
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Exactly 10-second auto-return timer to Start Over
     autoReturnTimerRef.current = setTimeout(() => {
       handleReturn();
-    }, 60000);
+    }, 10000);
 
     return () => {
       clearInterval(interval);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (autoReturnTimerRef.current) clearTimeout(autoReturnTimerRef.current);
     };
   }, [loadOrderDetails, loadOrderItems, handleReturn]);
-
-  // When order becomes READY: refresh timer by 60s so customer has plenty of time to see it
-  useEffect(() => {
-    if (orderStatus === "READY") {
-      if (autoReturnTimerRef.current) clearTimeout(autoReturnTimerRef.current);
-      autoReturnTimerRef.current = setTimeout(() => {
-        handleReturn();
-      }, 60000);
-    }
-  }, [orderStatus, handleReturn]);
 
   const handleOpenOrderDetails = () => {
     setShowOrderDetails(true);
@@ -684,7 +695,9 @@ export default function SettlementSuccessScreen({
           color="#ea580c"
           style={{ marginRight: 8 }}
         />
-        <Text style={styles.newOrderBtnText}>Start New Order</Text>
+        <Text style={styles.newOrderBtnText}>
+          Start New Order {countdown > 0 ? `(${countdown}s)` : ""}
+        </Text>
       </TouchableOpacity>
     </View>
   );
