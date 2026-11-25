@@ -1850,11 +1850,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         "kioskCustomerVehicleId",
       );
       const orderType = await AsyncStorage.getItem("kioskOrderType");
+      const isTakeaway =
+        (orderType || "").toUpperCase().includes("TAKEAWAY") ||
+        (orderType || "").toUpperCase() === "TW" ||
+        isTakeawayOrder;
       const storedTableId = await AsyncStorage.getItem("tableId");
       const storedTableNo = await AsyncStorage.getItem("tableNo");
-      const resolvedTableId = tableId || storedTableId || "TAKEAWAY";
+      const resolvedTableId =
+        tableId || storedTableId || (isTakeaway ? "TAKEAWAY" : "DINE_IN");
       const resolvedTableNo =
-        tableNo || storedTableNo || resolvedTableId || "TAKEAWAY";
+        tableNo || storedTableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN");
 
       // Retain selected dish ID from cart throughout checkout
       const selectedDishId =
@@ -1869,7 +1874,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId,
-          tableNo: resolvedTableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN"),
+          tableNo: resolvedTableNo,
           tableId: resolvedTableId,
           isSelfCollect: isSelfCollect,
           isTentNumber: isTentNumber,
@@ -1945,7 +1950,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           takeawayCharge: takeawayCharge,
           gst: gstAmount,
           total: Number(finalPayable),
-          tableNo: resolvedTableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN"),
+          tableNo: resolvedTableNo,
           tableId: resolvedTableId,
           isSelfCollect: isSelfCollect,
           isTentNumber: isTentNumber,
