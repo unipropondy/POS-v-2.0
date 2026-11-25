@@ -382,6 +382,8 @@ app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/loyalty/configs", loyaltyConfigRoutes);
 app.use("/api/combo", comboRoutes);
 app.use("/api/rewards", rewardRoutes);
+const promotionRoutes = require("./routes/promotions");
+app.use("/api/promotions", promotionRoutes);
 const cashDrawerRouter = require("./routes/cashDrawer");
 app.use("/api/cash-drawer", cashDrawerRouter);
 const printJobsRouter = require("./routes/printJobs");

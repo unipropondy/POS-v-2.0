@@ -1282,6 +1282,34 @@ async function initDB(pool) {
         EXEC('UPDATE [dbo].[DishMaster] SET isFavourite = Favourite');
       END
     `);
+    // 28. PromotionMaster Schema Check
+    await runQuery("Create PromotionMaster table if not exists", `
+      IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND type in (N'U'))
+      BEGIN
+        CREATE TABLE [dbo].[PromotionMaster] (
+          [PromotionId] INT IDENTITY(1,1) PRIMARY KEY,
+          [PromotionName] NVARCHAR(255) NULL,
+          [PromotionDescription] NVARCHAR(MAX) NULL,
+          [PromotionImageUrl] NVARCHAR(MAX) NULL,
+          [PromotionType] NVARCHAR(100) NULL,
+          [PromotionAmount] DECIMAL(18,2) NULL,
+          [DiscountValue] DECIMAL(18,2) NULL,
+          [StartDate] DATETIME NULL,
+          [EndDate] DATETIME NULL,
+          [StartTime] NVARCHAR(50) NULL,
+          [EndTime] NVARCHAR(50) NULL,
+          [Status] INT NOT NULL DEFAULT 1,
+          [CreatedOn] DATETIME DEFAULT GETDATE()
+        );
+      END
+    `);
+    await runQuery("PromotionMaster - PromotionImageUrl", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND name = 'PromotionImageUrl') ALTER TABLE [dbo].[PromotionMaster] ADD PromotionImageUrl NVARCHAR(MAX) NULL");
+    await runQuery("PromotionMaster - PromotionType", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND name = 'PromotionType') ALTER TABLE [dbo].[PromotionMaster] ADD PromotionType NVARCHAR(100) NULL");
+    await runQuery("PromotionMaster - PromotionAmount", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND name = 'PromotionAmount') ALTER TABLE [dbo].[PromotionMaster] ADD PromotionAmount DECIMAL(18,2) NULL");
+    await runQuery("PromotionMaster - DiscountValue", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND name = 'DiscountValue') ALTER TABLE [dbo].[PromotionMaster] ADD DiscountValue DECIMAL(18,2) NULL");
+    await runQuery("PromotionMaster - StartTime", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND name = 'StartTime') ALTER TABLE [dbo].[PromotionMaster] ADD StartTime NVARCHAR(50) NULL");
+    await runQuery("PromotionMaster - EndTime", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PromotionMaster]') AND name = 'EndTime') ALTER TABLE [dbo].[PromotionMaster] ADD EndTime NVARCHAR(50) NULL");
+
     await runQuery("PrintMaster - IsEnabled", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PrintMaster]') AND name = 'IsEnabled') ALTER TABLE [dbo].[PrintMaster] ADD IsEnabled BIT NOT NULL DEFAULT 1");
     await runQuery("RestaurantOrderDetailCur - ComboDetailsJSON", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RestaurantOrderDetailCur]') AND name = 'ComboDetailsJSON') ALTER TABLE [dbo].[RestaurantOrderDetailCur] ADD ComboDetailsJSON NVARCHAR(MAX) NULL");
     await runQuery("RestaurantOrderDetail - ComboDetailsJSON", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RestaurantOrderDetail]') AND name = 'ComboDetailsJSON') ALTER TABLE [dbo].[RestaurantOrderDetail] ADD ComboDetailsJSON NVARCHAR(MAX) NULL");
