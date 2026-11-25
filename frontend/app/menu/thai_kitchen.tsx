@@ -1,7 +1,8 @@
 import { API_URL } from "@/constants/Config";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
+import { Image } from "expo-image";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,19 +22,19 @@ import {
   useWindowDimensions,
   View
 } from "react-native";
-import { Image } from "expo-image";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import CartSidebar from "../../components/CartSidebar";
 import ComboCustomizer from "../../components/ComboCustomizer";
-import WindowControls from "../../components/WindowControls";
 import { useToast } from "../../components/Toast";
 import { Skeleton } from "../../components/ui/Skeleton";
 import UniversalPrinter from "../../components/UniversalPrinter";
+import WindowControls from "../../components/WindowControls";
 import { Fonts } from "../../constants/Fonts";
 import { Theme } from "../../constants/theme";
+import { useBarcodeScanner } from "../../hooks/useBarcodeScanner";
 import { useAuthStore } from "../../stores/authStore";
 import {
   addToCartGlobal,
@@ -41,12 +42,11 @@ import {
   setCurrentContext,
   useCartStore
 } from "../../stores/cartStore";
+import { useCompanySettingsStore } from "../../stores/companySettingsStore";
 import { useGeneralSettingsStore } from "../../stores/generalSettingsStore";
 import { useMenuStore } from "../../stores/menuStore";
 import { useOrderContextStore } from "../../stores/orderContextStore";
 import { usePaymentSettingsStore } from "../../stores/paymentSettingsStore";
-import { useCompanySettingsStore } from "../../stores/companySettingsStore";
-import { useBarcodeScanner } from "../../hooks/useBarcodeScanner";
 
 const EMPTY_ARRAY: any[] = [];
 
@@ -69,10 +69,8 @@ const NavRail = () => {
             style={[styles.railItem, item.active && styles.railItemActive]}
             onPress={() => {
               if (item.id === "home") {
-                const { getOrderContext } = require("../../stores/orderContextStore");
-                const ctx = getOrderContext();
-                const targetSection = ctx?.section || (ctx?.orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
-                router.replace({ pathname: "/(tabs)/category", params: { section: targetSection } });
+                const targetSec = useOrderContextStore.getState().currentOrder?.section || "SECTION_1";
+                router.replace(`/(tabs)/category?section=${targetSec}`);
               }
             }}
           >
@@ -114,8 +112,17 @@ const DishCard = React.memo(
       <Pressable
         style={({ pressed }: { pressed: boolean }) => [
           styles.card,
-          { width, padding: isPhone ? 8 : isTablet ? 12 : 10 },
-          isLandscape && !isTablet && { maxHeight: 135 },
+          {
+            width,
+            paddingVertical: isLandscape ? 4 : isPhone ? 8 : isTablet ? 12 : 10,
+            paddingHorizontal: isLandscape ? 4 : isPhone ? 8 : isTablet ? 12 : 10,
+          },
+          isLandscape && {
+            maxHeight: 98,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: isSC ? Theme.dangerBorder : "#F1F5F9",
+          },
           isSC && {
             borderWidth: 1.5,
             borderColor: Theme.dangerBorder,
@@ -137,17 +144,25 @@ const DishCard = React.memo(
           <View
             style={[
               styles.qtyBadge,
-              isPhone
+              isLandscape
+                ? { width: 18, height: 18, borderRadius: 9 }
+                : isPhone
                 ? { width: 22, height: 22, borderRadius: 11 }
                 : isTablet
-                  ? { width: 32, height: 32, borderRadius: 16 }
-                  : null,
+                ? { width: 32, height: 32, borderRadius: 16 }
+                : null,
             ]}
           >
             <Text
               style={[
                 styles.qtyBadgeText,
-                isPhone ? { fontSize: 11 } : isTablet ? { fontSize: 15 } : null,
+                isLandscape
+                  ? { fontSize: 9.5 }
+                  : isPhone
+                  ? { fontSize: 11 }
+                  : isTablet
+                  ? { fontSize: 15 }
+                  : null,
               ]}
             >
               {cartQty}
@@ -157,16 +172,18 @@ const DishCard = React.memo(
         <View
           style={[
             styles.dishImageWrap,
-            isPhone
+            isLandscape
+              ? { width: 38, height: 38, marginBottom: 3, borderRadius: 19 }
+              : isPhone
               ? { width: 48, height: 48, marginBottom: 4 }
               : isTablet
-                ? {
+              ? {
                   width: 75,
                   height: 75,
                   marginBottom: 6,
                   borderRadius: 37.5,
                 }
-                : null,
+              : null,
           ]}
         >
           {dish.Image ? (
@@ -174,7 +191,10 @@ const DishCard = React.memo(
               source={{ uri: `${IMAGE_BASE_URL}${dish.Image}` }}
               style={styles.dishImg}
               contentFit="cover"
-              transition={150}
+              transition={0}
+              cachePolicy="memory-disk"
+              priority="high"
+              recyclingKey={String(dish.Image)}
             />
           ) : (
             <View
@@ -189,7 +209,7 @@ const DishCard = React.memo(
             >
               <Ionicons
                 name="restaurant-outline"
-                size={isPhone ? (isLandscape ? 16 : 24) : isTablet ? 48 : 40}
+                size={isLandscape ? 18 : isPhone ? 24 : isTablet ? 48 : 40}
                 color={Theme.textMuted}
               />
             </View>
@@ -201,11 +221,11 @@ const DishCard = React.memo(
               backgroundColor: "rgba(0,0,0,0.4)",
               justifyContent: "center",
               alignItems: "center",
-              borderRadius: isPhone ? 24 : 37.5,
+              borderRadius: isLandscape ? 19 : isPhone ? 24 : 37.5,
             }}>
               <Text style={{
                 color: "#fff",
-                fontSize: isPhone ? 8 : 10,
+                fontSize: 8,
                 fontFamily: Fonts.bold,
                 textAlign: "center"
               }}>SOLD OUT</Text>
@@ -215,20 +235,28 @@ const DishCard = React.memo(
         <Text
           style={[
             styles.dishName,
-            isPhone
+            isLandscape
+              ? { fontSize: 10.5, minHeight: 24, lineHeight: 12 }
+              : isPhone
               ? { fontSize: 11, minHeight: 42, lineHeight: 14 }
               : isTablet
-                ? { fontSize: 13, minHeight: 48, lineHeight: 16 }
-                : null,
+              ? { fontSize: 13, minHeight: 48, lineHeight: 16 }
+              : null,
           ]}
-          numberOfLines={3}
+          numberOfLines={2}
         >
           {dish.Name}
         </Text>
         <Text
           style={[
             styles.dishPrice,
-            isPhone ? { fontSize: 12 } : isTablet ? { fontSize: 14 } : null,
+            isLandscape
+              ? { fontSize: 11.5, marginTop: 1 }
+              : isPhone
+              ? { fontSize: 12 }
+              : isTablet
+              ? { fontSize: 14 }
+              : null,
           ]}
         >
           {(() => {
@@ -254,13 +282,15 @@ const DishCard = React.memo(
 // This wrapper ensures only the SPECIFIC dish card being updated re-renders.
 const DishCardWrapper = React.memo(
   ({ item, width, isPhone, isTablet, isLandscape, onPress }: any) => {
+    const orderContext = useOrderContextStore((state) => state.currentOrder);
     const currentContextId = useCartStore((state) => state.currentContextId);
+    const effectiveContextId = (orderContext ? getContextId(orderContext) : null) || currentContextId;
     const dishId = item.DishId || item.id;
 
     // ⚡ SURGICAL SUBSCRIPTION: Only re-render if the quantity of THIS specific product changes
     const cartQty = useCartStore((state) => {
-      if (!currentContextId) return 0;
-      const qtyMap = state.cartQtyMap[currentContextId] || {};
+      if (!effectiveContextId) return 0;
+      const qtyMap = state.cartQtyMap[effectiveContextId] || {};
       return qtyMap[dishId] || 0;
     });
 
@@ -342,10 +372,12 @@ const GroupSkeleton = () => (
 
 // 🚀 PERFORMANCE OPTIMIZATION: Cart Badge Component
 const CartBadge = React.memo(({ isPhone, isLandscape }: any) => {
+  const orderContext = useOrderContextStore((state) => state.currentOrder);
   const currentContextId = useCartStore((state) => state.currentContextId);
+  const effectiveContextId = (orderContext ? getContextId(orderContext) : null) || currentContextId;
   const count = useCartStore((state) => {
-    if (!currentContextId) return 0;
-    return (state.carts[currentContextId] || []).length;
+    if (!effectiveContextId) return 0;
+    return (state.carts[effectiveContextId] || []).length;
   });
 
   if (count === 0) return null;
@@ -396,6 +428,43 @@ export default function MenuScreen() {
   const [selectedGroup, setSelectedGroup] = useState("");
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Search input ref & platform-aware focus management
+  const searchInputRef = React.useRef<TextInput>(null);
+  const [mobileSoftInputEnabled, setMobileSoftInputEnabled] = useState(false);
+  const focusTimerRef = React.useRef<any>(null);
+
+  const requestSearchFocus = React.useCallback(() => {
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => {
+      if (searchInputRef.current) {
+        if (Platform.OS === "web") {
+          const domInput = searchInputRef.current as any;
+          if (domInput?.focus) {
+            domInput.focus({ preventScroll: true });
+          }
+        } else {
+          searchInputRef.current.focus();
+        }
+      }
+    }, 50);
+  }, []);
+
+  // Cleanup focus timer on unmount
+  useEffect(() => {
+    return () => {
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    };
+  }, []);
+
+  // Screen focus lifecycle: auto-focus search whenever menu screen mounts or regains navigation focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (Platform.OS !== "web") {
+        setMobileSoftInputEnabled(false);
+      }
+      requestSearchFocus();
+    }, [requestSearchFocus])
+  );
   // Track in-flight modifier fetches to prevent duplicate requests
   const fetchingModifiers = React.useRef<Set<string>>(new Set());
 
@@ -449,15 +518,93 @@ export default function MenuScreen() {
         : undefined) || null,
   );
 
+  // --- MENU NAVIGATION MODE & PAGINATION ---
+  const menuNavigationMode =
+    useGeneralSettingsStore((s: any) => s.settings.menuNavigationMode) || "scroll";
+  const [currentPage, setCurrentPage] = useState(1);
+  const DISHES_PER_PAGE = 16;
+  const dishesScrollRef = React.useRef<any>(null);
+
+  // Dish Group Pagination (when menuNavigationMode === 'prev_next')
+  const [currentGroupPage, setCurrentGroupPage] = useState(1);
+  const GROUPS_PER_PAGE = 14; // 2 columns x 7 rows to display 14 dish groups per page and fill vertical space
+
+  // Category Horizontal Scroll Navigation Ref & Measurements
+  const categoryScrollRef = React.useRef<ScrollView>(null);
+  const categoryPillLayouts = React.useRef<Record<string, { x: number; width: number }>>({});
+  const categoryScrollWidth = React.useRef<number>(0);
+
+  const scrollCategoryIntoView = (kitchenId: string | number) => {
+    const layout = categoryPillLayouts.current[String(kitchenId)];
+    if (!layout || !categoryScrollRef.current) return;
+    const containerW = categoryScrollWidth.current;
+    const targetX =
+      containerW > 0
+        ? Math.max(0, layout.x - (containerW - layout.width) / 2)
+        : Math.max(0, layout.x - 40);
+    categoryScrollRef.current.scrollTo({ x: targetX, animated: true });
+  };
+
+  // Dish Group Vertical Scroll Navigation Ref & Measurements (Quick Serve POS style)
+  const dishGroupScrollRef = React.useRef<ScrollView>(null);
+  const [dishGroupScrollOffset, setDishGroupScrollOffset] = useState<number>(0);
+  const [dishGroupContentHeight, setDishGroupContentHeight] = useState<number>(0);
+  const [dishGroupContainerHeight, setDishGroupContainerHeight] = useState<number>(0);
+
+  const isDishGroupAtTop = dishGroupScrollOffset <= 2;
+  const isDishGroupAtBottom =
+    dishGroupContainerHeight > 0 &&
+    dishGroupContentHeight > 0 &&
+    dishGroupScrollOffset + dishGroupContainerHeight >= dishGroupContentHeight - 5;
+
+  const scrollDishGroupsVertically = (direction: "up" | "down") => {
+    if (dishGroupScrollRef.current) {
+      const delta = direction === "down" ? 120 : -120;
+      const nextOffset = Math.max(0, dishGroupScrollOffset + delta);
+      dishGroupScrollRef.current.scrollTo({
+        y: nextOffset,
+        animated: true,
+      });
+      setDishGroupScrollOffset(nextOffset);
+    }
+  };
+
+  const scrollDishesToTop = () => {
+    if (!dishesScrollRef.current) return;
+    if (typeof dishesScrollRef.current.scrollToOffset === "function") {
+      dishesScrollRef.current.scrollToOffset({ offset: 0, animated: false });
+    } else if (typeof dishesScrollRef.current.scrollTo === "function") {
+      dishesScrollRef.current.scrollTo({ y: 0, animated: false });
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    scrollDishesToTop();
+  };
+
+  const handleGroupPageChange = (newPage: number) => {
+    setCurrentGroupPage(newPage);
+    if (dishGroupScrollRef.current) {
+      dishGroupScrollRef.current.scrollTo({ y: 0, animated: false });
+      setDishGroupScrollOffset(0);
+    }
+  };
+
+  // Dish counts per dish group for badges
+  const getDishGroupCount = (groupId: string | number) => {
+    const gIdStr = String(groupId);
+    const cached = useMenuStore.getState().dishesByGroup[gIdStr];
+    if (Array.isArray(cached)) return cached.length;
+    // Fallback: count from allDishes
+    const matched = allDishes.filter((d: any) => String(d.DishGroupId || d.GroupId) === gIdStr);
+    return matched.length;
+  };
+
   const enableKOT = useGeneralSettingsStore((s: any) => s.settings.enableKOT);
   const enableCheckoutBill = useGeneralSettingsStore(
     (s: any) => s.settings.enableCheckoutBill,
   );
-
-  // 🟢 QUANTITY TRACKING: Handled surgically within DishCardWrapper to avoid O(N^2) re-renders
-
-  // Removed activeOrder memo to avoid system-wide re-renders.
-  // Access on-demand in handlers instead.
 
   const isLandscape = width > height;
   const isTablet = Math.min(width, height) >= 500;
@@ -471,18 +618,12 @@ export default function MenuScreen() {
     setShowCart((prev) => !prev);
   };
 
-  const isFetchingCart = React.useRef(false);
-
-  // Removed cartItemsCount dependency
-
   const insets = useSafeAreaInsets();
   const usableWidth = width - insets.left - insets.right;
 
-  // Moved totals to handlers or CartSidebar.
-  // MenuScreen no longer needs to calculate these on every render.
-
   const handleReprintKOT = async () => {
-    const cart = useCartStore.getState().carts[currentContextId!] || [];
+    const effectiveContextId = (orderContext ? getContextId(orderContext) : null) || currentContextId;
+    const cart = effectiveContextId ? (useCartStore.getState().carts[effectiveContextId] || []) : [];
     if (!cart.length) {
       showToast({ type: "error", message: "Cart is empty" });
       return;
@@ -520,17 +661,15 @@ export default function MenuScreen() {
   };
 
   const handleReprintBill = async () => {
-    const cart = useCartStore.getState().carts[currentContextId!] || [];
+    const effectiveContextId = (orderContext ? getContextId(orderContext) : null) || currentContextId;
+    const cart = effectiveContextId ? (useCartStore.getState().carts[effectiveContextId] || []) : [];
     if (!cart.length) {
       showToast({ type: "error", message: "Cart is empty" });
       return;
     }
 
     try {
-      const cart = useCartStore.getState().carts[currentContextId!] || [];
-      const discountInfo = useCartStore.getState().discounts[
-        currentContextId!
-      ] || { applied: false, type: "fixed", value: 0 };
+      const discountInfo = (effectiveContextId && useCartStore.getState().discounts[effectiveContextId]) || { applied: false, type: "fixed", value: 0 };
 
       const subtotal = cart.reduce((sum: number, item: any) => {
         if (item.status === "VOIDED") return sum;
@@ -579,7 +718,7 @@ export default function MenuScreen() {
     }
   };
 
-  // Sidebar width should be more responsive
+  // Cart width on the right (preserved exactly)
   const cartWidth = isTablet
     ? width > 1024
       ? 380
@@ -588,80 +727,88 @@ export default function MenuScreen() {
       ? usableWidth * 0.38
       : width * 0.62;
 
+  // Dish group column width on the left
+  const groupsColumnWidth = isTablet ? (width > 1200 ? 280 : 250) : (isLandscape ? 220 : 200);
+
+  // Main width for portrait fallback
   const mainWidth = showCart
     ? (isLandscape && !isTablet ? usableWidth : width) - cartWidth
     : (isLandscape && !isTablet ? usableWidth : width);
 
-  const columns = isTablet
-    ? isLandscape
-      ? showCart
-        ? (width > 1200 ? 5 : 3)
-        : (width > 1200 ? 7 : 5)
-      : showCart
-        ? 2
-        : 4 // At least 4 columns for tablet portrait when cart is off
-    : isLandscape
-      ? showCart
-        ? 3
-        : 4 // 4 per row for mobile landscape when cart is off
-      : showCart
-        ? 1
-        : 3; // 3 columns for mobile portrait when cart is off
+  // Center dishes panel width
+  const centerDishesWidth = isLandscape
+    ? Math.max(200, (showCart ? usableWidth - cartWidth : usableWidth) - groupsColumnWidth - 20)
+    : usableWidth;
 
-  const gap = isPhone ? (isLandscape ? 12 : 8) : 12;
-  // Increase internal padding subtraction (24 -> 32) to ensure cards don't touch edges or sidebar
-  const cardWidth = Math.floor(
-    (mainWidth - (isPhone ? 32 : 40) - gap * (columns - 1)) / columns,
-  );
+  // 4 columns in landscape, 2 columns in tablet portrait, 1 column in mobile portrait
+  const columns = isLandscape ? 4 : (isTablet ? 2 : 1);
+  const gap = isLandscape ? 6 : (isPhone ? 8 : 10);
+  const cardWidth = isLandscape
+    ? Math.floor((centerDishesWidth - 16 - gap * (columns - 1)) / columns)
+    : Math.max(110, Math.floor((mainWidth - (isPhone ? 28 : 48) - gap * (columns - 1)) / columns));
 
   const renderTopBar = () => (
     <View
       style={[
         styles.topBar,
-        isPhone && isLandscape && { marginBottom: 6, height: 40 },
+        isLandscape && { marginBottom: 6, height: 38 },
       ]}
     >
       <TouchableOpacity
         onPress={() => {
-          const { getOrderContext } = require("../../stores/orderContextStore");
-          const ctx = getOrderContext();
-          const targetSection = ctx?.section || (ctx?.orderType === "TAKEAWAY" ? "TAKEAWAY" : "SECTION_1");
-          router.replace({ pathname: "/(tabs)/category", params: { section: targetSection } });
+          const targetSec = orderContext?.section || "SECTION_1";
+          router.replace(`/(tabs)/category?section=${targetSec}`);
         }}
         style={[
           styles.backBtn,
-          isPhone && isLandscape && { width: 36, height: 36, borderRadius: 8 },
+          isLandscape && { width: 38, height: 38, borderRadius: 10 },
         ]}
       >
         <Ionicons
           name="arrow-back"
-          size={isPhone && isLandscape ? 20 : 24}
+          size={isLandscape ? 20 : 24}
           color={Theme.textPrimary}
         />
       </TouchableOpacity>
       <View
         style={[
           styles.searchWrap,
-          isPhone && isLandscape && { height: 36, flex: 0.8 },
+          isLandscape && { height: 38, flex: 0.8 },
         ]}
       >
         <Ionicons
           name="search"
-          size={isPhone && isLandscape ? 16 : 20}
+          size={isLandscape ? 16 : 20}
           color={Theme.textMuted}
           style={styles.searchIcon}
         />
         <TextInput
+          ref={searchInputRef}
+          autoFocus={true}
           style={[
             styles.searchInput,
-            isPhone && isLandscape && { fontSize: 13 },
+            isLandscape && { fontSize: 13 },
           ]}
           placeholder="Search items..."
           value={searchText}
           onChangeText={setSearchText}
+          showSoftInputOnFocus={Platform.OS === "web" ? true : mobileSoftInputEnabled}
+          onTouchStart={() => {
+            if (Platform.OS !== "web" && !mobileSoftInputEnabled) {
+              setMobileSoftInputEnabled(true);
+            }
+          }}
+          onPressIn={() => {
+            if (Platform.OS !== "web" && !mobileSoftInputEnabled) {
+              setMobileSoftInputEnabled(true);
+            }
+          }}
+          blurOnSubmit={false}
+          autoCorrect={false}
+          autoCapitalize="none"
         />
         {searchText.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchText("")}>
+          <TouchableOpacity onPress={() => clearSearch()}>
             <Ionicons name="close-circle" size={16} color={Theme.textMuted} />
           </TouchableOpacity>
         )}
@@ -672,8 +819,7 @@ export default function MenuScreen() {
         <TouchableOpacity
           style={[
             styles.headerBillBtn,
-            isPhone &&
-            isLandscape && { width: 36, height: 36, borderRadius: 8 },
+            isLandscape && { width: 38, height: 38, borderRadius: 10 },
             menuLoading && { opacity: 0.5 },
           ]}
           onPress={handleForceRefresh}
@@ -684,7 +830,7 @@ export default function MenuScreen() {
           ) : (
             <Ionicons
               name="refresh-outline"
-              size={isPhone && isLandscape ? 20 : 24}
+              size={isLandscape ? 20 : 24}
               color={Theme.primary}
             />
           )}
@@ -693,14 +839,13 @@ export default function MenuScreen() {
         <TouchableOpacity
           style={[
             styles.headerBillBtn,
-            isPhone &&
-            isLandscape && { width: 36, height: 36, borderRadius: 8 },
+            isLandscape && { width: 38, height: 38, borderRadius: 10 },
           ]}
           onPress={() => setShowReprintOptions(true)}
         >
           <Ionicons
             name="receipt-outline"
-            size={isPhone && isLandscape ? 20 : 24}
+            size={isLandscape ? 20 : 24}
             color={Theme.primary}
           />
         </TouchableOpacity>
@@ -708,15 +853,14 @@ export default function MenuScreen() {
         <TouchableOpacity
           style={[
             styles.headerCartBtn,
-            isPhone &&
-            isLandscape && { width: 36, height: 36, borderRadius: 8 },
+            isLandscape && { width: 38, height: 38, borderRadius: 10 },
             showCart && { backgroundColor: Theme.primaryLight },
           ]}
           onPress={toggleCart}
         >
           <Ionicons
             name={showCart ? "cart" : "cart-outline"}
-            size={isPhone && isLandscape ? 20 : 24}
+            size={isLandscape ? 20 : 24}
             color={Theme.primary}
           />
           <CartBadge isPhone={isPhone} isLandscape={isLandscape} />
@@ -735,9 +879,13 @@ export default function MenuScreen() {
       ]}
     >
       <ScrollView
+        ref={categoryScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.catScroll}
+        onLayout={(e) => {
+          categoryScrollWidth.current = e.nativeEvent.layout.width;
+        }}
       >
         {kitchens.map((k: any) => (
           <TouchableOpacity
@@ -747,6 +895,10 @@ export default function MenuScreen() {
               selectedKitchenId === k.CategoryId && styles.catPillActive,
               isPhone && isLandscape && { height: 36, paddingHorizontal: 16 },
             ]}
+            onLayout={(e) => {
+              const { x, width } = e.nativeEvent.layout;
+              categoryPillLayouts.current[String(k.CategoryId)] = { x, width };
+            }}
             onPress={() => loadGroups(k.CategoryId)}
           >
             <Text
@@ -856,37 +1008,74 @@ export default function MenuScreen() {
   useEffect(() => {
     const initMenu = async () => {
       setIsInitialLoading(true);
-      const activeCompany = user?.companyCode ? String(user.companyCode).trim().toUpperCase() : null;
-      const storeCompany = useMenuStore.getState().companyCode;
-      const isMismatch = Boolean(activeCompany && storeCompany !== activeCompany);
-
-      await fetchMenu(isMismatch);
+      await fetchMenu();
       const currentKitchens = useMenuStore.getState().kitchens;
+      const currentDishGroups = useMenuStore.getState().dishGroups;
       if (currentKitchens.length > 0) {
-        await loadGroups(currentKitchens[0].CategoryId);
-      } else {
-        setGroups([]);
-        setItems([]);
+        // Find first kitchen with available dish groups, or fall back to the first kitchen
+        const firstActiveWithGroups = currentKitchens.find((k: any) => {
+          const g = currentDishGroups[String(k.CategoryId)];
+          return Array.isArray(g) && g.length > 0;
+        });
+        const initialKitchenId = firstActiveWithGroups ? firstActiveWithGroups.CategoryId : currentKitchens[0].CategoryId;
+        await loadGroups(initialKitchenId);
       }
       setIsInitialLoading(false);
     };
     initMenu();
-  }, [user?.companyCode]);
+  }, []);
 
   const loadGroups = async (kitchenId: string) => {
-    setSelectedKitchenId(kitchenId);
-    const groupsData = await fetchGroups(kitchenId);
-    setGroups(groupsData);
-    if (groupsData.length > 0) {
-      await loadDishes(groupsData[0].DishGroupId);
+    const kIdStr = String(kitchenId);
+    scrollCategoryIntoView(kIdStr);
+    if (selectedKitchenId === kIdStr && groups.length > 0) {
+      requestSearchFocus();
+      return;
+    }
+    setSelectedKitchenId(kIdStr);
+    setCurrentPage(1);
+    setCurrentGroupPage(1);
+    requestSearchFocus();
+
+    const store = useMenuStore.getState();
+    let groupsData = store.dishGroups[kIdStr];
+    if (!groupsData || groupsData.length === 0) {
+      groupsData = await fetchGroups(kIdStr);
+    }
+
+    const currentGroups = Array.isArray(groupsData) ? groupsData : [];
+    setGroups(currentGroups);
+
+    if (currentGroups.length > 0) {
+      loadDishes(currentGroups[0].DishGroupId);
+    } else {
+      setSelectedGroup("");
+      setItems([]);
     }
   };
 
   const loadDishes = async (groupId: string) => {
-    setSelectedGroup(groupId);
+    const gIdStr = String(groupId);
+    if (selectedGroup === gIdStr && items.length > 0) {
+      requestSearchFocus();
+      return;
+    }
+    setSelectedGroup(gIdStr);
+    setCurrentPage(1);
+    requestSearchFocus();
+
+    // 🚀 INSTANT SWITCH: Read from in-memory cache with zero flicker/refresh!
+    const store = useMenuStore.getState();
+    const cachedDishes = store.dishesByGroup[gIdStr];
+    if (Array.isArray(cachedDishes)) {
+      setItems(cachedDishes);
+      return;
+    }
+
+    // Only if not found in cache, show brief loader and fetch
     setIsLoadingDishes(true);
-    const dishesData = await fetchDishes(groupId);
-    setItems(dishesData);
+    const dishesData = await fetchDishes(gIdStr);
+    setItems(dishesData || []);
     setIsLoadingDishes(false);
   };
 
@@ -913,9 +1102,45 @@ export default function MenuScreen() {
     });
   }, [debouncedSearch, items, allDishes]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / DISHES_PER_PAGE));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  // In Previous/Next mode, slice to 16 items per page. In Scroll mode, show all filtered items.
+  const displayedItems = useMemo(() => {
+    if (menuNavigationMode === "prev_next") {
+      const startIndex = (safePage - 1) * DISHES_PER_PAGE;
+      return filteredItems.slice(startIndex, startIndex + DISHES_PER_PAGE);
+    }
+    return filteredItems;
+  }, [menuNavigationMode, filteredItems, safePage]);
+
+  // Dish Group Pagination Calculations
+  const totalGroupPages = Math.max(1, Math.ceil(groups.length / GROUPS_PER_PAGE));
+  const safeGroupPage = Math.min(Math.max(1, currentGroupPage), totalGroupPages);
+
+  // In Previous/Next mode, slice groups to GROUPS_PER_PAGE. In Scroll mode, show all groups.
+  const displayedGroups = useMemo(() => {
+    if (menuNavigationMode === "prev_next") {
+      const startIndex = (safeGroupPage - 1) * GROUPS_PER_PAGE;
+      return groups.slice(startIndex, startIndex + GROUPS_PER_PAGE);
+    }
+    return groups;
+  }, [menuNavigationMode, groups, safeGroupPage]);
+
+  const clearSearch = React.useCallback(() => {
+    setSearchText("");
+    setDebouncedSearch("");
+    if (Platform.OS !== "web") {
+      setMobileSoftInputEnabled(false);
+    }
+    requestSearchFocus();
+  }, [requestSearchFocus]);
+
   const openModifiers = React.useCallback(
     async (dish: any) => {
       console.log("Dish Clicked", dish);
+      setSearchText("");
+      setTimeout(() => searchInputRef.current?.focus(), 50);
       try {
         const splitRes = await fetch(
           `${API_URL}/api/menu/checksplitdish/${dish.DishId}`
@@ -967,6 +1192,7 @@ export default function MenuScreen() {
           IsOpenItem: dish.IsOpenItem,
           takeawayCharge: dish.takeawayCharge ?? dish.TakeawayCharge,
         });
+        clearSearch();
       };
 
       // OPEN ITEM: Prompt for custom price before doing anything else
@@ -1010,7 +1236,7 @@ export default function MenuScreen() {
       try {
         const res = await fetch(`${API_URL}/api/menu/modifiers/${dish.DishId}`);
         const data = await res.json();
-        
+
         if (Array.isArray(data) && data.length > 0) {
           setModifiers(data);
           setShowModifier(true);
@@ -1082,7 +1308,7 @@ export default function MenuScreen() {
 
   const adjustModifierQuantity = (mod: any, gId: string, delta: number) => {
     const key = `${mod.ModifierID}_${gId}`;
-    
+
     const group = groupedModifiers.find(g => g.groupId === gId);
     const maxSelect = group ? group.maxSelect : 0;
     const multiselect = group ? group.multiselect : false;
@@ -1117,20 +1343,26 @@ export default function MenuScreen() {
     });
   };
 
+  const openModifiersRef = React.useRef(openModifiers);
+  openModifiersRef.current = openModifiers;
+  const handleDishPress = React.useCallback((dish: any) => {
+    openModifiersRef.current(dish);
+  }, []);
+
   const renderDishItem = React.useCallback(
     ({ item }: { item: any }) => {
       return (
         <DishCardWrapper
           item={item}
           width={cardWidth}
-          onPress={openModifiers}
+          onPress={handleDishPress}
           isPhone={isPhone}
           isTablet={isTablet}
           isLandscape={isLandscape}
         />
       );
     },
-    [cardWidth, openModifiers, isPhone, isTablet, isLandscape],
+    [cardWidth, handleDishPress, isPhone, isTablet, isLandscape],
   );
 
   const toggleModifier = (mod: any) => {
@@ -1236,6 +1468,7 @@ export default function MenuScreen() {
 
     }
     setShowModifier(false);
+    clearSearch();
   };
 
   // OPEN ITEM: Validate and add to cart at custom price
@@ -1277,6 +1510,7 @@ export default function MenuScreen() {
     setOpenItemDish(null);
     setOpenItemPrice("");
     setOpenItemError("");
+    clearSearch();
   };
 
   if (!orderContext) return null;
@@ -1287,66 +1521,376 @@ export default function MenuScreen() {
       <View style={{ flex: 1 }}>
         {isLandscape ? (
           <View style={styles.layout}>
-            {/* DESKTOP LAYOUT - Full height sidebar */}
-            <View style={[styles.main, { width: mainWidth }]}>
+            {/* 3-COLUMN MAIN BODY: Matches Quick Serve POS Structure */}
+            <View style={styles.main3Column}>
+              {/* TOP BAR */}
               {renderTopBar()}
-              {renderCategoryNav()}
-              <View style={styles.gridContainer}>
-                {isLoadingDishes || isInitialLoading ? (
-                  <DishGridSkeleton
-                    cardWidth={cardWidth}
-                    columns={columns}
-                    gap={gap}
-                    isPhone={isPhone}
-                  />
-                ) : (
-                  <FlatList
-                    data={filteredItems}
-                    keyExtractor={(item, index) =>
-                      item.DishId || `dish-${index}`
-                    }
-                    numColumns={columns}
-                    key={columns}
-                    renderItem={renderDishItem}
-                    columnWrapperStyle={
-                      columns > 1 ? { gap: gap, marginBottom: gap } : undefined
-                    }
-                    getItemLayout={(data, index) => ({
-                      length: 150, // Fixed height estimate
-                      offset: 150 * Math.floor(index / columns),
-                      index,
-                    })}
-                    removeClippedSubviews={Platform.OS === "android"}
-                    initialNumToRender={columns * 5}
-                    maxToRenderPerBatch={columns * 3}
-                    windowSize={5}
-                    contentContainerStyle={[
-                      styles.listPadding,
-                      columns === 1 && { gap: gap },
-                      filteredItems.length === 0 && {
-                        flex: 1,
-                        justifyContent: "center",
-                      },
-                    ]}
-                    showsVerticalScrollIndicator={false}
-                    ListEmptyComponent={
-                      !isLoadingDishes && !isInitialLoading ? (
-                        <View style={styles.emptyItemsState}>
+
+              {/* KITCHEN TYPE SELECTION ROW — Separate horizontal section above menu containers */}
+              <View style={styles.kitchenTabsBar}>
+                <ScrollView
+                  ref={categoryScrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.catScroll}
+                  onLayout={(e) => {
+                    categoryScrollWidth.current = e.nativeEvent.layout.width;
+                  }}
+                >
+                  {kitchens.map((k: any) => (
+                    <TouchableOpacity
+                      key={k.CategoryId}
+                      style={[
+                        styles.catPill,
+                        selectedKitchenId === k.CategoryId && styles.catPillActive,
+                      ]}
+                      onLayout={(e) => {
+                        const { x, width } = e.nativeEvent.layout;
+                        categoryPillLayouts.current[String(k.CategoryId)] = { x, width };
+                      }}
+                      onPress={() => loadGroups(k.CategoryId)}
+                    >
+                      <Text
+                        style={[
+                          styles.catText,
+                          selectedKitchenId === k.CategoryId && styles.catTextActive,
+                        ]}
+                      >
+                        {k.KitchenTypeName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* 3 COLUMNS CONTAINER */}
+              <View style={styles.columnsRow}>
+                {/* ================= COLUMN 1: LEFT SIDE → DISH GROUPS ================= */}
+                <View style={[styles.leftGroupsColumn, { width: groupsColumnWidth }]}>
+                  {/* DISH GROUPS HEADER */}
+                  <View style={styles.groupsHeader}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons
+                        name="restaurant-outline"
+                        size={16}
+                        color={Theme.primary}
+                      />
+                      <Text style={styles.groupsHeaderTitle}>Dish Groups</Text>
+                    </View>
+                  </View>
+
+                  {/* DISH GROUPS VERTICAL 2-COLUMN LIST WITH UP/DOWN SCROLL BUTTONS */}
+                  <View style={styles.dishGroupPanelBody}>
+                    {isInitialLoading ? (
+                      <View style={{ padding: 12 }}>
+                        <GroupSkeleton />
+                      </View>
+                    ) : groups.length === 0 ? (
+                      <View style={styles.emptyGroupPanelState}>
+                        <Ionicons
+                          name="restaurant-outline"
+                          size={40}
+                          color={Theme.textMuted}
+                        />
+                        <Text style={styles.emptyGroupPanelText}>No dish groups available for this kitchen.</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <ScrollView
+                          ref={dishGroupScrollRef}
+                          style={styles.dishGroupScroll}
+                          contentContainerStyle={styles.dishGroupScrollContent}
+                          showsVerticalScrollIndicator={false}
+                          nestedScrollEnabled
+                          scrollEnabled={menuNavigationMode === "scroll"}
+                          onScroll={(e) => setDishGroupScrollOffset(e.nativeEvent.contentOffset.y)}
+                          scrollEventThrottle={16}
+                          onContentSizeChange={(_w, h) => setDishGroupContentHeight(h)}
+                          onLayout={(e) => setDishGroupContainerHeight(e.nativeEvent.layout.height)}
+                        >
+                          <View style={styles.dishGroupGrid}>
+                            {displayedGroups.map((group) => {
+                              const isGroupActive = selectedGroup === String(group.DishGroupId);
+                              const groupName = group.DishGroupName;
+                              const count = getDishGroupCount(group.DishGroupId);
+
+                              return (
+                                <TouchableOpacity
+                                  key={group.DishGroupId}
+                                  style={[
+                                    styles.dishGroupCard2Col,
+                                    isGroupActive && styles.dishGroupCard2ColActive,
+                                  ]}
+                                  onPress={() => loadDishes(group.DishGroupId)}
+                                  activeOpacity={0.85}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.dishGroupName2Col,
+                                      isGroupActive && styles.dishGroupName2ColActive,
+                                    ]}
+                                    numberOfLines={2}
+                                  >
+                                    {groupName}
+                                  </Text>
+
+                                  <View
+                                    style={[
+                                      styles.dishGroupBadge2Col,
+                                      isGroupActive && styles.dishGroupBadge2ColActive,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.dishGroupBadgeText2Col,
+                                        isGroupActive && styles.dishGroupBadgeText2ColActive,
+                                      ]}
+                                    >
+                                      {count}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </ScrollView>
+
+                        {/* SINGLE UNIFIED UP/DOWN SCROLL BUTTON PILL ON THE RIGHT (ONLY IN SCROLL MODE) */}
+                        {menuNavigationMode === "scroll" && (
+                          <View style={styles.dishGroupScrollPillContainer}>
+                            <View style={styles.dishGroupScrollPill}>
+                              <TouchableOpacity
+                                style={[styles.singleScrollHalf, isDishGroupAtTop && styles.scrollBtnDisabled]}
+                                onPress={() => scrollDishGroupsVertically("up")}
+                                disabled={isDishGroupAtTop}
+                                activeOpacity={0.7}
+                              >
+                                <Ionicons
+                                  name="chevron-up"
+                                  size={14}
+                                  color={isDishGroupAtTop ? "#CBD5E1" : "#334155"}
+                                />
+                              </TouchableOpacity>
+
+                              <View style={styles.singleScrollDivider} />
+
+                              <TouchableOpacity
+                                style={[styles.singleScrollHalf, isDishGroupAtBottom && styles.scrollBtnDisabled]}
+                                onPress={() => scrollDishGroupsVertically("down")}
+                                disabled={isDishGroupAtBottom}
+                                activeOpacity={0.7}
+                              >
+                                <Ionicons
+                                  name="chevron-down"
+                                  size={14}
+                                  color={isDishGroupAtBottom ? "#CBD5E1" : "#334155"}
+                                />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                      </>
+                    )}
+                  </View>
+
+                  {/* DISH GROUPS PAGINATION BAR (ONLY IN PREVIOUS / NEXT MODE) */}
+                  {menuNavigationMode === "prev_next" && groups.length > 0 && (
+                    <View style={styles.groupsPaginationBar}>
+                      <View style={styles.paginationLeft}>
+                        <TouchableOpacity
+                          style={[styles.paginationBtn, safeGroupPage <= 1 && styles.paginationBtnDisabled]}
+                          onPress={() => {
+                            if (safeGroupPage > 1) handleGroupPageChange(safeGroupPage - 1);
+                          }}
+                          disabled={safeGroupPage <= 1}
+                          activeOpacity={0.8}
+                        >
                           <Ionicons
-                            name="restaurant-outline"
-                            size={64}
-                            color={Theme.textMuted}
+                            name="chevron-back"
+                            size={14}
+                            color={safeGroupPage <= 1 ? "#94A3B8" : Theme.primary}
                           />
-                          <Text style={styles.emptyItemsText}>
-                            No dish items added
+                          <Text style={[styles.paginationBtnText, safeGroupPage <= 1 && styles.paginationBtnTextDisabled]}>
+                            Prev
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.paginationCenter}>
+                        <Text style={styles.paginationText}>
+                          <Text style={styles.paginationCurrentText}>{safeGroupPage}</Text>
+                          <Text style={styles.paginationSubtext}> / </Text>
+                          <Text style={styles.paginationTotalText}>{totalGroupPages}</Text>
+                        </Text>
+                      </View>
+
+                      <View style={styles.paginationRight}>
+                        <TouchableOpacity
+                          style={[styles.paginationBtn, safeGroupPage >= totalGroupPages && styles.paginationBtnDisabled]}
+                          onPress={() => {
+                            if (safeGroupPage < totalGroupPages) handleGroupPageChange(safeGroupPage + 1);
+                          }}
+                          disabled={safeGroupPage >= totalGroupPages}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.paginationBtnText, safeGroupPage >= totalGroupPages && styles.paginationBtnTextDisabled]}>
+                            Next
+                          </Text>
+                          <Ionicons
+                            name="chevron-forward"
+                            size={14}
+                            color={safeGroupPage >= totalGroupPages ? "#94A3B8" : Theme.primary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* ================= COLUMN 2: CENTER → DISH ITEMS ================= */}
+                <View style={styles.centerDishesColumn}>
+                  {/* DISHES PANEL HEADER */}
+                  <View style={styles.dishesHeaderRow}>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Ionicons
+                        name="restaurant"
+                        size={18}
+                        color={Theme.primary}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.dishesHeaderTitle}>
+                        {debouncedSearch.trim()
+                          ? `Search Results for "${debouncedSearch.trim()}"`
+                          : selectedGroup
+                          ? `${groups.find((g) => String(g.DishGroupId) === String(selectedGroup))?.DishGroupName || "Dish Group"} Dishes`
+                          : "Menu Dishes"}
+                      </Text>
+                      {filteredItems.length > 0 && (
+                        <View style={styles.dishCountBadge}>
+                          <Text style={styles.dishCountBadgeText}>
+                            {filteredItems.length}
                           </Text>
                         </View>
-                      ) : null
-                    }
-                  />
-                )}
+                      )}
+                    </View>
+                  </View>
+
+                  {/* DISHES GRID AREA */}
+                  <View style={styles.gridContainer}>
+                    {isLoadingDishes || isInitialLoading ? (
+                      <DishGridSkeleton
+                        cardWidth={cardWidth}
+                        columns={columns}
+                        gap={gap}
+                        isPhone={isPhone}
+                      />
+                    ) : (
+                      <FlatList
+                        ref={dishesScrollRef}
+                        data={displayedItems}
+                        keyExtractor={(item, index) =>
+                          item.DishId || `dish-${index}`
+                        }
+                        numColumns={columns}
+                        key={`grid-${columns}`}
+                        renderItem={renderDishItem}
+                        scrollEnabled={menuNavigationMode === "scroll"}
+                        columnWrapperStyle={
+                          columns > 1 ? { gap: gap, marginBottom: isLandscape ? 3 : gap } : undefined
+                        }
+                        getItemLayout={(data, index) => ({
+                          length: isLandscape ? 101 : 150,
+                          offset: (isLandscape ? 101 : 150) * Math.floor(index / columns),
+                          index,
+                        })}
+                        removeClippedSubviews={Platform.OS === "android"}
+                        initialNumToRender={16}
+                        maxToRenderPerBatch={16}
+                        windowSize={5}
+                        contentContainerStyle={[
+                          isLandscape ? styles.dishesListLandscapePadding : styles.listPadding,
+                          (columns as number) === 1 && { gap: gap },
+                          filteredItems.length === 0 && {
+                            flex: 1,
+                            justifyContent: "center",
+                          },
+                        ]}
+                        showsVerticalScrollIndicator={menuNavigationMode === "scroll"}
+                        ListEmptyComponent={
+                          !isLoadingDishes && !isInitialLoading ? (
+                            <View style={styles.emptyItemsState}>
+                              <Ionicons
+                                name="restaurant-outline"
+                                size={56}
+                                color={Theme.textMuted}
+                              />
+                              <Text style={styles.emptyItemsText}>
+                                {groups.length === 0
+                                  ? "No dishes available for this kitchen"
+                                  : "No dish items added"}
+                              </Text>
+                            </View>
+                          ) : null
+                        }
+                      />
+                    )}
+                  </View>
+
+                  {/* QUICK SERVE STYLE PAGINATION BAR (ONLY IN PREVIOUS / NEXT MODE) */}
+                  {menuNavigationMode === "prev_next" && filteredItems.length > 0 && (
+                    <View style={styles.dishesPaginationBar}>
+                      <View style={styles.paginationLeft}>
+                        {safePage > 1 && (
+                          <TouchableOpacity
+                            style={styles.paginationBtn}
+                            onPress={() => handlePageChange(safePage - 1)}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="chevron-back" size={16} color={Theme.primary} />
+                            <Text style={styles.paginationBtnText}>
+                              Previous
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <View style={styles.paginationCenter}>
+                        <Text style={styles.paginationText}>
+                          Page <Text style={styles.paginationCurrentText}>{safePage}</Text> of{" "}
+                          <Text style={styles.paginationTotalText}>{totalPages}</Text>
+                          <Text style={styles.paginationSubtext}>
+                            {"  "}({Math.min(filteredItems.length, (safePage - 1) * DISHES_PER_PAGE + 1)}-
+                            {Math.min(filteredItems.length, safePage * DISHES_PER_PAGE)} of {filteredItems.length})
+                          </Text>
+                        </Text>
+                      </View>
+
+                      <View style={styles.paginationRight}>
+                        <TouchableOpacity
+                          style={[styles.paginationBtn, safePage >= totalPages && styles.paginationBtnDisabled]}
+                          onPress={() => {
+                            if (safePage < totalPages) handlePageChange(safePage + 1);
+                          }}
+                          disabled={safePage >= totalPages}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.paginationBtnText, safePage >= totalPages && styles.paginationBtnTextDisabled]}>
+                            Next
+                          </Text>
+                          <Ionicons
+                            name="chevron-forward"
+                            size={16}
+                            color={safePage >= totalPages ? "#94A3B8" : Theme.primary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
+
+            {/* ================= COLUMN 3: RIGHT SIDE → CART ================= */}
             {showCart && <CartSidebar width={cartWidth} />}
           </View>
         ) : (
@@ -1390,7 +1934,7 @@ export default function MenuScreen() {
                       }
                       contentContainerStyle={[
                         styles.listPadding,
-                        columns === 1 && { gap: gap },
+                        (columns as number) === 1 && { gap: gap },
                         filteredItems.length === 0 && {
                           flex: 1,
                           justifyContent: "center",
@@ -1437,7 +1981,10 @@ export default function MenuScreen() {
                   {selectedSplitDish?.Name}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => setShowSplitModal(false)}
+                  onPress={() => {
+                    setShowSplitModal(false);
+                    requestSearchFocus();
+                  }}
                   style={styles.modalClose}
                 >
                   <Ionicons
@@ -1606,6 +2153,7 @@ export default function MenuScreen() {
                   });
 
                   setShowSplitModal(false);
+                  clearSearch();
                 }}
               >
                 <Text
@@ -1640,7 +2188,10 @@ export default function MenuScreen() {
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => setShowModifier(false)}
+                  onPress={() => {
+                    setShowModifier(false);
+                    requestSearchFocus();
+                  }}
                   style={styles.modalClose}
                 >
                   <Ionicons
@@ -1665,7 +2216,7 @@ export default function MenuScreen() {
                       const maxSelect = group.maxSelect;
                       const minSelect = group.minSelect;
                       const multiselect = group.multiselect;
-                      
+
                       const groupSelectedCount = Object.entries(selectedModifierQuantities)
                         .filter(([k]) => k.endsWith(`_${gId}`))
                         .reduce((sum, [, q]) => sum + q, 0);
@@ -1767,7 +2318,10 @@ export default function MenuScreen() {
               <View style={styles.modalFooter}>
                 <TouchableOpacity
                   style={styles.modalBtnCancel}
-                  onPress={() => setShowModifier(false)}
+                  onPress={() => {
+                    setShowModifier(false);
+                    requestSearchFocus();
+                  }}
                 >
                   <Text style={styles.modalBtnTextCancel}>Cancel</Text>
                 </TouchableOpacity>
@@ -1922,7 +2476,10 @@ export default function MenuScreen() {
                 >
                   <Text style={styles.customModalTitle}>Enter Price</Text>
                   <TouchableOpacity
-                    onPress={() => setShowOpenItemModal(false)}
+                    onPress={() => {
+                      setShowOpenItemModal(false);
+                      requestSearchFocus();
+                    }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Ionicons name="close" size={22} color={Theme.textSecondary} />
@@ -1986,7 +2543,10 @@ export default function MenuScreen() {
                 <View style={styles.customModalActions}>
                   <TouchableOpacity
                     style={styles.customBtnCancel}
-                    onPress={() => setShowOpenItemModal(false)}
+                    onPress={() => {
+                      setShowOpenItemModal(false);
+                      requestSearchFocus();
+                    }}
                   >
                     <Text style={styles.customBtnTextCancel}>Cancel</Text>
                   </TouchableOpacity>
@@ -2007,6 +2567,7 @@ export default function MenuScreen() {
         onClose={() => {
           setShowComboModal(false);
           setComboDish(null);
+          requestSearchFocus();
         }}
         dish={comboDish}
         kitchenName={kitchens.find((k) => k.CategoryId === selectedKitchenId)?.KitchenTypeName || "KITCHEN"}
@@ -2127,9 +2688,9 @@ const styles = StyleSheet.create({
   categoryNavigation: { marginBottom: 15 },
   catScroll: { gap: 10 },
   catPill: {
-    paddingHorizontal: 20,
-    height: 36,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: Theme.border,
@@ -2142,7 +2703,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     ...Theme.shadowSm,
   },
-  catText: { fontSize: 14, fontFamily: Fonts.bold, color: Theme.textSecondary },
+  catText: { fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary },
   catTextActive: { color: Theme.primary },
   groupScroll: { gap: 8 },
   groupPill: {
@@ -2574,5 +3135,299 @@ const styles = StyleSheet.create({
     color: Theme.textPrimary,
     minWidth: 14,
     textAlign: "center",
+  },
+
+  /* 3-COLUMN MAIN BODY LAYOUT (MATCHING QUICK SERVE POS) */
+  main3Column: {
+    flex: 1,
+    padding: 10,
+    backgroundColor: Theme.bgMain,
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
+    height: "100%",
+  },
+  columnsRow: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 0,
+    overflow: "hidden",
+  },
+
+  /* COLUMN 1: LEFT SIDE DISH GROUPS */
+  leftGroupsColumn: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
+    height: "100%",
+  },
+  kitchenTabsBar: {
+    paddingVertical: 2,
+    marginBottom: 6,
+  },
+  groupsHeader: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FAFAFA",
+  },
+  groupsHeaderTitle: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  dishGroupPanelBody: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "stretch",
+    overflow: "hidden",
+  },
+  dishGroupScroll: {
+    flex: 1,
+    paddingLeft: 8,
+    paddingRight: 6,
+    paddingVertical: 6,
+  },
+  dishGroupScrollContent: {
+    paddingBottom: 6,
+  },
+  dishGroupGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  emptyGroupPanelState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+    gap: 10,
+  },
+  emptyGroupPanelText: {
+    fontSize: 12,
+    fontFamily: Fonts.medium,
+    color: Theme.textMuted || "#94A3B8",
+    textAlign: "center",
+  },
+  dishGroupCard2Col: {
+    width: (Platform.OS === "web" ? "calc(50% - 3px)" : "48.5%") as any,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dishGroupCard2ColActive: {
+    backgroundColor: Theme.primary,
+    borderColor: Theme.primary,
+  },
+  dishGroupName2Col: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: Fonts.bold,
+    color: "#1E293B",
+    marginRight: 4,
+    lineHeight: 15,
+  },
+  dishGroupName2ColActive: {
+    color: "#FFFFFF",
+  },
+  dishGroupBadge2Col: {
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    minWidth: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dishGroupBadge2ColActive: {
+    backgroundColor: "#FFFFFF",
+  },
+  dishGroupBadgeText2Col: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    color: "#475569",
+  },
+  dishGroupBadgeText2ColActive: {
+    color: Theme.primary,
+  },
+  dishGroupScrollPillContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingRight: 6,
+    paddingLeft: 2,
+  },
+  dishGroupScrollPill: {
+    width: 24,
+    height: 90,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  singleScrollHalf: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  singleScrollDivider: {
+    height: 1,
+    backgroundColor: "#E2E8F0",
+    marginHorizontal: 3,
+  },
+  scrollBtnDisabled: {
+    opacity: 0.35,
+  },
+
+  /* COLUMN 2: CENTER DISH ITEMS */
+  centerDishesColumn: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
+    height: "100%",
+  },
+  dishesHeaderRow: {
+    height: 34,
+    flexShrink: 0,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FAFAFA",
+  },
+  dishesHeaderTitle: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  dishCountBadge: {
+    backgroundColor: Theme.primaryLight,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    marginLeft: 6,
+    borderWidth: 1,
+    borderColor: Theme.primaryBorder || Theme.primary,
+  },
+  dishCountBadgeText: {
+    fontSize: 10.5,
+    fontFamily: Fonts.bold,
+    color: Theme.primary,
+  },
+
+  /* DISH GROUPS BOTTOM PAGINATION BAR */
+  groupsPaginationBar: {
+    height: 34,
+    flexShrink: 0,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    zIndex: 10,
+  },
+
+  /* DISHES BOTTOM PAGINATION BAR */
+  dishesPaginationBar: {
+    height: 34,
+    flexShrink: 0,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    zIndex: 10,
+  },
+  paginationLeft: {
+    minWidth: 80,
+    alignItems: "flex-start",
+  },
+  paginationCenter: {
+    flex: 1,
+    alignItems: "center",
+  },
+  paginationRight: {
+    minWidth: 80,
+    alignItems: "flex-end",
+  },
+  paginationBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: Theme.primaryLight || "#FFF7ED",
+    borderWidth: 1,
+    borderColor: Theme.primaryBorder || "#FFEDD5",
+  },
+  paginationBtnText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: Theme.primary,
+  },
+  paginationText: {
+    fontSize: 11,
+    fontFamily: Fonts.medium,
+    color: "#475569",
+  },
+  paginationCurrentText: {
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  paginationTotalText: {
+    fontFamily: Fonts.bold,
+    color: "#0F172A",
+  },
+  paginationBtnDisabled: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+  },
+  paginationBtnTextDisabled: {
+    color: "#94A3B8",
+  },
+  paginationSubtext: {
+    fontSize: 10.5,
+    fontFamily: Fonts.regular,
+    color: "#94A3B8",
+  },
+  dishesListLandscapePadding: {
+    paddingHorizontal: 6,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
 });

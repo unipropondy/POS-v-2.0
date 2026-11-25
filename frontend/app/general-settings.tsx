@@ -323,12 +323,25 @@ export default function GeneralSettingsScreen() {
         ? settings.enableQRTWPayAtCashier
         : true,
     );
+    setMenuNavigationMode(
+      settings.menuNavigationMode === "prev_next" ? "prev_next" : "scroll",
+    );
   }, [settings]);
 
   const [passwordAction, setPasswordAction] = useState<
     "CASHDRAWER" | "SAVE" | null
   >(null);
   const [passwordError, setPasswordError] = useState("");
+
+  const [menuNavigationMode, setMenuNavigationMode] = useState<"scroll" | "prev_next">("scroll");
+
+  const handleToggleScrollMode = (val: boolean) => {
+    setMenuNavigationMode(val ? "scroll" : "prev_next");
+  };
+
+  const handleTogglePrevNextMode = (val: boolean) => {
+    setMenuNavigationMode(val ? "prev_next" : "scroll");
+  };
 
   const handleToggleCheckoutFlow = (val: boolean) => {
     if (val) {
@@ -389,6 +402,7 @@ export default function GeneralSettingsScreen() {
         enableDirectPaymentToProcess,
         enableSkipSummaryScreen,
         enableReceiptPrint,
+        menuNavigationMode,
         enableVoiceSuccess,
         enableNotificationSound,
         enableQRTWPayAtCashier,
@@ -499,6 +513,28 @@ export default function GeneralSettingsScreen() {
           icon: "storefront-outline",
           value: enableQRTWPayAtCashier,
           onToggle: setEnableQRTWPayAtCashier,
+        },
+      ],
+    },
+    {
+      title: "Menu",
+      icon: "restaurant-outline",
+      items: [
+        {
+          id: "menu_scroll_mode",
+          title: "Scroll",
+          desc: "Enable scrolling for Dish Groups and Dish Items. Hides Previous and Next buttons.",
+          icon: "swap-vertical-outline",
+          value: menuNavigationMode === "scroll",
+          onToggle: handleToggleScrollMode,
+        },
+        {
+          id: "menu_prev_next_mode",
+          title: "Previous / Next",
+          desc: "Navigate through Dish Groups and Dish Items using Previous and Next pagination buttons. Disables scrolling.",
+          icon: "albums-outline",
+          value: menuNavigationMode === "prev_next",
+          onToggle: handleTogglePrevNextMode,
         },
       ],
     },

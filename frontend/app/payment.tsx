@@ -262,6 +262,30 @@ export default function PaymentScreen() {
 
   const [method, setMethod] = useState("CAS");
   const [cashInput, setCashInput] = useState("");
+
+  // Unified controlled keypad handler for Numeric Keypad UI
+  const handleKeypadPress = React.useCallback((val: string) => {
+    if (val === "clear") {
+      setCashInput("");
+    } else if (val === "backspace") {
+      setCashInput((prev) => (prev.length > 0 ? prev.slice(0, -1) : ""));
+    } else if (val === ".") {
+      setCashInput((prev) => {
+        if (!prev) return "0.";
+        if (prev.includes(".")) return prev;
+        return prev + ".";
+      });
+    } else {
+      setCashInput((prev) => {
+        if (prev === "0") return val;
+        if (prev.includes(".")) {
+          const parts = prev.split(".");
+          if (parts[1] && parts[1].length >= 2) return prev;
+        }
+        return prev + val;
+      });
+    }
+  }, []);
   const [collectionAmount, setCollectionAmount] = useState("");
   const [processing, setProcessing] = useState(false);
   const [checkoutSessionId, setCheckoutSessionId] = useState("");
@@ -3147,79 +3171,139 @@ export default function PaymentScreen() {
                             </TouchableOpacity>
                           )}
                         </View>
-                        <View style={styles.cashInputBox}>
-                          <Text style={styles.currencyPrefix}>
-                            {currencySymbol}
-                          </Text>
-                          <TextInput
-                            style={styles.cashInput}
-                            value={cashInput}
-                            onChangeText={setCashInput}
-                            keyboardType="numeric"
-                            placeholder="0.00"
-                            {...Platform.select({
-                              web: { outlineStyle: "none" } as any,
-                            })}
-                          />
-                        </View>
-                        <View style={styles.quickCashContainer}>
-                          {quickCash.map((v) => {
-                            const isSelected = parseFloat(cashInput) === v;
-                            return (
-                              <TouchableOpacity
-                                key={v}
-                                style={[
-                                  styles.quickCashBtn,
-                                  isSelected && styles.activeQuickCashBtn,
-                                ]}
-                                onPress={() => setCashInput(v.toString())}
-                              >
-                                <Text
-                                  style={[
-                                    styles.quickCashText,
-                                    isSelected && styles.activeQuickCashText,
-                                  ]}
-                                >
+                        <View style={styles.cashAndKeypadRow}>
+                          <View style={styles.cashLeftCol}>
+                            <View style={styles.cashAmountsRow}>
+                              <View style={[styles.cashInputBox, { flex: 1.3, minHeight: 74, height: 74 }]}>
+                                <Text style={styles.currencyPrefix}>
                                   {currencySymbol}
-                                  {v}
                                 </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                          {(() => {
-                            const isExact =
-                              Math.abs(parseFloat(cashInput) - total) < 0.01;
-                            return (
+                                <TextInput
+                                  style={styles.cashInput}
+                                  value={cashInput}
+                                  onChangeText={setCashInput}
+                                  keyboardType="numeric"
+                                  placeholder="0.00"
+                                  {...Platform.select({
+                                    web: { outlineStyle: "none" } as any,
+                                  })}
+                                />
+                              </View>
+                              <View style={[styles.changeBox, { flex: 1, marginTop: 0, minHeight: 74, justifyContent: "center", paddingHorizontal: 14 }]}>
+                                <Text style={styles.changeLabel}>
+                                  Change to Return
+                                </Text>
+                                <Text style={styles.changeValue}>
+                                  {currencySymbol}
+                                  {change.toFixed(2)}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={[styles.quickCashContainer, { flexWrap: "wrap", gap: 8 }]}>
+                              {quickCash.map((v) => {
+                                const isSelected = parseFloat(cashInput) === v;
+                                return (
+                                  <TouchableOpacity
+                                    key={v}
+                                    style={[
+                                      styles.quickCashBtn,
+                                      { width: "23%", height: 52, justifyContent: "center", alignItems: "center" },
+                                      isSelected && styles.activeQuickCashBtn,
+                                    ]}
+                                    onPress={() => setCashInput(v.toString())}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.quickCashText,
+                                        isSelected && styles.activeQuickCashText,
+                                      ]}
+                                    >
+                                      {currencySymbol}
+                                      {v}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                              {(() => {
+                                const isExact =
+                                  Math.abs(parseFloat(cashInput) - total) < 0.01;
+                                return (
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.quickCashBtn,
+                                      { width: "23%", height: 52, justifyContent: "center", alignItems: "center" },
+                                      isExact && styles.activeQuickCashBtn,
+                                    ]}
+                                    onPress={() => setCashInput(total.toFixed(2))}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.quickCashText,
+                                        isExact && styles.activeQuickCashText,
+                                      ]}
+                                    >
+                                      Exact
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })()}
                               <TouchableOpacity
-                                style={[
-                                  styles.quickCashBtn,
-                                  isExact && styles.activeQuickCashBtn,
-                                ]}
-                                onPress={() => setCashInput(total.toFixed(2))}
+                                style={[styles.quickCashBtn, { width: "23%", height: 52, justifyContent: "center", alignItems: "center", backgroundColor: "#ef4444", borderColor: "#ef4444" }]}
+                                onPress={() => handleKeypadPress("clear")}
                               >
-                                <Text
-                                  style={[
-                                    styles.quickCashText,
-                                    isExact && styles.activeQuickCashText,
-                                  ]}
-                                >
-                                  Exact
+                                <Text style={[styles.quickCashText, { color: "#ffffff" }]}>
+                                  Clear
                                 </Text>
                               </TouchableOpacity>
-                            );
-                          })()}
+                            </View>
                         </View>
-                        {paidNum > 0 && (
-                          <View style={styles.changeBox}>
-                            <Text style={styles.changeLabel}>
-                              Change to Return
-                            </Text>
-                            <Text style={styles.changeValue}>
-                              {currencySymbol}
-                              {change.toFixed(2)}
-                            </Text>
+
+                        {/* Right Column: Numeric Keypad */}
+                        <View style={styles.keypadCol}>
+                          <View style={styles.keypadHeader}>
+                            <Text style={styles.keypadTitle}>NUMERIC KEYPAD</Text>
                           </View>
-                        )}
+                          <View style={styles.keypadGrid}>
+                            {[
+                              ["7", "8", "9"],
+                              ["4", "5", "6"],
+                              ["1", "2", "3"],
+                            ].map((row, rIdx) => (
+                              <View key={rIdx} style={styles.keypadRow}>
+                                {row.map((num) => (
+                                  <TouchableOpacity
+                                    key={num}
+                                    style={styles.keypadBtn}
+                                    onPress={() => handleKeypadPress(num)}
+                                  >
+                                    <Text style={styles.keypadBtnText}>{num}</Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            ))}
+                            <View style={styles.keypadRow}>
+                              <TouchableOpacity
+                                style={styles.keypadBtn}
+                                onPress={() => handleKeypadPress(".")}
+                              >
+                                <Text style={styles.keypadBtnText}>.</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.keypadBtn}
+                                onPress={() => handleKeypadPress("0")}
+                              >
+                                <Text style={styles.keypadBtnText}>0</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.keypadBtn, styles.keypadBackspaceBtn]}
+                                onPress={() => handleKeypadPress("backspace")}
+                              >
+                                <Ionicons name="backspace-outline" size={20} color="#D97706" />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        </View>
+                        </View>
                       </View>
                     )}
 
@@ -3764,7 +3848,7 @@ export default function PaymentScreen() {
                       </View>
                       <View>
                         {finalItems.map((item: any, index: number) => (
-                          <React.Fragment key={item.id || index.toString()}>
+                          <React.Fragment key={item.lineItemId ? `${item.lineItemId}-${index}` : `${item.id || "item"}-${index}`}>
                             {renderItem({ item })}
                           </React.Fragment>
                         ))}
@@ -4525,8 +4609,8 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   methodCard: {
-    width: "31.8%",
-    height: 80,
+    width: "23.5%",
+    height: 76,
     backgroundColor: Theme.bgMuted,
     borderRadius: 14,
     flexDirection: "column",
@@ -4670,6 +4754,80 @@ const styles = StyleSheet.create({
     color: Theme.textPrimary,
   },
   activeQuickCashText: { color: Theme.primary },
+  cashAndKeypadRow: {
+    flexDirection: "row",
+    gap: 16,
+    alignItems: "stretch",
+  },
+  cashLeftCol: {
+    flex: 1.35,
+    flexDirection: "column",
+    justifyContent: "flex-start",
+    gap: 12,
+  },
+  cashAmountsRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "stretch",
+  },
+  keypadCol: {
+    flex: 1,
+    backgroundColor: "#FAFAFA",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  keypadHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  keypadTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#9CA3AF",
+    letterSpacing: 0.5,
+  },
+  keypadClearBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 8,
+  },
+  keypadClearBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#EF4444",
+  },
+  keypadGrid: {
+    gap: 8,
+  },
+  keypadRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  keypadBtn: {
+    flex: 1,
+    height: 52,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  keypadBtnText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#D97706",
+  },
+  keypadBackspaceBtn: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FFEDD5",
+  },
   changeBox: {
     padding: 12,
     backgroundColor: Theme.primaryLight,

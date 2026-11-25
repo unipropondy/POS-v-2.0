@@ -156,6 +156,14 @@ router.get("/", async (req, res) => {
       BEGIN
         ALTER TABLE AppSettings ADD EnableQRTWPayAtCashier BIT DEFAULT 1 WITH VALUES;
       END
+
+      IF NOT EXISTS (
+        SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'MenuNavigationMode'
+      )
+      BEGIN
+        ALTER TABLE AppSettings ADD MenuNavigationMode NVARCHAR(20) DEFAULT 'scroll' WITH VALUES;
+      END
     `).catch(err => console.warn("Failed self-healing AppSettings column:", err.message));
 
     invalidateCache();
@@ -177,6 +185,7 @@ router.get("/", async (req, res) => {
       EnableQuickServe: settings?.EnableQuickServe !== undefined ? (settings.EnableQuickServe ? 1 : 0) : 1,
       EnableQRTWPayAtCashier: settings?.EnableQRTWPayAtCashier !== undefined ? (settings.EnableQRTWPayAtCashier ? 1 : 0) : 1,
       EnableKiosk: settings?.EnableKiosk !== undefined ? (settings.EnableKiosk ? 1 : 0) : 0,
+      MenuNavigationMode: settings?.MenuNavigationMode || "scroll",
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -229,6 +238,7 @@ router.post("/update", async (req, res) => {
       .input("EnableVoiceSuccess", sql.Bit, enableVoiceSuccess !== undefined ? enableVoiceSuccess : 1)
       .input("EnableNotificationSound", sql.Bit, enableNotificationSound !== undefined ? enableNotificationSound : 1)
       .input("EnableQRTWPayAtCashier", sql.Bit, enableQRTWPayAtCashier !== undefined ? enableQRTWPayAtCashier : 1)
+      .input("MenuNavigationMode", sql.NVarChar(20), (req.body.menuNavigationMode || req.body.MenuNavigationMode) === "prev_next" ? "prev_next" : "scroll")
       .query(`
         IF EXISTS (SELECT 1 FROM AppSettings)
         BEGIN
@@ -263,6 +273,7 @@ router.post("/update", async (req, res) => {
             EnableVoiceSuccess = @EnableVoiceSuccess,
             EnableNotificationSound = @EnableNotificationSound,
             EnableQRTWPayAtCashier = @EnableQRTWPayAtCashier,
+            MenuNavigationMode = @MenuNavigationMode,
             UpdatedOn = GETDATE()
         END
         ELSE
@@ -310,7 +321,8 @@ router.post("/update", async (req, res) => {
       EnableReceiptPrint: enableReceiptPrint !== undefined ? (enableReceiptPrint ? 1 : 0) : (oldAppSettings.EnableReceiptPrint ? 1 : 0),
       EnableVoiceSuccess: enableVoiceSuccess !== undefined ? (enableVoiceSuccess ? 1 : 0) : (oldAppSettings.EnableVoiceSuccess ? 1 : 0),
       EnableNotificationSound: enableNotificationSound !== undefined ? (enableNotificationSound ? 1 : 0) : (oldAppSettings.EnableNotificationSound ? 1 : 0),
-      EnableQRTWPayAtCashier: enableQRTWPayAtCashier !== undefined ? (enableQRTWPayAtCashier ? 1 : 0) : (oldAppSettings.EnableQRTWPayAtCashier ? 1 : 0)
+      EnableQRTWPayAtCashier: enableQRTWPayAtCashier !== undefined ? (enableQRTWPayAtCashier ? 1 : 0) : (oldAppSettings.EnableQRTWPayAtCashier ? 1 : 0),
+      MenuNavigationMode: (req.body.menuNavigationMode || req.body.MenuNavigationMode) === "prev_next" ? "prev_next" : "scroll"
     };
 
     try {

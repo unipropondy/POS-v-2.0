@@ -159,6 +159,10 @@ export default function QuickServePOSScreen() {
   const showRewardPoints = useGeneralSettingsStore((s: any) => s.settings?.showRewardPoints !== false);
   const showPromoCode = useGeneralSettingsStore((s: any) => s.settings?.showPromoCode !== false);
   const enableKOT = useGeneralSettingsStore((s: any) => s.settings?.enableKOT !== false);
+  const menuNavigationMode =
+    useGeneralSettingsStore((s: any) => s.settings?.menuNavigationMode) || "scroll";
+  const [currentGroupPage, setCurrentGroupPage] = useState(1);
+  const GROUPS_PER_PAGE = 14;
   const enableKDS = useGeneralSettingsStore((s: any) => s.settings?.enableKDS !== false);
   const enableReceiptPrint = useGeneralSettingsStore((s: any) => s.settings?.enableReceiptPrint !== false);
   const enableCheckoutBill = useGeneralSettingsStore((s: any) => s.settings?.enableCheckoutBill !== false);
@@ -934,9 +938,12 @@ export default function QuickServePOSScreen() {
   const safeDishPage = Math.min(Math.max(1, dishPage), totalDishPages);
 
   const paginatedDishes = useMemo(() => {
+    if (menuNavigationMode === "scroll") {
+      return sortedDishes;
+    }
     const startIdx = (safeDishPage - 1) * DISHES_PER_PAGE;
     return sortedDishes.slice(startIdx, startIdx + DISHES_PER_PAGE);
-  }, [sortedDishes, safeDishPage]);
+  }, [menuNavigationMode, sortedDishes, safeDishPage]);
 
   const handlePageChange = (newPage: number) => {
     setDishPage(newPage);
@@ -1119,7 +1126,7 @@ export default function QuickServePOSScreen() {
     // Prepare Dishes snapshot for right panel mirroring (up to 12 visible dishes)
     const mirrorDishes = (paginatedDishes && paginatedDishes.length > 0 ? paginatedDishes : sortedDishes).slice(0, 12).map((d: any, idx: number) => {
       const rawImg = d.Image || d.ImagePath || d.image;
-      const imgUri = getImageUrl(rawImg) || DEFAULT_DISH_IMAGES[idx % DEFAULT_DISH_IMAGES.length];
+      const imgUri = getImageUrl(rawImg);
       return {
         id: d.DishId || idx,
         name: d.Name || "Dish",
@@ -2645,7 +2652,10 @@ export default function QuickServePOSScreen() {
                     onLayout={(e) => setDishGroupContainerHeight(e.nativeEvent.layout.height)}
                   >
                     <View style={styles.dishGroupGrid}>
-                      {allDishGroups.map((group) => {
+                      {(menuNavigationMode === "prev_next"
+                        ? allDishGroups.slice((currentGroupPage - 1) * GROUPS_PER_PAGE, currentGroupPage * GROUPS_PER_PAGE)
+                        : allDishGroups
+                      ).map((group) => {
                         const isGroupActive = leftPanelView === "dishgroup" && String(selectedDishGroupId) === String(group.DishGroupId);
                         const groupName = group.DishGroupName;
                         const count = getDishGroupCount(group);
@@ -2695,7 +2705,8 @@ export default function QuickServePOSScreen() {
                     </View>
                   </ScrollView>
 
-                {/* SINGLE UNIFIED UP/DOWN SCROLL BUTTON PILL ON THE RIGHT */}
+                {/* SINGLE UNIFIED UP/DOWN SCROLL BUTTON PILL ON THE RIGHT (SCROLL MODE ONLY) */}
+                {menuNavigationMode === "scroll" && (
                 <View style={styles.dishGroupScrollPillContainer}>
                   <View style={styles.dishGroupScrollPill}>
                     <TouchableOpacity
@@ -2719,7 +2730,40 @@ export default function QuickServePOSScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
+                )}
               </View>
+              {/* DISH GROUPS PAGINATION BAR (PREVIOUS / NEXT MODE ONLY) */}
+              {menuNavigationMode === "prev_next" && allDishGroups.length > GROUPS_PER_PAGE && (
+                <View style={styles.dishesPaginationBar}>
+                  <View style={styles.paginationLeft}>
+                    <TouchableOpacity
+                      style={[styles.paginationBtn, currentGroupPage <= 1 && { opacity: 0.4 }]}
+                      onPress={() => setCurrentGroupPage((p) => Math.max(1, p - 1))}
+                      disabled={currentGroupPage <= 1}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="chevron-back" size={14} color="#FF5A16" />
+                      <Text style={styles.paginationBtnText}>Previous</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.paginationCenter}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#64748b" }}>
+                      Page {currentGroupPage} of {Math.max(1, Math.ceil(allDishGroups.length / GROUPS_PER_PAGE))}
+                    </Text>
+                  </View>
+                  <View style={styles.paginationRight}>
+                    <TouchableOpacity
+                      style={[styles.paginationBtn, styles.paginationBtnPrimary, currentGroupPage >= Math.ceil(allDishGroups.length / GROUPS_PER_PAGE) && { opacity: 0.4 }]}
+                      onPress={() => setCurrentGroupPage((p) => Math.min(Math.ceil(allDishGroups.length / GROUPS_PER_PAGE), p + 1))}
+                      disabled={currentGroupPage >= Math.ceil(allDishGroups.length / GROUPS_PER_PAGE)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.paginationBtnPrimaryText}>Next</Text>
+                      <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </>
           )}
         </View>
@@ -2851,7 +2895,7 @@ export default function QuickServePOSScreen() {
                       const price = Number(dish.Price || dish.currentcost || 0);
                       const isSoldOut = Boolean(dish.IsSoldOut);
                       const rawImg = dish.Image || dish.ImagePath || dish.image;
-                      const imgUri = getImageUrl(rawImg) || DEFAULT_DISH_IMAGES[idx % DEFAULT_DISH_IMAGES.length];
+                      const imgUri = getImageUrl(rawImg);
                       const qtyInCart = cartQtyMap[String(dish.DishId)] || 0;
 
                       return (
@@ -2862,11 +2906,17 @@ export default function QuickServePOSScreen() {
                             activeOpacity={0.88}
                           >
                             <View style={styles.dishCoverWrap}>
-                              <Image
-                                source={{ uri: imgUri }}
-                                style={styles.dishCoverImg}
-                                contentFit="cover"
-                              />
+                              {imgUri ? (
+                                <Image
+                                  source={{ uri: imgUri }}
+                                  style={styles.dishCoverImg}
+                                  contentFit="cover"
+                                />
+                              ) : (
+                                <View style={[styles.dishCoverImg, { backgroundColor: "#f8fafc", alignItems: "center", justifyContent: "center" }]}>
+                                  <Ionicons name="restaurant-outline" size={28} color="#cbd5e1" />
+                                </View>
+                              )}
 
                               {isSoldOut ? (
                                 <View style={[styles.tagBadge, { backgroundColor: "#EF4444" }]}>
@@ -2908,7 +2958,7 @@ export default function QuickServePOSScreen() {
                       const price = Number(dish.Price || dish.currentcost || 0);
                       const isSoldOut = Boolean(dish.IsSoldOut);
                       const rawImg = dish.Image || dish.ImagePath || dish.image;
-                      const imgUri = getImageUrl(rawImg) || DEFAULT_DISH_IMAGES[idx % DEFAULT_DISH_IMAGES.length];
+                      const imgUri = getImageUrl(rawImg);
                       const qtyInCart = cartQtyMap[String(dish.DishId)] || 0;
 
                       return (
@@ -2919,7 +2969,13 @@ export default function QuickServePOSScreen() {
                           activeOpacity={0.85}
                         >
                           <View style={styles.dishListThumbWrap}>
-                            <Image source={{ uri: imgUri }} style={styles.dishListThumb} contentFit="cover" />
+                            {imgUri ? (
+                              <Image source={{ uri: imgUri }} style={styles.dishListThumb} contentFit="cover" />
+                            ) : (
+                              <View style={[styles.dishListThumb, { backgroundColor: "#f8fafc", alignItems: "center", justifyContent: "center" }]}>
+                                <Ionicons name="restaurant-outline" size={20} color="#cbd5e1" />
+                              </View>
+                            )}
                           </View>
 
                           <View style={styles.dishListInfo}>
@@ -2952,8 +3008,8 @@ export default function QuickServePOSScreen() {
               </ScrollView>
             )}
 
-            {/* DISHES BOTTOM PAGINATION BAR */}
-            {totalDishPages > 1 && (
+            {/* DISHES BOTTOM PAGINATION BAR (PREVIOUS / NEXT MODE ONLY) */}
+            {menuNavigationMode === "prev_next" && totalDishPages > 1 && (
               <View style={styles.dishesPaginationBar}>
                 {/* Left: Back button (visible when on subsequent pages) */}
                 <View style={styles.paginationLeft}>
