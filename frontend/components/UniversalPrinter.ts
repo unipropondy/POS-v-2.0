@@ -1559,44 +1559,17 @@ class UniversalPrinter {
           const isBtMac = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(targetIp.trim());
           const isUsbTarget = !isIp && !isBtMac;
 
-          // 📲 Network printers use central Print Bridge; USB printers ONLY print directly to THIS device's local Print Bridge (never central queue)
-          if (isUsbTarget) {
-            if ((Platform.OS as string) === "web" && typeof window !== "undefined") {
-              try {
-                const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
-                const ctrl = new AbortController();
-                const t = setTimeout(() => ctrl.abort(), 1500);
-                const localRes = await fetch("http://127.0.0.1:3100/print-direct", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ printerName: targetIp, text }),
-                  signal: ctrl.signal,
-                });
-                clearTimeout(t);
-                if (localRes.ok) {
-                  const data = await localRes.json().catch(() => ({}));
-                  if (data?.success) {
-                    console.log(`🔌 [USB Direct] Printed directly to local USB printer "${targetIp}"`);
-                    return;
-                  }
-                }
-              } catch (usbErr) {
-                console.log(`🔌 [USB Guard] Local USB printer "${targetIp}" not available on this device, skipping.`);
-              }
-            }
-            return;
-          }
-
+          // 📲 Try Print Bridge if active on network (supports USB / Shared printers from APK)
           const isBridge = await this.isBridgeOnline();
           if (isBridge) {
             try {
-              console.log(`📡 [Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
+              console.log(`📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
               const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
               const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
               const success = await this.queuePrintJob(pType, undefined, text);
               if (success) return;
             } catch (bridgeErr) {
-              console.warn("Print Bridge queue failed, trying direct connection:", bridgeErr);
+              console.warn("APK Print Bridge queue failed, trying direct connection:", bridgeErr);
             }
           }
           let isReachable = false;

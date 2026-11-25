@@ -191,26 +191,6 @@ app.post('/api/printer/reconnect', async (req: Request, res: Response) => {
 // â”€â”€â”€ Settings UI now served via static file (src/public/settings.html) â”€â”€â”€
 
 // 2. POST /test-print - Directly test a kitchen printer from the bridge machine
-app.post('/print-direct', async (req: Request, res: Response) => {
-  try {
-    const { printerName, text } = req.body || {};
-    if (!text) {
-      return res.status(400).json({ success: false, error: 'Missing print text' });
-    }
-    const targetPrinter = printerName || config.printerName || config.usbPrinterName;
-    if (!targetPrinter) {
-      return res.status(400).json({ success: false, error: 'No local USB printer configured' });
-    }
-    const ok = await printReceipt({
-      printerName: targetPrinter,
-      text,
-    } as any);
-    return res.json({ success: !!ok, printerName: targetPrinter });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Direct print failed' });
-  }
-});
-
 app.post('/test-print', async (req: Request, res: Response) => {
   const { ip, port } = req.body;
   const targetPort = parseInt(port as string) || 9100;
