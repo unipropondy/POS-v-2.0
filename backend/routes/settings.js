@@ -176,6 +176,7 @@ router.get("/", async (req, res) => {
       EnableNotificationSound: settings?.EnableNotificationSound !== undefined ? (settings.EnableNotificationSound ? 1 : 0) : 1,
       EnableQuickServe: settings?.EnableQuickServe !== undefined ? (settings.EnableQuickServe ? 1 : 0) : 1,
       EnableQRTWPayAtCashier: settings?.EnableQRTWPayAtCashier !== undefined ? (settings.EnableQRTWPayAtCashier ? 1 : 0) : 1,
+      EnableKiosk: settings?.EnableKiosk !== undefined ? (settings.EnableKiosk ? 1 : 0) : 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

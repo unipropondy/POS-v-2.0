@@ -31,6 +31,7 @@ export interface GeneralSettings {
   enableVoiceSuccess: boolean;
   enableNotificationSound: boolean;
   enableQRTWPayAtCashier: boolean;
+  enableKiosk?: boolean;
 }
 
 interface GeneralSettingsState {
@@ -109,6 +110,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
                 enableVoiceSuccess: data.EnableVoiceSuccess !== undefined ? Boolean(data.EnableVoiceSuccess) : true,
                 enableNotificationSound: data.EnableNotificationSound !== undefined ? Boolean(data.EnableNotificationSound) : true,
                 enableQRTWPayAtCashier: data.EnableQRTWPayAtCashier !== undefined ? Boolean(data.EnableQRTWPayAtCashier) : true,
+                enableKiosk: data.EnableKiosk !== undefined ? Boolean(data.EnableKiosk) : false,
               },
             }));
           }
