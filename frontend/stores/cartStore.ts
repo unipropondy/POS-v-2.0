@@ -1362,6 +1362,9 @@ export const useCartStore = create<CartState>()(
                     _syncAbortControllers: newControllers
                   };
                 });
+            } else {
+              console.warn(`⚠️ [CartStore] Sync failed with HTTP ${res.status} for ${contextId}`);
+              set({ pendingSync: false, _syncTimeout: null });
             }
           } catch (err) {
             if ((err as any).name === 'AbortError') {
