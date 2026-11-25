@@ -3463,11 +3463,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         activeOpacity={0.65}
                       >
                         {item.selectedMods?.length > 0 && (
-                          <View style={{ marginTop: 2, width: "100%" }}>
+                          <View style={{ marginTop: 3, width: "100%" }}>
                             <View style={styles.cartCustomizationHeaderRow}>
                               <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
                               <View style={styles.cartInlineEditBadge}>
-                                <Ionicons name="pencil" size={10} color="#ea580c" />
+                                <Ionicons name="pencil" size={13} color="#ea580c" />
                                 <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
                             </View>
@@ -3479,26 +3479,26 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                         {item.comboSelections?.length > 0 &&
                           item.comboSelections.map((grp: any, gIdx: number) => (
-                            <View key={gIdx} style={{ marginTop: (gIdx > 0 || item.selectedMods?.length > 0) ? 5 : 2, width: "100%" }}>
+                            <View key={gIdx} style={{ marginTop: (gIdx > 0 || item.selectedMods?.length > 0) ? 6 : 3, width: "100%" }}>
                               <View style={styles.cartCustomizationHeaderRow}>
                                 <Text style={styles.cartModifierGroupTitle}>
                                   {grp.groupName}:
                                 </Text>
                                 <View style={styles.cartInlineEditBadge}>
-                                  <Ionicons name="pencil" size={10} color="#ea580c" />
-                                  <Text style={styles.cartInlineEditText}>Edit</Text>
-                                </View>
+                                <Ionicons name="pencil" size={13} color="#ea580c" />
+                                <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
-                              {(grp.items || []).map((opt: any, oIdx: number) => (
-                                <Text key={oIdx} style={styles.cartModifierValueText}>
-                                  ↳ {opt.name || opt.dishName}
-                                  {Number(opt.surcharge || 0) + Number(opt.dishPrice || 0) > 0
-                                    ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
-                                    : ""}
-                                </Text>
-                              ))}
                             </View>
-                          ))}
+                            {(grp.items || []).map((opt: any, oIdx: number) => (
+                              <Text key={oIdx} style={styles.cartModifierValueText}>
+                                ↳ {opt.name || opt.dishName}
+                                {Number(opt.surcharge || 0) + Number(opt.dishPrice || 0) > 0
+                                  ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
+                                  : ""}
+                              </Text>
+                            ))}
+                          </View>
+                        ))}
                       </TouchableOpacity>
                     )}
 
@@ -6392,7 +6392,7 @@ const styles = StyleSheet.create({
 
   /* Cart Item Customizations Display (Clean, borderless & integrated) */
   cartCustomizationGroup: {
-    marginTop: 4,
+    marginTop: 6,
     width: "100%",
     alignSelf: "stretch",
     paddingVertical: 2,
@@ -6401,32 +6401,32 @@ const styles = StyleSheet.create({
   cartCustomizationHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
   cartModifierGroupTitle: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "800",
     color: "#ea580c",
   },
   cartInlineEditBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
+    gap: 3,
     paddingHorizontal: 4,
     paddingVertical: 1,
   },
   cartInlineEditText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "800",
     color: "#ea580c",
   },
   cartModifierValueText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#475569",
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#334155",
     paddingLeft: 4,
-    marginTop: 1,
-    lineHeight: 18,
+    marginTop: 3,
+    lineHeight: 23,
   },
 
   /* Combo Customizer Modal Styles */
