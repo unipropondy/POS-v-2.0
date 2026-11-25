@@ -463,15 +463,18 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
       : [];
 
   return (
-    <ImageBackground
-      source={require("./assets/images/start_page_bg.jpg")}
-      style={styles.container}
-      resizeMode="cover"
+    <View
+      style={{ flex: 1 }}
       onStartShouldSetResponderCapture={() => {
         resetIdleTimer();
         return false;
       }}
     >
+      <ImageBackground
+        source={require("./assets/images/start_page_bg.jpg")}
+        style={styles.container}
+        resizeMode="cover"
+      >
       {/* ── Fullscreen Promo Slideshow Attract Loop Screensaver (dbo.PromoCodeMaster) ── */}
       {showAttractLoop && promoSlides.length > 0 && (
         <TouchableOpacity
@@ -1052,6 +1055,7 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
         </View>
       )}
     </ImageBackground>
+    </View>
   );
 }
 
