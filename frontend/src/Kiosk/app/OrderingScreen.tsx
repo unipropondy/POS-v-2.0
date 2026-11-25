@@ -3455,73 +3455,65 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       </Text>
                     </TouchableOpacity>
 
-                    {/* Standard Modifiers Section - Entire Box & Text Clickable */}
-                    {item.selectedMods?.length > 0 && (
+                    {/* Customizations Section (Modifiers & Combo Selections) - Clean, borderless & clickable */}
+                    {(item.selectedMods?.length > 0 || item.comboSelections?.length > 0) && (
                       <TouchableOpacity
                         style={styles.cartCustomizationGroup}
                         onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.7}
+                        activeOpacity={0.65}
                       >
-                        <View style={styles.cartCustomizationHeaderRow}>
-                          <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
-                          <View style={styles.cartInlineEditBadge}>
-                            <Ionicons name="pencil" size={11} color="#ea580c" />
-                            <Text style={styles.cartInlineEditText}>Edit</Text>
-                          </View>
-                        </View>
-                        <Text style={styles.cartModifierValueText}>
-                          {item.selectedMods
-                            .map((m: any) => m.ModifierName)
-                            .join(", ")}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {/* Combo Selections Section - Entire Box & All Lines Clickable */}
-                    {item.comboSelections?.length > 0 && (
-                      <TouchableOpacity
-                        style={styles.cartCustomizationGroup}
-                        onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.7}
-                      >
-                        {item.comboSelections.map((grp: any, gIdx: number) => (
-                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 5 : 2, width: "100%" }}>
+                        {item.selectedMods?.length > 0 && (
+                          <View style={{ marginTop: 2, width: "100%" }}>
                             <View style={styles.cartCustomizationHeaderRow}>
-                              <Text style={styles.cartModifierGroupTitle}>
-                                {grp.groupName}:
-                              </Text>
+                              <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
                               <View style={styles.cartInlineEditBadge}>
-                                <Ionicons name="pencil" size={11} color="#ea580c" />
+                                <Ionicons name="pencil" size={10} color="#ea580c" />
                                 <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
                             </View>
-                            {(grp.items || []).map((opt: any, oIdx: number) => (
-                              <Text key={oIdx} style={styles.cartModifierValueText}>
-                                ↳ {opt.name || opt.dishName}
-                                {Number(opt.surcharge || 0) +
-                                  Number(opt.dishPrice || 0) >
-                                0
-                                  ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
-                                  : ""}
-                              </Text>
-                            ))}
+                            <Text style={styles.cartModifierValueText}>
+                              ↳ {item.selectedMods.map((m: any) => m.ModifierName).join(", ")}
+                            </Text>
                           </View>
-                        ))}
+                        )}
+
+                        {item.comboSelections?.length > 0 &&
+                          item.comboSelections.map((grp: any, gIdx: number) => (
+                            <View key={gIdx} style={{ marginTop: (gIdx > 0 || item.selectedMods?.length > 0) ? 5 : 2, width: "100%" }}>
+                              <View style={styles.cartCustomizationHeaderRow}>
+                                <Text style={styles.cartModifierGroupTitle}>
+                                  {grp.groupName}:
+                                </Text>
+                                <View style={styles.cartInlineEditBadge}>
+                                  <Ionicons name="pencil" size={10} color="#ea580c" />
+                                  <Text style={styles.cartInlineEditText}>Edit</Text>
+                                </View>
+                              </View>
+                              {(grp.items || []).map((opt: any, oIdx: number) => (
+                                <Text key={oIdx} style={styles.cartModifierValueText}>
+                                  ↳ {opt.name || opt.dishName}
+                                  {Number(opt.surcharge || 0) + Number(opt.dishPrice || 0) > 0
+                                    ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
+                                    : ""}
+                                </Text>
+                              ))}
+                            </View>
+                          ))}
                       </TouchableOpacity>
                     )}
 
                     {/* Fallback for configurable item without current selections */}
                     {isConfigurable && !item.selectedMods?.length && !item.comboSelections?.length && (
                       <TouchableOpacity
-                        style={[styles.cartCustomizationGroup, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                        style={[styles.cartCustomizationGroup, { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }]}
                         onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.7}
+                        activeOpacity={0.65}
                       >
                         <Text style={[styles.cartModifierGroupTitle, { fontSize: 13 }]}>
                           Customize / Choose Options
                         </Text>
                         <View style={styles.cartInlineEditBadge}>
-                          <Ionicons name="pencil" size={11} color="#ea580c" />
+                          <Ionicons name="pencil" size={10} color="#ea580c" />
                           <Text style={styles.cartInlineEditText}>Edit</Text>
                         </View>
                       </TouchableOpacity>
@@ -6398,51 +6390,43 @@ const styles = StyleSheet.create({
     color: "#475569",
   },
 
-  /* Cart Item Customizations Display (Prominent, full-width touchable card) */
+  /* Cart Item Customizations Display (Clean, borderless & integrated) */
   cartCustomizationGroup: {
-    marginTop: 6,
+    marginTop: 4,
     width: "100%",
     alignSelf: "stretch",
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    backgroundColor: "#fff7ed",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#fed7aa",
+    paddingVertical: 2,
+    backgroundColor: "transparent",
   },
   cartCustomizationHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   cartModifierGroupTitle: {
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "700",
     color: "#ea580c",
   },
   cartInlineEditBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    backgroundColor: "#fff7ed",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#ffedd5",
+    gap: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
   cartInlineEditText: {
     fontSize: 11,
-    fontWeight: "800",
+    fontWeight: "700",
     color: "#ea580c",
   },
   cartModifierValueText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#334155",
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#475569",
     paddingLeft: 4,
-    marginTop: 2,
-    lineHeight: 21,
+    marginTop: 1,
+    lineHeight: 18,
   },
 
   /* Combo Customizer Modal Styles */
