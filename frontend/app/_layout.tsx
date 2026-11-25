@@ -56,10 +56,48 @@ try {
 // Propagate API URL to local package stores
 setApiUrl(API_URL);
 
+const notifiedToastKioskOrders = new Set<string>();
+
 function SocketToastListener() {
   const toast = useToast();
 
   useEffect(() => {
+    const handleKioskNotification = (payload: any) => {
+      const user = useAuthStore.getState().user;
+      if (!user || !payload?.orderId) return;
+
+      const cleanId = String(payload.orderId).replace(/^#/, "").trim();
+      if (notifiedToastKioskOrders.has(cleanId)) return;
+      notifiedToastKioskOrders.add(cleanId);
+      setTimeout(() => notifiedToastKioskOrders.delete(cleanId), 10 * 60 * 1000);
+
+      const isTent =
+        payload?.isTentNumber ||
+        payload?.context?.isTentNumber ||
+        !!payload?.tentNumber ||
+        !!payload?.context?.tentNumber;
+      const isSelf = payload?.isSelfCollect || payload?.context?.isSelfCollect;
+      const tentNo =
+        payload?.tentNumber ||
+        payload?.context?.tentNumber ||
+        payload?.tableNo ||
+        payload?.context?.tableNo;
+
+      const detailLabel = isTent && tentNo
+        ? `Tent #${tentNo}`
+        : isSelf
+          ? "Self Collect"
+          : (payload?.context?.tableNo || payload?.tableNo ? `Table ${payload?.context?.tableNo || payload?.tableNo}` : "Dine In");
+      const payMode = payload?.paymentMethod ? ` • ${payload.paymentMethod}` : "";
+
+      toast.showToast({
+        message: `🖥️ New KIOSK Order Placed!`,
+        subtitle: `Order #${cleanId} (${detailLabel}${payMode})`,
+        type: "info",
+        duration: 6000,
+      });
+    };
+
     const handleNewOrder = (payload: any) => {
       const user = useAuthStore.getState().user;
       if (!user) return;
@@ -80,6 +118,17 @@ function SocketToastListener() {
           type: "success",
           duration: 5000,
         });
+      }
+
+      // 🖥️ Real-time POS Toast for KIOSK Orders (ALL Payment Modes)
+      const isKioskOrder =
+        payload?.context?.entryStatus === "K" ||
+        payload?.entryStatus === "K" ||
+        payload?.isKiosk === true ||
+        String(payload?.context?.entryStatus || "").trim().toUpperCase() === "K";
+
+      if (isKioskOrder) {
+        handleKioskNotification(payload);
       }
     };
 
@@ -229,9 +278,11 @@ function SocketToastListener() {
     };
 
     socket.on("new_order", handleNewOrder);
+    socket.on("kiosk_order_notification", handleKioskNotification);
     socket.on("customer_request", handleCustomerRequest);
     return () => {
       socket.off("new_order", handleNewOrder);
+      socket.off("kiosk_order_notification", handleKioskNotification);
       socket.off("customer_request", handleCustomerRequest);
     };
   }, [toast]);

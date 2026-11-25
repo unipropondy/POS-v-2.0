@@ -119,6 +119,23 @@ const getCleanTableId = async (pool, tableId) => {
   return cleanId;
 };
 
+// 🛡️ Self-healing DB check for Kiosk fields on RestaurantOrderCur
+poolPromise.then(async (pool) => {
+  try {
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'RestaurantOrderCur' AND COLUMN_NAME = 'TentNumber')
+        ALTER TABLE RestaurantOrderCur ADD TentNumber NVARCHAR(50) NULL;
+      IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'RestaurantOrderCur' AND COLUMN_NAME = 'IsSelfCollect')
+        ALTER TABLE RestaurantOrderCur ADD IsSelfCollect BIT NULL DEFAULT 0;
+      IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'RestaurantOrderCur' AND COLUMN_NAME = 'IsTentNumber')
+        ALTER TABLE RestaurantOrderCur ADD IsTentNumber BIT NULL DEFAULT 0;
+    `);
+  } catch (e) {
+    console.warn("⚠️ [orders.js] Schema check for TentNumber/IsSelfCollect:", e.message);
+  }
+}).catch(() => {});
+
+
 
 function resolveItemTextField(item = {}, keys = []) {
   const itemKeys = Object.keys(item || {});
@@ -1486,6 +1503,28 @@ router.post("/save-cart", async (req, res) => {
           .input("entryStatus", sql.VarChar(10), resolvedEntryStatus)
           .query(`
             UPDATE TableMaster SET Status = 1, entry_status = @entryStatus, PAYMENT_STATUS = 0 WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+          `);
+      }
+
+      // 🖥️ KIOSK ORDER: Ensure RestaurantOrderCur records TentNumber / IsSelfCollect and StatusCode = 2
+      if (isKioskOrder && currentOrderId) {
+        await transaction.request()
+          .input("oid", sql.NVarChar(50), currentOrderId)
+          .input("tentNumber", sql.NVarChar(50), req.body.tentNumber || null)
+          .input("isTentNumber", sql.Bit, req.body.isTentNumber ? 1 : 0)
+          .input("isSelfCollect", sql.Bit, req.body.isSelfCollect ? 1 : 0)
+          .query(`
+            UPDATE RestaurantOrderCur
+            SET TentNumber = ISNULL(@tentNumber, TentNumber),
+                IsTentNumber = CASE WHEN @isTentNumber = 1 THEN 1 ELSE IsTentNumber END,
+                IsSelfCollect = CASE WHEN @isSelfCollect = 1 THEN 1 ELSE IsSelfCollect END,
+                entry_status = 'K'
+            WHERE OrderNumber = @oid;
+
+            UPDATE RestaurantOrderDetailCur
+            SET StatusCode = 2
+            WHERE OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @oid)
+              AND StatusCode <> 0;
           `);
       }
 
@@ -2978,7 +3017,12 @@ router.get("/active-kitchen", async (req, res) => {
         ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
         ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
         pm.PrinterPath as PrinterIP,
-        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status,
+        tm.TableId, tm.DiningSection, 
+        ISNULL(NULLIF(RTRIM(LTRIM(h.entry_status)), ''), tm.entry_status) as entry_status,
+        ISNULL(h.TentNumber, '') as TentNumber,
+        ISNULL(h.IsSelfCollect, 0) as IsSelfCollect,
+        ISNULL(h.IsTentNumber, 0) as IsTentNumber,
+        tm.PAYMENT_STATUS, tm.Status,
         h.CustomerId, ISNULL(NULLIF(tm.CustomerName, 'Guest'), h.CustomerName) as CustomerName, h.MobileNo
       FROM RestaurantOrderDetailCur d 
       JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
@@ -3028,6 +3072,7 @@ router.get("/active-kitchen", async (req, res) => {
           customerId: row.CustomerId || null,
           customerName: row.CustomerName || null,
           mobileNo: row.MobileNo || null,
+          entryStatus: row.entry_status,
           context: {
             orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
             tableId: row.TableId
@@ -3043,6 +3088,11 @@ router.get("/active-kitchen", async (req, res) => {
                 ? row.orderId.slice(-4)
                 : String(row.tableNo).trim()
               : null,
+            entryStatus: row.entry_status,
+            isKiosk: row.entry_status === "K",
+            isSelfCollect: Boolean(row.IsSelfCollect),
+            isTentNumber: Boolean(row.IsTentNumber),
+            tentNumber: row.TentNumber || (row.IsTentNumber ? String(row.tableNo).trim() : undefined),
           },
           items: [],
           createdAt: Date.now() - Math.max(0, Math.min(86400, Number(row.elapsedSeconds) || 0)) * 1000,
@@ -3083,7 +3133,12 @@ router.get("/active-sessions", async (req, res) => {
         ISNULL(ckt.KitchenTypeCode, '0') as KitchenTypeCode, 
         ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') as KitchenTypeName,
         pm.PrinterPath as PrinterIP,
-        tm.TableId, tm.DiningSection, tm.entry_status, tm.PAYMENT_STATUS, tm.Status,
+        tm.TableId, tm.DiningSection, 
+        ISNULL(NULLIF(RTRIM(LTRIM(h.entry_status)), ''), tm.entry_status) as entry_status,
+        ISNULL(h.TentNumber, '') as TentNumber,
+        ISNULL(h.IsSelfCollect, 0) as IsSelfCollect,
+        ISNULL(h.IsTentNumber, 0) as IsTentNumber,
+        tm.PAYMENT_STATUS, tm.Status,
         h.CustomerId, ISNULL(NULLIF(tm.CustomerName, 'Guest'), h.CustomerName) as CustomerName, h.MobileNo
       FROM RestaurantOrderDetailCur d 
       JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
@@ -3129,6 +3184,7 @@ router.get("/active-sessions", async (req, res) => {
           customerId: row.CustomerId || null,
           customerName: row.CustomerName || null,
           mobileNo: row.MobileNo || null,
+          entryStatus: row.entry_status,
           context: {
             orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
             tableId: row.TableId
@@ -3144,6 +3200,11 @@ router.get("/active-sessions", async (req, res) => {
                 ? row.orderId.slice(-4)
                 : String(row.tableNo).trim()
               : null,
+            entryStatus: row.entry_status,
+            isKiosk: row.entry_status === "K",
+            isSelfCollect: Boolean(row.IsSelfCollect),
+            isTentNumber: Boolean(row.IsTentNumber),
+            tentNumber: row.TentNumber || (row.IsTentNumber ? String(row.tableNo).trim() : undefined),
           },
           items: [],
           createdAt: Date.now() - Math.max(0, Math.min(86400, Number(row.elapsedSeconds) || 0)) * 1000,
@@ -4136,12 +4197,18 @@ router.post("/complete-online-payment", async (req, res) => {
               .input("orderNo", sql.NVarChar(50), orderNo)
               .input("paidAmt", sql.Decimal(18, 2), verifiedPaidAmt || 0)
               .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
+              .input("tentNumber", sql.NVarChar(50), req.body.tentNumber || null)
+              .input("isTentNumber", sql.Bit, req.body.isTentNumber ? 1 : 0)
+              .input("isSelfCollect", sql.Bit, req.body.isSelfCollect ? 1 : 0)
               .query(`
                 UPDATE RestaurantOrderCur
                 SET isOrderClosed = 0,
                     StatusCode = 2,
                     entry_status = @entryStatus,
                     TotalAmount = CASE WHEN @paidAmt > 0 THEN @paidAmt ELSE TotalAmount END,
+                    TentNumber = ISNULL(@tentNumber, TentNumber),
+                    IsTentNumber = CASE WHEN @isTentNumber = 1 THEN 1 ELSE IsTentNumber END,
+                    IsSelfCollect = CASE WHEN @isSelfCollect = 1 THEN 1 ELSE IsSelfCollect END,
                     ModifiedOn = GETDATE()
                 WHERE OrderNumber = @orderNo;
 
@@ -4211,9 +4278,31 @@ router.post("/complete-online-payment", async (req, res) => {
                   orderType: "DINE_IN",
                   tableId: cleanTid,
                   tableNo: matchedTableNo,
-                  section: secStr
+                  section: secStr,
+                  entryStatus: resolvedEntryStatus || "K",
+                  isKiosk: true,
+                  isSelfCollect: !!req.body.isSelfCollect,
+                  isTentNumber: !!req.body.isTentNumber,
+                  tentNumber: req.body.tentNumber || (req.body.isTentNumber ? matchedTableNo : undefined),
                 }
               });
+
+              if (resolvedEntryStatus === "K" || isKioskOrder) {
+                ioInst.emit("kiosk_order_notification", {
+                  orderId: orderNo,
+                  orderNumber: orderNo,
+                  entryStatus: "K",
+                  isKiosk: true,
+                  tableNo: matchedTableNo || tableNo || "KIOSK",
+                  tentNumber: req.body.tentNumber || (req.body.isTentNumber ? matchedTableNo : undefined),
+                  isSelfCollect: !!req.body.isSelfCollect,
+                  isTentNumber: !!req.body.isTentNumber,
+                  paymentMethod: paymentMethod || "PAID",
+                  totalAmount: verifiedPaidAmt || req.body.totalAmount || 0,
+                  itemCount: Array.isArray(req.body.cart) ? req.body.cart.length : 0,
+                  timestamp: Date.now()
+                });
+              }
             }
           } else {
             // 🛡️ TAKEAWAY FLOW: Release Takeaway Table upon payment settlement
@@ -5032,6 +5121,9 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
         .query(`
           UPDATE RestaurantOrderCur
           SET Tableno = LTRIM(RTRIM(@newTable)),
+              TentNumber = LTRIM(RTRIM(@newTable)),
+              IsTentNumber = 1,
+              IsSelfCollect = 0,
               entry_status = 'K',
               ModifiedOn = GETDATE()
           WHERE OrderNumber = @oid

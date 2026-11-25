@@ -1845,6 +1845,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             userId: "00000000-0000-0000-0000-000000000000",
             isKiosk: true,
             entryStatus: "K",
+            isSelfCollect: isSelfCollect,
+            isTentNumber: isTentNumber,
+            tentNumber: isTentNumber ? tableNo : undefined,
           }),
         });
         const saveJson = await saveRes.json();
@@ -2061,6 +2064,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           tableId: resolvedTableId,
           isSelfCollect: isSelfCollect,
           isTentNumber: isTentNumber,
+          tentNumber: isTentNumber ? resolvedTableNo : undefined,
           kioskOrderType: orderType,
           kioskCarNumber: carNumber || undefined,
           kioskCustomerName: customerName || undefined,

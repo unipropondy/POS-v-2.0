@@ -7,7 +7,7 @@ export type NotificationItem = {
   title: string;
   message: string;
   time: string;
-  type: "QR_ORDER" | "GENERAL";
+  type: "QR_ORDER" | "KIOSK_ORDER" | "GENERAL";
   read: boolean;
   orderId?: string;
   tableNo?: string;

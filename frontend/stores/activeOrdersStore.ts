@@ -21,6 +21,7 @@ export type OrderItem = CartItem & {
 
 export type ActiveOrder = {
   orderId: string;
+  entryStatus?: string;
   context: OrderContext;
   items: OrderItem[];
   discount?: DiscountInfo; // 🔥 ADDED
@@ -145,6 +146,7 @@ const storeCreator: StateCreator<
     if (existingOrderIndex === -1) {
       const newOrder: ActiveOrder = {
         orderId,
+        entryStatus: (context as any)?.entryStatus,
         context,
         items: safeCartItems.map((i) => ({
           ...normalizeKitchenItem(i),
@@ -399,15 +401,23 @@ const storeCreator: StateCreator<
         const currentOrders = get().activeOrders;
         const updatedApiOrders = ordersFromApi.map((apiOrder: any) => {
           const apiContext = apiOrder.context || {};
+          const isKioskOrder =
+            String(apiContext.entryStatus || apiOrder.entryStatus || "").trim().toUpperCase() === "K";
           const cleanContext = {
             ...apiContext,
             tableId: apiContext.tableId ? String(apiContext.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : undefined,
             tableNo: apiContext.tableNo ? String(apiContext.tableNo).trim() : apiContext.tableNo,
             section: apiContext.section ? String(apiContext.section).trim() : apiContext.section,
             takeawayNo: apiContext.takeawayNo ? String(apiContext.takeawayNo).trim() : apiContext.takeawayNo,
+            entryStatus: apiContext.entryStatus || apiOrder.entryStatus,
+            isKiosk: apiContext.isKiosk ?? isKioskOrder,
+            isSelfCollect: apiContext.isSelfCollect ?? apiOrder.isSelfCollect,
+            isTentNumber: apiContext.isTentNumber ?? apiOrder.isTentNumber,
+            tentNumber: apiContext.tentNumber ?? apiOrder.tentNumber,
           };
           const normalizedApiOrder = {
             ...apiOrder,
+            entryStatus: apiOrder.entryStatus || apiContext.entryStatus,
             context: cleanContext,
             items: (apiOrder.items || []).map((i: any) => normalizeKitchenItem(i))
           };

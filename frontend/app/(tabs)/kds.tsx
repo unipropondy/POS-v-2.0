@@ -113,23 +113,70 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
       <View style={[styles.urgencyBar, { backgroundColor: ui.primary }]} />
       <View style={styles.cardHeader}>
         <View style={styles.headerRow}>
-          <Text style={styles.tableInfo} numberOfLines={1}>
-            {item.context.orderType === "DINE_IN"
-              ? `${formatSection(item.context.section)} • Table ${item.context.tableNo}`
-              : (() => {
-                  const tbl = item.context.tableNo || item.context.takeawayNo || "";
-                  const cleanTbl = String(tbl).trim();
-                  const formattedTbl = cleanTbl.toUpperCase().startsWith("TW") ? cleanTbl.toUpperCase() : (cleanTbl ? `TW${cleanTbl}` : "TW");
-                  const shortOrd = item.orderId ? `#${String(item.orderId).slice(-4)}` : "";
-                  return `TW - ${formattedTbl} ${shortOrd}`.trim();
-                })()}
-          </Text>
+          {(() => {
+            const isKiosk =
+              item.entryStatus === "K" ||
+              item.context?.entryStatus === "K" ||
+              String(item.context?.entryStatus || "").trim().toUpperCase() === "K";
+
+            if (isKiosk) {
+              const isTent = !!(item.context?.isTentNumber || item.context?.tentNumber);
+              const tentVal = item.context?.tentNumber || item.context?.tableNo || "";
+
+              if (isTent && tentVal) {
+                // 2. Enter Tent Number: Display customer-entered Tent Number instead of Section and Table
+                const displayTent = String(tentVal).toLowerCase().startsWith("tent") ? tentVal : `Tent ${tentVal}`;
+                return (
+                  <Text style={styles.tableInfo} numberOfLines={1}>
+                    {displayTent}
+                  </Text>
+                );
+              }
+
+              // 1. Self Collect: Hide Section Number and Table Number
+              return (
+                <Text style={styles.tableInfo} numberOfLines={1}>
+                  Self Collect
+                </Text>
+              );
+            }
+
+            return (
+              <Text style={styles.tableInfo} numberOfLines={1}>
+                {item.context.orderType === "DINE_IN"
+                  ? `${formatSection(item.context.section)} • Table ${item.context.tableNo}`
+                  : (() => {
+                      const tbl = item.context.tableNo || item.context.takeawayNo || "";
+                      const cleanTbl = String(tbl).trim();
+                      const formattedTbl = cleanTbl.toUpperCase().startsWith("TW") ? cleanTbl.toUpperCase() : (cleanTbl ? `TW${cleanTbl}` : "TW");
+                      const shortOrd = item.orderId ? `#${String(item.orderId).slice(-4)}` : "";
+                      return `TW - ${formattedTbl} ${shortOrd}`.trim();
+                    })()}
+              </Text>
+            );
+          })()}
           <Animated.Text style={[styles.timer, { color: ui.primary, opacity: timerOpacity }]}>
             {minutes}:{seconds.toString().padStart(2, "00")}
           </Animated.Text>
         </View>
         <View style={styles.headerRow}>
-          <Text style={styles.orderIdText}>#{item.orderId}</Text>
+          {(() => {
+            const isKiosk =
+              item.entryStatus === "K" ||
+              item.context?.entryStatus === "K" ||
+              String(item.context?.entryStatus || "").trim().toUpperCase() === "K";
+
+            if (isKiosk) {
+              const last4 = String(item.orderId || "").slice(-4);
+              return (
+                <Text style={[styles.orderIdText, { fontWeight: "900", fontFamily: Fonts.black, fontSize: 18, color: Theme.textPrimary }]}>
+                  #{last4}
+                </Text>
+              );
+            }
+
+            return <Text style={styles.orderIdText}>#{item.orderId}</Text>;
+          })()}
           <View style={[styles.statusBadge, { borderColor: ui.primary + "40" }]}>
             <Ionicons name={ui.icon} size={10} color={ui.primary} />
             <Text style={[styles.statusBadgeText, { color: ui.primary }]}>{ui.label}</Text>
@@ -982,7 +1029,11 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(0,0,0,0.3)",
   },
   modalContent: {

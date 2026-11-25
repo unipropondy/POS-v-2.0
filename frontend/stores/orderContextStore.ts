@@ -16,6 +16,11 @@ export type OrderContext = {
   serverId?: number;
   serverName?: string;
   status?: string | number;
+  entryStatus?: string;
+  isKiosk?: boolean;
+  isSelfCollect?: boolean;
+  isTentNumber?: boolean;
+  tentNumber?: string;
 };
 
 type OrderContextState = {

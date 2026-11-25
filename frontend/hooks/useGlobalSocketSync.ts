@@ -16,6 +16,52 @@ import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
  * Handles real-time synchronization for the entire app.
  * This should be used at the Root Layout level to ensure consistency across all screens.
  */
+const notifiedKioskOrders = new Set<string>();
+
+function handleKioskOrderNotification(payload: any) {
+  const orderId = payload?.orderId;
+  if (!orderId) return;
+  const cleanId = String(orderId).replace(/^#/, "").trim();
+  if (notifiedKioskOrders.has(cleanId)) return; // Prevent duplicate alerts
+  notifiedKioskOrders.add(cleanId);
+  setTimeout(() => notifiedKioskOrders.delete(cleanId), 10 * 60 * 1000);
+
+  const isTent =
+    payload?.isTentNumber ||
+    payload?.context?.isTentNumber ||
+    !!payload?.tentNumber ||
+    !!payload?.context?.tentNumber;
+  const isSelf = payload?.isSelfCollect || payload?.context?.isSelfCollect;
+  const tentNo =
+    payload?.tentNumber ||
+    payload?.context?.tentNumber ||
+    payload?.tableNo ||
+    payload?.context?.tableNo;
+
+  let detailLabel = "";
+  if (isTent && tentNo) {
+    detailLabel = `Tent #${tentNo}`;
+  } else if (isSelf) {
+    detailLabel = "Self Collect";
+  } else if (payload?.context?.tableNo || payload?.tableNo) {
+    detailLabel = `Table ${payload?.context?.tableNo || payload?.tableNo}`;
+  } else {
+    detailLabel = "Dine In";
+  }
+
+  const payMode = payload?.paymentMethod ? ` • ${payload.paymentMethod}` : "";
+  const totalStr = payload?.totalAmount ? ` • $${Number(payload.totalAmount).toFixed(2)}` : "";
+
+  useNotificationStore.getState().addNotification({
+    title: "🖥️ New KIOSK Order",
+    message: `Order #${cleanId} (${detailLabel}${payMode}${totalStr})`,
+    type: "KIOSK_ORDER",
+    orderId: cleanId,
+    tableNo: tentNo,
+    section: payload?.context?.section,
+  });
+}
+
 export function useGlobalSocketSync() {
   const { appendOrder, closeActiveOrder, markItemReady, markItemServed, markItemsSent, voidOrderItem } = useActiveOrdersStore.getState();
   const { fetchCartFromDB } = useCartStore.getState();
@@ -135,7 +181,17 @@ export function useGlobalSocketSync() {
           tableNo: payload.context?.tableNo,
           section: payload.context?.section,
         });
+      }
 
+      // 🖥️ Notification for KIOSK orders (ALL payment modes: Cash, Card, Online, etc.)
+      const isKioskOrder =
+        payload?.context?.entryStatus === "K" ||
+        payload?.entryStatus === "K" ||
+        payload?.isKiosk === true ||
+        String(payload?.context?.entryStatus || "").trim().toUpperCase() === "K";
+
+      if (isKioskOrder) {
+        handleKioskOrderNotification(payload);
       }
 
       // 🖨️ QR printing is handled via the PrintJobQueue system triggered by the print_jobs_available event.
@@ -484,6 +540,7 @@ export function useGlobalSocketSync() {
     socket.on("order_closed", handleOrderClosed);
     socket.on("qr_payment_confirmed", handleQrPaymentConfirmed);
     socket.on("active_kitchen_updated", handleActiveKitchenUpdated);
+    socket.on("kiosk_order_notification", handleKioskOrderNotification);
     socket.on("cart_change", handleCartChange);
     socket.on("print_jobs_available", handlePrintJobsAvailable);
     socket.on("terminal_payment_sync", handleTerminalPaymentSync);
@@ -503,6 +560,7 @@ export function useGlobalSocketSync() {
       socket.off("order_closed", handleOrderClosed);
       socket.off("qr_payment_confirmed", handleQrPaymentConfirmed);
       socket.off("active_kitchen_updated", handleActiveKitchenUpdated);
+      socket.off("kiosk_order_notification", handleKioskOrderNotification);
       socket.off("cart_change", handleCartChange);
       socket.off("print_jobs_available", handlePrintJobsAvailable);
       socket.off("terminal_payment_sync", handleTerminalPaymentSync);
