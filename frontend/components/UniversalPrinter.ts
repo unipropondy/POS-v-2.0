@@ -1929,7 +1929,7 @@ class UniversalPrinter {
         .padEnd(26);
       const qtyNum =
         parseInt(String(item.qty || item.quantity || item.Quantity || 1)) || 1;
-      const qty = `[${qtyNum}]`.padStart(5);
+      const qty = `${qtyNum}`.padStart(5);
 
       const priceNum =
         parseFloat(String(item.price || item.Price || item.Cost || 0)) || 0;
@@ -1980,20 +1980,31 @@ class UniversalPrinter {
         });
       }
 
-      // Item Discount
+      // Item Discount & After Discount lines
       const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
       if (discAmt > 0) {
         const discType = item.discountType || "percentage";
         const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
         const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
-        const effectiveDisc = discType === "percentage" ? discAmt : Math.min(discAmt, discountBasis);
-        const discStr =
+        const qtyNumItem = Number(item.qty ?? item.quantity ?? item.Quantity ?? 1) || 1;
+        const baseItemTotal = (Number(item.price ?? item.Price ?? item.Cost ?? 0) || 0) * qtyNumItem;
+        let itemDiscount = 0;
+        if (discType === "percentage") {
+          itemDiscount = (discountBasis * (discAmt / 100)) * qtyNumItem;
+        } else if (discType === "FOC") {
+          itemDiscount = baseItemTotal;
+        } else {
+          itemDiscount = Math.min(discAmt, discountBasis) * qtyNumItem;
+        }
+        const afterDiscTotal = Math.max(0, baseItemTotal - itemDiscount);
+        const discLabel =
           discType === "FOC"
-            ? "FOC"
+            ? "Discount (FOC):"
             : discType === "percentage"
-            ? `-${discAmt}%`
-            : `-${symbol}${effectiveDisc.toFixed(2)}`;
-        text += `[L]<B>      Discount: ${discStr}</B>\n`;
+            ? `Discount (${discAmt}%):`
+            : "Discount:";
+        text += `[L]<B>  ${discLabel}</B>[R]<B>-${symbol}${itemDiscount.toFixed(2)}</B>\n`;
+        text += `[L]<B>  After Discount:</B>[R]<B>${symbol}${afterDiscTotal.toFixed(2)}</B>\n`;
       }
     });
 

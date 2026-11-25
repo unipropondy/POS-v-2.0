@@ -151,7 +151,7 @@ export class PrinterFormatter {
 
     if (is58) {
       // 32-column format
-      const qtyStr = `[${qtyNum}]`.padStart(4);
+      const qtyStr = `${qtyNum}`.padStart(4);
       const totalStr = `${currency}${totalNum.toFixed(2)}`.padStart(8);
       const rightPart = `${qtyStr} ${totalStr}`; // 13 chars
       const availName = width - rightPart.length; // 19 chars
@@ -162,9 +162,9 @@ export class PrinterFormatter {
       }
     } else {
       // 48-column format (Standard POS 80mm)
-      // ITEM (26 chars), QTY [1] (5 chars), PRICE $X.XX (8 chars), TOTAL $X.XX (9 chars)
+      // ITEM (26 chars), QTY 1 (5 chars), PRICE $X.XX (8 chars), TOTAL $X.XX (9 chars)
       const nameCol = itemName.substring(0, 26).padEnd(26);
-      const qtyCol = `[${qtyNum}]`.padStart(5);
+      const qtyCol = `${qtyNum}`.padStart(5);
       const priceCol = `${currency}${priceNum.toFixed(2)}`.padStart(8);
       const totalCol = `${currency}${totalNum.toFixed(2)}`.padStart(9);
       lines.push(`${nameCol}${qtyCol}${priceCol}${totalCol}`);
@@ -405,10 +405,13 @@ export class PrinterFormatter {
         });
       }
 
-      // Item Discount line
+      // Item Discount & After Discount lines
       if (discAmt > 0) {
-        const discStr = discType === "FOC" ? "FOC" : discType === "percentage" ? `-${discAmt}%` : `-${currency}${itemDiscount.toFixed(2)}`;
-        builder.textLine(`      Discount: ${discStr}`);
+        const discLabel = discType === "FOC" ? "  Discount (FOC):" : discType === "percentage" ? `  Discount (${discAmt}%):` : "  Discount:";
+        const discVal = `-${currency}${itemDiscount.toFixed(2)}`;
+        const afterDiscTotal = Math.max(0, baseTotal - itemDiscount);
+        builder.textLine(this.formatTwoCol(discLabel, discVal, width));
+        builder.textLine(this.formatTwoCol("  After Discount:", `${currency}${afterDiscTotal.toFixed(2)}`, width));
       }
     });
 
