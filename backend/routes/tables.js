@@ -77,9 +77,13 @@ router.get("/all", async (req, res) => {
         SET tm.Status = 0, tm.entry_status = NULL, tm.PAYMENT_STATUS = 0, tm.TotalAmount = 0, tm.StartTime = NULL, tm.CurrentOrderId = NULL, tm.CustomerName = NULL, tm.Pax = NULL, tm.LockedByName = NULL
         OUTPUT INSERTED.TableId, INSERTED.TableNumber, INSERTED.DiningSection INTO @cleared
         FROM TableMaster tm
-        WHERE tm.Status IN (1, 2, 3, 4)
-          -- 🛡️ Never auto-clear dining tables active/modified in the last 30 minutes
-          AND DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 30
+        WHERE (tm.Status IN (1, 2, 3, 4) OR tm.CurrentOrderId IS NOT NULL)
+          -- 🛡️ Immediately clear tables whose order is already settled or no longer active; otherwise wait 30 mins
+          AND (
+            EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = tm.CurrentOrderId)
+            OR NOT EXISTS (SELECT 1 FROM RestaurantOrderCur roc WHERE roc.OrderNumber = tm.CurrentOrderId)
+            OR DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 30
+          )
           -- 🛡️ DO NOT clear active Takeaway QR sessions (DiningSection 4) within active timeout (15 mins) with active session lock
           AND NOT (
             CAST(tm.DiningSection AS VARCHAR(10)) = '4' 
@@ -93,11 +97,13 @@ router.get("/all", async (req, res) => {
             WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
                OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
           )
-          -- 🛡️ Must NOT have any active unclosed orders in RestaurantOrderCur
+          -- 🛡️ Must NOT have any active unclosed, unsettled orders in RestaurantOrderCur
           AND NOT EXISTS (
             SELECT 1 FROM RestaurantOrderCur roc 
             WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
               AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+              AND roc.StatusCode NOT IN (0, 3, 4)
+              AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber)
           )
           -- 🛡️ Must be verified closed
           AND (
@@ -251,7 +257,17 @@ router.post("/unlock-persistent", async (req, res) => {
         DECLARE @temp TABLE (TableNumber NVARCHAR(50), DiningSection VARCHAR(10), ModifiedOn VARCHAR(50));
 
         UPDATE TableMaster 
-        SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL
+        SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE(), CustomerName = NULL, Pax = NULL,
+            CurrentOrderId = CASE
+              WHEN NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderCur roc 
+                WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(TableMaster.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(TableMaster.CurrentOrderId AS NVARCHAR(100)))
+                  AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                  AND roc.StatusCode NOT IN (0, 3, 4)
+                  AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber)
+              ) THEN NULL
+              ELSE CurrentOrderId
+            END
         OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
         INTO @temp
         WHERE TableId = @tableId;

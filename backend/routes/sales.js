@@ -3045,8 +3045,8 @@ router.post("/save", async (req, res) => {
       }
 
       // 4. Cleanup Table & Cart on success
-      if (tableId) {
-        const cleanTableId = String(tableId).replace(/^\{|\}$/g, "").trim();
+      if (tableId || tableNo || displayOrderId) {
+        const cleanTableId = String(tableId || "").replace(/^\{|\}$/g, "").trim();
         const validTableGuid = toGuidOrNull(cleanTableId);
         
         if (isSplitParsed && hasRemaining) {
@@ -3066,27 +3066,87 @@ router.post("/save", async (req, res) => {
           }
         } else {
           // Fully paid or normal sale: complete cleanup
-          console.log(`[SAVE SALE] Cleaning up table: ${cleanTableId}`);
-          await transaction.request()
-            .input("cartId", sql.NVarChar(128), cleanTableId)
-            .query("DELETE FROM [dbo].[CartItems] WHERE [CartId] = @cartId");
-            
-          const targetTableNo = tableNo || cleanTableId;
-          if (validTableGuid) {
-            await transaction.request()
-              .input("tid", sql.UniqueIdentifier, validTableGuid)
-              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
-          } else {
-            await transaction.request()
-              .input("tno", sql.NVarChar(50), String(targetTableNo))
-              .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
+          // 🛡️ Resolve tableId and tableNo robustly for this completed order
+          let resolvedTableId = validTableGuid;
+          let resolvedTableNo = tableNo ? String(tableNo).trim() : null;
+
+          if (!resolvedTableId && !resolvedTableNo && displayOrderId) {
+            const tLookup = await transaction.request()
+              .input("ordNo", sql.NVarChar(100), displayOrderId)
+              .query(`
+                SELECT TOP 1 tm.TableId, tm.TableNumber
+                FROM TableMaster tm
+                WHERE tm.CurrentOrderId = @ordNo
+                   OR tm.TableNumber = (SELECT TOP 1 Tableno FROM RestaurantOrderCur WHERE OrderNumber = @ordNo)
+              `);
+            if (tLookup.recordset.length > 0) {
+              resolvedTableId = tLookup.recordset[0].TableId;
+              resolvedTableNo = tLookup.recordset[0].TableNumber;
+            }
+          } else if (!resolvedTableId && resolvedTableNo) {
+            const tLookup = await transaction.request()
+              .input("tno", sql.NVarChar(50), resolvedTableNo)
+              .query("SELECT TOP 1 TableId FROM TableMaster WHERE TableNumber = @tno");
+            if (tLookup.recordset.length > 0) {
+              resolvedTableId = tLookup.recordset[0].TableId;
+            }
+          } else if (resolvedTableId && !resolvedTableNo) {
+            const tLookup = await transaction.request()
+              .input("tid", sql.UniqueIdentifier, resolvedTableId)
+              .query("SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tid");
+            if (tLookup.recordset.length > 0) {
+              resolvedTableNo = tLookup.recordset[0].TableNumber;
+            }
           }
+
+          console.log(`[SAVE SALE] Cleaning up table: ${resolvedTableNo || resolvedTableId} for completed order ${displayOrderId}`);
+
+          // 🛡️ Enforce BOTH TableId (or TableNumber) AND CurrentOrderId = @CompletedOrderId
+          await transaction.request()
+            .input("tid", sql.UniqueIdentifier, resolvedTableId || DEFAULT_GUID)
+            .input("tno", sql.NVarChar(50), resolvedTableNo || "")
+            .input("completedOrderId", sql.NVarChar(50), displayOrderId)
+            .query(`
+              UPDATE [dbo].[TableMaster]
+              SET Status = 0,
+                  entry_status = NULL,
+                  PAYMENT_STATUS = 0,
+                  TotalAmount = 0,
+                  StartTime = NULL,
+                  CurrentOrderId = NULL,
+                  CustomerName = NULL,
+                  Pax = NULL,
+                  LockedByName = NULL,
+                  IsLocked = 0,
+                  ModifiedOn = GETDATE()
+              WHERE (
+                (@tid <> '00000000-0000-0000-0000-000000000000' AND TableId = @tid)
+                OR (@tno <> '' AND TableNumber = @tno)
+              )
+              AND CurrentOrderId = @completedOrderId;
+
+              IF @tid <> '00000000-0000-0000-0000-000000000000'
+                DELETE FROM [dbo].[CartItems] WHERE [CartId] = CAST(@tid AS NVARCHAR(128));
+              IF @tno <> ''
+                DELETE FROM [dbo].[CartItems] WHERE [CartId] = @tno;
+            `);
 
           const io = req.app.get("io");
           if (io) {
-            io.emit("table_status_updated", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo, status: 0, paymentStatus: 0, totalAmount: 0, customerName: null, pax: null });
-            io.emit("cart_updated", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo });
-            io.emit("order_closed", { tableId: cleanTableId.toLowerCase(), tableNo: targetTableNo, orderId: displayOrderId });
+            const lid = resolvedTableId ? String(resolvedTableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : (resolvedTableNo || "").toLowerCase();
+            io.emit("table_status_updated", { 
+              tableId: lid, 
+              rawTableId: resolvedTableId,
+              tableNo: resolvedTableNo, 
+              status: 0, 
+              paymentStatus: 0, 
+              totalAmount: 0, 
+              currentOrderId: null,
+              customerName: null, 
+              pax: null 
+            });
+            io.emit("cart_updated", { tableId: lid, tableNo: resolvedTableNo });
+            io.emit("order_closed", { tableId: lid, tableNo: resolvedTableNo, orderId: displayOrderId });
           }
 
           // 🚀 CLEANUP MERGED SOURCE TABLES AS WELL (Strictly scoped to current order only)
@@ -3127,15 +3187,19 @@ router.post("/save", async (req, res) => {
                   .query("DELETE FROM [dbo].[CartItems] WHERE [CartId] = @cartId");
 
                 const validChildGuid = toGuidOrNull(childTableId);
-                if (validChildGuid) {
-                  await transaction.request()
-                    .input("tid", sql.UniqueIdentifier, validChildGuid)
-                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableId = @tid");
-                } else {
-                  await transaction.request()
-                    .input("tno", sql.NVarChar(50), String(childTableNo))
-                    .query("UPDATE [dbo].[TableMaster] SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL WHERE TableNumber = @tno");
-                }
+                await transaction.request()
+                  .input("tid", sql.UniqueIdentifier, validChildGuid || DEFAULT_GUID)
+                  .input("tno", sql.NVarChar(50), String(childTableNo))
+                  .input("completedOrderId", sql.NVarChar(50), displayOrderId)
+                  .query(`
+                    UPDATE [dbo].[TableMaster] 
+                    SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, CustomerName = NULL, Pax = NULL, LockedByName = NULL, IsLocked = 0, ModifiedOn = GETDATE() 
+                    WHERE (
+                      (@tid <> '00000000-0000-0000-0000-000000000000' AND TableId = @tid)
+                      OR (@tno <> '' AND TableNumber = @tno)
+                    )
+                    AND (CurrentOrderId = @completedOrderId OR CurrentOrderId IS NULL OR CurrentOrderId = '');
+                  `);
 
                 if (io) {
                   io.emit("table_status_updated", { 

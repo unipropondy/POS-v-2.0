@@ -2432,7 +2432,7 @@ router.post("/cancel", async (req, res) => {
 
 router.post("/complete", async (req, res) => {
   try {
-    const { tableId, userId } = req.body;
+    const { tableId, userId, orderId } = req.body;
     const pool = await poolPromise;
     const cleanId = await getCleanTableId(pool, tableId);
     if (!toGuidOrNull(cleanId)) {
@@ -2441,12 +2441,29 @@ router.post("/complete", async (req, res) => {
     }
 
     // Final atomic update: Close the professional order and release the table
-    await pool.request().input("tid", sql.UniqueIdentifier, cleanId).query(`
-        UPDATE RestaurantOrderCur SET isOrderClosed = 1, ModifiedOn = GETDATE() 
+    // 🛡️ Enforces both TableId and CurrentOrderId matching the completed order
+    await pool.request()
+      .input("tid", sql.UniqueIdentifier, cleanId)
+      .input("oid", sql.NVarChar(50), orderId || null)
+      .query(`
+        DECLARE @CompletedOrderId NVARCHAR(50) = @oid;
+        IF @CompletedOrderId IS NULL
+          SELECT TOP 1 @CompletedOrderId = CurrentOrderId FROM TableMaster WHERE TableId = @tid;
+
+        UPDATE RestaurantOrderCur 
+        SET isOrderClosed = 1, ModifiedOn = GETDATE() 
         WHERE Tableno = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tid) 
-        AND (isOrderClosed = 0 OR isOrderClosed IS NULL);
+          AND (OrderNumber = @CompletedOrderId OR @CompletedOrderId IS NULL)
+          AND (isOrderClosed = 0 OR isOrderClosed IS NULL);
         
-        UPDATE TableMaster SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, CurrentOrderId = NULL, StartTime = NULL, TotalAmount = 0, CustomerName = NULL, Pax = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid;
+        UPDATE TableMaster 
+        SET Status = 0, entry_status = NULL, PAYMENT_STATUS = 0, CurrentOrderId = NULL, StartTime = NULL, TotalAmount = 0, CustomerName = NULL, Pax = NULL, LockedByName = NULL, IsLocked = 0, ModifiedOn = GETDATE() 
+        WHERE TableId = @tid
+          AND (CurrentOrderId = @CompletedOrderId OR @CompletedOrderId IS NULL);
+
+        DELETE FROM CartItems 
+        WHERE CartId = CAST(@tid AS NVARCHAR(128)) 
+           OR CartId = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tid);
       `);
 
     const updated = await syncTableStatus(req, cleanId);
@@ -2455,16 +2472,31 @@ router.post("/complete", async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       const lid = cleanId.toLowerCase();
-      io.emit("order_closed", { tableId: lid });
+      io.emit("order_closed", { tableId: lid, orderId: orderId });
+      io.emit("table_status_updated", {
+        tableId: lid,
+        rawTableId: cleanId,
+        tableNo: updated?.tableNo,
+        status: 0,
+        paymentStatus: 0,
+        totalAmount: 0,
+        currentOrderId: null,
+        customerName: null,
+        pax: null,
+      });
+      io.emit("cart_updated", { tableId: lid, tableNo: updated?.tableNo });
       io.emit("order_status_update", {
         tableId: lid,
-        action: "CLOSE",
-        orderId: updated?.CurrentOrderId,
+        orderId: orderId,
+        status: "COMPLETED",
+        statusCode: 3,
+        source: "order_completed",
       });
     }
-    res.json({ success: true, ...updated });
+
+    res.json({ success: true, table: updated });
   } catch (err) {
-    console.error("❌ Complete Error:", err.message);
+    console.error("❌ /complete error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3970,16 +4002,106 @@ router.post("/complete-online-payment", async (req, res) => {
       const verifiedPaidAmt = totalAmount ? Number(totalAmount) : (paidAmount ? Number(paidAmount) : null);
       const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow", verifiedPaidAmt);
       const ioInst = req.app.get("io");
-      if (ioInst && (cleanId || updatedTable)) {
-        const targetTableId = updatedTable?.TableId ? String(updatedTable.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase();
-        ioInst.emit("qr_payment_confirmed", {
-          tableId: targetTableId,
-          rawTableId: updatedTable?.TableId,
-          tableNo: updatedTable?.tableNo,
-          orderId: updatedTable?.CurrentOrderId || orderNo,
-          paymentStatus: 1,
-          entryStatus: updatedTable?.entryStatus || resolvedEntryStatus,
-        });
+
+      // 🛡️ ORDER & TABLE COMPLETION: After successful settlement transaction commit, release table in TableMaster
+      // Strictly enforces TableId (or TableNumber) AND CurrentOrderId = @CompletedOrderId
+      let releasedTable = null;
+      if (settled && settled.success) {
+        try {
+          const tableLookup = await pool.request()
+            .input("tid", sql.VarChar(50), cleanId || "")
+            .input("orderNo", sql.NVarChar(50), orderNo)
+            .query(`
+              SELECT TOP 1 TableId, TableNumber, DiningSection
+              FROM TableMaster
+              WHERE (TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER)))
+                 OR CurrentOrderId = @orderNo
+                 OR TableNumber = (SELECT TOP 1 Tableno FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+            `);
+
+          const matchedTable = tableLookup.recordset[0];
+          const matchedTableId = matchedTable?.TableId;
+          const matchedTableNo = matchedTable?.TableNumber;
+
+          // Close order in RestaurantOrderCur
+          await pool.request()
+            .input("orderNo", sql.NVarChar(50), orderNo)
+            .query(`
+              UPDATE RestaurantOrderCur
+              SET isOrderClosed = 1, StatusCode = 3, ModifiedOn = GETDATE()
+              WHERE OrderNumber = @orderNo;
+            `);
+
+          if (matchedTableId) {
+            const releaseRes = await pool.request()
+              .input("tableId", sql.UniqueIdentifier, matchedTableId)
+              .input("completedOrderId", sql.NVarChar(50), orderNo)
+              .query(`
+                UPDATE TableMaster
+                SET
+                  CurrentOrderId = NULL,
+                  TotalAmount = 0,
+                  Status = 0,
+                  entry_status = NULL,
+                  PAYMENT_STATUS = 0,
+                  StartTime = NULL,
+                  CustomerName = NULL,
+                  Pax = NULL,
+                  LockedByName = NULL,
+                  IsLocked = 0,
+                  ModifiedOn = GETDATE()
+                WHERE TableId = @tableId
+                  AND CurrentOrderId = @completedOrderId;
+
+                DELETE FROM CartItems 
+                WHERE CartId = CAST(@tableId AS NVARCHAR(128)) 
+                   OR CartId = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tableId);
+              `);
+
+            if (releaseRes.rowsAffected[0] > 0) {
+              console.log(`✅ [complete-online-payment] Table ${matchedTableNo} released successfully (CurrentOrderId ${orderNo} -> NULL)`);
+              releasedTable = {
+                tableId: String(matchedTableId).replace(/^\{|\}$/g, "").trim().toLowerCase(),
+                rawTableId: matchedTableId,
+                tableNo: matchedTableNo,
+                section: matchedTable.DiningSection
+              };
+            }
+          }
+        } catch (releaseErr) {
+          console.error("⚠️ [complete-online-payment] Error releasing TableMaster record:", releaseErr.message);
+        }
+      }
+
+      if (ioInst && (cleanId || updatedTable || releasedTable)) {
+        const targetTableId = releasedTable?.tableId || (updatedTable?.TableId ? String(updatedTable.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase());
+        const targetRawTableId = releasedTable?.rawTableId || updatedTable?.TableId;
+        const targetTableNo = releasedTable?.tableNo || updatedTable?.tableNo;
+
+        if (releasedTable) {
+          ioInst.emit("table_status_updated", {
+            tableId: targetTableId,
+            rawTableId: targetRawTableId,
+            tableNo: targetTableNo,
+            status: 0,
+            paymentStatus: 0,
+            totalAmount: 0,
+            currentOrderId: null,
+            customerName: null,
+            pax: null,
+          });
+          ioInst.emit("cart_updated", { tableId: targetTableId, tableNo: targetTableNo });
+          ioInst.emit("order_closed", { tableId: targetTableId, tableNo: targetTableNo, orderId: orderNo });
+        } else {
+          ioInst.emit("qr_payment_confirmed", {
+            tableId: targetTableId,
+            rawTableId: targetRawTableId,
+            tableNo: targetTableNo,
+            orderId: updatedTable?.CurrentOrderId || orderNo,
+            paymentStatus: 1,
+            entryStatus: updatedTable?.entryStatus || resolvedEntryStatus,
+          });
+        }
       }
 
       try {
