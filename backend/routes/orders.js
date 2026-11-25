@@ -5329,28 +5329,44 @@ router.get("/order-items/:orderId", async (req, res) => {
 
 router.post("/clear-cart", async (req, res) => {
   try {
-    const { orderId } = req.body;
-    if (!orderId) {
-      return res.status(400).json({ success: false, error: "orderId missing" });
+    const { orderId, tableId } = req.body;
+    if (!orderId && !tableId) {
+      return res.status(400).json({ success: false, error: "orderId or tableId missing" });
     }
     const pool = await poolPromise;
-    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
-    const orderGuid = isGuid ? orderId : null;
+    const rawId = String(orderId || "").trim();
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
 
-    if (!orderGuid) {
-      return res.json({ success: true, message: "Invalid order ID" });
+    // Resolve the order (supports both OrderId GUID and OrderNumber like 20261125-0013)
+    const orderRes = await pool.request()
+      .input("ordId", sql.UniqueIdentifier, isGuid ? rawId : null)
+      .input("ordNo", sql.NVarChar(50), rawId || null)
+      .query(`
+        SELECT TOP 1 OrderId, OrderNumber, Tableno
+        FROM RestaurantOrderCur
+        WHERE (@ordId IS NOT NULL AND OrderId = @ordId)
+           OR (@ordNo IS NOT NULL AND OrderNumber = @ordNo)
+      `);
+
+    const orderRow = orderRes.recordset[0];
+    if (orderRow) {
+      await pool.request()
+        .input("orderId", sql.UniqueIdentifier, orderRow.OrderId)
+        .query(`
+          DELETE FROM RestaurantmodifierdetailCur
+          WHERE OrderDetailId IN (
+            SELECT OrderDetailId FROM RestaurantOrderDetailCur WHERE OrderId = @orderId
+          );
+          DELETE FROM RestaurantOrderDetailCur WHERE OrderId = @orderId;
+          UPDATE RestaurantOrderCur SET TotalAmount = 0 WHERE OrderId = @orderId;
+        `);
     }
 
-    await pool.request()
-      .input("orderId", sql.UniqueIdentifier, orderGuid)
-      .query(`
-        DELETE FROM RestaurantmodifierdetailCur
-        WHERE OrderDetailId IN (
-          SELECT OrderDetailId FROM RestaurantOrderDetailCur WHERE OrderId = @orderId
-        );
-        DELETE FROM RestaurantOrderDetailCur WHERE OrderId = @orderId;
-        UPDATE RestaurantOrderCur SET TotalAmount = 0 WHERE OrderId = @orderId;
-      `);
+    // Sync & reset TableMaster if table is now empty
+    const targetTable = tableId || orderRow?.Tableno;
+    if (targetTable) {
+      await syncTableStatus(req, String(targetTable));
+    }
 
     res.json({ success: true, message: "Cart cleared successfully" });
   } catch (err) {
