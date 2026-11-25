@@ -4806,36 +4806,38 @@ export default function Category() {
                 </View>
               )}
 
-              {/* Kiosk Mode Entry Button */}
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={styles.menuItem}
-                onPress={() => {
-                  setIsMenuVisible(false);
-                  router.push("/kiosk" as any);
-                }}
-              >
-                <View
-                  style={[
-                    styles.menuIconContainer,
-                    { backgroundColor: "#ff572215" },
-                  ]}
+              {/* Kiosk Mode Entry Button (only shown when EnableKiosk = 1) */}
+              {((useGeneralSettingsStore.getState().settings as any)?.EnableKiosk === true || (useGeneralSettingsStore.getState().settings as any)?.EnableKiosk === 1 || (useGeneralSettingsStore.getState().settings as any)?.enableKiosk === true) && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setIsMenuVisible(false);
+                    router.push("/kiosk" as any);
+                  }}
                 >
+                  <View
+                    style={[
+                      styles.menuIconContainer,
+                      { backgroundColor: "#ff572215" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="phone-portrait-outline"
+                      size={18}
+                      color="#ff5722"
+                    />
+                  </View>
+                  <Text style={[styles.menuItemText, { flex: 1, fontWeight: "600" }]}>
+                    Kiosk
+                  </Text>
                   <Ionicons
-                    name="phone-portrait-outline"
+                    name="chevron-forward"
                     size={18}
-                    color="#ff5722"
+                    color={Theme.textSecondary}
                   />
-                </View>
-                <Text style={[styles.menuItemText, { flex: 1, fontWeight: "600" }]}>
-                  Kiosk
-                </Text>
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={Theme.textSecondary}
-                />
-              </TouchableOpacity>
+                </TouchableOpacity>
+              )}
 
               {/* 6. Settings Dropdown */}
               <TouchableOpacity

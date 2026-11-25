@@ -1556,18 +1556,25 @@ class UniversalPrinter {
           console.log(`ðŸŒ Trying configured printer: ${targetIp}`);
           const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp.trim());
 
-          // 📲 Try Print Bridge if active on network (supports USB / Shared printers from APK)
-          const isBridge = await this.isBridgeOnline();
-          if (isBridge) {
-            try {
-              console.log(`📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
-              const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
-              const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
-              const success = await this.queuePrintJob(pType, undefined, text);
-              if (success) return;
-            } catch (bridgeErr) {
-              console.warn("APK Print Bridge queue failed, trying direct connection:", bridgeErr);
+          const isBtMac = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(targetIp.trim());
+          const isUsbTarget = !isIp && !isBtMac;
+
+          // 📲 Network printers can use Print Bridge; USB printers must ONLY print on the originating device
+          if (!isUsbTarget) {
+            const isBridge = await this.isBridgeOnline();
+            if (isBridge) {
+              try {
+                console.log(`📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
+                const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
+                const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
+                const success = await this.queuePrintJob(pType, undefined, text);
+                if (success) return;
+              } catch (bridgeErr) {
+                console.warn("APK Print Bridge queue failed, trying direct connection:", bridgeErr);
+              }
             }
+          } else {
+            console.log(`🔌 [USB Guard] Skipping remote Print Bridge for USB printer "${targetIp}" (device-specific only).`);
           }
           let isReachable = false;
           if (isIp) {
