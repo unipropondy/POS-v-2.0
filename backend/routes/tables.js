@@ -80,9 +80,17 @@ router.get("/all", async (req, res) => {
         WHERE (tm.Status IN (1, 2, 3, 4) OR tm.CurrentOrderId IS NOT NULL)
           -- 🛡️ Immediately clear tables whose order is already settled or no longer active; otherwise wait 30 mins
           AND (
-            EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = tm.CurrentOrderId)
+            (EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = tm.CurrentOrderId) AND CAST(tm.DiningSection AS VARCHAR(10)) = '4')
             OR NOT EXISTS (SELECT 1 FROM RestaurantOrderCur roc WHERE roc.OrderNumber = tm.CurrentOrderId)
-            OR DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 30
+            OR (
+              DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 30
+              AND NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderCur roc 
+                WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                  AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                  AND roc.StatusCode NOT IN (0, 4)
+              )
+            )
           )
           -- 🛡️ DO NOT clear active Takeaway QR sessions (DiningSection 4) within active timeout (15 mins) with active session lock
           AND NOT (
@@ -97,13 +105,12 @@ router.get("/all", async (req, res) => {
             WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
                OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
           )
-          -- 🛡️ Must NOT have any active unclosed, unsettled orders in RestaurantOrderCur
+          -- 🛡️ Must NOT have any active unclosed orders in RestaurantOrderCur (Dine-In or Kiosk)
           AND NOT EXISTS (
             SELECT 1 FROM RestaurantOrderCur roc 
             WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
               AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
-              AND roc.StatusCode NOT IN (0, 3, 4)
-              AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber)
+              AND roc.StatusCode NOT IN (0, 4)
           )
           -- 🛡️ Must be verified closed
           AND (

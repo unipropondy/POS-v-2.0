@@ -4026,8 +4026,10 @@ router.post("/complete-online-payment", async (req, res) => {
       const settled = await settlePaidQROrder(pool, orderNo, paymentMethod || "Yeahpay Paynow", verifiedPaidAmt);
       const ioInst = req.app.get("io");
 
-      // 🛡️ ORDER & TABLE COMPLETION: After successful settlement transaction commit, release table in TableMaster
-      // Strictly enforces TableId (or TableNumber) AND CurrentOrderId = @CompletedOrderId
+      // 🛡️ ORDER & TABLE HANDLING AFTER PAYMENT:
+      // - For Takeaway orders, release table in TableMaster upon settlement
+      // - For Kiosk Dine-In orders, keep table OCCUPIED (Status=1, PAYMENT_STATUS=1, CurrentOrderId=@orderNo)
+      //   and order OPEN (isOrderClosed=0, StatusCode=2) so POS GTable shows Dining and KDS shows order!
       let releasedTable = null;
       if (settled && settled.success) {
         try {
@@ -4045,54 +4047,153 @@ router.post("/complete-online-payment", async (req, res) => {
           const matchedTable = tableLookup.recordset[0];
           const matchedTableId = matchedTable?.TableId;
           const matchedTableNo = matchedTable?.TableNumber;
+          const matchedSection = matchedTable?.DiningSection;
 
-          // Close order in RestaurantOrderCur
-          await pool.request()
-            .input("orderNo", sql.NVarChar(50), orderNo)
-            .query(`
-              UPDATE RestaurantOrderCur
-              SET isOrderClosed = 1, StatusCode = 3, ModifiedOn = GETDATE()
-              WHERE OrderNumber = @orderNo;
-            `);
+          const isTakeawayOrder = 
+            req.body.isTakeaway === true ||
+            req.body.isTakeaway === "true" ||
+            req.body.orderType === "TAKEAWAY" ||
+            req.body.kioskOrderType === "TAKEAWAY" ||
+            String(matchedSection) === "4" ||
+            (tableNo && String(tableNo).trim().startsWith("TW"));
 
-          if (matchedTableId) {
-            const releaseRes = await pool.request()
-              .input("tableId", sql.UniqueIdentifier, matchedTableId)
-              .input("completedOrderId", sql.NVarChar(50), orderNo)
+          const isDineIn = !isTakeawayOrder && (String(matchedSection) === "3" || String(matchedSection) === "1" || String(matchedSection) === "2" || isKioskOrder);
+
+          if (isDineIn) {
+            // 🛡️ KIOSK / DINE-IN FLOW:
+            // Customer is actively dining at the table (e.g. Table 74, DiningSection = 3).
+            // Preserve order as OPEN (isOrderClosed = 0, StatusCode = 2).
+            await pool.request()
+              .input("orderNo", sql.NVarChar(50), orderNo)
+              .input("paidAmt", sql.Decimal(18, 2), verifiedPaidAmt || 0)
+              .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
               .query(`
-                UPDATE TableMaster
-                SET
-                  CurrentOrderId = NULL,
-                  TotalAmount = 0,
-                  Status = 0,
-                  entry_status = NULL,
-                  PAYMENT_STATUS = 0,
-                  StartTime = NULL,
-                  CustomerName = NULL,
-                  Pax = NULL,
-                  LockedByName = NULL,
-                  IsLocked = 0,
-                  ModifiedOn = GETDATE()
-                WHERE TableId = @tableId
-                  AND CurrentOrderId = @completedOrderId;
+                UPDATE RestaurantOrderCur
+                SET isOrderClosed = 0,
+                    StatusCode = 2,
+                    entry_status = @entryStatus,
+                    TotalAmount = CASE WHEN @paidAmt > 0 THEN @paidAmt ELSE TotalAmount END,
+                    ModifiedOn = GETDATE()
+                WHERE OrderNumber = @orderNo;
 
-                DELETE FROM CartItems 
-                WHERE CartId = CAST(@tableId AS NVARCHAR(128)) 
-                   OR CartId = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tableId);
+                UPDATE RestaurantOrderDetailCur
+                SET StatusCode = 2, ModifiedOn = GETDATE()
+                WHERE OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                  AND StatusCode <> 0;
               `);
 
-            if (releaseRes.rowsAffected[0] > 0) {
-              console.log(`✅ [complete-online-payment] Table ${matchedTableNo} released successfully (CurrentOrderId ${orderNo} -> NULL)`);
-              releasedTable = {
-                tableId: String(matchedTableId).replace(/^\{|\}$/g, "").trim().toLowerCase(),
+            if (matchedTableId) {
+              await pool.request()
+                .input("tableId", sql.UniqueIdentifier, matchedTableId)
+                .input("orderNo", sql.NVarChar(50), orderNo)
+                .input("paidAmt", sql.Decimal(18, 2), verifiedPaidAmt || 0)
+                .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
+                .query(`
+                  UPDATE TableMaster
+                  SET
+                    CurrentOrderId = @orderNo,
+                    TotalAmount = CASE WHEN @paidAmt > 0 THEN @paidAmt ELSE TotalAmount END,
+                    Status = 1,
+                    entry_status = @entryStatus,
+                    PAYMENT_STATUS = 1,
+                    StartTime = ISNULL(StartTime, GETDATE()),
+                    ModifiedOn = GETDATE()
+                  WHERE TableId = @tableId;
+
+                  DELETE FROM CartItems 
+                  WHERE CartId = CAST(@tableId AS NVARCHAR(128)) 
+                     OR CartId = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tableId);
+                `);
+            }
+
+            console.log(`✅ [complete-online-payment] Dine-In Table ${matchedTableNo} kept active as DINING/PAID (Order ${orderNo})`);
+
+            if (ioInst) {
+              const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
+              const secStr = sectionMap[String(matchedSection)] || "SECTION_3";
+              const cleanTid = matchedTableId ? String(matchedTableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : cleanId.toLowerCase();
+
+              // 📡 Update POS GTable immediately to Dining / Paid
+              ioInst.emit("table_status_updated", {
+                tableId: cleanTid,
                 rawTableId: matchedTableId,
                 tableNo: matchedTableNo,
-                section: matchedTable.DiningSection
-              };
+                section: secStr,
+                status: 1, // DINING (occupied, green)
+                paymentStatus: 1, // PAID
+                totalAmount: verifiedPaidAmt || 0,
+                currentOrderId: orderNo,
+                entryStatus: resolvedEntryStatus || "K",
+                startTime: Date.now()
+              });
+              ioInst.emit("tables_updated");
+
+              // 📡 Notify KDS to display active kitchen order
+              ioInst.emit("active_kitchen_updated", {
+                orderId: orderNo,
+                tableNo: matchedTableNo,
+                section: secStr
+              });
+              ioInst.emit("new_order", {
+                orderId: orderNo,
+                entryStatus: resolvedEntryStatus || "K",
+                context: {
+                  orderType: "DINE_IN",
+                  tableId: cleanTid,
+                  tableNo: matchedTableNo,
+                  section: secStr
+                }
+              });
+            }
+          } else {
+            // 🛡️ TAKEAWAY FLOW: Release Takeaway Table upon payment settlement
+            await pool.request()
+              .input("orderNo", sql.NVarChar(50), orderNo)
+              .query(`
+                UPDATE RestaurantOrderCur
+                SET isOrderClosed = 1, StatusCode = 3, ModifiedOn = GETDATE()
+                WHERE OrderNumber = @orderNo;
+              `);
+
+            if (matchedTableId) {
+              const releaseRes = await pool.request()
+                .input("tableId", sql.UniqueIdentifier, matchedTableId)
+                .input("completedOrderId", sql.NVarChar(50), orderNo)
+                .query(`
+                  UPDATE TableMaster
+                  SET
+                    CurrentOrderId = NULL,
+                    TotalAmount = 0,
+                    Status = 0,
+                    entry_status = NULL,
+                    PAYMENT_STATUS = 0,
+                    StartTime = NULL,
+                    CustomerName = NULL,
+                    Pax = NULL,
+                    LockedByName = NULL,
+                    IsLocked = 0,
+                    ModifiedOn = GETDATE()
+                  WHERE TableId = @tableId
+                    AND CurrentOrderId = @completedOrderId;
+
+                  DELETE FROM CartItems 
+                  WHERE CartId = CAST(@tableId AS NVARCHAR(128)) 
+                     OR CartId = (SELECT TOP 1 TableNumber FROM TableMaster WHERE TableId = @tableId);
+                `);
+
+              if (releaseRes.rowsAffected[0] > 0) {
+                console.log(`✅ [complete-online-payment] Takeaway Table ${matchedTableNo} released successfully (CurrentOrderId ${orderNo} -> NULL)`);
+                releasedTable = {
+                  tableId: String(matchedTableId).replace(/^\{|\}$/g, "").trim().toLowerCase(),
+                  rawTableId: matchedTableId,
+                  tableNo: matchedTableNo,
+                  section: matchedTable.DiningSection
+                };
+              }
             }
           }
         } catch (releaseErr) {
-          console.error("⚠️ [complete-online-payment] Error releasing TableMaster record:", releaseErr.message);
+          console.error("⚠️ [complete-online-payment] Error handling TableMaster record:", releaseErr.message);
         }
       }
 
@@ -4733,6 +4834,23 @@ router.post("/kiosk/start", async (req, res) => {
                 ModifiedOn = GETDATE()
             WHERE TableId = @tid;
           `);
+
+        const io = req.app.get("io");
+        if (io) {
+          const cleanTid = String(tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+          io.emit("table_status_updated", {
+            tableId: cleanTid,
+            rawTableId: cleanGuid,
+            tableNo: finalTableNo,
+            section: isTakeaway ? "TAKEAWAY" : "SECTION_3",
+            status: 1,
+            paymentStatus: 0,
+            totalAmount: 0,
+            currentOrderId: orderNumber,
+            entryStatus: "K"
+          });
+          io.emit("tables_updated");
+        }
       }
     }
 
