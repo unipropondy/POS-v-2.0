@@ -547,6 +547,32 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       .trim()
       .toUpperCase();
 
+  const isCategoryFavourite = (categoryOrId?: any) => {
+    const target = categoryOrId !== undefined ? categoryOrId : activeCategory;
+    if (!target) return false;
+    if (typeof target === "object") {
+      return (
+        target.isFavouriteCategory === true ||
+        target.CategoryId === "FAVOURITE_CATEGORY" ||
+        (target.KitchenTypeName || "").trim().toLowerCase() === "favourite" ||
+        (target.KitchenTypeName || "").trim().toLowerCase() === "favorite"
+      );
+    }
+    const targetStr = String(target);
+    if (targetStr === "FAVOURITE_CATEGORY") return true;
+    const catObj = categories.find(
+      (c) =>
+        c.CategoryId === target ||
+        normalizeGuid(c.CategoryId) === normalizeGuid(target),
+    );
+    return (
+      catObj?.isFavouriteCategory === true ||
+      catObj?.CategoryId === "FAVOURITE_CATEGORY" ||
+      (catObj?.KitchenTypeName || "").trim().toLowerCase() === "favourite" ||
+      (catObj?.KitchenTypeName || "").trim().toLowerCase() === "favorite"
+    );
+  };
+
   const isCategoryPrevious = (categoryOrId?: any) => {
     const target = categoryOrId !== undefined ? categoryOrId : activeCategory;
     if (!target) return false;
@@ -664,6 +690,36 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
+  const loadFavouriteCategory = async () => {
+    try {
+      setGroups([
+        {
+          DishGroupId: "FAVOURITE_GROUP",
+          DishGroupName: "Favourites",
+          SortCode: 0,
+        },
+      ]);
+      setActiveGroup("FAVOURITE_GROUP");
+
+      const res = await fetch(`${API}/dishes/favourites?isKiosk=true`, {
+        headers: { "x-kiosk": "true" },
+      });
+      const data = await res.json();
+      const rawDishes = Array.isArray(data) ? data : [];
+      const safeDishes = rawDishes.filter(
+        (d: any) =>
+          isPublishedForKiosk(d.IsPublished) &&
+          (d.CategoryPublished === undefined ||
+            isPublishedForKiosk(d.CategoryPublished)) &&
+          (d.GroupPublished === undefined ||
+            isPublishedForKiosk(d.GroupPublished)),
+      );
+      setDishes(safeDishes);
+    } catch (e) {
+      console.log("Error loading favourite dishes:", e);
+    }
+  };
+
   const loadDishes = async (groupId: any) => {
     try {
       const res = await fetch(`${API}/dishes/group/${groupId}?isKiosk=true`, {
@@ -684,6 +740,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const loadGroups = async (categoryId: any) => {
+    if (isCategoryFavourite(categoryId)) {
+      await loadFavouriteCategory();
+      return;
+    }
+
     if (isCategoryPrevious(categoryId)) {
       await loadPreviousCategory();
       return;
@@ -865,13 +926,60 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         const safeKitchens = rawKitchens.filter((k: any) =>
           isPublishedForKiosk(k.IsPublished),
         );
-        setCategories(safeKitchens);
 
-        if (safeKitchens.length > 0) {
-          const firstCat = safeKitchens[0];
+        // Dynamically fetch Favourite dishes to check if any have Favourite = 1
+        let initialFavDishes: any[] = [];
+        try {
+          const favRes = await fetch(`${API}/dishes/favourites?isKiosk=true`, {
+            headers: { "x-kiosk": "true" },
+          });
+          const favData = await favRes.json();
+          if (Array.isArray(favData)) {
+            initialFavDishes = favData.filter(
+              (d: any) =>
+                isPublishedForKiosk(d.IsPublished) &&
+                (d.CategoryPublished === undefined ||
+                  isPublishedForKiosk(d.CategoryPublished)) &&
+                (d.GroupPublished === undefined ||
+                  isPublishedForKiosk(d.GroupPublished)),
+            );
+          }
+        } catch (e) {
+          console.log("Error loading favourite dishes on init:", e);
+        }
+
+        const hasFavourites = initialFavDishes.length > 0;
+        const allCategories: any[] = [];
+
+        if (hasFavourites) {
+          allCategories.push({
+            CategoryId: "FAVOURITE_CATEGORY",
+            KitchenTypeName: "Favourite",
+            KitchenTypeCode: "FAVOURITE",
+            SortCode: -999,
+            IsPublished: 0,
+            isFavouriteCategory: true,
+          });
+        }
+
+        allCategories.push(...safeKitchens);
+        setCategories(allCategories);
+
+        if (allCategories.length > 0) {
+          const firstCat = allCategories[0];
           setActiveCategory(firstCat.CategoryId);
           setExpandedCategoryId(firstCat.CategoryId);
-          if (isCategoryPrevious(firstCat)) {
+          if (isCategoryFavourite(firstCat)) {
+            setGroups([
+              {
+                DishGroupId: "FAVOURITE_GROUP",
+                DishGroupName: "Favourites",
+                SortCode: 0,
+              },
+            ]);
+            setActiveGroup("FAVOURITE_GROUP");
+            setDishes(initialFavDishes);
+          } else if (isCategoryPrevious(firstCat)) {
             await loadPreviousCategory();
           } else {
             await loadGroups(firstCat.CategoryId);
@@ -2341,7 +2449,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         // Expand it and make active
                         setExpandedCategoryId(cat.CategoryId);
                         setActiveCategory(cat.CategoryId);
-                        if (isCategoryPrevious(cat)) {
+                        if (isCategoryFavourite(cat)) {
+                          loadFavouriteCategory();
+                        } else if (isCategoryPrevious(cat)) {
                           loadPreviousCategory();
                         } else {
                           loadGroups(cat.CategoryId);
@@ -2361,9 +2471,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     {/* Category Food Icon */}
                     <View style={styles.catIconWrap}>
                       <Ionicons
-                        name="restaurant-outline"
+                        name={
+                          isCategoryFavourite(cat)
+                            ? "heart"
+                            : "restaurant-outline"
+                        }
                         size={28}
-                        color="#f97316"
+                        color={isCategoryFavourite(cat) ? "#FF5A16" : "#f97316"}
                       />
                     </View>
 
@@ -2420,7 +2534,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               setShowComboCustomizer(false);
                               setSelectedDish(null);
                               setActiveGroup(grp.DishGroupId);
-                              if (isCategoryPrevious(cat)) {
+                              if (isCategoryFavourite(cat)) {
+                                loadFavouriteCategory();
+                              } else if (isCategoryPrevious(cat)) {
                                 loadPreviousCategory();
                               } else {
                                 loadDishes(grp.DishGroupId);

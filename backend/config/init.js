@@ -1262,6 +1262,26 @@ async function initDB(pool) {
 
     // 27. Combo Meal Schema Migration
     await runQuery("DishMaster - IsCombo", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[DishMaster]') AND name = 'IsCombo') ALTER TABLE [dbo].[DishMaster] ADD IsCombo BIT NOT NULL DEFAULT 0");
+    await runQuery("DishMaster - Favourite / isFavourite", `
+      IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[DishMaster]') AND name = 'Favourite')
+      BEGIN
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[DishMaster]') AND name = 'isFavourite')
+        BEGIN
+          ALTER TABLE [dbo].[DishMaster] ADD Favourite BIT NOT NULL DEFAULT 0;
+          EXEC('UPDATE [dbo].[DishMaster] SET Favourite = isFavourite');
+        END
+        ELSE
+        BEGIN
+          ALTER TABLE [dbo].[DishMaster] ADD Favourite BIT NOT NULL DEFAULT 0;
+        END
+      END
+
+      IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[DishMaster]') AND name = 'isFavourite')
+      BEGIN
+        ALTER TABLE [dbo].[DishMaster] ADD isFavourite BIT NOT NULL DEFAULT 0;
+        EXEC('UPDATE [dbo].[DishMaster] SET isFavourite = Favourite');
+      END
+    `);
     await runQuery("PrintMaster - IsEnabled", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[PrintMaster]') AND name = 'IsEnabled') ALTER TABLE [dbo].[PrintMaster] ADD IsEnabled BIT NOT NULL DEFAULT 1");
     await runQuery("RestaurantOrderDetailCur - ComboDetailsJSON", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RestaurantOrderDetailCur]') AND name = 'ComboDetailsJSON') ALTER TABLE [dbo].[RestaurantOrderDetailCur] ADD ComboDetailsJSON NVARCHAR(MAX) NULL");
     await runQuery("RestaurantOrderDetail - ComboDetailsJSON", "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[RestaurantOrderDetail]') AND name = 'ComboDetailsJSON') ALTER TABLE [dbo].[RestaurantOrderDetail] ADD ComboDetailsJSON NVARCHAR(MAX) NULL");

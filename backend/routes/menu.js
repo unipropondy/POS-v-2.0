@@ -7,6 +7,42 @@ const sharp = require("sharp");
 const cache = new Map();
 const CACHE_TTL = 300000; // 5 minutes
 
+async function getFavouriteClause(pool) {
+  try {
+    const colRes = await pool.request().query(`
+      SELECT name FROM sys.columns 
+      WHERE object_id = OBJECT_ID(N'[dbo].[DishMaster]') 
+        AND name IN ('Favourite', 'isFavourite')
+    `);
+    const names = (colRes.recordset || []).map((r) => r.name.toLowerCase());
+    const hasFav = names.includes("favourite");
+    const hasIsFav = names.includes("isfavourite");
+
+    if (hasFav && hasIsFav) {
+      return {
+        selectExpr: "CASE WHEN ISNULL(d.Favourite, 0) = 1 OR ISNULL(d.isFavourite, 0) = 1 THEN 1 ELSE 0 END",
+        whereExpr: "(ISNULL(d.Favourite, 0) = 1 OR ISNULL(d.isFavourite, 0) = 1)",
+      };
+    } else if (hasFav) {
+      return {
+        selectExpr: "ISNULL(d.Favourite, 0)",
+        whereExpr: "ISNULL(d.Favourite, 0) = 1",
+      };
+    } else if (hasIsFav) {
+      return {
+        selectExpr: "ISNULL(d.isFavourite, 0)",
+        whereExpr: "ISNULL(d.isFavourite, 0) = 1",
+      };
+    }
+  } catch (err) {
+    console.error("Error inspecting favourite column:", err);
+  }
+  return {
+    selectExpr: "ISNULL(d.isFavourite, 0)",
+    whereExpr: "ISNULL(d.isFavourite, 0) = 1",
+  };
+}
+
 function getCached(key, req) {
   const store = tenancyContext.getStore();
   const scope = (req?.databaseName || store?.databaseName || "DEFAULT").toUpperCase();
@@ -125,6 +161,7 @@ router.get("/dishes/all", async (req, res) => {
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const favClause = await getFavouriteClause(pool);
     const filterClause = isKiosk
       ? "AND ISNULL(d.IsPublished, 0) = 0 AND ISNULL(cat.IsPublished, 0) = 0 AND ISNULL(dgm.IsPublished, 0) = 0"
       : "";
@@ -138,7 +175,8 @@ router.get("/dishes/all", async (req, res) => {
         ISNULL(d.IsCombo, 0) AS IsCombo,
         ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
         ISNULL(d.IsPublished, 0) AS IsPublished,
-        ISNULL(d.isFavourite, 0) AS isFavourite,
+        ${favClause.selectExpr} AS isFavourite,
+        ${favClause.selectExpr} AS Favourite,
         ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
         ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
         ISNULL(cat.IsPublished, 0) AS CategoryPublished,
@@ -175,7 +213,12 @@ router.get("/dishes/all", async (req, res) => {
 
 router.get("/dishes/favourites", async (req, res) => {
   try {
+    const isKiosk = req.query.isKiosk === 'true' || req.query.isKiosk === '1' || req.headers['x-kiosk'] === 'true';
     const pool = await poolPromise;
+    const favClause = await getFavouriteClause(pool);
+    const filterClause = isKiosk
+      ? "AND ISNULL(d.IsPublished, 0) = 0 AND ISNULL(cat.IsPublished, 0) = 0 AND ISNULL(dgm.IsPublished, 0) = 0"
+      : "";
     const result = await pool.request().query(`
       SELECT 
         d.DishId, d.Name, d.DishGroupId, d.currentcost AS Price,
@@ -186,7 +229,8 @@ router.get("/dishes/favourites", async (req, res) => {
         ISNULL(d.IsCombo, 0) AS IsCombo,
         ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
         ISNULL(d.IsPublished, 0) AS IsPublished,
-        ISNULL(d.isFavourite, 0) AS isFavourite,
+        ${favClause.selectExpr} AS isFavourite,
+        ${favClause.selectExpr} AS Favourite,
         ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
         ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
         ISNULL(cat.IsPublished, 0) AS CategoryPublished,
@@ -211,7 +255,7 @@ router.get("/dishes/favourites", async (req, res) => {
         SELECT *, ROW_NUMBER() OVER(PARTITION BY LOWER(TRIM(KitchenTypeName)) ORDER BY PrinterId) as rn 
         FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
       ) pm ON LOWER(TRIM(ISNULL(ckt.KitchenTypeName, cat.CategoryName))) = LOWER(TRIM(pm.KitchenTypeName)) AND pm.rn = 1
-      WHERE d.IsActive = 1 AND d.isFavourite = 1
+      WHERE d.IsActive = 1 AND ${favClause.whereExpr} ${filterClause}
       ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
     `);
     res.json(result.recordset);
@@ -224,14 +268,25 @@ router.post("/dishes/:DishId/toggle-favourite", async (req, res) => {
   try {
     const dishId = req.params.DishId;
     const pool = await poolPromise;
-    await pool.request()
-      .input("DishId", dishId)
-      .query(`
-        UPDATE DishMaster 
-        SET isFavourite = CASE WHEN isFavourite = 1 THEN 0 ELSE 1 END 
-        WHERE DishId = @DishId
-      `);
-    setCache("dishes_all", null);
+    const colRes = await pool.request().query(`
+      SELECT name FROM sys.columns 
+      WHERE object_id = OBJECT_ID(N'[dbo].[DishMaster]') 
+        AND name IN ('Favourite', 'isFavourite')
+    `);
+    const names = (colRes.recordset || []).map((r) => r.name.toLowerCase());
+    const sets = [];
+    if (names.includes("favourite")) {
+      sets.push("Favourite = CASE WHEN ISNULL(Favourite, 0) = 1 THEN 0 ELSE 1 END");
+    }
+    if (names.includes("isfavourite")) {
+      sets.push("isFavourite = CASE WHEN ISNULL(isFavourite, 0) = 1 THEN 0 ELSE 1 END");
+    }
+    if (sets.length > 0) {
+      await pool.request()
+        .input("DishId", dishId)
+        .query(`UPDATE DishMaster SET ${sets.join(", ")} WHERE DishId = @DishId`);
+    }
+    cache.clear();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -247,6 +302,7 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
     if (cached) return res.json(cached);
 
     const pool = await poolPromise;
+    const favClause = await getFavouriteClause(pool);
     const filterClause = isKiosk
       ? "AND ISNULL(d.IsPublished, 0) = 0 AND ISNULL(cat.IsPublished, 0) = 0 AND ISNULL(dgm.IsPublished, 0) = 0"
       : "";
@@ -269,7 +325,8 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
               ISNULL(d.IsCombo, 0) AS IsCombo,
               ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
               ISNULL(d.IsPublished, 0) AS IsPublished,
-              ISNULL(d.isFavourite, 0) AS isFavourite,
+              ${favClause.selectExpr} AS isFavourite,
+              ${favClause.selectExpr} AS Favourite,
               ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
               ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
               ISNULL(cat.IsPublished, 0) AS CategoryPublished,
