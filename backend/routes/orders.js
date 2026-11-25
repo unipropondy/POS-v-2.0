@@ -451,12 +451,14 @@ async function syncToProfessionalTables(
       DECLARE @Section INT = 4;
       DECLARE @Pax INT = NULL;
       DECLARE @CustomerName NVARCHAR(150) = NULL;
+      DECLARE @TableEntryStatus VARCHAR(10) = NULL;
       IF @tableId IS NOT NULL 
         SELECT TOP 1 
           @ActualTableNo = TableNumber, 
           @Section = ISNULL(DiningSection, 4), 
           @Pax = Pax, 
-          @CustomerName = CustomerName 
+          @CustomerName = CustomerName,
+          @TableEntryStatus = entry_status 
         FROM TableMaster 
         WHERE (TRY_CAST(@tableId AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tableId AS UNIQUEIDENTIFIER))
            OR TableNumber = @tableId;
@@ -468,7 +470,7 @@ async function syncToProfessionalTables(
       ELSE IF @Section = 4 SET @PriorityCode = 4
 
       -- 🛡️ SHIELD: Find the DEFINITIVE active order for this table/number
-      SELECT TOP 1 OrderId, Tableno, BusinessUnitId, OrderNumber
+      SELECT TOP 1 OrderId, Tableno, BusinessUnitId, OrderNumber, entry_status
       FROM RestaurantOrderCur WITH (UPDLOCK)
       WHERE OrderNumber = @orderNo 
       OR (RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@ActualTableNo)) AND (isOrderClosed = 0 OR isOrderClosed IS NULL)) 
@@ -476,7 +478,7 @@ async function syncToProfessionalTables(
         CASE WHEN OrderNumber = @orderNo THEN 0 ELSE 1 END,
         CreatedOn DESC;
       
-      SELECT @ActualTableNo as ActualTableNo, @PriorityCode as PriorityCode, @Pax as Pax, @CustomerName as CustomerName;
+      SELECT @ActualTableNo as ActualTableNo, @PriorityCode as PriorityCode, @Pax as Pax, @CustomerName as CustomerName, @TableEntryStatus as TableEntryStatus;
     `);
 
   const header = initRes.recordsets[0][0];
@@ -484,6 +486,17 @@ async function syncToProfessionalTables(
   const priorityCode = initRes.recordsets[1][0]?.PriorityCode || 4;
   const tablePax = initRes.recordsets[1][0]?.Pax || null;
   const tableCustomerName = initRes.recordsets[1][0]?.CustomerName || null;
+  const tableEntryStatus = initRes.recordsets[1][0]?.TableEntryStatus || null;
+
+  const isKioskOrder =
+    String(finalEntryStatus || "").trim().toUpperCase() === "K" ||
+    String(entryStatusOverride || "").trim().toUpperCase() === "K" ||
+    String(header?.entry_status || "").trim().toUpperCase() === "K" ||
+    String(tableEntryStatus || "").trim().toUpperCase() === "K";
+
+  if (isKioskOrder && (!finalEntryStatus || finalEntryStatus !== "K")) {
+    finalEntryStatus = "K";
+  }
 
   let orderGuid;
   let finalUserId = userId;
@@ -673,6 +686,7 @@ async function syncToProfessionalTables(
     itemRequest.input("bizId", sql.UniqueIdentifier, bizId);
     itemRequest.input("orderNo", sql.NVarChar(100), cleanOrderNo);
     itemRequest.input("startDate", sql.Date, startDate);
+    itemRequest.input("isKiosk", sql.Bit, isKioskOrder ? 1 : 0);
 
     let batchSql = "";
 
@@ -690,8 +704,16 @@ async function syncToProfessionalTables(
       item.OrderDetailId = lineItemId;
       processedDetailIds.push(lineItemId);
       const itemStatus = item.status || item.Status;
-      const currentStatusCode = statusCodes[itemStatus] || 2;
-      console.log(`[syncToProfessionalTables] Item: ${item.name || 'Dish'} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
+      let currentStatusCode = statusCodes[itemStatus] || 2;
+      if (isKioskOrder) {
+        // 🛡️ Requirement: Whenever an order is created from Kiosk, ensure all records inserted into RestaurantOrderDetailCur have StatusCode = 2
+        if (item.status === "VOIDED" || item.StatusCode === 0) {
+          currentStatusCode = 0;
+        } else {
+          currentStatusCode = 2;
+        }
+      }
+      console.log(`[syncToProfessionalTables] Item: ${item.name || 'Dish'} | isKiosk: ${isKioskOrder} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
       const dishName = (item.name || item.ProductName || "Dish").substring(0, 150);
       const songName = (item.songName || item.SongName || "").substring(0, 200);
       const unitPrice = item.price || item.Cost || 0;
@@ -849,7 +871,7 @@ async function syncToProfessionalTables(
               ActualAmount = @${p_cost} * @${p_qty},
               TotalDetailLineAmount = @${p_cost} * @${p_qty},
               BaseAmount = @${p_cost} * @${p_qty},
-              StatusCode = @${p_status},
+              StatusCode = CASE WHEN @isKiosk = 1 THEN 2 ELSE @${p_status} END,
               Description = @${p_name}, DishName = @${p_name}, SongName = @${p_song},
               ModifiedBy = @userId, ModifiedOn = GETDATE(),
               ModifiersJSON = @${p_mods}, ComboDetailsJSON = @${p_combo},
@@ -861,7 +883,7 @@ async function syncToProfessionalTables(
           ELSE
           BEGIN
             INSERT INTO RestaurantOrderDetailCur (OrderDetailId, OrderId, DishId, Description, DishName,SongName, Quantity, PricePerUnit, ActualAmount, TotalDetailLineAmount, BaseAmount, StatusCode, CreatedBy, CreatedOn, ModifiersJSON, ComboDetailsJSON, OrderNumber, Remarks, isTakeAway, BusinessUnitId, OrderDateTime, DiscountAmount, DiscountType, ServiceCharge, start_date)
-            VALUES (@${p_id}, @orderId, @${p_dish}, @${p_name}, @${p_name}, @${p_song}, @${p_qty}, @${p_cost}, @${p_cost} * @${p_qty}, @${p_cost} * @${p_qty}, @${p_cost} * @${p_qty}, @${p_status}, @userId, CASE WHEN @${p_status} = 2 THEN GETDATE() ELSE @${p_created} END, @${p_mods}, @${p_combo}, @orderNo, @${p_note}, @${p_tw}, @bizId, GETDATE(), @${p_disc}, @${p_disctype}, @${p_sc}, @startDate);
+            VALUES (@${p_id}, @orderId, @${p_dish}, @${p_name}, @${p_name}, @${p_song}, @${p_qty}, @${p_cost}, @${p_cost} * @${p_qty}, @${p_cost} * @${p_qty}, @${p_cost} * @${p_qty}, CASE WHEN @isKiosk = 1 THEN 2 ELSE @${p_status} END, @userId, CASE WHEN (@isKiosk = 1 OR @${p_status} = 2) THEN GETDATE() ELSE @${p_created} END, @${p_mods}, @${p_combo}, @orderNo, @${p_note}, @${p_tw}, @bizId, GETDATE(), @${p_disc}, @${p_disctype}, @${p_sc}, @startDate);
           END
         END
 
