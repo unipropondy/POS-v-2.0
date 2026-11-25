@@ -518,9 +518,22 @@ private static escapeHtml(str: string): string {
                         const discType = item.discountType || 'percentage';
                         const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
                         const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
-                        const effectiveDisc = discType === 'percentage' ? discAmt : Math.min(discAmt, discountBasis);
-                        const discStr = discType === 'percentage' ? `-${discAmt}%` : `-${currencySymbol}${effectiveDisc.toFixed(2)}`;
-                        return `<div style="font-size: 8.5px; color: #555; font-style: italic; margin-top: 0.5mm;">Discount: ${discStr}</div>`;
+                        const qtyNumItem = Number(item.qty ?? item.quantity ?? 1) || 1;
+                        const baseItemTotal = (Number(item.price ?? 0) || 0) * qtyNumItem;
+                        let itemDiscount = 0;
+                        if (discType === 'percentage') {
+                          itemDiscount = (discountBasis * (discAmt / 100)) * qtyNumItem;
+                        } else if (discType === 'FOC') {
+                          itemDiscount = baseItemTotal;
+                        } else {
+                          itemDiscount = Math.min(discAmt, discountBasis) * qtyNumItem;
+                        }
+                        const afterDiscTotal = Math.max(0, baseItemTotal - itemDiscount);
+                        const discLabel = discType === 'FOC' ? 'Discount (FOC)' : discType === 'percentage' ? `Discount (${discAmt}%)` : 'Discount';
+                        return `
+                          <div style="font-size: 8.5px; color: #555; font-style: italic; margin-top: 0.5mm;">${discLabel}: -${currencySymbol}${itemDiscount.toFixed(2)}</div>
+                          <div style="font-size: 8.5px; color: #111; font-weight: bold; margin-top: 0.2mm;">After Discount: ${currencySymbol}${afterDiscTotal.toFixed(2)}</div>
+                        `;
                       }
                       return '';
                     })()}
