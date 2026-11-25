@@ -3405,45 +3405,47 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     <Text style={styles.cartItemName}>
                       {item.Name || item.name}
                     </Text>
+
                     {item.selectedMods?.length > 0 && (
                       <TouchableOpacity
-                        style={styles.cartItemModsTouchable}
+                        style={styles.cartCustomizationGroup}
                         onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.75}
+                        activeOpacity={0.7}
                       >
-                        <View style={styles.comboGroupHeaderRowCart}>
-                          <Text style={styles.comboGroupNameCart}>Modifiers:</Text>
-                          <View style={styles.cartItemEditBadge}>
-                            <Ionicons name="pencil" size={12} color="#ea580c" />
-                            <Text style={styles.cartItemEditText}>Edit</Text>
+                        <View style={styles.cartCustomizationHeaderRow}>
+                          <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
+                          <View style={styles.cartInlineEditBadge}>
+                            <Ionicons name="pencil" size={11} color="#ea580c" />
+                            <Text style={styles.cartInlineEditText}>Edit</Text>
                           </View>
                         </View>
-                        <Text style={styles.cartItemMods}>
+                        <Text style={styles.cartModifierValueText}>
                           {item.selectedMods
                             .map((m: any) => m.ModifierName)
                             .join(", ")}
                         </Text>
                       </TouchableOpacity>
                     )}
+
                     {item.comboSelections?.length > 0 && (
                       <TouchableOpacity
-                        style={styles.comboSelectionsCartBox}
+                        style={styles.cartCustomizationGroup}
                         onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.75}
+                        activeOpacity={0.7}
                       >
                         {item.comboSelections.map((grp: any, gIdx: number) => (
-                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 6 : 2 }}>
-                            <View style={styles.comboGroupHeaderRowCart}>
-                              <Text style={styles.comboGroupNameCart}>
+                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 5 : 2 }}>
+                            <View style={styles.cartCustomizationHeaderRow}>
+                              <Text style={styles.cartModifierGroupTitle}>
                                 {grp.groupName}:
                               </Text>
-                              <View style={styles.cartItemEditBadge}>
-                                <Ionicons name="pencil" size={12} color="#ea580c" />
-                                <Text style={styles.cartItemEditText}>Edit</Text>
+                              <View style={styles.cartInlineEditBadge}>
+                                <Ionicons name="pencil" size={11} color="#ea580c" />
+                                <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
                             </View>
                             {(grp.items || []).map((opt: any, oIdx: number) => (
-                              <Text key={oIdx} style={styles.comboItemNameCart}>
+                              <Text key={oIdx} style={styles.cartModifierValueText}>
                                 ↳ {opt.name}
                                 {Number(opt.surcharge || 0) +
                                   Number(opt.dishPrice || 0) >
@@ -5788,11 +5790,12 @@ const styles = StyleSheet.create({
   qtyControlsContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#f8fafc",
     borderRadius: 24,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     paddingVertical: 4,
-    gap: 4,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
   qtyBtn: {
     width: 32,
@@ -5801,6 +5804,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#ea580c",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
   },
   qtyBtnText: {
     color: "#ffffff",
@@ -5813,9 +5821,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     color: "#0f172a",
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     textAlign: "center",
-    minWidth: 24,
+    minWidth: 26,
   },
   cartItemPrice: {
     fontSize: 22,
@@ -6322,59 +6330,44 @@ const styles = StyleSheet.create({
     color: "#475569",
   },
 
-  /* Combo Selections in Cart Display */
-  comboSelectionsCartBox: {
-    marginTop: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#fff7ed",
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#fed7aa",
+  /* Cart Item Customizations Display (Clean, borderless, readable) */
+  cartCustomizationGroup: {
+    marginTop: 5,
+    paddingVertical: 2,
   },
-  comboGroupHeaderRowCart: {
+  cartCustomizationHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
+    gap: 8,
   },
-  comboGroupNameCart: {
+  cartModifierGroupTitle: {
     fontSize: 16,
     fontWeight: "800",
     color: "#ea580c",
-    letterSpacing: -0.2,
   },
-  comboItemNameCart: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1e293b",
-    paddingLeft: 4,
-    lineHeight: 22,
-  },
-  cartItemEditBadge: {
+  cartInlineEditBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "#ffedd5",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    gap: 3,
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#fdba74",
+    borderColor: "#ffedd5",
   },
-  cartItemEditText: {
-    fontSize: 12,
+  cartInlineEditText: {
+    fontSize: 11,
     fontWeight: "800",
     color: "#ea580c",
   },
-  cartItemModsTouchable: {
-    marginTop: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#fff7ed",
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#fed7aa",
+  cartModifierValueText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#334155",
+    paddingLeft: 4,
+    marginTop: 2,
+    lineHeight: 21,
   },
 
   /* Combo Customizer Modal Styles */
