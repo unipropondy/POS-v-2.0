@@ -114,6 +114,7 @@ const storeCreator: StateCreator<
 
   appendOrder: (orderId, context, cartItems, createdAt) => {
     const { activeOrders } = get();
+    const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
 
     const contextId = getContextId(context);
 
@@ -145,7 +146,7 @@ const storeCreator: StateCreator<
       const newOrder: ActiveOrder = {
         orderId,
         context,
-        items: cartItems.map((i) => ({
+        items: safeCartItems.map((i) => ({
           ...normalizeKitchenItem(i),
           status: i.status || "NEW",
         })),
@@ -164,7 +165,7 @@ const storeCreator: StateCreator<
 
     existingOrder.items = [...existingOrder.items];
 
-    cartItems.forEach((cartItem) => {
+    safeCartItems.forEach((cartItem) => {
       const cleanLineItemId = String(cartItem.lineItemId || "").toLowerCase();
       const itemIndex = existingOrder.items.findIndex(
         (i) => String(i.lineItemId || "").toLowerCase() === cleanLineItemId

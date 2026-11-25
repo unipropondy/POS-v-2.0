@@ -98,11 +98,22 @@ export function useGlobalSocketSync() {
 
     // --- 1. NEW ORDERS ---
     const handleNewOrder = (payload: any) => {
+      if (!payload || !payload.orderId) return;
       if (__DEV__) {
         console.log("📦 [Socket-Global] New order:", payload.orderId);
       }
-      appendOrder(payload.orderId, payload.context, payload.items, payload.createdAt);
+      const rawItems = Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload.cart)
+          ? payload.cart
+          : [];
+      appendOrder(payload.orderId, payload.context || {}, rawItems, payload.createdAt);
       markItemsSent(payload.orderId);
+
+      // If items were omitted in the broadcast, refresh kitchen orders directly from server
+      if (rawItems.length === 0) {
+        useActiveOrdersStore.getState().fetchActiveKitchenOrders().catch(() => {});
+      }
 
       // --- QR Auto-Print ---
       const isQrOrder =

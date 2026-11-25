@@ -4206,6 +4206,7 @@ router.post("/complete-online-payment", async (req, res) => {
               ioInst.emit("new_order", {
                 orderId: orderNo,
                 entryStatus: resolvedEntryStatus || "K",
+                items: Array.isArray(req.body.cart) ? req.body.cart : [],
                 context: {
                   orderType: "DINE_IN",
                   tableId: cleanTid,
