@@ -159,6 +159,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [modifiers, setModifiers] = useState<any[]>([]);
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [comboQty, setComboQty] = useState(1);
+  const [editingCartItemIndex, setEditingCartItemIndex] = useState<number | null>(null);
 
   // Combo Customizer States
   const [showComboCustomizer, setShowComboCustomizer] = useState(false);
@@ -1087,6 +1088,119 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     handleDishClick(dish);
   };
 
+  const handleEditCartItem = async (index: number) => {
+    const item = cart[index];
+    if (!item) return;
+
+    setEditingCartItemIndex(index);
+    setSelectedDish(item);
+    setComboQty(item.qty || 1);
+    setComboError(null);
+
+    const isComboItem =
+      item.isCombo === true ||
+      item.IsCombo === true ||
+      (item.comboSelections && item.comboSelections.length > 0) ||
+      item.isCombo === 1 ||
+      item.IsCombo === 1;
+
+    const dishId = item.DishId || item.id;
+
+    // Temporarily close cart page so the full customizer is visible
+    setShowCartPage(false);
+
+    if (isComboItem) {
+      setComboLoading(true);
+      setShowComboCustomizer(true);
+
+      try {
+        const [res, modRes] = await Promise.all([
+          fetch(`${API}/combo/config/${dishId}`).catch(() => null),
+          fetch(`${API}/modifiers/${dishId}`).catch(() => null),
+        ]);
+
+        if (res && res.ok) {
+          const payload = await res.json();
+          if (payload.success && payload.data) {
+            const config = payload.data;
+            setComboConfig(config);
+
+            // Pre-populate selections from existing cart item
+            const existingSelections: { [groupId: string]: any[] } = {};
+            if (Array.isArray(item.comboSelections)) {
+              item.comboSelections.forEach((grp: any) => {
+                const gId = grp.groupId || grp.comboGroupId;
+                if (gId) {
+                  existingSelections[gId] = (grp.items || []).map(
+                    (opt: any) => opt.dishId || opt.id,
+                  );
+                }
+              });
+            }
+
+            // Fallback: match by groupName if group IDs differ
+            (config.groups || []).forEach((group: any) => {
+              if (!existingSelections[group.comboGroupId] || existingSelections[group.comboGroupId].length === 0) {
+                const matchingGrp = (item.comboSelections || []).find(
+                  (g: any) => g.groupName === group.groupName || g.groupId === group.comboGroupId
+                );
+                if (matchingGrp) {
+                  existingSelections[group.comboGroupId] = (matchingGrp.items || []).map(
+                    (opt: any) => opt.dishId || opt.id
+                  );
+                }
+              }
+            });
+
+            setComboSelections(existingSelections);
+          }
+        }
+
+        if (modRes && modRes.ok) {
+          const modData = await modRes.json();
+          if (Array.isArray(modData)) {
+            const realMods = modData.filter(
+              (m: any) => m.ModifierName?.toUpperCase() !== "OPEN",
+            );
+            setComboDishModifiers(realMods);
+          }
+        }
+
+        // Pre-populate existing combo modifiers
+        const existingModIds = (item.selectedMods || item.modifiers || []).map(
+          (m: any) => String(m.ModifierID || m.ModifierId || ""),
+        ).filter(Boolean);
+        setSelectedComboModifierIds(existingModIds);
+      } catch (err: any) {
+        console.error("Combo config fetch error on edit:", err);
+        setComboError(err.message || "Failed to load options.");
+      } finally {
+        setComboLoading(false);
+      }
+      return;
+    }
+
+    // Standard Modifiers item
+    try {
+      const res = await fetch(`${API}/modifiers/${dishId}`);
+      const mods = await res.json();
+      const realMods = Array.isArray(mods)
+        ? mods.filter((m: any) => m.ModifierName?.toUpperCase() !== "OPEN")
+        : [];
+
+      if (realMods.length > 0) {
+        setModifiers(realMods);
+        const existingModIds = (item.selectedMods || item.modifiers || []).map(
+          (m: any) => String(m.ModifierID || m.ModifierId || ""),
+        ).filter(Boolean);
+        setSelectedModifierIds(existingModIds);
+        setShowModifier(true);
+      }
+    } catch (e) {
+      console.error("Failed to load modifiers for edit:", e);
+    }
+  };
+
   const handleSelectComboOption = (
     groupId: string,
     option: any,
@@ -1273,6 +1387,40 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       status: "NEW",
     };
 
+    if (editingCartItemIndex !== null && editingCartItemIndex >= 0 && editingCartItemIndex < cart.length) {
+      setCart((prev) =>
+        prev.map((item, idx) => {
+          if (idx === editingCartItemIndex) {
+            return {
+              ...item,
+              ...newCartItem,
+              lineItemId: item.lineItemId || newCartItem.lineItemId,
+              OrderDetailId: item.OrderDetailId || newCartItem.lineItemId,
+              qty: comboQty,
+              price: finalPrice,
+              Price: finalPrice,
+              finalPrice: finalPrice,
+              basePrice: comboConfig.basePrice || item.basePrice || selectedDish.basePrice,
+              comboSelections: chosenSelections,
+              selectedMods: chosenModifiers,
+              modifiers: chosenModifiers,
+            };
+          }
+          return item;
+        }),
+      );
+      setShowComboCustomizer(false);
+      setEditingCartItemIndex(null);
+      setShowCartPage(true);
+      showCartToast(
+        selectedDish.Name || selectedDish.name,
+        comboQty,
+        calculateComboTotal() * comboQty,
+        selectedDish.DishId || selectedDish.id,
+      );
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find(
         (item) =>
@@ -1377,8 +1525,41 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       selectedModifierIds.includes(String(m.ModifierID || m.ModifierId)),
     );
     const extra = chosenMods.reduce((s, m) => s + Number(m.Price || 0), 0);
-    const finalPrice =
-      Number(selectedDish.Price || selectedDish.price || 0) + extra;
+    const origBase = Number(
+      selectedDish?.basePrice ?? selectedDish?.Price ?? selectedDish?.price ?? 0,
+    );
+    const finalPrice = origBase + extra;
+
+    if (editingCartItemIndex !== null && editingCartItemIndex >= 0 && editingCartItemIndex < cart.length) {
+      setCart((prev) =>
+        prev.map((item, idx) => {
+          if (idx === editingCartItemIndex) {
+            return {
+              ...item,
+              ...selectedDish,
+              qty: comboQty,
+              Price: finalPrice,
+              price: finalPrice,
+              finalPrice: finalPrice,
+              selectedMods: chosenMods,
+              modifiers: chosenMods,
+              comboSelections: [],
+            };
+          }
+          return item;
+        }),
+      );
+      setShowModifier(false);
+      setEditingCartItemIndex(null);
+      setShowCartPage(true);
+      showCartToast(
+        selectedDish.Name || selectedDish.name,
+        comboQty,
+        finalPrice * comboQty,
+        selectedDish.DishId || selectedDish.id,
+      );
+      return;
+    }
 
     setCart((prev) => [
       ...prev,
@@ -2305,6 +2486,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 <TouchableOpacity
                   style={styles.customizeTopHomeBtn}
                   onPress={() => {
+                    const wasEditing = editingCartItemIndex !== null;
                     setShowComboCustomizer(false);
                     setShowModifier(false);
                     setSelectedDish(null);
@@ -2314,6 +2496,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     setSelectedComboModifierIds([]);
                     setModifiers([]);
                     setSelectedModifierIds([]);
+                    setEditingCartItemIndex(null);
+                    if (wasEditing) {
+                      setShowCartPage(true);
+                    }
                   }}
                   activeOpacity={0.8}
                 >
@@ -2739,7 +2925,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         activeOpacity={0.88}
                       >
                         {/* Circular/Pill Badge showing total cart item count if cart has items */}
-                        {totalCartCount > 0 && (
+                        {totalCartCount > 0 && editingCartItemIndex === null && (
                           <View style={styles.customizeAddToCartBadge}>
                             <Text style={styles.customizeAddToCartBadgeText}>
                               {totalCartCount}
@@ -2747,13 +2933,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           </View>
                         )}
                         <Ionicons
-                          name="cart-outline"
+                          name={editingCartItemIndex !== null ? "checkmark-circle-outline" : "cart-outline"}
                           size={24}
                           color="#ffffff"
                           style={{ marginRight: 10 }}
                         />
                         <Text style={styles.customizeAddToCartBtnText}>
-                          Add to Cart ${totalPrice}
+                          {editingCartItemIndex !== null
+                            ? `Update Item $${totalPrice}`
+                            : `Add to Cart $${totalPrice}`}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -3216,19 +3404,42 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       {item.Name || item.name}
                     </Text>
                     {item.selectedMods?.length > 0 && (
-                      <Text style={styles.cartItemMods}>
-                        {item.selectedMods
-                          .map((m: any) => m.ModifierName)
-                          .join(", ")}
-                      </Text>
+                      <TouchableOpacity
+                        style={styles.cartItemModsTouchable}
+                        onPress={() => handleEditCartItem(index)}
+                        activeOpacity={0.75}
+                      >
+                        <View style={styles.comboGroupHeaderRowCart}>
+                          <Text style={styles.comboGroupNameCart}>Modifiers:</Text>
+                          <View style={styles.cartItemEditBadge}>
+                            <Ionicons name="pencil" size={12} color="#ea580c" />
+                            <Text style={styles.cartItemEditText}>Edit</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.cartItemMods}>
+                          {item.selectedMods
+                            .map((m: any) => m.ModifierName)
+                            .join(", ")}
+                        </Text>
+                      </TouchableOpacity>
                     )}
                     {item.comboSelections?.length > 0 && (
-                      <View style={styles.comboSelectionsCartBox}>
+                      <TouchableOpacity
+                        style={styles.comboSelectionsCartBox}
+                        onPress={() => handleEditCartItem(index)}
+                        activeOpacity={0.75}
+                      >
                         {item.comboSelections.map((grp: any, gIdx: number) => (
-                          <View key={gIdx} style={{ marginTop: 3 }}>
-                            <Text style={styles.comboGroupNameCart}>
-                              {grp.groupName}:
-                            </Text>
+                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 6 : 2 }}>
+                            <View style={styles.comboGroupHeaderRowCart}>
+                              <Text style={styles.comboGroupNameCart}>
+                                {grp.groupName}:
+                              </Text>
+                              <View style={styles.cartItemEditBadge}>
+                                <Ionicons name="pencil" size={12} color="#ea580c" />
+                                <Text style={styles.cartItemEditText}>Edit</Text>
+                              </View>
+                            </View>
                             {(grp.items || []).map((opt: any, oIdx: number) => (
                               <Text key={oIdx} style={styles.comboItemNameCart}>
                                 ↳ {opt.name}
@@ -3241,7 +3452,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             ))}
                           </View>
                         ))}
-                      </View>
+                      </TouchableOpacity>
                     )}
                   </View>
 
@@ -5554,8 +5765,10 @@ const styles = StyleSheet.create({
   },
   cartItemMods: {
     fontSize: 15,
-    color: "#64748b",
-    marginTop: 6,
+    fontWeight: "700",
+    color: "#1e293b",
+    lineHeight: 22,
+    paddingLeft: 4,
   },
   qtyControlsContainer: {
     flexDirection: "row",
@@ -6094,20 +6307,57 @@ const styles = StyleSheet.create({
 
   /* Combo Selections in Cart Display */
   comboSelectionsCartBox: {
-    marginTop: 4,
-    paddingLeft: 2,
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#fff7ed",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#fed7aa",
+  },
+  comboGroupHeaderRowCart: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
   },
   comboGroupNameCart: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#f97316",
-    marginBottom: 1,
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#ea580c",
+    letterSpacing: -0.2,
   },
   comboItemNameCart: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1e293b",
+    paddingLeft: 4,
+    lineHeight: 22,
+  },
+  cartItemEditBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ffedd5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fdba74",
+  },
+  cartItemEditText: {
     fontSize: 12,
-    color: "#4b5563",
-    paddingLeft: 6,
-    lineHeight: 16,
+    fontWeight: "800",
+    color: "#ea580c",
+  },
+  cartItemModsTouchable: {
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#fff7ed",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#fed7aa",
   },
 
   /* Combo Customizer Modal Styles */
