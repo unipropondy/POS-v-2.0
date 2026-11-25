@@ -273,7 +273,8 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
   const email = companySettings.Email || companySettings.email || "";
 
   let text = "\n\n[C]================================================\n";
-  text += "[C]<font size='big'><B>PAYMENT RECEIPT</B></font>\n";
+  const receiptTitle = saleData.isCheckoutBill ? "CHECKOUT BILL" : "PAYMENT RECEIPT";
+  text += `[C]<font size='big'><B>${receiptTitle}</B></font>\n`;
   text += "[C]================================================\n";
   text += `[C]<font size='big'><B>${storeName}</B></font>\n`;
   if (address) text += `[C]${address}\n`;
@@ -445,18 +446,22 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
     text += "[L]------------------------------------------------\n";
   }
 
-  text += "[L]<B>Payment Details:</B>\n";
-  if (payments.length > 0) {
-    payments.forEach((p) => {
-      let modeText = String(p.payMode || p.payModeName || p.Remarks || "Payment");
-      if (modeText.toUpperCase().trim() === "FOC") modeText = "FOC (Discount)";
-      const amountVal = `${symbol}${parseFloat(p.amount || p.Amount || finalTotal).toFixed(2)}`;
-      text += formatTwoCols48(`<B>  ${modeText}</B>`, `<B>${amountVal}</B>`);
-    });
+  if (saleData.isCheckoutBill) {
+    text += "[L]<B>Payment Status: Pay at Cashier</B>\n";
   } else {
-    const methodText = String(saleData.paymentMethod || saleData.payMode || "Payment");
-    const amountVal = `${symbol}${parseFloat(finalTotal).toFixed(2)}`;
-    text += formatTwoCols48(`<B>  ${methodText}</B>`, `<B>${amountVal}</B>`);
+    text += "[L]<B>Payment Details:</B>\n";
+    if (payments.length > 0) {
+      payments.forEach((p) => {
+        let modeText = String(p.payMode || p.payModeName || p.Remarks || "Payment");
+        if (modeText.toUpperCase().trim() === "FOC") modeText = "FOC (Discount)";
+        const amountVal = `${symbol}${parseFloat(p.amount || p.Amount || finalTotal).toFixed(2)}`;
+        text += formatTwoCols48(`<B>  ${modeText}</B>`, `<B>${amountVal}</B>`);
+      });
+    } else {
+      const methodText = String(saleData.paymentMethod || saleData.payMode || "Payment");
+      const amountVal = `${symbol}${parseFloat(finalTotal).toFixed(2)}`;
+      text += formatTwoCols48(`<B>  ${methodText}</B>`, `<B>${amountVal}</B>`);
+    }
   }
   text += "[L]------------------------------------------------\n";
 
@@ -501,7 +506,7 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
  * @param {object} opts  - { orderId, tableNo, sentItems, isAdditional, isPaid, payMode, io, ... }
  */
 async function queueQRPrintJobs(pool, sql, opts = {}) {
-  const { orderId, tableNo: initialTableNo, isAdditional = false, isPaid = false, payMode = "Yeahpay Paynow", io } = opts;
+  const { orderId, tableNo: initialTableNo, isAdditional = false, isPaid = false, isCheckoutBill = false, payMode = "Yeahpay Paynow", io } = opts;
   const STORE_ID = "STORE_001";
 
   if (!orderId) {
@@ -753,13 +758,13 @@ async function queueQRPrintJobs(pool, sql, opts = {}) {
     }
   }
 
-  // ── C. PAYMENT RECEIPT PRINTING ───────────────────────────────────────────
-  if (!isPaid) {
+  // ── C. PAYMENT RECEIPT / CHECKOUT BILL PRINTING ───────────────────────────
+  if (!isPaid && !isCheckoutBill) {
     console.log(`[PrintHelper] ⏸️ Order ${orderId} is not paid yet — skipping payment receipt.`);
-  } else if (!enableReceiptPrint) {
+  } else if (isPaid && !enableReceiptPrint) {
     console.log(`[PrintHelper] ⏸️ Receipt printing is DISABLED in General Settings — skipping receipt for order ${orderId}`);
   } else {
-    const receiptJobKey = `RECEIPT:${orderId}`;
+    const receiptJobKey = isCheckoutBill ? `CHECKOUT:${orderId}` : `RECEIPT:${orderId}`;
     if (!isDuplicateJob(receiptJobKey)) {
       try {
         // Resolve Receipt Printer: First try Takeaway printer (PrinterType=3), then Cashier printer (PrinterType=1)
@@ -796,6 +801,7 @@ async function queueQRPrintJobs(pool, sql, opts = {}) {
             invoiceNumber: orderId,
             orderNumber: orderId,
             tableNo,
+            isCheckoutBill,
             customerName: orderHeader?.CustomerName || opts.customerName || null,
             mobileNo: orderHeader?.Phone || opts.mobileNo || null,
             date: orderHeader?.CreatedOn || new Date(),

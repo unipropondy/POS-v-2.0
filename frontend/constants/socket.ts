@@ -26,7 +26,7 @@ function getSocket(): Socket {
   });
 
   _socket.on("connect_error", (error) => {
-    console.error("🔌 Socket connection error:", error);
+    console.warn("🔌 Socket connection error:", error?.message || error);
   });
 
   globalAny._globalSocket = _socket;

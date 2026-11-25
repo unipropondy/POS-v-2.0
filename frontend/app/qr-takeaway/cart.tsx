@@ -484,6 +484,7 @@ export default function CustomerCartScreen() {
     setIsAnimating(false);
 
     if (!success) {
+      setIsProcessingCashier(false);
       setShowPaymentModal(true);
       return;
     }
@@ -527,6 +528,7 @@ export default function CustomerCartScreen() {
           if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
 
           setShowPaymentModal(false);
+          setIsProcessingCashier(false);
           setPaymentSent(false);
           setPaymentMethod(null);
 
@@ -571,6 +573,9 @@ export default function CustomerCartScreen() {
           if (createdOrderId) {
             // Automatically redirect customer to the Order Status page
             router.replace("/qr-takeaway/order-status" as any);
+          } else if (Platform.OS === "web" && typeof window !== "undefined") {
+            window.alert("Your payment was received, but we could not automatically send your order to the kitchen. Please show your confirmation to the counter staff.");
+            router.replace("/qr-takeaway/order-status" as any);
           } else {
             Alert.alert(
               "Payment Received",
@@ -601,6 +606,7 @@ export default function CustomerCartScreen() {
     setCapturedGrandTotal(grandTotal);
 
     // Open payment modal immediately
+    setIsProcessingCashier(false);
     setPaymentMethod(null);
     setPaymentSent(false);
     setShowPaymentModal(true);

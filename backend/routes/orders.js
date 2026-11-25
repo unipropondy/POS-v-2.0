@@ -692,7 +692,7 @@ async function syncToProfessionalTables(
       const itemStatus = item.status || item.Status;
       const currentStatusCode = statusCodes[itemStatus] || 2;
       console.log(`[syncToProfessionalTables] Item: ${item.name || 'Dish'} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
-      const dishName = (item.name || item.ProductName || "Dish").substring(0, 200);
+      const dishName = (item.name || item.ProductName || "Dish").substring(0, 150);
       const songName = (item.songName || item.SongName || "").substring(0, 200);
       const unitPrice = item.price || item.Cost || 0;
       const basePrice = item.basePrice !== undefined ? item.basePrice : unitPrice;
@@ -719,7 +719,7 @@ async function syncToProfessionalTables(
         comboDetailsJSON = JSON.stringify(comboObj);
       }
 
-      const noteInfo = { value: item.note || item.Note || item.notes || item.Notes || item.Remarks || item.remarks || "" };
+      const noteInfo = { value: String(item.note || item.Note || item.notes || item.Notes || item.Remarks || item.remarks || "").substring(0, 300) };
       const takeawayInfo = { value: item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway || false };
 
       const modifiers = Array.isArray(item.modifiers || item.Modifiers) ? (item.modifiers || item.Modifiers) : [];
@@ -763,7 +763,7 @@ async function syncToProfessionalTables(
           : (item.discount || 0) > 0
             ? "percentage"
             : "fixed";
-      itemRequest.input(p_disctype, sql.NVarChar(50), resolvedDiscountType);
+      itemRequest.input(p_disctype, sql.NVarChar(20), String(resolvedDiscountType || "fixed").substring(0, 20));
 
       const isTWItem =
         item.isTakeaway === true ||
@@ -1725,7 +1725,7 @@ router.post("/send", async (req, res) => {
           .input("status", sql.Int, tableStatus)
           .input("paymentStatus", sql.Int, paymentStatus)
           .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
-          .input("custName", sql.NVarChar, customerName || null).query(`
+          .input("custName", sql.NVarChar(9), customerName ? String(customerName).substring(0, 9) : null).query(`
             UPDATE TableMaster 
             SET Status = CASE WHEN Status = 2 THEN 2 ELSE @status END, 
                 entry_status = @entryStatus,
@@ -1752,10 +1752,9 @@ router.post("/send", async (req, res) => {
       }
     }
 
-      // 🔹 PRINTING: For Dine-In QR orders, queue print jobs immediately.
-      // For QR Takeaway orders, ONLY print after payment is completed!
+      // 🔹 PRINTING: Queue KOT/KDS print jobs immediately for all QR orders (Dine-In & Takeaway).
       const isPaidOrder = req.body.isPaid === true || req.body.paymentStatus === 1;
-      const shouldPrintNow = isQROrder && (!isTakeawayOrder || isPaidOrder);
+      const shouldPrintNow = isQROrder;
 
       if (shouldPrintNow) {
         try {
@@ -1956,8 +1955,8 @@ router.get("/cart/:tableId", async (req, res) => {
           .query(`
             SELECT TOP 1 SettlementID 
             FROM SettlementHeader 
-            WHERE OrderNumber = @ordNo 
-               OR (TRY_CAST(@ordNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@ordNo AS UNIQUEIDENTIFIER))
+            WHERE BillNo = @ordNo 
+               OR (TRY_CAST(@ordNo AS INT) IS NOT NULL AND OrderId = TRY_CAST(@ordNo AS INT))
           `);
         if (settleCheck.recordset && settleCheck.recordset.length > 0) {
           isPaid = true;
@@ -2213,7 +2212,7 @@ router.get("/order-status/:id", async (req, res) => {
         .query(`
           SELECT TOP 1 SettlementID 
           FROM SettlementHeader 
-          WHERE BillNo = @ordNo OR (TRY_CAST(@ordNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@ordNo AS UNIQUEIDENTIFIER))
+          WHERE BillNo = @ordNo OR (TRY_CAST(@ordNo AS INT) IS NOT NULL AND OrderId = TRY_CAST(@ordNo AS INT))
         `);
       if (settleCheck.recordset && settleCheck.recordset.length > 0) {
         isPaid = true;
@@ -3812,9 +3811,9 @@ router.post("/payment-status", async (req, res) => {
       }
     }
 
-    // 2. Trigger print jobs for QR orders
+    // 2. Trigger print jobs for QR orders (paymentStatus === 1: paid receipt + KOT/KDS; paymentStatus === 2: Pay at Cashier checkout bill + KOT/KDS)
     const resolvedOrderNo = clientOrderId || updated?.CurrentOrderId || (await resolveTableOrderNo(pool, cleanId));
-    if (Number(paymentStatus) === 1 && resolvedOrderNo) {
+    if ((Number(paymentStatus) === 1 || Number(paymentStatus) === 2) && resolvedOrderNo) {
       try {
         const { queueQRPrintJobs } = require("../utils/printHelper");
         const orderNo = resolvedOrderNo;
@@ -3871,8 +3870,9 @@ router.post("/payment-status", async (req, res) => {
             tableNo: actualTableNo,
             sentItems: printItems,
             isAdditional: false,
-            isPaid: true,
-            payMode: payMode || "Yeahpay Paynow",
+            isPaid: Number(paymentStatus) === 1,
+            isCheckoutBill: Number(paymentStatus) === 2,
+            payMode: payMode || (Number(paymentStatus) === 2 ? "Pay at Cashier" : "Yeahpay Paynow"),
             io: ioInst,
           });
           console.log(`[QR Print Queue] Queued KOT/KDS/Receipt jobs after payment confirmation for Order ${orderNo} Table ${actualTableNo}`);
