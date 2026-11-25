@@ -1636,15 +1636,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const decreaseQty = (index: number) => {
-    setCart((prev) => {
-      const item = prev[index];
-      if ((item.qty || 1) <= 1) {
-        return prev.filter((_, i) => i !== index);
-      }
-      return prev.map((it, i) =>
-        i === index ? { ...it, qty: Number(it.qty) - 1 } : it,
-      );
-    });
+    const item = cart[index];
+    if (!item) return;
+    if ((item.qty || 1) <= 1) {
+      setItemToDeleteIndex(index);
+      return;
+    }
+    setCart((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, qty: Math.max(1, Number(it.qty || 1) - 1) } : it,
+      ),
+    );
   };
 
   const handleClearCart = () => {
@@ -3458,14 +3460,27 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                   <View style={styles.cartItemCenter}>
                     <View style={styles.qtyControlsContainer}>
-                      <Text
-                        style={[
-                          styles.qtyVal,
-                          { fontSize: 16, fontWeight: "700" },
-                        ]}
+                      <TouchableOpacity
+                        style={styles.qtyBtn}
+                        onPress={() => decreaseQty(index)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
                       >
+                        <Ionicons name="remove" size={18} color="#ffffff" />
+                      </TouchableOpacity>
+
+                      <Text style={styles.qtyVal}>
                         {item.qty || 1}
                       </Text>
+
+                      <TouchableOpacity
+                        style={styles.qtyBtn}
+                        onPress={() => increaseQty(index)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="add" size={18} color="#ffffff" />
+                      </TouchableOpacity>
                     </View>
                   </View>
 
@@ -5775,14 +5790,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f1f5f9",
     borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    gap: 4,
   },
   qtyBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#f97316",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#ea580c",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -5794,11 +5810,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   qtyVal: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
     color: "#0f172a",
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     textAlign: "center",
+    minWidth: 24,
   },
   cartItemPrice: {
     fontSize: 22,
