@@ -5195,16 +5195,19 @@ const styles = StyleSheet.create({
   },
   sidebarBrandName: {
     flex: 1,
-    fontSize: 26,
+    fontSize: 36,
     fontWeight: "900",
-    color: "#0F172A",
-    letterSpacing: 0.3,
-    lineHeight: 32,
+    color: "#0f172a",
+    letterSpacing: -0.5,
+    lineHeight: 40,
   },
   sidebarBrandNameOnly: {
-    fontSize: 27,
+    fontSize: 36,
     textAlign: "left",
     fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.5,
+    lineHeight: 40,
   },
 
   /* Card styling matching the reference image */
