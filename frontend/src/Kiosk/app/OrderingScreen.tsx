@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -179,6 +179,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [activePromotions, setActivePromotions] = useState<any[]>([]);
   const [checkingPromotions, setCheckingPromotions] = useState(false);
+  const [selectedPromotion, setSelectedPromotion] = useState<any | null>(null);
+  const [appliedPromotion, setAppliedPromotion] = useState<any | null>(null);
   const [totalAmount, setTotalAmount] = useState("0.00");
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [companyBrand, setCompanyBrand] = useState<{
@@ -1133,12 +1135,49 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   }
 
-  // 6. Final Total
+  // 5.5 Promotion Discount (from selected promotion in PromotionMaster)
+  const promotionDiscount = useMemo(() => {
+    if (!appliedPromotion) return 0;
+    const pType = (appliedPromotion.PromotionType || "").toUpperCase();
+    const discVal = Number(appliedPromotion.DiscountValue || 0);
+    const minSpend = Number(appliedPromotion.PromotionAmount || 0);
+
+    // If minimum spend requirement is configured and subtotal does not reach it, discount does not apply
+    if (minSpend > 0 && subTotal < minSpend) {
+      return 0;
+    }
+
+    let calculatedDisc = 0;
+    if (pType.includes("PERCENT") || pType.includes("%")) {
+      calculatedDisc = (subTotal * discVal) / 100;
+    } else if (
+      pType.includes("AMOUNT") ||
+      pType.includes("FIXED") ||
+      pType.includes("FLAT")
+    ) {
+      calculatedDisc = discVal > 0 ? discVal : minSpend;
+    } else if (discVal > 0 && discVal <= 100) {
+      calculatedDisc = (subTotal * discVal) / 100;
+    } else if (discVal > 0) {
+      calculatedDisc = discVal;
+    }
+
+    return Math.min(subTotal, Math.max(0, Number(calculatedDisc.toFixed(2))));
+  }, [appliedPromotion, subTotal]);
+
+  // 6. Final Total (deducting promotionDiscount without duplicate application)
   let totalBeforeRound = subTotal + serviceCharge + takeawayCharge;
   if (taxMode === "exclusive") {
     totalBeforeRound += gstAmount;
   }
-  const calculatedTotal = Math.max(0, totalBeforeRound).toFixed(2);
+  const calculatedTotal = Math.max(
+    0,
+    totalBeforeRound - promotionDiscount,
+  ).toFixed(2);
+
+  useEffect(() => {
+    setTotalAmount(calculatedTotal);
+  }, [calculatedTotal]);
 
   // Open Combo Customizer or Modifiers or Add Direct
   const handleDishClick = async (dish: any) => {
@@ -1820,6 +1859,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const handleClearCart = () => {
     setCart([]);
+    setAppliedPromotion(null);
+    setSelectedPromotion(null);
     setShowClearCartConfirm(false);
   };
 
@@ -2043,6 +2084,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       if (validPromos.length > 0) {
         setActivePromotions(validPromos);
+        setSelectedPromotion(appliedPromotion || null);
         setShowPromotionModal(true);
         setCheckingPromotions(false);
         return;
@@ -3875,6 +3917,27 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </View>
               )}
 
+              {promotionDiscount > 0 && (
+                <View style={styles.totalRow}>
+                  <View style={styles.totalLabelGroup}>
+                    <View style={[styles.totalRowIconWrap, { backgroundColor: "#FFF7ED" }]}>
+                      <Ionicons
+                        name="sparkles"
+                        size={17}
+                        color="#ea580c"
+                      />
+                    </View>
+                    <Text style={[styles.totalLabel, { color: "#ea580c", fontWeight: "700" }]}>
+                      Promo: {appliedPromotion?.PromotionName || "Offer Discount"}
+                    </Text>
+                  </View>
+                  <Text style={[styles.totalValue, { color: "#ea580c", fontWeight: "800" }]}>
+                    -{currencySymbol}
+                    {promotionDiscount.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+
               {/* Grand Total Row with Badge & Accent Color */}
               <View style={[styles.totalRow, styles.grandTotalRow]}>
                 <View style={styles.grandTotalLabelWrap}>
@@ -4324,7 +4387,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.promotionModalHeader}>
               <View style={styles.promotionBadgeTag}>
                 <Ionicons name="sparkles" size={16} color="#EA580C" />
-                <Text style={styles.promotionBadgeTagText}>SPECIAL OFFER</Text>
+                <Text style={styles.promotionBadgeTagText}>SPECIAL OFFERS</Text>
               </View>
               <TouchableOpacity
                 style={styles.promotionCloseBtn}
@@ -4338,14 +4401,23 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </TouchableOpacity>
             </View>
 
+            {/* Instruction Header */}
+            <View style={styles.promotionSubHeader}>
+              <Text style={styles.promotionSubHeaderTitle}>Select an offer to apply</Text>
+              <Text style={styles.promotionSubHeaderSubtitle}>
+                Choose a promotion offer below, or tap Skip to continue without a discount.
+              </Text>
+            </View>
+
             {/* Promotions Scroll Content */}
             <ScrollView
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.promotionScrollContent}
-              style={{ maxHeight: 540 }}
+              style={{ maxHeight: 480 }}
             >
               {activePromotions.map((promo, idx) => {
                 const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
+                const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
                 const hasAmount =
                   promo.PromotionAmount !== null &&
                   promo.PromotionAmount !== undefined &&
@@ -4356,9 +4428,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   Number(promo.DiscountValue) > 0;
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={promo.PromotionId || idx}
-                    style={styles.promotionCard}
+                    style={[
+                      styles.promotionCard,
+                      isSelected && styles.promotionCardSelected,
+                    ]}
+                    onPress={() =>
+                      setSelectedPromotion(isSelected ? null : promo)
+                    }
+                    activeOpacity={0.88}
                   >
                     {/* Promotion Image */}
                     {promoImgUri ? (
@@ -4373,9 +4452,30 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
                     {/* Promotion Info */}
                     <View style={styles.promotionInfoWrap}>
-                      <Text style={styles.promotionNameText}>
-                        {promo.PromotionName || "Exclusive Promotion"}
-                      </Text>
+                      <View style={styles.promotionTitleRow}>
+                        <Text
+                          style={[
+                            styles.promotionNameText,
+                            isSelected && styles.promotionNameTextSelected,
+                          ]}
+                        >
+                          {promo.PromotionName || "Exclusive Promotion"}
+                        </Text>
+                        <View
+                          style={[
+                            styles.promotionRadioCircle,
+                            isSelected && styles.promotionRadioCircleSelected,
+                          ]}
+                        >
+                          {isSelected && (
+                            <Ionicons
+                              name="checkmark"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                          )}
+                        </View>
+                      </View>
 
                       {promo.PromotionDescription ? (
                         <Text style={styles.promotionDescText}>
@@ -4421,23 +4521,37 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         ) : null}
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
-            {/* Modal Footer: Continue to Payment */}
+            {/* Modal Footer: Skip & Continue Buttons */}
             <View style={styles.promotionFooter}>
+              <TouchableOpacity
+                style={styles.promotionSkipBtn}
+                onPress={() => {
+                  setSelectedPromotion(null);
+                  setAppliedPromotion(null);
+                  setShowPromotionModal(false);
+                  setShowPaymentPopup(true);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.promotionSkipBtnText}>Skip</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={styles.promotionContinueBtn}
                 onPress={() => {
+                  setAppliedPromotion(selectedPromotion);
                   setShowPromotionModal(false);
                   setShowPaymentPopup(true);
                 }}
                 activeOpacity={0.85}
               >
                 <Text style={styles.promotionContinueBtnText}>
-                  Continue to Payment
+                  {selectedPromotion ? "Apply & Continue" : "Continue"}
                 </Text>
                 <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
@@ -4475,6 +4589,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               TOTAL: {currencySymbol}
               {totalAmount}
             </Text>
+            {promotionDiscount > 0 && appliedPromotion && (
+              <View style={styles.paymentPromoAppliedBadge}>
+                <Ionicons name="sparkles" size={15} color="#15803d" />
+                <Text style={styles.paymentPromoAppliedText}>
+                  {appliedPromotion.PromotionName}: -{currencySymbol}
+                  {promotionDiscount.toFixed(2)} applied
+                </Text>
+              </View>
+            )}
             <Text style={styles.paymentPrompt}>Choose your payment mode</Text>
 
             <View style={styles.paymentOptionsRow}>
@@ -5042,18 +5165,18 @@ const styles = StyleSheet.create({
   sidebarBrandHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 18,
     paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 20,
+    paddingTop: 24,
+    paddingBottom: 22,
     borderBottomWidth: 1.8,
     borderBottomColor: "#EFE6DC",
     backgroundColor: "#FBF7F2",
   },
   sidebarBrandLogoWrap: {
-    width: 70,
-    height: 70,
-    borderRadius: 18,
+    width: 84,
+    height: 84,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
     borderWidth: 2,
     borderColor: "#EFE6DC",
@@ -5061,25 +5184,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sidebarBrandLogo: {
-    width: "90%",
-    height: "90%",
+    width: "92%",
+    height: "92%",
   },
   sidebarBrandName: {
     flex: 1,
-    fontSize: 23,
+    fontSize: 26,
     fontWeight: "900",
     color: "#0F172A",
     letterSpacing: 0.3,
-    lineHeight: 28,
+    lineHeight: 32,
   },
   sidebarBrandNameOnly: {
-    fontSize: 24,
+    fontSize: 27,
     textAlign: "left",
     fontWeight: "900",
   },
@@ -6504,6 +6627,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  promotionSubHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  promotionSubHeaderTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 4,
+  },
+  promotionSubHeaderSubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    lineHeight: 18,
+  },
   promotionScrollContent: {
     padding: 20,
     gap: 16,
@@ -6515,9 +6654,19 @@ const styles = StyleSheet.create({
     borderColor: "#EFE6DC",
     overflow: "hidden",
   },
+  promotionCardSelected: {
+    borderColor: "#EA580C",
+    backgroundColor: "#FFFBF7",
+    borderWidth: 2,
+    shadowColor: "#EA580C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 3,
+  },
   promotionImageWrap: {
     width: "100%",
-    height: 200,
+    height: 190,
     backgroundColor: "#F1F5F9",
   },
   promotionImage: {
@@ -6527,11 +6676,35 @@ const styles = StyleSheet.create({
   promotionInfoWrap: {
     padding: 18,
   },
+  promotionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 6,
+  },
+  promotionRadioCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  promotionRadioCircleSelected: {
+    borderColor: "#EA580C",
+    backgroundColor: "#EA580C",
+  },
   promotionNameText: {
+    flex: 1,
     fontSize: 20,
     fontWeight: "900",
     color: "#0F172A",
-    marginBottom: 6,
+  },
+  promotionNameTextSelected: {
+    color: "#EA580C",
   },
   promotionDescText: {
     fontSize: 14,
@@ -6591,12 +6764,31 @@ const styles = StyleSheet.create({
     color: "#059669",
   },
   promotionFooter: {
-    padding: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 18,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
     backgroundColor: "#FFFFFF",
   },
+  promotionSkipBtn: {
+    height: 54,
+    paddingHorizontal: 26,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  promotionSkipBtnText: {
+    color: "#475569",
+    fontSize: 16,
+    fontWeight: "800",
+  },
   promotionContinueBtn: {
+    flex: 1,
     height: 54,
     borderRadius: 16,
     backgroundColor: "#EA580C",
@@ -6615,6 +6807,24 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900",
     letterSpacing: 0.3,
+  },
+  paymentPromoAppliedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#DCFCE7",
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  paymentPromoAppliedText: {
+    color: "#15803d",
+    fontSize: 15,
+    fontWeight: "800",
   },
 
   /* PAYMENT FULL MODAL (.full-screen-payment) */
