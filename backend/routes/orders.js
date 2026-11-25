@@ -4450,15 +4450,23 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) 
   }
 
   // DINE-IN FLOW:
-  // 🛡️ Requirement: Kiosk Dine-In MUST ONLY use DiningSection = '3' in TABLEMASTER
-  const sectionCondition = "tm.DiningSection = '3'";
-  let res = await poolOrTx.request().query(`
+  // 🛡️ Concurrency-safe lookup with automatic table creation in DiningSection = '3'
+  const dineInQuery = `
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+    BEGIN TRANSACTION;
+
+    DECLARE @FoundTableId UNIQUEIDENTIFIER = NULL;
+    DECLARE @FoundTableNo VARCHAR(50) = NULL;
+    DECLARE @FoundSection VARCHAR(10) = NULL;
+    DECLARE @WasAutoCreated BIT = 0;
+
+    -- 1. Check for an existing unoccupied Dine-In table in DiningSection = '3'
     SELECT TOP 1 
-      tm.TableId, 
-      tm.TableNumber AS TableNo,
-      tm.DiningSection
-    FROM TableMaster tm
-    WHERE ${sectionCondition}
+      @FoundTableId = tm.TableId, 
+      @FoundTableNo = tm.TableNumber,
+      @FoundSection = tm.DiningSection
+    FROM TableMaster tm WITH (UPDLOCK, HOLDLOCK)
+    WHERE tm.DiningSection = '3'
       AND ISNULL(tm.Status, 0) = 0
       AND tm.CurrentOrderId IS NULL
       AND NOT EXISTS (
@@ -4482,14 +4490,75 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) 
           THEN CAST(SUBSTRING(tm.TableNumber, 2, 20) AS INT)
         ELSE 99999
       END ASC,
-      tm.TableNumber ASC
-  `);
+      tm.TableNumber ASC;
 
-  if (res.recordset && res.recordset.length > 0) {
+    -- 2. If all existing DiningSection 3 tables are occupied, automatically create the next table (D61, D62, ...)
+    IF @FoundTableId IS NULL
+    BEGIN
+      DECLARE @MaxDNum INT = 0;
+      SELECT @MaxDNum = ISNULL(MAX(
+        CASE 
+          WHEN TableNumber LIKE 'D%' AND ISNUMERIC(SUBSTRING(TableNumber, 2, 20)) = 1 
+          THEN CAST(SUBSTRING(TableNumber, 2, 20) AS INT) 
+          ELSE 0 
+        END
+      ), 0)
+      FROM TableMaster WITH (UPDLOCK, HOLDLOCK)
+      WHERE DiningSection = '3';
+
+      DECLARE @NextDNum INT;
+      IF @MaxDNum < 60
+        SET @NextDNum = 61;
+      ELSE
+        SET @NextDNum = @MaxDNum + 1;
+
+      DECLARE @CandidateDTableNo VARCHAR(50);
+      SET @CandidateDTableNo = 'D' + CAST(@NextDNum AS VARCHAR(20));
+
+      WHILE EXISTS (SELECT 1 FROM TableMaster WHERE TableNumber = @CandidateDTableNo)
+      BEGIN
+        SET @NextDNum = @NextDNum + 1;
+        SET @CandidateDTableNo = 'D' + CAST(@NextDNum AS VARCHAR(20));
+      END
+
+      SET @FoundTableId = NEWID();
+      SET @FoundTableNo = @CandidateDTableNo;
+      SET @FoundSection = '3';
+      SET @WasAutoCreated = 1;
+
+      INSERT INTO TableMaster (
+        TableId, TableNumber, Seats, ReservationAllowed, DiningSection,
+        IstakeAway, Status, SortCode, PrintSection, TotalAmount, CreatedOn, ModifiedOn
+      ) VALUES (
+        @FoundTableId, @FoundTableNo, 4, 0, '3',
+        0, 0, @NextDNum, 1, 0, GETDATE(), GETDATE()
+      );
+    END
+
+    COMMIT TRANSACTION;
+
+    SELECT 
+      @FoundTableId AS TableId, 
+      @FoundTableNo AS TableNo, 
+      @FoundSection AS DiningSection,
+      @WasAutoCreated AS WasAutoCreated;
+  `;
+
+  const res = await poolOrTx.request().query(dineInQuery);
+  if (res.recordset && res.recordset.length > 0 && res.recordset[0].TableId) {
+    const row = res.recordset[0];
+    if (row.WasAutoCreated) {
+      console.log(`[Kiosk Dine-In] Auto-created new Section 3 table: ${row.TableNo} (${row.TableId})`);
+      if (io) {
+        io.emit("table_config_updated", {});
+        io.emit("tables_updated", {});
+      }
+    }
     return {
-      tableId: res.recordset[0].TableId,
-      tableNo: res.recordset[0].TableNo,
-      section: res.recordset[0].DiningSection
+      tableId: row.TableId,
+      tableNo: row.TableNo,
+      section: row.DiningSection || "3",
+      isNewlyCreated: !!row.WasAutoCreated
     };
   }
 
@@ -4636,6 +4705,7 @@ router.post("/kiosk/start", async (req, res) => {
             SET Status = 1,
                 CurrentOrderId = @orderNumber,
                 entry_status = 'K',
+                TotalAmount = 0,
                 StartTime = ISNULL(StartTime, GETDATE()),
                 PAYMENT_STATUS = 0,
                 ModifiedOn = GETDATE()
