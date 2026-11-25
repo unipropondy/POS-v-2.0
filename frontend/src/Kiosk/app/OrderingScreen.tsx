@@ -1132,22 +1132,33 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 const gId = grp.groupId || grp.comboGroupId;
                 if (gId) {
                   existingSelections[gId] = (grp.items || []).map(
-                    (opt: any) => opt.dishId || opt.id,
-                  );
+                    (opt: any) => opt.dishId || opt.DishId || opt.id || opt.DishID,
+                  ).filter(Boolean);
                 }
               });
             }
 
-            // Fallback: match by groupName if group IDs differ
+            // Fallback: match by groupName and option name if group IDs differ or options matched by name
             (config.groups || []).forEach((group: any) => {
-              if (!existingSelections[group.comboGroupId] || existingSelections[group.comboGroupId].length === 0) {
+              const currentList = existingSelections[group.comboGroupId] || [];
+              if (currentList.length === 0) {
                 const matchingGrp = (item.comboSelections || []).find(
-                  (g: any) => g.groupName === group.groupName || g.groupId === group.comboGroupId
+                  (g: any) =>
+                    g.groupName?.toLowerCase() === group.groupName?.toLowerCase() ||
+                    g.groupId === group.comboGroupId ||
+                    g.comboGroupId === group.comboGroupId
                 );
                 if (matchingGrp) {
-                  existingSelections[group.comboGroupId] = (matchingGrp.items || []).map(
-                    (opt: any) => opt.dishId || opt.id
-                  );
+                  const resolvedIds = (matchingGrp.items || []).map((opt: any) => {
+                    const match = (group.options || []).find(
+                      (o: any) =>
+                        String(o.dishId) === String(opt.dishId || opt.DishId || opt.id || opt.DishID) ||
+                        (o.name && (opt.name || opt.dishName) && o.name.toLowerCase() === (opt.name || opt.dishName).toLowerCase()) ||
+                        (o.dishName && (opt.name || opt.dishName) && o.dishName.toLowerCase() === (opt.name || opt.dishName).toLowerCase())
+                    );
+                    return match ? match.dishId : (opt.dishId || opt.DishId || opt.id || opt.DishID);
+                  }).filter(Boolean);
+                  existingSelections[group.comboGroupId] = resolvedIds;
                 }
               }
             });
@@ -1537,6 +1548,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             return {
               ...item,
               ...selectedDish,
+              lineItemId: item.lineItemId || selectedDish.lineItemId,
+              OrderDetailId: item.OrderDetailId || selectedDish.OrderDetailId,
               qty: comboQty,
               Price: finalPrice,
               price: finalPrice,
@@ -2939,14 +2952,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           </View>
                         )}
                         <Ionicons
-                          name={editingCartItemIndex !== null ? "checkmark-circle-outline" : "cart-outline"}
+                          name={editingCartItemIndex !== null ? "checkmark-circle" : "cart-outline"}
                           size={24}
                           color="#ffffff"
                           style={{ marginRight: 10 }}
                         />
                         <Text style={styles.customizeAddToCartBtnText}>
                           {editingCartItemIndex !== null
-                            ? `Update Item $${totalPrice}`
+                            ? `Save & Confirm $${totalPrice}`
                             : `Add to Cart $${totalPrice}`}
                         </Text>
                       </TouchableOpacity>
@@ -3383,10 +3396,34 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   : null;
               const imageFilename = item.Image || matchedDish?.Image;
 
+              const isComboItem =
+                item.isCombo === true ||
+                item.IsCombo === true ||
+                item.isCombo === 1 ||
+                item.IsCombo === 1 ||
+                String(item.isCombo) === "1" ||
+                String(item.IsCombo) === "1" ||
+                (Array.isArray(item.comboSelections) && item.comboSelections.length > 0) ||
+                matchedDish?.IsCombo === true ||
+                matchedDish?.IsCombo === 1 ||
+                String(matchedDish?.IsCombo) === "1";
+
+              const hasModifiers =
+                (Array.isArray(item.selectedMods) && item.selectedMods.length > 0) ||
+                (Array.isArray(item.modifiers) && item.modifiers.length > 0) ||
+                (Array.isArray(matchedDish?.modifiers) && matchedDish.modifiers.length > 0);
+
+              const isConfigurable = isComboItem || hasModifiers;
+
               return (
                 <View key={String(index)} style={styles.cartItemRow}>
-                  {/* Dish Thumbnail on Left */}
-                  <View style={styles.cartItemThumbWrap}>
+                  {/* Dish Thumbnail on Left - Clickable to open Modifier/Combo Popup */}
+                  <TouchableOpacity
+                    style={styles.cartItemThumbWrap}
+                    onPress={() => isConfigurable && handleEditCartItem(index)}
+                    activeOpacity={isConfigurable ? 0.75 : 1}
+                    disabled={!isConfigurable}
+                  >
                     {imageFilename ? (
                       <ExpoImage
                         source={{ uri: `${API}/image/${imageFilename}` }}
@@ -3403,13 +3440,22 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         />
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
 
                   <View style={styles.cartItemLeft}>
-                    <Text style={styles.cartItemName}>
-                      {item.Name || item.name}
-                    </Text>
+                    {/* Item Title - Clickable to open Modifier/Combo Popup */}
+                    <TouchableOpacity
+                      onPress={() => isConfigurable && handleEditCartItem(index)}
+                      activeOpacity={isConfigurable ? 0.75 : 1}
+                      disabled={!isConfigurable}
+                      style={{ width: "100%" }}
+                    >
+                      <Text style={styles.cartItemName}>
+                        {item.Name || item.name}
+                      </Text>
+                    </TouchableOpacity>
 
+                    {/* Standard Modifiers Section - Entire Box & Text Clickable */}
                     {item.selectedMods?.length > 0 && (
                       <TouchableOpacity
                         style={styles.cartCustomizationGroup}
@@ -3431,6 +3477,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       </TouchableOpacity>
                     )}
 
+                    {/* Combo Selections Section - Entire Box & All Lines Clickable */}
                     {item.comboSelections?.length > 0 && (
                       <TouchableOpacity
                         style={styles.cartCustomizationGroup}
@@ -3438,7 +3485,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         activeOpacity={0.7}
                       >
                         {item.comboSelections.map((grp: any, gIdx: number) => (
-                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 5 : 2 }}>
+                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 5 : 2, width: "100%" }}>
                             <View style={styles.cartCustomizationHeaderRow}>
                               <Text style={styles.cartModifierGroupTitle}>
                                 {grp.groupName}:
@@ -3450,7 +3497,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             </View>
                             {(grp.items || []).map((opt: any, oIdx: number) => (
                               <Text key={oIdx} style={styles.cartModifierValueText}>
-                                ↳ {opt.name}
+                                ↳ {opt.name || opt.dishName}
                                 {Number(opt.surcharge || 0) +
                                   Number(opt.dishPrice || 0) >
                                 0
@@ -3460,6 +3507,23 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             ))}
                           </View>
                         ))}
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Fallback for configurable item without current selections */}
+                    {isConfigurable && !item.selectedMods?.length && !item.comboSelections?.length && (
+                      <TouchableOpacity
+                        style={[styles.cartCustomizationGroup, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                        onPress={() => handleEditCartItem(index)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.cartModifierGroupTitle, { fontSize: 13 }]}>
+                          Customize / Choose Options
+                        </Text>
+                        <View style={styles.cartInlineEditBadge}>
+                          <Ionicons name="pencil" size={11} color="#ea580c" />
+                          <Text style={styles.cartInlineEditText}>Edit</Text>
+                        </View>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -6334,10 +6398,17 @@ const styles = StyleSheet.create({
     color: "#475569",
   },
 
-  /* Cart Item Customizations Display (Clean, borderless, readable) */
+  /* Cart Item Customizations Display (Prominent, full-width touchable card) */
   cartCustomizationGroup: {
-    marginTop: 5,
-    paddingVertical: 2,
+    marginTop: 6,
+    width: "100%",
+    alignSelf: "stretch",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: "#fff7ed",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fed7aa",
   },
   cartCustomizationHeaderRow: {
     flexDirection: "row",
