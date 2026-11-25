@@ -1894,8 +1894,45 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
-  // Checkout button click handler
+  // Step 1: Checkout button click handler - Checks PromotionMaster FIRST
   const handleCheckoutClick = async () => {
+    if (cart.length === 0) return;
+
+    // Check for active promotions from PromotionMaster (entry_status = 'K') FIRST
+    try {
+      setCheckingPromotions(true);
+      const promoRes = await fetch(`${API}/promotions/active?entry_status=K`, {
+        headers: { "x-entry-status": "K" },
+      });
+      const promoData = await promoRes.json();
+      const validPromos = Array.isArray(promoData?.promotions)
+        ? promoData.promotions
+        : [];
+
+      if (validPromos.length > 0) {
+        setActivePromotions(validPromos);
+        setSelectedPromotion(appliedPromotion || null);
+        // Display Promotion Popup FIRST (ensure other modals are closed)
+        setShowTableModal(false);
+        setShowPaymentPopup(false);
+        setShowPromotionModal(true);
+        setCheckingPromotions(false);
+        return;
+      }
+    } catch (promoErr) {
+      console.warn("Promotion check error:", promoErr);
+    } finally {
+      setCheckingPromotions(false);
+    }
+
+    // If no valid promotion records exist, skip promotion popup and proceed directly to Checkout Option
+    proceedToCheckoutOption();
+  };
+
+  // Step 2: Proceed to Checkout Option (Self Collect / Enter Tent Number) or Payment if Takeaway / prompt disabled
+  const proceedToCheckoutOption = async () => {
+    setShowPromotionModal(false);
+
     // Check if order is Takeaway (TW) -> Skip table/tent prompt completely
     const storedOrderType =
       (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
@@ -2071,31 +2108,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       }
     }
 
-    // Check for active promotions from PromotionMaster (entry_status = 'K')
-    try {
-      setCheckingPromotions(true);
-      const promoRes = await fetch(`${API}/promotions/active?entry_status=K`, {
-        headers: { "x-entry-status": "K" },
-      });
-      const promoData = await promoRes.json();
-      const validPromos = Array.isArray(promoData?.promotions)
-        ? promoData.promotions
-        : [];
-
-      if (validPromos.length > 0) {
-        setActivePromotions(validPromos);
-        setSelectedPromotion(appliedPromotion || null);
-        setShowPromotionModal(true);
-        setCheckingPromotions(false);
-        return;
-      }
-    } catch (promoErr) {
-      console.warn("Promotion check error:", promoErr);
-    } finally {
-      setCheckingPromotions(false);
-    }
-
-    // If no valid promotion records exist, skip popup and continue directly to payment
+    // Ensure previous modals are closed, then open payment modal
+    setShowPromotionModal(false);
+    setShowTableModal(false);
     setShowPaymentPopup(true);
   };
 
@@ -3956,20 +3971,33 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
               {/* Primary Action Button: Proceed to Checkout */}
               <TouchableOpacity
-                style={styles.checkoutBtn}
+                style={[
+                  styles.checkoutBtn,
+                  checkingPromotions && { opacity: 0.8 },
+                ]}
                 onPress={handleCheckoutClick}
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || checkingPromotions}
                 activeOpacity={0.88}
               >
                 <View style={styles.checkoutBtnInner}>
-                  <Ionicons
-                    name="card-outline"
-                    size={22}
-                    color="#ffffff"
-                    style={{ marginRight: 8 }}
-                  />
+                  {checkingPromotions ? (
+                    <ActivityIndicator
+                      size="small"
+                      color="#ffffff"
+                      style={{ marginRight: 8 }}
+                    />
+                  ) : (
+                    <Ionicons
+                      name="card-outline"
+                      size={22}
+                      color="#ffffff"
+                      style={{ marginRight: 8 }}
+                    />
+                  )}
                   <Text style={styles.checkoutBtnText}>
-                    Proceed to Checkout
+                    {checkingPromotions
+                      ? "Checking Offers..."
+                      : "Proceed to Checkout"}
                   </Text>
                   <Ionicons
                     name="arrow-forward"
@@ -4378,7 +4406,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         animationType="fade"
         onRequestClose={() => {
           setShowPromotionModal(false);
-          setShowPaymentPopup(true);
+          proceedToCheckoutOption();
         }}
       >
         <View style={styles.promotionModalOverlay}>
@@ -4393,7 +4421,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 style={styles.promotionCloseBtn}
                 onPress={() => {
                   setShowPromotionModal(false);
-                  setShowPaymentPopup(true);
+                  proceedToCheckoutOption();
                 }}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
@@ -4405,7 +4433,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.promotionSubHeader}>
               <Text style={styles.promotionSubHeaderTitle}>Select an offer to apply</Text>
               <Text style={styles.promotionSubHeaderSubtitle}>
-                Choose a promotion offer below, or tap Skip to continue without a discount.
+                Choose a promotion offer below, or tap No Thanks to continue.
               </Text>
             </View>
 
@@ -4526,7 +4554,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               })}
             </ScrollView>
 
-            {/* Modal Footer: Skip & Continue Buttons */}
+            {/* Modal Footer: No Thanks & Continue Buttons */}
             <View style={styles.promotionFooter}>
               <TouchableOpacity
                 style={styles.promotionSkipBtn}
@@ -4534,11 +4562,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   setSelectedPromotion(null);
                   setAppliedPromotion(null);
                   setShowPromotionModal(false);
-                  setShowPaymentPopup(true);
+                  proceedToCheckoutOption();
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.promotionSkipBtnText}>Skip</Text>
+                <Text style={styles.promotionSkipBtnText}>No Thanks</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -4546,13 +4574,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 onPress={() => {
                   setAppliedPromotion(selectedPromotion);
                   setShowPromotionModal(false);
-                  setShowPaymentPopup(true);
+                  proceedToCheckoutOption();
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.promotionContinueBtnText}>
-                  {selectedPromotion ? "Apply & Continue" : "Continue"}
-                </Text>
+                <Text style={styles.promotionContinueBtnText}>Continue</Text>
                 <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
