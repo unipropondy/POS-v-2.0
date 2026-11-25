@@ -1282,6 +1282,8 @@ router.post("/save-cart", async (req, res) => {
       version,
       skipTableStatusSync,
       entryStatus,
+      isTakeaway,
+      orderType,
       mobileNo,
       customerName,
     } = req.body;
