@@ -1552,6 +1552,48 @@ router.post("/save-cart", async (req, res) => {
           paymentStatus: 0
         });
         io.emit("tables_updated");
+
+        // 🖥️ KIOSK ORDER: Immediate POS notification & KDS sync when order is successfully saved
+        if (isKioskOrder && currentOrderId) {
+          const tentNo = req.body.tentNumber || (req.body.isTentNumber ? cleanId : undefined);
+          io.emit("kiosk_order_notification", {
+            orderId: currentOrderId,
+            orderNumber: currentOrderId,
+            entryStatus: "K",
+            isKiosk: true,
+            tableNo: cleanId,
+            tentNumber: tentNo,
+            isSelfCollect: !!req.body.isSelfCollect,
+            isTentNumber: !!req.body.isTentNumber,
+            paymentMethod: req.body.paymentMethod || "Pending / Counter",
+            totalAmount: req.body.totalAmount || 0,
+            itemCount: Array.isArray(items) ? items.length : 0,
+            timestamp: Date.now()
+          });
+
+          io.emit("active_kitchen_updated", {
+            orderId: currentOrderId,
+            tableNo: cleanId,
+            section: "SECTION_3"
+          });
+
+          io.emit("new_order", {
+            orderId: currentOrderId,
+            entryStatus: "K",
+            items: Array.isArray(items) ? items : [],
+            context: {
+              orderType: "DINE_IN",
+              tableId: cleanTid,
+              tableNo: cleanId,
+              section: "SECTION_3",
+              entryStatus: "K",
+              isKiosk: true,
+              isSelfCollect: !!req.body.isSelfCollect,
+              isTentNumber: !!req.body.isTentNumber,
+              tentNumber: tentNo,
+            }
+          });
+        }
       }
 
       // Always sync table status to update the payable amount instantly on the main grid via socket/db
