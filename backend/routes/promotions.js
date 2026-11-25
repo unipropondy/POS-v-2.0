@@ -18,19 +18,22 @@ router.get("/active", async (req, res) => {
     }
 
     const pool = await poolPromise;
+    // Note: Table column in PromotionMaster is "Description" (not "PromotionDescription")
     const result = await pool.request().query(`
       SELECT 
         PromotionId,
         PromotionName,
-        PromotionDescription,
+        Description,
+        Description AS PromotionDescription,
         PromotionImageUrl,
         PromotionType,
         PromotionAmount,
+        MinPurchaseAmount,
         DiscountValue,
-        StartDate,
-        EndDate,
-        StartTime,
-        EndTime,
+        CONVERT(varchar(10), StartDate, 120) AS StartDateStr,
+        CONVERT(varchar(10), EndDate, 120) AS EndDateStr,
+        CONVERT(varchar(8), StartTime, 108) AS StartTimeStr,
+        CONVERT(varchar(8), EndTime, 108) AS EndTimeStr,
         Status
       FROM PromotionMaster WITH (NOLOCK)
       WHERE Status = 1
@@ -39,84 +42,59 @@ router.get("/active", async (req, res) => {
     const rows = result.recordset || [];
     const now = new Date();
 
-    // Local Singapore date: "YYYY-MM-DD"
-    const localDateStr = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Singapore",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(now);
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const todayStr = `${year}-${month}-${day}`;
+    const curMinutes = now.getHours() * 60 + now.getMinutes();
 
-    const timeParts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Singapore",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(now);
-    const curHour = parseInt(timeParts.find((p) => p.type === "hour")?.value || "0", 10);
-    const curMin = parseInt(timeParts.find((p) => p.type === "minute")?.value || "0", 10);
-    const currentMinutes = curHour * 60 + curMin;
-
-    function parseTimeToMinutes(t) {
-      if (!t) return null;
-      if (t instanceof Date) {
-        return t.getHours() * 60 + t.getMinutes();
-      }
-      const s = String(t).trim();
-      if (!s) return null;
-      const match = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?/);
-      if (!match) return null;
-      let h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      const ampm = match[4]?.toUpperCase();
-      if (ampm === "PM" && h < 12) h += 12;
-      if (ampm === "AM" && h === 12) h = 0;
-      return h * 60 + m;
-    }
-
-    function toDateStr(d) {
-      if (!d) return null;
-      if (d instanceof Date) {
-        return new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Singapore",
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }).format(d);
-      }
-      const s = String(d).trim();
-      const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
-      return match ? match[1] : null;
-    }
+    console.log(`[Promotions API] Today: ${todayStr}, CurMinutes: ${curMinutes} (${now.getHours()}:${now.getMinutes()}), Total records: ${rows.length}`);
 
     const activePromotions = rows.filter((promo) => {
       // 1. Date Check: Current date between StartDate and EndDate
-      const startStr = toDateStr(promo.StartDate);
-      const endStr = toDateStr(promo.EndDate);
-
-      if (startStr && localDateStr < startStr) return false;
-      if (endStr && localDateStr > endStr) return false;
+      if (promo.StartDateStr && todayStr < promo.StartDateStr) {
+        console.log(`[Promotions API] Promo ${promo.PromotionId} skipped: StartDate ${promo.StartDateStr} > ${todayStr}`);
+        return false;
+      }
+      if (promo.EndDateStr && todayStr > promo.EndDateStr) {
+        console.log(`[Promotions API] Promo ${promo.PromotionId} skipped: EndDate ${promo.EndDateStr} < ${todayStr}`);
+        return false;
+      }
 
       // 2. Time Check:
       // If both StartTime and EndTime are NULL, consider available throughout configured dates
-      const startMin = parseTimeToMinutes(promo.StartTime);
-      const endMin = parseTimeToMinutes(promo.EndTime);
+      if (promo.StartTimeStr && promo.EndTimeStr) {
+        const partsS = promo.StartTimeStr.split(":").map(Number);
+        const partsE = promo.EndTimeStr.split(":").map(Number);
+        const startMin = partsS[0] * 60 + partsS[1];
+        const endMin = partsE[0] * 60 + partsE[1];
 
-      if (startMin !== null && endMin !== null) {
         if (startMin <= endMin) {
-          if (currentMinutes < startMin || currentMinutes > endMin) return false;
+          if (curMinutes < startMin || curMinutes > endMin) {
+            console.log(`[Promotions API] Promo ${promo.PromotionId} skipped: curMinutes ${curMinutes} outside ${startMin}-${endMin}`);
+            return false;
+          }
         } else {
           // Overnight promotion (e.g. 22:00 to 02:00)
-          if (currentMinutes < startMin && currentMinutes > endMin) return false;
+          if (curMinutes < startMin && curMinutes > endMin) {
+            console.log(`[Promotions API] Promo ${promo.PromotionId} skipped: overnight curMinutes ${curMinutes}`);
+            return false;
+          }
         }
-      } else if (startMin !== null) {
-        if (currentMinutes < startMin) return false;
-      } else if (endMin !== null) {
-        if (currentMinutes > endMin) return false;
+      } else if (promo.StartTimeStr) {
+        const partsS = promo.StartTimeStr.split(":").map(Number);
+        const startMin = partsS[0] * 60 + partsS[1];
+        if (curMinutes < startMin) return false;
+      } else if (promo.EndTimeStr) {
+        const partsE = promo.EndTimeStr.split(":").map(Number);
+        const endMin = partsE[0] * 60 + partsE[1];
+        if (curMinutes > endMin) return false;
       }
 
       return true;
     });
+
+    console.log(`[Promotions API] Returning ${activePromotions.length} active promotions`);
 
     res.json({
       success: true,

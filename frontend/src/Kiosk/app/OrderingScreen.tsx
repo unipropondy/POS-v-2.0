@@ -1140,10 +1140,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (!appliedPromotion) return 0;
     const pType = (appliedPromotion.PromotionType || "").toUpperCase();
     const discVal = Number(appliedPromotion.DiscountValue || 0);
-    const minSpend = Number(appliedPromotion.PromotionAmount || 0);
+    const minPurchase = Number(appliedPromotion.MinPurchaseAmount || 0);
 
-    // If minimum spend requirement is configured and subtotal does not reach it, discount does not apply
-    if (minSpend > 0 && subTotal < minSpend) {
+    // If minimum purchase requirement is configured and subtotal does not reach it, discount does not apply
+    if (minPurchase > 0 && subTotal < minPurchase) {
       return 0;
     }
 
@@ -1155,7 +1155,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       pType.includes("FIXED") ||
       pType.includes("FLAT")
     ) {
-      calculatedDisc = discVal > 0 ? discVal : minSpend;
+      calculatedDisc =
+        discVal > 0 ? discVal : Number(appliedPromotion.PromotionAmount || 0);
     } else if (discVal > 0 && discVal <= 100) {
       calculatedDisc = (subTotal * discVal) / 100;
     } else if (discVal > 0) {
@@ -4446,14 +4447,25 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               {activePromotions.map((promo, idx) => {
                 const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
                 const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
-                const hasAmount =
+                const promoDesc = promo.Description || promo.PromotionDescription;
+                const minPurchase =
+                  promo.MinPurchaseAmount !== null &&
+                  promo.MinPurchaseAmount !== undefined &&
+                  Number(promo.MinPurchaseAmount) > 0
+                    ? Number(promo.MinPurchaseAmount)
+                    : null;
+                const promoAmt =
                   promo.PromotionAmount !== null &&
                   promo.PromotionAmount !== undefined &&
-                  Number(promo.PromotionAmount) > 0;
-                const hasDiscount =
+                  Number(promo.PromotionAmount) > 0
+                    ? Number(promo.PromotionAmount)
+                    : null;
+                const discVal =
                   promo.DiscountValue !== null &&
                   promo.DiscountValue !== undefined &&
-                  Number(promo.DiscountValue) > 0;
+                  Number(promo.DiscountValue) > 0
+                    ? Number(promo.DiscountValue)
+                    : null;
 
                 return (
                   <TouchableOpacity
@@ -4467,7 +4479,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     }
                     activeOpacity={0.88}
                   >
-                    {/* Promotion Image */}
+                    {/* Promotion Image or Banner */}
                     {promoImgUri ? (
                       <View style={styles.promotionImageWrap}>
                         <ExpoImage
@@ -4476,7 +4488,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           contentFit="cover"
                         />
                       </View>
-                    ) : null}
+                    ) : (
+                      <View style={styles.promotionPlaceholderBanner}>
+                        <Ionicons name="sparkles" size={28} color="#EA580C" />
+                        <Text style={styles.promotionPlaceholderBannerText}>
+                          {promo.PromotionType || "SPECIAL PROMOTION"}
+                        </Text>
+                      </View>
+                    )}
 
                     {/* Promotion Info */}
                     <View style={styles.promotionInfoWrap}>
@@ -4505,9 +4524,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         </View>
                       </View>
 
-                      {promo.PromotionDescription ? (
+                      {promoDesc ? (
                         <Text style={styles.promotionDescText}>
-                          {promo.PromotionDescription}
+                          {promoDesc}
                         </Text>
                       ) : null}
 
@@ -4526,16 +4545,25 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           </View>
                         ) : null}
 
-                        {hasAmount ? (
+                        {minPurchase ? (
                           <View style={styles.promotionAmountPill}>
                             <Text style={styles.promotionAmountPillText}>
                               Min Spend: {currencySymbol}
-                              {Number(promo.PromotionAmount).toFixed(2)}
+                              {minPurchase.toFixed(2)}
                             </Text>
                           </View>
                         ) : null}
 
-                        {hasDiscount ? (
+                        {promoAmt ? (
+                          <View style={styles.promotionAmountPill}>
+                            <Text style={styles.promotionAmountPillText}>
+                              Price: {currencySymbol}
+                              {promoAmt.toFixed(2)}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {discVal ? (
                           <View style={styles.promotionDiscountPill}>
                             <Ionicons
                               name="gift-outline"
@@ -4543,7 +4571,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               color="#059669"
                             />
                             <Text style={styles.promotionDiscountPillText}>
-                              Discount: {promo.DiscountValue}% OFF
+                              {String(promo.PromotionType || "").toUpperCase().includes("PERCENT")
+                                ? `Discount: ${discVal}% OFF`
+                                : `Save ${currencySymbol}${discVal.toFixed(2)}`}
                             </Text>
                           </View>
                         ) : null}
@@ -6697,6 +6727,24 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 190,
     backgroundColor: "#F1F5F9",
+  },
+  promotionPlaceholderBanner: {
+    width: "100%",
+    height: 100,
+    backgroundColor: "#FFF7ED",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFEDD5",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  promotionPlaceholderBannerText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#EA580C",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
   promotionImage: {
     width: "100%",
