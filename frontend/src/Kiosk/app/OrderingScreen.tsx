@@ -3528,7 +3528,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name="remove" size={24} color="#ffffff" />
+                        <Ionicons name="remove" size={26} color="#ffffff" />
                       </TouchableOpacity>
 
                       <Text style={styles.qtyVal}>
@@ -3541,7 +3541,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name="add" size={24} color="#ffffff" />
+                        <Ionicons name="add" size={26} color="#ffffff" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -5851,16 +5851,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f8fafc",
-    borderRadius: 28,
+    borderRadius: 32,
     paddingHorizontal: 6,
     paddingVertical: 6,
     borderWidth: 1.5,
     borderColor: "#e2e8f0",
   },
   qtyBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: "#ea580c",
     alignItems: "center",
     justifyContent: "center",
@@ -5872,18 +5872,18 @@ const styles = StyleSheet.create({
   },
   qtyBtnText: {
     color: "#ffffff",
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
-    lineHeight: 24,
+    lineHeight: 26,
     textAlign: "center",
   },
   qtyVal: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
     color: "#0f172a",
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     textAlign: "center",
-    minWidth: 32,
+    minWidth: 36,
   },
   cartItemPrice: {
     fontSize: 22,
