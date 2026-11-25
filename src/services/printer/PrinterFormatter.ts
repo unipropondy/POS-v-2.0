@@ -231,7 +231,7 @@ export class PrinterFormatter {
     const rawTable = saleData?.tableNo ? String(saleData.tableNo).trim() : "";
     const cleanTableNo = rawTable.replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
 
-    // ── Upside White Space & Header Border ──
+    // 1. Payment Receipt Header
     builder.lineFeed(1);
     builder.alignCenter();
     builder.textLine(this.formatDivider("=", width));
@@ -248,8 +248,9 @@ export class PrinterFormatter {
     }
     builder.textLine(this.formatDivider("=", width));
 
-    // ── Company Header (Upper Case, Big Bold) ──
-    builder.bold(true).setTextSize(1, 2).textLine(companyName.toUpperCase()).resetTextSize().bold(false);
+    // 2. Company Details (Upper Case, Bigger Bold Font)
+    builder.alignCenter();
+    builder.bold(true).setTextSize(2, 2).textLine(companyName.toUpperCase()).resetTextSize().bold(false);
 
     if (address) {
       builder.textLine(address);
@@ -260,17 +261,37 @@ export class PrinterFormatter {
     if (gstNo) {
       builder.textLine(gstNo);
     }
-    builder.textLine(this.formatDivider("-", width));
+
+    // 3. Official Queue Ticket (for Kiosk Orders)
+    if (saleData?.isKiosk) {
+      const cleanDigits = billNumber.replace(/\D/g, "");
+      const queueSuffix = cleanDigits ? cleanDigits.slice(-4) : (billNumber.length >= 4 ? billNumber.slice(-4) : billNumber);
+      builder.textLine(this.formatDivider("-", width));
+      builder.alignCenter();
+      builder.bold(true).textLine("OFFICIAL QUEUE TICKET");
+      builder.setTextSize(2, 2).textLine(`#${queueSuffix}`).resetTextSize();
+      builder.textLine(this.formatDivider("=", width));
+      builder.alignLeft();
+    } else {
+      builder.textLine(this.formatDivider("-", width));
+    }
 
     // ── Order Metadata ──
     builder.alignLeft();
     builder.bold(true);
-    if (isReceiptTW) {
+
+    const isSelfCollect = saleData?.isSelfCollect === true;
+    const isTent = saleData?.isTentNumber === true;
+    const tableLabel = isTent ? "TENT NO" : "TABLE";
+
+    if (isSelfCollect) {
+      builder.textLine(`Bill No: ${billNumber}`);
+    } else if (isReceiptTW) {
       const shortOrderNo = billNumber ? String(billNumber).slice(-4) : "";
       const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
       builder.textLine(this.formatTwoCol(`Bill No: ${billNumber}`, twLabel, width));
     } else if (cleanTableNo) {
-      builder.textLine(this.formatTwoCol(`Bill No: ${billNumber}`, `TABLE: ${cleanTableNo}`, width));
+      builder.textLine(this.formatTwoCol(`Bill No: ${billNumber}`, `${tableLabel}: ${cleanTableNo}`, width));
     } else {
       builder.textLine(`Bill No: ${billNumber}`);
     }

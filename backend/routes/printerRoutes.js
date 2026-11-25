@@ -83,13 +83,18 @@ function buildKioskEscPosReceipt(order, company = {}) {
   text += ESC + '@';
   text += LF;
 
-  // 2. Center alignment for Header
+  // 1. PAYMENT RECEIPT Header (Center aligned)
   text += ESC + 'a' + '\x01';
+  text += '='.repeat(WIDTH) + LF;
+  text += ESC + '!' + '\x10'; // Double height
+  text += 'PAYMENT RECEIPT' + LF;
+  text += ESC + '!' + '\x00';
+  text += '='.repeat(WIDTH) + LF;
 
-  // Double width & height for company name
-  text += ESC + '!' + '\x38';
+  // 2. Company Details (Upper Case, Big Bold)
+  text += ESC + '!' + '\x38'; // Double width & height
   const brandName = (company.CompanyName || company.OutletName || 'SMART POS').trim();
-  text += brandName + LF;
+  text += brandName.toUpperCase() + LF;
   text += ESC + '!' + '\x00';
 
   if (company.Address) {
@@ -103,7 +108,7 @@ function buildKioskEscPosReceipt(order, company = {}) {
   }
 
   // 3. Queue / Order Ticket Box
-  text += '='.repeat(WIDTH) + LF;
+  text += '-'.repeat(WIDTH) + LF;
   text += 'OFFICIAL QUEUE TICKET' + LF;
   text += ESC + '!' + '\x38'; // Double size for order/bill number
   const orderNumber = String(order.orderNumber || order.orderId || order.invoiceNumber || order.billNumber || 'KIOSK-01').trim();

@@ -486,7 +486,11 @@ function formatThermalTextWithDiscount(saleData: any, company: any, discountInfo
   const dateStr = formatToSingaporeDate(now);
   const timeStr = formatToSingaporeTime(now);
 
-  let text = `[C]<B>${name}</B>\n`;
+  let text = "[C]================================\n";
+  text += "[C]<font size='normal'><B>PAYMENT RECEIPT</B></font>\n";
+  text += "[C]================================\n";
+
+  text += `[C]<font size='big'><B>${name.toUpperCase()}</B></font>\n`;
   if (address) text += `[C]${address}\n`;
   if (gstNo) text += `[C]GST: ${gstNo}\n`;
   if (tel) text += `[C]Tel: ${tel}\n`;

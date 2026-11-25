@@ -312,12 +312,22 @@ export class BillPDFGenerator {
             max-width: 72mm;
             margin: 0 auto;
           }
+          .receipt-type-banner {
+            text-align: center;
+            border-top: 2px solid #000;
+            border-bottom: 2px solid #000;
+            padding: 2mm 0;
+            margin-bottom: 3mm;
+            font-size: 14px;
+            font-weight: 900;
+            letter-spacing: 2px;
+          }
           .header-box {
             text-align: center;
-            margin-bottom: 4mm;
+            margin-bottom: 3mm;
           }
           .company-name {
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 900;
             letter-spacing: 2.5px;
             text-transform: uppercase;
@@ -421,6 +431,8 @@ export class BillPDFGenerator {
       </head>
       <body>
         <div class="receipt">
+          <div class="receipt-type-banner">PAYMENT RECEIPT</div>
+
           <div class="header-box">
             <div class="company-name">${company.name}</div>
             ${company.address ? `<div class="company-address">${company.address}</div>` : ""}
