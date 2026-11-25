@@ -405,13 +405,11 @@ export class PrinterFormatter {
         });
       }
 
-      // Item Discount & After Discount lines
+      // Item Discount line
       if (discAmt > 0) {
         const discLabel = discType === "FOC" ? "  Discount (FOC):" : discType === "percentage" ? `  Discount (${discAmt}%):` : "  Discount:";
         const discVal = `-${currency}${itemDiscount.toFixed(2)}`;
-        const afterDiscTotal = Math.max(0, baseTotal - itemDiscount);
         builder.textLine(this.formatTwoCol(discLabel, discVal, width));
-        builder.textLine(this.formatTwoCol("  After Discount:", `${currency}${afterDiscTotal.toFixed(2)}`, width));
       }
     });
 

@@ -2007,11 +2007,6 @@ class UniversalPrinter {
         const rightDisc = `-${symbol}${itemDiscount.toFixed(2)}`;
         const padDisc = Math.max(1, 48 - leftDisc.length - rightDisc.length);
         text += `[L]${leftDisc}${" ".repeat(padDisc)}${rightDisc}\n`;
-
-        const leftAfter = "  After Discount:";
-        const rightAfter = `${symbol}${afterDiscTotal.toFixed(2)}`;
-        const padAfter = Math.max(1, 48 - leftAfter.length - rightAfter.length);
-        text += `[L]${leftAfter}${" ".repeat(padAfter)}${rightAfter}\n`;
       }
     });
 

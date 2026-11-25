@@ -471,7 +471,6 @@ class SunmiPrinterService {
           const afterDiscTotal = Math.max(0, baseItemTotal - itemDiscount);
           const discLabel = discType === "FOC" ? "  Discount (FOC):" : discType === "percentage" ? `  Discount (${discAmt}%):` : "  Discount:";
           await SunmiModule.printText(formatter.twoCols(discLabel, `-${symbol}${itemDiscount.toFixed(2)}`));
-          await SunmiModule.printText(formatter.twoCols("  After Discount:", `${symbol}${afterDiscTotal.toFixed(2)}`));
         }
       }
 

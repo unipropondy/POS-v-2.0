@@ -532,7 +532,6 @@ private static escapeHtml(str: string): string {
                         const discLabel = discType === 'FOC' ? 'Discount (FOC)' : discType === 'percentage' ? `Discount (${discAmt}%)` : 'Discount';
                         return `
                           <div style="font-size: 8.5px; color: #555; font-style: italic; margin-top: 0.5mm;">${discLabel}: -${currencySymbol}${itemDiscount.toFixed(2)}</div>
-                          <div style="font-size: 8.5px; color: #111; font-weight: bold; margin-top: 0.2mm;">After Discount: ${currencySymbol}${afterDiscTotal.toFixed(2)}</div>
                         `;
                       }
                       return '';
