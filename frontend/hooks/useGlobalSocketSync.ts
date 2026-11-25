@@ -92,7 +92,7 @@ export function useGlobalSocketSync() {
 
     const handleConnectError = (error: any) => {
       if (__DEV__) {
-        console.error("🔌 [Socket-Global] CONNECTION ERROR:", error);
+        console.warn("🔌 [Socket-Global] CONNECTION ERROR:", error?.message || error);
       }
     };
 
