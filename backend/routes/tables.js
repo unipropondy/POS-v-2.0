@@ -71,6 +71,22 @@ router.get("/all", async (req, res) => {
     // NOTE: Protect active dining tables and active Takeaway QR sessions
     try {
       const reconcileResult = await pool.request().query(`
+        -- 🛡️ AUTO-LINK: If TableMaster has CurrentOrderId IS NULL or TotalAmount = 0 or Status = 0, but RestaurantOrderCur has an active unclosed order for this table, link it immediately!
+        UPDATE tm
+        SET tm.CurrentOrderId = roc.OrderNumber,
+            tm.TotalAmount = roc.TotalAmount,
+            tm.Status = 1,
+            tm.entry_status = COALESCE(roc.entry_status, tm.entry_status, 'K'),
+            tm.StartTime = ISNULL(tm.StartTime, roc.OrderDateTime),
+            tm.ModifiedOn = GETDATE()
+        FROM TableMaster tm
+        INNER JOIN RestaurantOrderCur roc 
+          ON (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)))
+        WHERE CAST(tm.DiningSection AS VARCHAR(10)) IN ('1', '2', '3')
+          AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+          AND roc.StatusCode NOT IN (0, 4)
+          AND (tm.CurrentOrderId IS NULL OR tm.TotalAmount = 0 OR tm.Status = 0);
+
         DECLARE @cleared TABLE (TableId UNIQUEIDENTIFIER, TableNumber NVARCHAR(50), DiningSection INT);
 
         UPDATE tm
@@ -81,7 +97,12 @@ router.get("/all", async (req, res) => {
           -- 🛡️ Immediately clear tables whose order is already settled or no longer active; otherwise wait 30 mins
           AND (
             (EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = tm.CurrentOrderId) AND CAST(tm.DiningSection AS VARCHAR(10)) = '4')
-            OR NOT EXISTS (SELECT 1 FROM RestaurantOrderCur roc WHERE roc.OrderNumber = tm.CurrentOrderId)
+            OR (
+              -- Only check if CurrentOrderId is NOT NULL, AND give a 15-minute grace period for newly occupied tables (e.g. Kiosk session in progress)
+              tm.CurrentOrderId IS NOT NULL
+              AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
+              AND NOT EXISTS (SELECT 1 FROM RestaurantOrderCur roc WHERE roc.OrderNumber = tm.CurrentOrderId)
+            )
             OR (
               DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 30
               AND NOT EXISTS (
@@ -98,6 +119,16 @@ router.get("/all", async (req, res) => {
             AND tm.entry_status = 'q' 
             AND tm.LockedByName IS NOT NULL
             AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) < 15
+          )
+          -- 🛡️ DO NOT clear active Dine-In orders (DiningSection 1, 2, 3) or Kiosk sessions (entry_status = 'K') with active orders
+          AND NOT (
+            CAST(tm.DiningSection AS VARCHAR(10)) IN ('1', '2', '3')
+            AND EXISTS (
+              SELECT 1 FROM RestaurantOrderCur roc
+              WHERE (roc.OrderNumber = tm.CurrentOrderId OR RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)))
+                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                AND roc.StatusCode NOT IN (0, 4)
+            )
           )
           -- 🛡️ Must NOT have any active CartItems
           AND NOT EXISTS (

@@ -447,6 +447,7 @@ async function syncToProfessionalTables(
     .request()
     .input("orderNo", sql.NVarChar(50), cleanOrderNo)
     .input("tableId", sql.VarChar(50), cleanTableId).query(`
+      DECLARE @ActualTableId UNIQUEIDENTIFIER = NULL;
       DECLARE @ActualTableNo VARCHAR(20) = 'TAKEAWAY';
       DECLARE @Section INT = 4;
       DECLARE @Pax INT = NULL;
@@ -454,6 +455,7 @@ async function syncToProfessionalTables(
       DECLARE @TableEntryStatus VARCHAR(10) = NULL;
       IF @tableId IS NOT NULL 
         SELECT TOP 1 
+          @ActualTableId = TableId,
           @ActualTableNo = TableNumber, 
           @Section = ISNULL(DiningSection, 4), 
           @Pax = Pax, 
@@ -478,15 +480,17 @@ async function syncToProfessionalTables(
         CASE WHEN OrderNumber = @orderNo THEN 0 ELSE 1 END,
         CreatedOn DESC;
       
-      SELECT @ActualTableNo as ActualTableNo, @PriorityCode as PriorityCode, @Pax as Pax, @CustomerName as CustomerName, @TableEntryStatus as TableEntryStatus;
+      SELECT @ActualTableId as ActualTableId, @ActualTableNo as ActualTableNo, @PriorityCode as PriorityCode, @Pax as Pax, @CustomerName as CustomerName, @TableEntryStatus as TableEntryStatus, @Section as DiningSection;
     `);
 
   const header = initRes.recordsets[0][0];
+  const actualTableId = initRes.recordsets[1][0]?.ActualTableId || null;
   const actualTableNo = initRes.recordsets[1][0]?.ActualTableNo || "TAKEAWAY";
   const priorityCode = initRes.recordsets[1][0]?.PriorityCode || 4;
   const tablePax = initRes.recordsets[1][0]?.Pax || null;
   const tableCustomerName = initRes.recordsets[1][0]?.CustomerName || null;
   const tableEntryStatus = initRes.recordsets[1][0]?.TableEntryStatus || null;
+  const tableSection = initRes.recordsets[1][0]?.DiningSection ?? 4;
 
   const isKioskOrder =
     String(finalEntryStatus || "").trim().toUpperCase() === "K" ||
@@ -964,6 +968,11 @@ async function syncToProfessionalTables(
   if (!skipSmartRemoval) {
     const cleanupRequest = transaction.request();
     cleanupRequest.input("orderId", sql.UniqueIdentifier, orderGuid);
+    cleanupRequest.input("orderNo", sql.NVarChar(50), cleanOrderNo);
+    cleanupRequest.input("targetTableId", sql.UniqueIdentifier, actualTableId);
+    cleanupRequest.input("targetTableNo", sql.VarChar(50), actualTableNo);
+    cleanupRequest.input("entryStatus", sql.NVarChar(10), finalEntryStatus || "K");
+    cleanupRequest.input("isTakeaway", sql.Bit, isTakeaway ? 1 : 0);
 
     const cleanupSql = `
       -- Smart Removal: Delete unsent items that are no longer in the cart
@@ -1009,12 +1018,31 @@ async function syncToProfessionalTables(
           TotalTax = ROUND((@calcTaxable + @calcSC + @calcTW) * ISNULL(@calcGSTRate, 0), 2),
           TotalAmount = @calcTotal
       WHERE OrderId = @orderId;
+
+      -- 🚀 CRITICAL: Update TableMaster for Dine-In / Kiosk order creation inside the transaction
+      IF @isTakeaway = 0 AND (@targetTableId IS NOT NULL OR (@targetTableNo IS NOT NULL AND @targetTableNo <> 'TAKEAWAY'))
+      BEGIN
+        UPDATE TableMaster
+        SET CurrentOrderId = @orderNo,
+            TotalAmount = @calcTotal,
+            Status = 1,
+            entry_status = COALESCE(@entryStatus, entry_status, 'K'),
+            StartTime = ISNULL(StartTime, GETDATE()),
+            ModifiedOn = GETDATE()
+        WHERE ((@targetTableId IS NOT NULL AND TableId = @targetTableId) OR TableNumber = @targetTableNo)
+          AND (CurrentOrderId IS NULL OR CurrentOrderId = '' OR CurrentOrderId = 'EMPTY' OR CurrentOrderId = @orderNo);
+      END
     `;
     await cleanupRequest.query(cleanupSql);
   } else {
     // Still update the total without touching items
     const totalRequest = transaction.request();
     totalRequest.input("orderId", sql.UniqueIdentifier, orderGuid);
+    totalRequest.input("orderNo", sql.NVarChar(50), cleanOrderNo);
+    totalRequest.input("targetTableId", sql.UniqueIdentifier, actualTableId);
+    totalRequest.input("targetTableNo", sql.VarChar(50), actualTableNo);
+    totalRequest.input("entryStatus", sql.NVarChar(10), finalEntryStatus || "K");
+    totalRequest.input("isTakeaway", sql.Bit, isTakeaway ? 1 : 0);
     await totalRequest.query(`
       DECLARE @calcSubtotal2 DECIMAL(18,2) = 0;
       DECLARE @calcSC2 DECIMAL(18,2) = 0;
@@ -1054,8 +1082,23 @@ async function syncToProfessionalTables(
           TotalTax = ROUND((@calcTaxable2 + @calcSC2 + @calcTW2) * ISNULL(@calcGSTRate2, 0), 2),
           TotalAmount = @calcTotal2
       WHERE OrderId = @orderId;
+
+      -- 🚀 CRITICAL: Update TableMaster for Dine-In / Kiosk order creation inside the transaction
+      IF @isTakeaway = 0 AND (@targetTableId IS NOT NULL OR (@targetTableNo IS NOT NULL AND @targetTableNo <> 'TAKEAWAY'))
+      BEGIN
+        UPDATE TableMaster
+        SET CurrentOrderId = @orderNo,
+            TotalAmount = @calcTotal2,
+            Status = 1,
+            entry_status = COALESCE(@entryStatus, entry_status, 'K'),
+            StartTime = ISNULL(StartTime, GETDATE()),
+            ModifiedOn = GETDATE()
+        WHERE ((@targetTableId IS NOT NULL AND TableId = @targetTableId) OR TableNumber = @targetTableNo)
+          AND (CurrentOrderId IS NULL OR CurrentOrderId = '' OR CurrentOrderId = 'EMPTY' OR CurrentOrderId = @orderNo);
+      END
     `);
   }
+  return { orderGuid, actualTableId, actualTableNo, tableSection };
 }
 
 async function syncTableStatus(req, tableId) {
@@ -1409,7 +1452,14 @@ router.post("/save-cart", async (req, res) => {
         .request()
         .input("tid", sql.VarChar(50), cleanId)
         .input("oid", sql.NVarChar(50), currentOrderId)
-        .input("skipSync", sql.Bit, !!skipTableStatusSync).query(`
+        .input("skipSync", sql.Bit, !!skipTableStatusSync)
+        .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
+        .query(`
+          DECLARE @orderTotal DECIMAL(18,2) = 0;
+          SELECT TOP 1 @orderTotal = ISNULL(TotalAmount, 0)
+          FROM RestaurantOrderCur
+          WHERE OrderNumber = @oid;
+
           UPDATE TableMaster 
           SET Status = CASE 
                          WHEN @skipSync = 1 AND Status IN (2, 3) THEN Status 
@@ -1418,11 +1468,15 @@ router.post("/save-cart", async (req, res) => {
                          ELSE 0 
                        END, 
               CurrentOrderId = @oid,
+              TotalAmount = CASE WHEN @orderTotal > 0 THEN @orderTotal ELSE TotalAmount END,
+              entry_status = CASE WHEN @oid IS NOT NULL THEN COALESCE(@entryStatus, entry_status, 'K') ELSE entry_status END,
               StartTime = CASE WHEN @oid IS NOT NULL AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
                                WHEN @oid IS NULL AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN StartTime
                                WHEN @oid IS NULL THEN NULL 
-                               ELSE StartTime END
-          WHERE TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER))
+                               ELSE StartTime END,
+              ModifiedOn = GETDATE()
+          WHERE (TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER)))
+            AND (CurrentOrderId IS NULL OR CurrentOrderId = '' OR CurrentOrderId = 'EMPTY' OR CurrentOrderId = @oid);
         `);
 
       // 🔹 QR / KIOSK ORDER: If entryStatus is 'q' or 'K', set table to Status 1 (Dining/Active)
@@ -1447,6 +1501,18 @@ router.post("/save-cart", async (req, res) => {
           orderId: currentOrderId,
           source: skipTableStatusSync ? "pos_auto_save" : "normal",
         });
+
+        // 📡 Broadcast table occupancy immediately to POS Table Screen
+        const cleanTid = String(cleanId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+        io.emit("table_status_updated", {
+          tableId: cleanTid,
+          orderId: currentOrderId,
+          currentOrderId: currentOrderId,
+          status: 1, // OCCUPIED
+          entryStatus: resolvedEntryStatus || "K",
+          paymentStatus: 0
+        });
+        io.emit("tables_updated");
       }
 
       // Always sync table status to update the payable amount instantly on the main grid via socket/db
@@ -1755,6 +1821,7 @@ router.post("/send", async (req, res) => {
                 entry_status = @entryStatus,
                 PAYMENT_STATUS = @paymentStatus,
                 CurrentOrderId = @oid,
+                TotalAmount = ISNULL((SELECT TOP 1 TotalAmount FROM RestaurantOrderCur WHERE OrderNumber = @oid), TotalAmount),
                 StartTime = CASE WHEN StartTime IS NULL OR StartTime < '2000-01-01' THEN GETDATE() ELSE StartTime END,
                 CustomerName = CASE WHEN @custName IS NOT NULL AND @custName <> '' AND @custName <> 'Guest' THEN @custName ELSE CustomerName END,
                 ModifiedOn = GETDATE()
