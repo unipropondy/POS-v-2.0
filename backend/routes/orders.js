@@ -4448,8 +4448,9 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) 
     return null;
   }
 
-  // DINE-IN FLOW: Keep existing Dine-in behavior completely untouched
-  const sectionCondition = "tm.DiningSection IN ('1', '2', '3')";
+  // DINE-IN FLOW:
+  // 🛡️ Requirement: Kiosk Dine-In MUST ONLY use DiningSection = '3' in TABLEMASTER
+  const sectionCondition = "tm.DiningSection = '3'";
   let res = await poolOrTx.request().query(`
     SELECT TOP 1 
       tm.TableId, 
@@ -4466,46 +4467,18 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) 
           AND (ro.isOrderClosed = 0 OR ro.isOrderClosed IS NULL)
           AND ro.StatusCode NOT IN (0, 3, 4)
       )
+      AND NOT EXISTS (
+        SELECT 1 
+        FROM CartItems ci 
+        WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
+           OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
+      )
     ORDER BY 
-      CASE 
-        WHEN tm.DiningSection = '1' THEN 1
-        WHEN tm.DiningSection = '2' THEN 2
-        WHEN tm.DiningSection = '3' THEN 3
-        ELSE 5
-      END ASC,
       tm.SortCode ASC,
       CASE 
         WHEN ISNUMERIC(tm.TableNumber) = 1 THEN CAST(tm.TableNumber AS INT)
-        ELSE 99999
-      END ASC,
-      tm.TableNumber ASC
-  `);
-
-  if (res.recordset && res.recordset.length > 0) {
-    return {
-      tableId: res.recordset[0].TableId,
-      tableNo: res.recordset[0].TableNo,
-      section: res.recordset[0].DiningSection
-    };
-  }
-
-  res = await poolOrTx.request().query(`
-    SELECT TOP 1 
-      tm.TableId, 
-      tm.TableNumber AS TableNo,
-      tm.DiningSection
-    FROM TableMaster tm
-    WHERE ${sectionCondition}
-    ORDER BY 
-      CASE 
-        WHEN tm.DiningSection = '1' THEN 1
-        WHEN tm.DiningSection = '2' THEN 2
-        WHEN tm.DiningSection = '3' THEN 3
-        ELSE 5
-      END ASC,
-      tm.SortCode ASC,
-      CASE 
-        WHEN ISNUMERIC(tm.TableNumber) = 1 THEN CAST(tm.TableNumber AS INT)
+        WHEN tm.TableNumber LIKE 'D%' AND ISNUMERIC(SUBSTRING(tm.TableNumber, 2, 20)) = 1 
+          THEN CAST(SUBSTRING(tm.TableNumber, 2, 20) AS INT)
         ELSE 99999
       END ASC,
       tm.TableNumber ASC
@@ -4544,18 +4517,21 @@ router.get("/kiosk/available-tables", async (req, res) => {
     const isTakeaway = (orderType && String(orderType).toUpperCase().includes("TAKEAWAY")) || String(section) === "4";
     const sectionCondition = isTakeaway
       ? "tm.DiningSection = '4'"
-      : "tm.DiningSection IN ('1', '2', '3')";
+      : "tm.DiningSection = '3'";
 
     let result = await pool.request().query(`
       SELECT 
         tm.TableId, 
         tm.TableNumber AS TableNo,
+        tm.TableNumber,
         tm.DiningSection,
         tm.SortCode,
         tm.Seats,
         ISNULL(tm.Status, 0) AS Status
       FROM TableMaster tm
       WHERE ${sectionCondition}
+        AND ISNULL(tm.Status, 0) = 0
+        AND tm.CurrentOrderId IS NULL
         AND NOT EXISTS (
           SELECT 1 
           FROM RestaurantOrderCur ro 
@@ -4563,16 +4539,18 @@ router.get("/kiosk/available-tables", async (req, res) => {
             AND (ro.isOrderClosed = 0 OR ro.isOrderClosed IS NULL)
             AND ro.StatusCode NOT IN (0, 3, 4)
         )
+        AND NOT EXISTS (
+          SELECT 1 
+          FROM CartItems ci 
+          WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
+             OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
+        )
       ORDER BY 
-        CASE 
-          WHEN tm.DiningSection = '1' THEN 1
-          WHEN tm.DiningSection = '2' THEN 2
-          WHEN tm.DiningSection = '3' THEN 3
-          WHEN tm.DiningSection = '4' THEN 4
-          ELSE 5
-        END ASC,
+        tm.SortCode ASC,
         CASE 
           WHEN ISNUMERIC(tm.TableNumber) = 1 THEN CAST(tm.TableNumber AS INT)
+          WHEN tm.TableNumber LIKE 'D%' AND ISNUMERIC(SUBSTRING(tm.TableNumber, 2, 20)) = 1 
+            THEN CAST(SUBSTRING(tm.TableNumber, 2, 20) AS INT)
           ELSE 99999
         END ASC,
         tm.TableNumber ASC
@@ -4586,6 +4564,7 @@ router.get("/kiosk/available-tables", async (req, res) => {
           recordset: [{
             TableId: autoCreated.tableId,
             TableNo: autoCreated.tableNo,
+            TableNumber: autoCreated.tableNo,
             DiningSection: autoCreated.section,
             SortCode: 41,
             Seats: 4,
@@ -4609,16 +4588,60 @@ router.post("/kiosk/start", async (req, res) => {
 
     const isTakeaway = (orderType && String(orderType).toUpperCase().includes("TAKEAWAY"));
 
-    if (!tableId || !tableNo || tableNo === "DINE_IN" || tableNo === "TAKEAWAY") {
+    if (tableId) {
+      // Validate that table exists and for Dine-In, belongs strictly to DiningSection 3
+      const check = await pool.request()
+        .input("tid", sql.UniqueIdentifier, toGuidOrNull(tableId))
+        .query(`
+          SELECT TableId, TableNumber, DiningSection 
+          FROM TableMaster 
+          WHERE TableId = @tid
+        `);
+      if (check.recordset.length > 0) {
+        const row = check.recordset[0];
+        tableNo = row.TableNumber;
+        if (!isTakeaway && String(row.DiningSection) !== "3") {
+          return res.status(400).json({
+            success: false,
+            error: "Selected table does not belong to DiningSection 3.",
+          });
+        }
+      }
+    } else if (!tableNo || tableNo === "DINE_IN" || tableNo === "TAKEAWAY") {
       const found = await findAvailableKioskTable(pool, isTakeaway, req.app?.get("io"));
       if (found) {
         tableId = found.tableId;
         tableNo = found.tableNo;
+      } else if (!isTakeaway) {
+        return res.status(400).json({
+          success: false,
+          error: "All Dine-In tables in DiningSection 3 are currently occupied.",
+        });
       }
     }
 
     const finalTableNo = tableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN");
     const orderNumber = await getOrGenerateOrderId(req, tableId || finalTableNo);
+
+    // 🛡️ Pre-occupy table in TableMaster for this Kiosk session
+    if (tableId) {
+      const cleanGuid = toGuidOrNull(tableId);
+      if (cleanGuid) {
+        await pool.request()
+          .input("tid", sql.UniqueIdentifier, cleanGuid)
+          .input("orderNumber", sql.NVarChar(50), orderNumber)
+          .query(`
+            UPDATE TableMaster
+            SET Status = 1,
+                CurrentOrderId = @orderNumber,
+                entry_status = 'K',
+                StartTime = ISNULL(StartTime, GETDATE()),
+                PAYMENT_STATUS = 0,
+                ModifiedOn = GETDATE()
+            WHERE TableId = @tid;
+          `);
+      }
+    }
 
     res.json({
       success: true,
@@ -4648,12 +4671,14 @@ router.post("/kiosk/update-tent-number", async (req, res) => {
 
     await transaction.begin();
 
+    // 🛡️ Strict Section 3 enforcement for Kiosk Dine-In tables
     const existingTableRes = await transaction.request()
       .input("newTable", sql.VarChar(50), cleanNewTable)
       .query(`
-        SELECT TOP 1 TableId, TableNumber, ISNULL(Status, 0) AS Status, CurrentOrderId
+        SELECT TOP 1 TableId, TableNumber, ISNULL(Status, 0) AS Status, CurrentOrderId, DiningSection
         FROM TableMaster
         WHERE LTRIM(RTRIM(TableNumber)) = LTRIM(RTRIM(@newTable))
+          AND DiningSection = '3'
       `);
 
     let targetTableId = null;

@@ -1485,7 +1485,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const storedOrderType =
         (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
       const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
-      const url = `${API}/order/kiosk/available-tables?orderType=${encodeURIComponent(storedOrderType)}&section=${isTakeaway ? "4" : "1"}`;
+      const url = `${API}/order/kiosk/available-tables?orderType=${encodeURIComponent(storedOrderType)}&section=${isTakeaway ? "4" : "3"}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data && data.success && Array.isArray(data.tables)) {
@@ -1869,7 +1869,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId,
-          tableNo: isSelfCollect ? "" : resolvedTableNo,
+          tableNo: resolvedTableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN"),
           tableId: resolvedTableId,
           isSelfCollect: isSelfCollect,
           isTentNumber: isTentNumber,
@@ -1945,7 +1945,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           takeawayCharge: takeawayCharge,
           gst: gstAmount,
           total: Number(finalPayable),
-          tableNo: isSelfCollect ? "" : resolvedTableNo,
+          tableNo: resolvedTableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN"),
           tableId: resolvedTableId,
           isSelfCollect: isSelfCollect,
           isTentNumber: isTentNumber,
