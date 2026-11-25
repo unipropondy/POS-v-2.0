@@ -178,6 +178,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [totalAmount, setTotalAmount] = useState("0.00");
   const [companySettings, setCompanySettings] = useState<any>(null);
+  const [companyBrand, setCompanyBrand] = useState<{
+    CompanyLogoUrl?: string | null;
+    CompanyName?: string | null;
+  } | null>(null);
   const [serviceChargePercent, setServiceChargePercent] = useState(0);
   const [twServiceChargePercent, setTwServiceChargePercent] = useState(0);
   const [takeawayChargeRate, setTakeawayChargeRate] = useState(0);
@@ -845,8 +849,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         setTableNo(storedTableNo || "");
         setTableId(storedTableId || "");
 
-        // Fetch settings, paymodes, kitchens and orderType
-        const [settingsRes, paymodesRes, kitchensRes, storedOrderType] =
+        // Fetch settings, paymodes, kitchens, brand and orderType
+        const [settingsRes, paymodesRes, kitchensRes, brandRes, storedOrderType] =
           await Promise.all([
             fetch(`${API}/company-settings/1`)
               .then((r) => r.json())
@@ -863,6 +867,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             })
               .then((r) => r.json())
               .catch(() => []),
+            fetch(`${API}/company-settings/brand`)
+              .then((r) => r.json())
+              .catch(() => ({})),
             AsyncStorage.getItem("kioskOrderType").then(
               (t) =>
                 t ||
@@ -872,6 +879,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
         const rawSettings = settingsRes?.settings || settingsRes || {};
         setCompanySettings(rawSettings);
+
+        const brandData = brandRes?.success ? brandRes : null;
+        setCompanyBrand({
+          CompanyLogoUrl:
+            brandData?.CompanyLogoUrl ?? rawSettings?.CompanyLogoUrl ?? null,
+          CompanyName:
+            brandData?.CompanyName ?? rawSettings?.CompanyName ?? null,
+        });
 
         const sc = Number(
           rawSettings.ServiceChargePercentage ??
@@ -999,6 +1014,36 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
     initData();
   }, []);
+
+  // ── Company Branding for Sidebar Header ──
+  const companyName = String(
+    companyBrand?.CompanyName ||
+      companySettings?.CompanyName ||
+      companySettings?.companyName ||
+      "",
+  ).trim();
+
+  const rawLogoUrl =
+    companyBrand?.CompanyLogoUrl ||
+    companySettings?.CompanyLogoUrl ||
+    companySettings?.companyLogoUrl ||
+    "";
+
+  const formatLogoUrl = (url?: string) => {
+    if (!url || typeof url !== "string") return null;
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return null;
+    if (
+      cleanUrl.startsWith("data:image") ||
+      cleanUrl.startsWith("http://") ||
+      cleanUrl.startsWith("https://")
+    ) {
+      return cleanUrl;
+    }
+    return `${API}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
+  };
+
+  const companyLogoUri = formatLogoUrl(rawLogoUrl);
 
   // ── ACCURATE CHARGE CALCULATIONS (ALIGNED WITH POS & QR CUSTOMER FLOW) ──
   const isTakeawayOrder =
@@ -2427,9 +2472,41 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
         {/* Categories Sidebar with Accordion Dropdown for Dish Groups */}
         <View style={styles.sidebar}>
+          {/* Company Branding Header at the top of the sidebar */}
+          {(companyLogoUri || companyName) ? (
+            <View style={styles.sidebarBrandHeader}>
+              {companyLogoUri ? (
+                <View style={styles.sidebarBrandLogoWrap}>
+                  <ExpoImage
+                    source={{ uri: companyLogoUri }}
+                    style={styles.sidebarBrandLogo}
+                    contentFit="contain"
+                  />
+                </View>
+              ) : null}
+              {companyName ? (
+                <Text
+                  style={[
+                    styles.sidebarBrandName,
+                    !companyLogoUri && styles.sidebarBrandNameOnly,
+                  ]}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {companyName}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.sidebarContent}
+            contentContainerStyle={[
+              styles.sidebarContent,
+              (companyLogoUri || companyName)
+                ? { paddingTop: 14 }
+                : undefined,
+            ]}
           >
             {categories.map((cat) => {
               const isActive = activeCategory === cat.CategoryId;
@@ -4794,6 +4871,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 16,
     paddingBottom: 170,
+  },
+
+  /* Company Branding Header at the top of Sidebar */
+  sidebarBrandHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#EFE6DC",
+    backgroundColor: "#FBF7F2",
+  },
+  sidebarBrandLogoWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#EFE6DC",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sidebarBrandLogo: {
+    width: "82%",
+    height: "82%",
+  },
+  sidebarBrandName: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: 0.3,
+    lineHeight: 22,
+  },
+  sidebarBrandNameOnly: {
+    fontSize: 18,
+    textAlign: "left",
   },
 
   /* Card styling matching the reference image */

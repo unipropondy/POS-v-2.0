@@ -5,7 +5,55 @@ const { poolPromise } = require("../config/db");
 const { getCompanySettings, invalidateCache } = require("../utils/settingsCache");
 const { logSettingsDiff } = require("../utils/auditLogger");
 
+// 🔹 GET Brand details (CompanyLogoUrl, CompanyName)
+router.get("/brand", async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query(`
+      SELECT TOP 1 CompanyLogoUrl, CompanyName
+      FROM CompanySettings
+      ORDER BY UpdatedOn DESC
+    `);
+    if (result.recordset && result.recordset.length > 0) {
+      res.json({
+        success: true,
+        CompanyLogoUrl: result.recordset[0].CompanyLogoUrl || null,
+        CompanyName: result.recordset[0].CompanyName || null,
+      });
+    } else {
+      res.json({ success: true, CompanyLogoUrl: null, CompanyName: null });
+    }
+  } catch (err) {
+    console.error("Error fetching company brand:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 🔹 GET Settings
+router.get("/", async (req, res) => {
+  try {
+    const settings = await getCompanySettings();
+    const pool = await poolPromise;
+    const licenseRes = await pool.request().query("SELECT MAX(FromDate) AS FromDate, MAX(ToDate) AS ToDate FROM UserMaster");
+    const license = licenseRes.recordset[0] || { FromDate: null, ToDate: null };
+
+    if (settings) {
+      res.json({ 
+        success: true, 
+        settings: { 
+          ...settings, 
+          LicenseFromDate: license.FromDate, 
+          LicenseToDate: license.ToDate 
+        } 
+      });
+    } else {
+      res.status(404).json({ success: false, message: "Settings not found" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const settings = await getCompanySettings();
