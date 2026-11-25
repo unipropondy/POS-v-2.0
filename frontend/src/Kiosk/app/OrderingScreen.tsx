@@ -3467,7 +3467,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             <View style={styles.cartCustomizationHeaderRow}>
                               <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
                               <View style={styles.cartInlineEditBadge}>
-                                <Ionicons name="pencil" size={13} color="#ea580c" />
+                                <Ionicons name="pencil" size={15} color="#ea580c" />
                                 <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
                             </View>
@@ -3485,7 +3485,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                                   {grp.groupName}:
                                 </Text>
                                 <View style={styles.cartInlineEditBadge}>
-                                <Ionicons name="pencil" size={13} color="#ea580c" />
+                                <Ionicons name="pencil" size={15} color="#ea580c" />
                                 <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
                             </View>
@@ -3528,7 +3528,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name="remove" size={18} color="#ffffff" />
+                        <Ionicons name="remove" size={24} color="#ffffff" />
                       </TouchableOpacity>
 
                       <Text style={styles.qtyVal}>
@@ -3541,7 +3541,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name="add" size={18} color="#ffffff" />
+                        <Ionicons name="add" size={24} color="#ffffff" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -5851,39 +5851,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f8fafc",
-    borderRadius: 24,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    borderWidth: 1,
+    borderRadius: 28,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderWidth: 1.5,
     borderColor: "#e2e8f0",
   },
   qtyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#ea580c",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#ea580c",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   qtyBtnText: {
     color: "#ffffff",
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "800",
-    lineHeight: 20,
+    lineHeight: 24,
     textAlign: "center",
   },
   qtyVal: {
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 22,
+    fontWeight: "900",
     color: "#0f172a",
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     textAlign: "center",
-    minWidth: 26,
+    minWidth: 32,
   },
   cartItemPrice: {
     fontSize: 22,
@@ -6404,7 +6404,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   cartModifierGroupTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "800",
     color: "#ea580c",
   },
@@ -6416,17 +6416,17 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   cartInlineEditText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
     color: "#ea580c",
   },
   cartModifierValueText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#334155",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1e293b",
     paddingLeft: 4,
     marginTop: 3,
-    lineHeight: 23,
+    lineHeight: 25,
   },
 
   /* Combo Customizer Modal Styles */
