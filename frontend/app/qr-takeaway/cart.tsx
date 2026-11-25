@@ -571,6 +571,12 @@ export default function CustomerCartScreen() {
           if (createdOrderId) {
             // Automatically redirect customer to the Order Status page
             router.replace("/qr-takeaway/order-status" as any);
+          } else {
+            Alert.alert(
+              "Payment Received",
+              "Your payment was received, but we could not automatically send your order to the kitchen. Please show your confirmation to the counter staff.",
+              [{ text: "OK", onPress: () => router.replace("/qr-takeaway/order-status" as any) }]
+            );
           }
         }
       };

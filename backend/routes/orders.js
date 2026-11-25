@@ -3813,11 +3813,12 @@ router.post("/payment-status", async (req, res) => {
     }
 
     // 2. Trigger print jobs for QR orders
-    if (Number(paymentStatus) === 1 && updated?.CurrentOrderId) {
+    const resolvedOrderNo = clientOrderId || updated?.CurrentOrderId || (await resolveTableOrderNo(pool, cleanId));
+    if (Number(paymentStatus) === 1 && resolvedOrderNo) {
       try {
         const { queueQRPrintJobs } = require("../utils/printHelper");
-        const orderNo = updated.CurrentOrderId;
-        const actualTableNo = updated.tableNo || "TAKEAWAY";
+        const orderNo = resolvedOrderNo;
+        const actualTableNo = updated?.tableNo || (cleanId && cleanId !== "TAKEAWAY" ? cleanId : "TAKEAWAY");
 
         // Query active order items to print
         const itemsRes = await pool
