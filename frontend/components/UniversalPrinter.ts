@@ -1559,22 +1559,37 @@ class UniversalPrinter {
           const isBtMac = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(targetIp.trim());
           const isUsbTarget = !isIp && !isBtMac;
 
-          // 📲 Network printers can use Print Bridge; USB printers must ONLY print on the originating device
-          if (!isUsbTarget) {
+          // 📲 Network printers can use Print Bridge; USB printers only use Print Bridge if Print Bridge is running locally on THIS device (even when hosted)
+          let allowBridgeForTarget = !isUsbTarget;
+          if (isUsbTarget && (Platform.OS as string) === "web" && typeof window !== "undefined") {
+            try {
+              const ctrl = new AbortController();
+              const t = setTimeout(() => ctrl.abort(), 800);
+              const localRes = await fetch("http://127.0.0.1:3100/health", { signal: ctrl.signal });
+              clearTimeout(t);
+              if (localRes.ok) {
+                allowBridgeForTarget = true;
+              }
+            } catch {
+              allowBridgeForTarget = false;
+            }
+          }
+
+          if (allowBridgeForTarget) {
             const isBridge = await this.isBridgeOnline();
             if (isBridge) {
               try {
-                console.log(`📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
+                console.log(`📡 [Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
                 const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
                 const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
                 const success = await this.queuePrintJob(pType, undefined, text);
                 if (success) return;
               } catch (bridgeErr) {
-                console.warn("APK Print Bridge queue failed, trying direct connection:", bridgeErr);
+                console.warn("Print Bridge queue failed, trying direct connection:", bridgeErr);
               }
             }
           } else {
-            console.log(`🔌 [USB Guard] Skipping remote Print Bridge for USB printer "${targetIp}" (device-specific only).`);
+            console.log(`🔌 [USB Guard] Skipping remote Print Bridge for USB printer "${targetIp}" (not on local host).`);
           }
           let isReachable = false;
           if (isIp) {
