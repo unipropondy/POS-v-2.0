@@ -73,6 +73,13 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
   const [showCustomerListPopup, setShowCustomerListPopup] = useState(false);
   const [popupSearch, setPopupSearch] = useState("");
 
+  // Takeaway Table Selection State
+  const [showTakeawayTableModal, setShowTakeawayTableModal] = useState(false);
+  const [takeawayTables, setTakeawayTables] = useState<any[]>([]);
+  const [loadingTakeawayTables, setLoadingTakeawayTables] = useState(false);
+  const [selectedTakeawayTable, setSelectedTakeawayTable] = useState<any | null>(null);
+  const [takeawayTableError, setTakeawayTableError] = useState("");
+
   // Screen sizing
   const isWide = screenWidth >= 900;
   const isTablet = screenWidth >= 600 && screenWidth < 900;
@@ -293,8 +300,55 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
   };
 
 
+  // Fetch available Takeaway tables dynamically from TableMaster
+  const fetchTakeawayTables = async () => {
+    setLoadingTakeawayTables(true);
+    setTakeawayTableError("");
+    try {
+      const res = await fetch(`${API}/order/kiosk/available-tables?orderType=TAKEAWAY&section=4`);
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.tables)) {
+        setTakeawayTables(data.tables);
+        if (data.tables.length === 0) {
+          setTakeawayTableError("All Takeaway tables are currently occupied. Please wait a moment.");
+        }
+      } else {
+        setTakeawayTables([]);
+        setTakeawayTableError(data?.error || "No available Takeaway tables found.");
+      }
+    } catch (err: any) {
+      console.error("Error fetching takeaway tables:", err);
+      setTakeawayTables([]);
+      setTakeawayTableError("Unable to load Takeaway tables. Please check your network connection.");
+    } finally {
+      setLoadingTakeawayTables(false);
+    }
+  };
+
+  // Open Takeaway Table Picker
+  const handleOpenTakeawayTablePicker = async () => {
+    setSelectedTakeawayTable(null);
+    setShowTakeawayTableModal(true);
+    await fetchTakeawayTables();
+  };
+
+  // Confirm Takeaway Table selection and start Kiosk order
+  const handleConfirmTakeawayTable = async (tableToUse?: any) => {
+    const target = tableToUse || selectedTakeawayTable;
+    if (!target) {
+      setTakeawayTableError("Please select a Takeaway table to proceed.");
+      return;
+    }
+    setShowTakeawayTableModal(false);
+    chooseService("TAKEAWAY", target);
+  };
+
   // Choose Service (DINE_IN / TAKEAWAY) -> Start Kiosk session
-  const chooseService = async (orderType: string) => {
+  const chooseService = async (orderType: string, chosenTable?: any) => {
+    if (orderType === "TAKEAWAY" && !chosenTable) {
+      handleOpenTakeawayTablePicker();
+      return;
+    }
     if (isStartingRef.current || loading) {
       return;
     }
@@ -302,7 +356,7 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
     setError("");
     setLoading(true);
     try {
-      await handleStart(orderType);
+      await handleStart(orderType, chosenTable);
     } catch (err: any) {
       setError(err?.message || "Unable to start service.");
     } finally {
@@ -793,6 +847,147 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
                 )}
               />
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── TAKEAWAY TABLE SELECTION POPUP MODAL ── */}
+      <Modal
+        visible={showTakeawayTableModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTakeawayTableModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.takeawayTableModal}>
+            {/* Modal Header */}
+            <View style={styles.takeawayModalHeader}>
+              <View style={styles.takeawayModalTitleRow}>
+                <View style={styles.takeawayModalIconCircle}>
+                  <Ionicons name="bag-handle" size={24} color="#ea580c" />
+                </View>
+                <View>
+                  <Text style={styles.takeawayModalTitle}>Select Takeaway Table</Text>
+                  <Text style={styles.takeawayModalSubtitle}>
+                    Choose an available counter / takeaway slot for your order
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.popupCloseBtn}
+                onPress={() => setShowTakeawayTableModal(false)}
+                hitSlop={10}
+              >
+                <Text style={styles.popupCloseText}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Error Message if Any */}
+            {!!takeawayTableError && (
+              <View style={styles.takeawayErrorBadge}>
+                <Ionicons name="alert-circle-outline" size={18} color="#ef4444" />
+                <Text style={styles.takeawayErrorText}>{takeawayTableError}</Text>
+              </View>
+            )}
+
+            {/* Table Grid / Loading State */}
+            {loadingTakeawayTables ? (
+              <View style={styles.takeawayLoadingWrap}>
+                <ActivityIndicator size="large" color="#ea580c" />
+                <Text style={styles.takeawayLoadingText}>Loading available takeaway tables...</Text>
+              </View>
+            ) : takeawayTables.length === 0 ? (
+              <View style={styles.takeawayEmptyWrap}>
+                <Ionicons name="restaurant-outline" size={48} color="#94a3b8" />
+                <Text style={styles.takeawayEmptyTitle}>No Takeaway Tables Available</Text>
+                <Text style={styles.takeawayEmptyDesc}>
+                  All Takeaway slots are currently occupied. Please wait for staff or try again in a few moments.
+                </Text>
+                <TouchableOpacity
+                  style={styles.takeawayRefreshBtn}
+                  onPress={fetchTakeawayTables}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={18} color="#ffffff" />
+                  <Text style={styles.takeawayRefreshBtnText}>Refresh Availability</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.takeawayTablesScroll}
+                contentContainerStyle={styles.takeawayTablesGrid}
+                showsVerticalScrollIndicator={false}
+              >
+                {takeawayTables.map((tbl) => {
+                  const isSelected = selectedTakeawayTable?.TableId === tbl.TableId;
+                  const displayLabel = tbl.TableNo || tbl.TableNumber || "TW";
+                  return (
+                    <TouchableOpacity
+                      key={tbl.TableId || displayLabel}
+                      style={[
+                        styles.takeawayTableCard,
+                        isSelected && styles.takeawayTableCardSelected,
+                      ]}
+                      onPress={() => setSelectedTakeawayTable(tbl)}
+                      activeOpacity={0.78}
+                    >
+                      <View
+                        style={[
+                          styles.takeawayCardIconWrap,
+                          isSelected && styles.takeawayCardIconWrapSelected,
+                        ]}
+                      >
+                        <Ionicons
+                          name="bag-handle-outline"
+                          size={24}
+                          color={isSelected ? "#ffffff" : "#ea580c"}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.takeawayTableCardLabel,
+                          isSelected && styles.takeawayTableCardLabelSelected,
+                        ]}
+                      >
+                        {displayLabel}
+                      </Text>
+                      <View style={styles.takeawayAvailablePill}>
+                        <View style={styles.takeawayAvailableDot} />
+                        <Text style={styles.takeawayAvailableText}>Available</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Modal Footer Actions */}
+            <View style={styles.takeawayModalFooter}>
+              <TouchableOpacity
+                style={styles.takeawayCancelBtn}
+                onPress={() => setShowTakeawayTableModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.takeawayCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.takeawayProceedBtn,
+                  (!selectedTakeawayTable || loadingTakeawayTables) && styles.takeawayProceedBtnDisabled,
+                ]}
+                onPress={() => handleConfirmTakeawayTable()}
+                disabled={!selectedTakeawayTable || loadingTakeawayTables}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.takeawayProceedBtnText}>
+                  {selectedTakeawayTable
+                    ? `Continue with ${selectedTakeawayTable.TableNo || selectedTakeawayTable.TableNumber}`
+                    : "Select a Table"}
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1537,5 +1732,234 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     color: "#374151",
+  },
+
+  /* ── TAKEAWAY TABLE SELECTION MODAL STYLES ── */
+  takeawayTableModal: {
+    width: "100%",
+    maxWidth: 600,
+    maxHeight: "85%",
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    padding: 24,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.25,
+    shadowRadius: 30,
+    elevation: 12,
+  },
+  takeawayModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  takeawayModalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+    paddingRight: 10,
+  },
+  takeawayModalIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  takeawayModalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  takeawayModalSubtitle: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  takeawayErrorBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  takeawayErrorText: {
+    color: "#b91c1c",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
+  takeawayLoadingWrap: {
+    paddingVertical: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  takeawayLoadingText: {
+    color: "#64748b",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  takeawayEmptyWrap: {
+    paddingVertical: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+  },
+  takeawayEmptyTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1e293b",
+    marginTop: 8,
+  },
+  takeawayEmptyDesc: {
+    fontSize: 13,
+    color: "#64748b",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  takeawayRefreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#ea580c",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  takeawayRefreshBtnText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  takeawayTablesScroll: {
+    maxHeight: 380,
+    marginBottom: 16,
+  },
+  takeawayTablesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  takeawayTableCard: {
+    width: "30.5%",
+    minWidth: 110,
+    flexGrow: 1,
+    backgroundColor: "#f8fafc",
+    borderWidth: 2,
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  takeawayTableCardSelected: {
+    borderColor: "#ea580c",
+    backgroundColor: "#fff7ed",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  takeawayCardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  takeawayCardIconWrapSelected: {
+    backgroundColor: "#ea580c",
+  },
+  takeawayTableCardLabel: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1e293b",
+  },
+  takeawayTableCardLabelSelected: {
+    color: "#ea580c",
+  },
+  takeawayAvailablePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#ecfdf5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  takeawayAvailableDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10b981",
+  },
+  takeawayAvailableText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  takeawayModalFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  takeawayCancelBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#f1f5f9",
+  },
+  takeawayCancelBtnText: {
+    color: "#475569",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  takeawayProceedBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#ea580c",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  takeawayProceedBtnDisabled: {
+    backgroundColor: "#cbd5e1",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  takeawayProceedBtnText: {
+    color: "#ffffff",
+    fontWeight: "800",
+    fontSize: 15,
   },
 });

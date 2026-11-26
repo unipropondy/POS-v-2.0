@@ -4932,7 +4932,7 @@ router.get("/kiosk/available-tables", async (req, res) => {
 
     const isTakeaway = (orderType && String(orderType).toUpperCase().includes("TAKEAWAY")) || String(section) === "4";
     const sectionCondition = isTakeaway
-      ? "tm.DiningSection = '4'"
+      ? "tm.DiningSection = '4' AND tm.TableNumber LIKE 'TW%'"
       : "tm.DiningSection = '3'";
 
     let result = await pool.request().query(`
@@ -4964,6 +4964,8 @@ router.get("/kiosk/available-tables", async (req, res) => {
       ORDER BY 
         tm.SortCode ASC,
         CASE 
+          WHEN tm.TableNumber LIKE 'TW%' AND ISNUMERIC(SUBSTRING(tm.TableNumber, 3, 20)) = 1 
+            THEN CAST(SUBSTRING(tm.TableNumber, 3, 20) AS INT)
           WHEN ISNUMERIC(tm.TableNumber) = 1 THEN CAST(tm.TableNumber AS INT)
           WHEN tm.TableNumber LIKE 'D%' AND ISNUMERIC(SUBSTRING(tm.TableNumber, 2, 20)) = 1 
             THEN CAST(SUBSTRING(tm.TableNumber, 2, 20) AS INT)
