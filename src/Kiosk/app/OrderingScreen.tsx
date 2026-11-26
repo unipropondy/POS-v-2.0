@@ -3879,8 +3879,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       onPress={() => handleDishClick(item)}
                       activeOpacity={0.88}
                     >
-                      {/* Top Right Badge: Shows quantity with scale pop animation if added to cart */}
-                      {dishQty > 0 && (
+                      {/* Top Right: Cart Qty Badge if in cart, otherwise Red Heart Outline matching reference */}
+                      {dishQty > 0 ? (
                         <Animated.View
                           style={[
                             styles.dishCardQtyBadge,
@@ -3895,9 +3895,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             {dishQty}
                           </Text>
                         </Animated.View>
+                      ) : (
+                        <View style={styles.dishCardHeartWrap}>
+                          <Ionicons name="heart-outline" size={26} color="#ef4444" />
+                        </View>
                       )}
 
-                      {/* Square full-bleed dish image matching reference design (1:1 edge-to-edge cover fit) */}
+                      {/* Rounded rectangular dish image matching reference design (1.35 aspect ratio, rounded corners, cover fit) */}
                       <View style={styles.dishImageBox}>
                         {item.Image ? (
                           <ExpoImage
@@ -6204,12 +6208,12 @@ const styles = StyleSheet.create({
     margin: 12,
     backgroundColor: "#ffffff",
     borderRadius: 28,
-    paddingVertical: 0,
-    paddingHorizontal: 0,
+    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingBottom: 24,
     alignItems: "center",
     justifyContent: "flex-start",
     position: "relative",
-    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
@@ -6227,19 +6231,19 @@ const styles = StyleSheet.create({
   dishSoldOut: { opacity: 0.5 },
   dishCardHeartWrap: {
     position: "absolute",
-    top: 18,
+    top: 16,
     right: 20,
-    zIndex: 2,
+    zIndex: 5,
   },
   dishCardHeartIcon: {
-    fontSize: 24,
+    fontSize: 26,
     color: "#ef4444",
     fontWeight: "600",
   },
   dishCardQtyBadge: {
     position: "absolute",
     top: 14,
-    right: 14,
+    right: 18,
     zIndex: 10,
     minWidth: 32,
     height: 32,
@@ -6612,9 +6616,8 @@ const styles = StyleSheet.create({
   },
   dishImageBox: {
     width: "100%",
-    aspectRatio: 1,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    aspectRatio: 1.35,
+    borderRadius: 20,
     backgroundColor: "#f8fafc",
     alignItems: "center",
     justifyContent: "center",
@@ -6623,9 +6626,8 @@ const styles = StyleSheet.create({
   },
   dishCircularBox: {
     width: "100%",
-    aspectRatio: 1,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    aspectRatio: 1.35,
+    borderRadius: 20,
     backgroundColor: "#f8fafc",
     alignItems: "center",
     justifyContent: "center",
@@ -6635,8 +6637,7 @@ const styles = StyleSheet.create({
   dishImg: {
     width: "100%",
     height: "100%",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderRadius: 20,
   },
   dishEmoji: { fontSize: 64 },
   soldOutBadge: {
@@ -6654,9 +6655,9 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingTop: 18,
-    paddingBottom: 22,
+    paddingBottom: 4,
   },
   dishTopContent: {
     width: "100%",
