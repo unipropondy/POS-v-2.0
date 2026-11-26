@@ -1016,7 +1016,7 @@ async function syncToProfessionalTables(
     cleanupRequest.input("orderNo", sql.NVarChar(50), cleanOrderNo);
     cleanupRequest.input("targetTableId", sql.UniqueIdentifier, actualTableId);
     cleanupRequest.input("targetTableNo", sql.VarChar(50), actualTableNo);
-    cleanupRequest.input("entryStatus", sql.NVarChar(10), finalEntryStatus || "K");
+    cleanupRequest.input("entryStatus", sql.NVarChar(10), finalEntryStatus || null);
     cleanupRequest.input("isTakeaway", sql.Bit, isTakeaway ? 1 : 0);
 
     const cleanupSql = `
@@ -1071,7 +1071,7 @@ async function syncToProfessionalTables(
         SET CurrentOrderId = @orderNo,
             TotalAmount = @calcTotal,
             Status = 1,
-            entry_status = COALESCE(@entryStatus, entry_status, 'K'),
+            entry_status = COALESCE(@entryStatus, entry_status),
             StartTime = ISNULL(StartTime, GETDATE()),
             ModifiedOn = GETDATE()
         WHERE ((@targetTableId IS NOT NULL AND TableId = @targetTableId) OR TableNumber = @targetTableNo)
@@ -1086,7 +1086,7 @@ async function syncToProfessionalTables(
     totalRequest.input("orderNo", sql.NVarChar(50), cleanOrderNo);
     totalRequest.input("targetTableId", sql.UniqueIdentifier, actualTableId);
     totalRequest.input("targetTableNo", sql.VarChar(50), actualTableNo);
-    totalRequest.input("entryStatus", sql.NVarChar(10), finalEntryStatus || "K");
+    totalRequest.input("entryStatus", sql.NVarChar(10), finalEntryStatus || null);
     totalRequest.input("isTakeaway", sql.Bit, isTakeaway ? 1 : 0);
     await totalRequest.query(`
       DECLARE @calcSubtotal2 DECIMAL(18,2) = 0;
@@ -1135,7 +1135,7 @@ async function syncToProfessionalTables(
         SET CurrentOrderId = @orderNo,
             TotalAmount = @calcTotal2,
             Status = 1,
-            entry_status = COALESCE(@entryStatus, entry_status, 'K'),
+            entry_status = COALESCE(@entryStatus, entry_status),
             StartTime = ISNULL(StartTime, GETDATE()),
             ModifiedOn = GETDATE()
         WHERE ((@targetTableId IS NOT NULL AND TableId = @targetTableId) OR TableNumber = @targetTableNo)
@@ -1498,7 +1498,7 @@ router.post("/save-cart", async (req, res) => {
         .input("tid", sql.VarChar(50), cleanId)
         .input("oid", sql.NVarChar(50), currentOrderId)
         .input("skipSync", sql.Bit, !!skipTableStatusSync)
-        .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
+        .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || null)
         .query(`
           DECLARE @orderTotal DECIMAL(18,2) = 0;
           SELECT TOP 1 @orderTotal = ISNULL(TotalAmount, 0)
@@ -1514,7 +1514,7 @@ router.post("/save-cart", async (req, res) => {
                        END, 
               CurrentOrderId = @oid,
               TotalAmount = CASE WHEN @orderTotal > 0 THEN @orderTotal ELSE TotalAmount END,
-              entry_status = CASE WHEN @oid IS NOT NULL THEN COALESCE(@entryStatus, entry_status, 'K') ELSE entry_status END,
+              entry_status = CASE WHEN @oid IS NOT NULL THEN COALESCE(@entryStatus, entry_status) ELSE entry_status END,
               StartTime = CASE WHEN @oid IS NOT NULL AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
                                WHEN @oid IS NULL AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN StartTime
                                WHEN @oid IS NULL THEN NULL 
@@ -1576,7 +1576,7 @@ router.post("/save-cart", async (req, res) => {
           orderId: currentOrderId,
           currentOrderId: currentOrderId,
           status: 1, // OCCUPIED
-          entryStatus: resolvedEntryStatus || "K",
+          entryStatus: resolvedEntryStatus || null,
           paymentStatus: 0
         });
         io.emit("tables_updated");
@@ -1914,6 +1914,13 @@ router.post("/send", async (req, res) => {
         paymentStatus = 0;
       }
 
+      const isKioskSend =
+        req.body.isKiosk === true ||
+        req.body.isKiosk === "true" ||
+        req.body.entryStatus === "K" ||
+        req.body.orderSource === "kiosk";
+      const sendEntryStatus = isQROrder ? "q" : (isKioskSend ? "K" : null);
+
       const hasSpecificTable = cleanId && cleanId !== "TAKEAWAY" && !String(cleanId).startsWith("TAKEAWAY");
 
       if (cleanId && (hasSpecificTable || !isTakeawayOrder)) {
@@ -1923,11 +1930,11 @@ router.post("/send", async (req, res) => {
           .input("oid", sql.NVarChar(50), finalOrderId)
           .input("status", sql.Int, tableStatus)
           .input("paymentStatus", sql.Int, paymentStatus)
-          .input("entryStatus", sql.NVarChar(10), isQROrder ? "q" : null)
+          .input("entryStatus", sql.NVarChar(10), sendEntryStatus)
           .input("custName", sql.NVarChar(9), customerName ? String(customerName).substring(0, 9) : null).query(`
             UPDATE TableMaster 
             SET Status = CASE WHEN Status = 2 THEN 2 ELSE @status END, 
-                entry_status = @entryStatus,
+                entry_status = COALESCE(@entryStatus, entry_status),
                 PAYMENT_STATUS = @paymentStatus,
                 CurrentOrderId = @oid,
                 TotalAmount = ISNULL((SELECT TOP 1 TotalAmount FROM RestaurantOrderCur WHERE OrderNumber = @oid), TotalAmount),
@@ -4302,7 +4309,7 @@ router.post("/complete-online-payment", async (req, res) => {
             await pool.request()
               .input("orderNo", sql.NVarChar(50), orderNo)
               .input("paidAmt", sql.Decimal(18, 2), verifiedPaidAmt || 0)
-              .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
+              .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || null)
               .input("tentNumber", sql.NVarChar(50), req.body.tentNumber || null)
               .input("isTentNumber", sql.Bit, req.body.isTentNumber ? 1 : 0)
               .input("isSelfCollect", sql.Bit, req.body.isSelfCollect ? 1 : 0)
@@ -4329,7 +4336,7 @@ router.post("/complete-online-payment", async (req, res) => {
                 .input("tableId", sql.UniqueIdentifier, matchedTableId)
                 .input("orderNo", sql.NVarChar(50), orderNo)
                 .input("paidAmt", sql.Decimal(18, 2), verifiedPaidAmt || 0)
-                .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || "K")
+                .input("entryStatus", sql.VarChar(10), resolvedEntryStatus || null)
                 .query(`
                   UPDATE TableMaster
                   SET
@@ -4365,7 +4372,7 @@ router.post("/complete-online-payment", async (req, res) => {
                 paymentStatus: 1, // PAID
                 totalAmount: verifiedPaidAmt || 0,
                 currentOrderId: orderNo,
-                entryStatus: resolvedEntryStatus || "K",
+                entryStatus: resolvedEntryStatus || null,
                 startTime: Date.now()
               });
               ioInst.emit("tables_updated");
@@ -4378,15 +4385,15 @@ router.post("/complete-online-payment", async (req, res) => {
               });
               ioInst.emit("new_order", {
                 orderId: orderNo,
-                entryStatus: resolvedEntryStatus || "K",
+                entryStatus: resolvedEntryStatus || null,
                 items: Array.isArray(req.body.cart) ? req.body.cart : [],
                 context: {
                   orderType: "DINE_IN",
                   tableId: cleanTid,
                   tableNo: matchedTableNo,
                   section: secStr,
-                  entryStatus: resolvedEntryStatus || "K",
-                  isKiosk: true,
+                  entryStatus: resolvedEntryStatus || null,
+                  isKiosk: isKioskOrder,
                   isSelfCollect: !!req.body.isSelfCollect,
                   isTentNumber: !!req.body.isTentNumber,
                   tentNumber: req.body.tentNumber || (req.body.isTentNumber ? matchedTableNo : undefined),

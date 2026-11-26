@@ -76,7 +76,7 @@ router.get("/all", async (req, res) => {
         SET tm.CurrentOrderId = roc.OrderNumber,
             tm.TotalAmount = roc.TotalAmount,
             tm.Status = 1,
-            tm.entry_status = COALESCE(roc.entry_status, tm.entry_status, 'K'),
+            tm.entry_status = COALESCE(roc.entry_status, tm.entry_status),
             tm.StartTime = ISNULL(tm.StartTime, roc.OrderDateTime),
             tm.ModifiedOn = GETDATE()
         FROM TableMaster tm

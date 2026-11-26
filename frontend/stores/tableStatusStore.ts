@@ -1,6 +1,13 @@
-import { create } from 'zustand';
-import { parseDatabaseDate } from '../utils/timezoneHelper';
-export type TableStatusType = 'EMPTY' | 'HOLD' | 'SENT' | 'BILL_REQUESTED' | 'LOCKED' | 'CART' | 'DELIVERY';
+import { create } from "zustand";
+import { parseDatabaseDate } from "../utils/timezoneHelper";
+export type TableStatusType =
+  | "EMPTY"
+  | "HOLD"
+  | "SENT"
+  | "BILL_REQUESTED"
+  | "LOCKED"
+  | "CART"
+  | "DELIVERY";
 
 export type TableStatus = {
   tableId: string;
@@ -40,7 +47,7 @@ type TableStatusState = {
     entryStatus?: string,
     customerName?: string,
     pax?: number,
-    paymentStatus?: number
+    paymentStatus?: number,
   ) => void;
   clearTable: (section: string, tableNo: string) => void;
   lockTable: (tableId: string, lockedByName?: string) => void;
@@ -48,7 +55,14 @@ type TableStatusState = {
   isTableLocked: (tableId: string) => boolean;
   getLockedName: (tableNo: string, section?: string) => string | undefined;
   setLockedName: (tableNo: string, name: string) => void;
-  syncLockedTables: (lockedTables: Array<{ tableId: string; tableNo: string; section: string; lockedByName?: string }>) => void;
+  syncLockedTables: (
+    lockedTables: Array<{
+      tableId: string;
+      tableNo: string;
+      section: string;
+      lockedByName?: string;
+    }>,
+  ) => void;
   batchUpdateTableStatus: (updates: TableStatus[]) => void;
   getTables: () => TableStatus[];
 };
@@ -60,8 +74,27 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
   lockedTableNames: {},
   lastLocalUpdate: {},
 
-  updateTableStatus: (tableId, section, tableNo, orderId, status, startTime, lockedByName, totalAmount, isExternal, isHoldOvertime, modifiedOn, entryStatus, customerName, pax, paymentStatus) => {
-    const cleanTableId = String(tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+  updateTableStatus: (
+    tableId,
+    section,
+    tableNo,
+    orderId,
+    status,
+    startTime,
+    lockedByName,
+    totalAmount,
+    isExternal,
+    isHoldOvertime,
+    modifiedOn,
+    entryStatus,
+    customerName,
+    pax,
+    paymentStatus,
+  ) => {
+    const cleanTableId = String(tableId || "")
+      .replace(/^\{|\}$/g, "")
+      .trim()
+      .toLowerCase();
     const key = `${section}_${tableNo}`;
     set((state) => {
       const lastModified = state.tableMap[cleanTableId]?.lastModified || "";
@@ -71,38 +104,73 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       // 🛡️ SYNC SHIELD: Prioritize modifiedOn (Version Check) over simple timer
       if (isExternal) {
         // If we have timestamps, use them for definitive versioning (never block EMPTY status)
-        if (status !== 'EMPTY' && (status as any) !== 0 && modifiedOn && lastModified && modifiedOn < lastModified) {
+        if (
+          status !== "EMPTY" &&
+          (status as any) !== 0 &&
+          modifiedOn &&
+          lastModified &&
+          modifiedOn < lastModified
+        ) {
           return state; // Stale update
         }
         // 🚀 FIX: Strictly ignore external updates if recently edited locally (< 3s)
         // This prevents flicker when background fetches return stale data before DB catches up.
         // UNLESS the status is EMPTY (0) or LOCKED (5), which should sync instantly.
-        if (now - lastEdit < 3000 && status !== 'EMPTY' && (status as any) !== 0 && status !== 'LOCKED' && (status as any) !== 5) return state;
+        if (
+          now - lastEdit < 3000 &&
+          status !== "EMPTY" &&
+          (status as any) !== 0 &&
+          status !== "LOCKED" &&
+          (status as any) !== 5
+        )
+          return state;
       }
 
-      const parsedStartTime = typeof startTime === 'string' 
-        ? parseDatabaseDate(startTime).getTime() 
-        : startTime;
+      const parsedStartTime =
+        typeof startTime === "string"
+          ? parseDatabaseDate(startTime).getTime()
+          : startTime;
 
       let existingIndex = -1;
-      let existingTable: TableStatus | undefined = cleanTableId ? state.tableMap[cleanTableId] : undefined;
+      let existingTable: TableStatus | undefined = cleanTableId
+        ? state.tableMap[cleanTableId]
+        : undefined;
 
-      const normTableNo = String(tableNo ?? "").trim().toLowerCase();
-      const normSection = String(section ?? "").trim().toLowerCase();
+      const normTableNo = String(tableNo ?? "")
+        .trim()
+        .toLowerCase();
+      const normSection = String(section ?? "")
+        .trim()
+        .toLowerCase();
 
       if (cleanTableId) {
         existingIndex = state.tables.findIndex((t) => {
-          const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+          const tId = String(t.tableId || "")
+            .replace(/^\{|\}$/g, "")
+            .trim()
+            .toLowerCase();
           return tId === cleanTableId;
         });
       }
       if (existingIndex === -1 && normTableNo) {
         existingIndex = state.tables.findIndex((t) => {
-          const tId = String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+          const tId = String(t.tableId || "")
+            .replace(/^\{|\}$/g, "")
+            .trim()
+            .toLowerCase();
           if (cleanTableId && tId === cleanTableId) return true;
-          const tNo = String(t.tableNo ?? "").trim().toLowerCase();
-          const tSec = String(t.section ?? "").trim().toLowerCase();
-          return tNo === normTableNo && (!normSection || tSec === normSection || tSec.replace(/[-_]/g, "") === normSection.replace(/[-_]/g, ""));
+          const tNo = String(t.tableNo ?? "")
+            .trim()
+            .toLowerCase();
+          const tSec = String(t.section ?? "")
+            .trim()
+            .toLowerCase();
+          return (
+            tNo === normTableNo &&
+            (!normSection ||
+              tSec === normSection ||
+              tSec.replace(/[-_]/g, "") === normSection.replace(/[-_]/g, ""))
+          );
         });
       }
       if (existingIndex > -1 && !existingTable) {
@@ -118,13 +186,43 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         status,
         startTime: parsedStartTime || existingTable?.startTime || Date.now(),
         lockedByName,
-        totalAmount: status === 'EMPTY' ? 0 : (totalAmount !== undefined ? totalAmount : (existingTable?.totalAmount ?? 0)),
-        isHoldOvertime: status === 'EMPTY' ? false : (isHoldOvertime !== undefined ? isHoldOvertime : (existingTable?.isHoldOvertime ?? false)),
+        totalAmount:
+          status === "EMPTY"
+            ? 0
+            : totalAmount !== undefined
+              ? totalAmount
+              : (existingTable?.totalAmount ?? 0),
+        isHoldOvertime:
+          status === "EMPTY"
+            ? false
+            : isHoldOvertime !== undefined
+              ? isHoldOvertime
+              : (existingTable?.isHoldOvertime ?? false),
         lastModified: modifiedOn || existingTable?.lastModified || "",
-        entryStatus: status === 'EMPTY' ? undefined : (entryStatus !== undefined ? entryStatus : existingTable?.entryStatus),
-        paymentStatus: status === 'EMPTY' ? 0 : (paymentStatus !== undefined ? Number(paymentStatus) : (existingTable?.paymentStatus ?? 0)),
-        customerName: status === 'EMPTY' ? undefined : (customerName !== undefined ? customerName : existingTable?.customerName),
-        pax: status === 'EMPTY' ? undefined : (pax !== undefined ? pax : existingTable?.pax),
+        entryStatus:
+          status === "EMPTY"
+            ? undefined
+            : entryStatus !== undefined
+              ? entryStatus
+              : existingTable?.entryStatus,
+        paymentStatus:
+          status === "EMPTY"
+            ? 0
+            : paymentStatus !== undefined
+              ? Number(paymentStatus)
+              : (existingTable?.paymentStatus ?? 0),
+        customerName:
+          status === "EMPTY"
+            ? undefined
+            : customerName !== undefined
+              ? customerName
+              : existingTable?.customerName,
+        pax:
+          status === "EMPTY"
+            ? undefined
+            : pax !== undefined
+              ? pax
+              : existingTable?.pax,
       };
 
       const newTables = [...state.tables];
@@ -133,18 +231,22 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
 
       const newMap = { ...state.tableMap };
       if (updatedTable.tableId) {
-        const cleanKey = String(updatedTable.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+        const cleanKey = String(updatedTable.tableId)
+          .replace(/^\{|\}$/g, "")
+          .trim()
+          .toLowerCase();
         newMap[cleanKey] = updatedTable;
       }
       if (updatedTable.tableNo) {
-        newMap[String(updatedTable.tableNo).trim().toLowerCase()] = updatedTable;
+        newMap[String(updatedTable.tableNo).trim().toLowerCase()] =
+          updatedTable;
       }
 
       return {
         ...state,
         tables: newTables,
         tableMap: newMap,
-        lastLocalUpdate: { ...state.lastLocalUpdate, [key]: updateTimestamp }
+        lastLocalUpdate: { ...state.lastLocalUpdate, [key]: updateTimestamp },
       };
     });
   },
@@ -154,7 +256,16 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       const { [tableNo]: _, ...rest } = state.lockedTableNames;
       const newTables = state.tables.map((t) => {
         if (t.section === section && t.tableNo === tableNo) {
-          return { ...t, status: 'EMPTY' as TableStatusType, totalAmount: 0, startTime: 0, orderId: '', isHoldOvertime: false, customerName: undefined, pax: undefined };
+          return {
+            ...t,
+            status: "EMPTY" as TableStatusType,
+            totalAmount: 0,
+            startTime: 0,
+            orderId: "",
+            isHoldOvertime: false,
+            customerName: undefined,
+            pax: undefined,
+          };
         }
         return t;
       });
@@ -174,9 +285,14 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
     set((state) => {
       const normalizedId = tableId.toLowerCase();
       if (!state.lockedTables.includes(normalizedId)) {
-        const newState: any = { lockedTables: [...state.lockedTables, normalizedId] };
+        const newState: any = {
+          lockedTables: [...state.lockedTables, normalizedId],
+        };
         if (lockedByName) {
-          newState.lockedTableNames = { ...state.lockedTableNames, [normalizedId]: lockedByName };
+          newState.lockedTableNames = {
+            ...state.lockedTableNames,
+            [normalizedId]: lockedByName,
+          };
         }
         return newState;
       }
@@ -204,14 +320,17 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
     const sTableNo = normalize(tableNo);
 
     if (section) {
-      const name = get().lockedTableNames[`${section}_${sTableNo}`] || get().lockedTableNames[`${section}_${tableNo}`];
+      const name =
+        get().lockedTableNames[`${section}_${sTableNo}`] ||
+        get().lockedTableNames[`${section}_${tableNo}`];
       if (name) return name;
     }
 
     // Fallback search in tables array
-    const table = get().tables.find(t => 
-      (normalize(t.tableNo) === sTableNo || t.tableNo === tableNo) && 
-      (!section || t.section === section)
+    const table = get().tables.find(
+      (t) =>
+        (normalize(t.tableNo) === sTableNo || t.tableNo === tableNo) &&
+        (!section || t.section === section),
     );
     return table?.lockedByName;
   },
@@ -235,16 +354,26 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         const key = `${t.section}_${t.tableNo}`;
         const lockedData = lockedMap[key];
         if (lockedData !== undefined) {
-          return { ...t, status: "LOCKED" as TableStatusType, lockedByName: lockedData.name };
+          return {
+            ...t,
+            status: "LOCKED" as TableStatusType,
+            lockedByName: lockedData.name,
+          };
         } else if (t.status === "LOCKED") {
-          return { ...t, status: "EMPTY" as TableStatusType, lockedByName: undefined };
+          return {
+            ...t,
+            status: "EMPTY" as TableStatusType,
+            lockedByName: undefined,
+          };
         }
         return t;
       });
 
       // 2. Add tables that are locked but were not in the store
       lockedList.forEach((lockedItem) => {
-        const exists = updatedTables.find(t => t.tableId === lockedItem.tableId.toLowerCase());
+        const exists = updatedTables.find(
+          (t) => t.tableId === lockedItem.tableId.toLowerCase(),
+        );
         if (!exists) {
           updatedTables.push({
             tableId: lockedItem.tableId.toLowerCase(),
@@ -253,14 +382,14 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
             orderId: "RESERVED",
             startTime: 0,
             status: "LOCKED",
-            lockedByName: lockedItem.lockedByName
+            lockedByName: lockedItem.lockedByName,
           });
         }
       });
 
-      const finalTables = updatedTables.filter(t => t.status !== 'EMPTY');
+      const finalTables = updatedTables.filter((t) => t.status !== "EMPTY");
       const nameMap: Record<string, string> = {};
-      lockedList.forEach(t => {
+      lockedList.forEach((t) => {
         const key = `${t.section}_${t.tableNo}`;
         nameMap[key] = t.lockedByName || "";
       });
@@ -279,12 +408,21 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
       const newMap = { ...state.tableMap };
 
       updates.forEach((update) => {
-        const cleanUpdateId = String(update.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase();
+        const cleanUpdateId = String(update.tableId || "")
+          .replace(/^\{|\}$/g, "")
+          .trim()
+          .toLowerCase();
         const existingTable = newMap[cleanUpdateId];
-        const isStatusEmpty = update.status === 'EMPTY' || (update.status as any) === 0;
+        const isStatusEmpty =
+          update.status === "EMPTY" || (update.status as any) === 0;
 
         // 🛡️ SYNC SHIELD: Only update if incoming data is NEWER (never block EMPTY status)
-        if (!isStatusEmpty && update.lastModified && existingTable?.lastModified && update.lastModified < existingTable.lastModified) {
+        if (
+          !isStatusEmpty &&
+          update.lastModified &&
+          existingTable?.lastModified &&
+          update.lastModified < existingTable.lastModified
+        ) {
           return;
         }
 
@@ -292,31 +430,73 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         const lastEdit = state.lastLocalUpdate[key] || 0;
 
         // 🛡️ SYNC SHIELD: Ignore stale background updates if recently edited locally
-        if (now - lastEdit < 3000 && !isStatusEmpty && update.status !== 'LOCKED' && (update.status as any) !== 5) return;
+        if (
+          now - lastEdit < 3000 &&
+          !isStatusEmpty &&
+          update.status !== "LOCKED" &&
+          (update.status as any) !== 5
+        )
+          return;
 
         const existingIndex = newTables.findIndex(
-          (t) => (String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanUpdateId && !!cleanUpdateId) || (t.section === update.section && t.tableNo === update.tableNo)
+          (t) =>
+            (String(t.tableId || "")
+              .replace(/^\{|\}$/g, "")
+              .trim()
+              .toLowerCase() === cleanUpdateId &&
+              !!cleanUpdateId) ||
+            (t.section === update.section && t.tableNo === update.tableNo),
         );
 
         const updatedTable: TableStatus = {
           ...(existingIndex > -1 ? newTables[existingIndex] : {}),
           ...update,
-          tableId: cleanUpdateId || (existingIndex > -1 ? newTables[existingIndex].tableId : ""),
+          tableId:
+            cleanUpdateId ||
+            (existingIndex > -1 ? newTables[existingIndex].tableId : ""),
           status: update.status,
-          orderId: isStatusEmpty ? "" : (update.orderId || (existingIndex > -1 ? newTables[existingIndex].orderId : "")),
-          startTime: isStatusEmpty ? 0 : (update.startTime || (existingIndex > -1 ? newTables[existingIndex].startTime : 0) || Date.now()),
-          totalAmount: isStatusEmpty ? 0 : (update.totalAmount !== undefined ? update.totalAmount : (existingIndex > -1 ? newTables[existingIndex].totalAmount : 0)),
-          isHoldOvertime: isStatusEmpty ? false : (update.isHoldOvertime !== undefined ? update.isHoldOvertime : (existingIndex > -1 ? newTables[existingIndex].isHoldOvertime : false)),
+          orderId: isStatusEmpty
+            ? ""
+            : update.orderId ||
+              (existingIndex > -1 ? newTables[existingIndex].orderId : ""),
+          startTime: isStatusEmpty
+            ? 0
+            : update.startTime ||
+              (existingIndex > -1 ? newTables[existingIndex].startTime : 0) ||
+              Date.now(),
+          totalAmount: isStatusEmpty
+            ? 0
+            : update.totalAmount !== undefined
+              ? update.totalAmount
+              : existingIndex > -1
+                ? newTables[existingIndex].totalAmount
+                : 0,
+          isHoldOvertime: isStatusEmpty
+            ? false
+            : update.isHoldOvertime !== undefined
+              ? update.isHoldOvertime
+              : existingIndex > -1
+                ? newTables[existingIndex].isHoldOvertime
+                : false,
           customerName: isStatusEmpty ? undefined : update.customerName,
           pax: isStatusEmpty ? undefined : update.pax,
-          entryStatus: isStatusEmpty ? undefined : update.entryStatus,
+          entryStatus: isStatusEmpty
+            ? undefined
+            : update.entryStatus !== undefined
+              ? update.entryStatus
+              : existingIndex > -1
+                ? newTables[existingIndex].entryStatus
+                : undefined,
         };
 
         if (existingIndex > -1) newTables[existingIndex] = updatedTable;
         else newTables.push(updatedTable);
-        
+
         if (updatedTable.tableId) {
-          const cleanKey = String(updatedTable.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase();
+          const cleanKey = String(updatedTable.tableId)
+            .replace(/^\{|\}$/g, "")
+            .trim()
+            .toLowerCase();
           newMap[cleanKey] = updatedTable;
         }
       });
@@ -344,9 +524,27 @@ export const updateTableStatus = (
   modifiedOn?: string,
   entryStatus?: string,
   customerName?: string,
-  pax?: number
-) => useTableStatusStore.getState().updateTableStatus(tableId, section, tableNo, orderId, status, startTime, lockedByName, totalAmount, isExternal, isHoldOvertime, modifiedOn, entryStatus, customerName, pax);
-export const clearTable = (section: string, tableNo: string) => 
+  pax?: number,
+) =>
+  useTableStatusStore
+    .getState()
+    .updateTableStatus(
+      tableId,
+      section,
+      tableNo,
+      orderId,
+      status,
+      startTime,
+      lockedByName,
+      totalAmount,
+      isExternal,
+      isHoldOvertime,
+      modifiedOn,
+      entryStatus,
+      customerName,
+      pax,
+    );
+export const clearTable = (section: string, tableNo: string) =>
   useTableStatusStore.getState().clearTable(section, tableNo);
 
 export const setTableActive = (
@@ -355,7 +553,7 @@ export const setTableActive = (
   tableNo: string,
   orderId: string,
 ) => {
-  updateTableStatus(tableId, section, tableNo, orderId, 'SENT', Date.now());
+  updateTableStatus(tableId, section, tableNo, orderId, "SENT", Date.now());
 };
 
 export const setTableHold = (
@@ -364,6 +562,5 @@ export const setTableHold = (
   tableNo: string,
   orderId: string,
 ) => {
-  updateTableStatus(tableId, section, tableNo, orderId, 'HOLD', Date.now());
+  updateTableStatus(tableId, section, tableNo, orderId, "HOLD", Date.now());
 };
-
