@@ -888,9 +888,15 @@ export const useCartStore = create<CartState>()(
             newQtyMap[item.id] = (newQtyMap[item.id] || 0) + item.qty;
           });
 
+          const updatedTableOrderIds = { ...state.tableOrderIds };
+          if (sentItems.length === 0) {
+            delete updatedTableOrderIds[tableId];
+          }
+
           return {
             carts: { ...state.carts, [currentContextId]: sentItems },
             cartQtyMap: { ...state.cartQtyMap, [currentContextId]: newQtyMap },
+            tableOrderIds: updatedTableOrderIds,
             deletedItemsShield: newShield,
           };
         });

@@ -1455,8 +1455,26 @@ router.post("/save-cart", async (req, res) => {
             DELETE FROM RestaurantOrderDetailCur WHERE OrderId IN (
               SELECT OrderId FROM RestaurantOrderCur WHERE (Tableno = @TableNo OR Tableno = @tid) AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
             ) AND StatusCode = 1;
+
+            -- Close empty open order headers on this table (no remaining non-voided items)
+            UPDATE h
+            SET h.isOrderClosed = 1,
+                h.TotalAmount = 0,
+                h.TotalLineItemAmount = 0,
+                h.TotalAmountLessFreight = 0,
+                h.TotalTax = 0,
+                h.ServiceCharge = 0,
+                h.TakeawayCharge = 0,
+                h.ModifiedOn = GETDATE()
+            FROM RestaurantOrderCur h
+            WHERE (h.Tableno = @TableNo OR h.Tableno = @tid)
+              AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+              AND NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderDetailCur d
+                WHERE d.OrderId = h.OrderId AND d.StatusCode <> 0
+              );
           `);
-        currentOrderId = orderId || null;
+        currentOrderId = null;
         nuclearClearWasBlocked = true;
       }
     }
@@ -1515,15 +1533,15 @@ router.post("/save-cart", async (req, res) => {
                          ELSE 0 
                        END, 
               CurrentOrderId = @oid,
-              TotalAmount = CASE WHEN @orderTotal > 0 THEN @orderTotal ELSE TotalAmount END,
-              entry_status = CASE WHEN @oid IS NOT NULL THEN COALESCE(@entryStatus, entry_status) ELSE entry_status END,
+              TotalAmount = CASE WHEN @oid IS NULL THEN 0 WHEN @orderTotal > 0 THEN @orderTotal ELSE TotalAmount END,
+              entry_status = CASE WHEN @oid IS NOT NULL THEN COALESCE(@entryStatus, entry_status) WHEN CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15 THEN entry_status ELSE NULL END,
               StartTime = CASE WHEN @oid IS NOT NULL AND (StartTime IS NULL OR StartTime < '2000-01-01') THEN GETDATE() 
                                WHEN @oid IS NULL AND (CAST(DiningSection AS VARCHAR(10)) = '4' AND entry_status = 'q' AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) < 15) THEN StartTime
                                WHEN @oid IS NULL THEN NULL 
                                ELSE StartTime END,
               ModifiedOn = GETDATE()
           WHERE (TableNumber = @tid OR (TRY_CAST(@tid AS UNIQUEIDENTIFIER) IS NOT NULL AND TableId = TRY_CAST(@tid AS UNIQUEIDENTIFIER)))
-            AND (CurrentOrderId IS NULL OR CurrentOrderId = '' OR CurrentOrderId = 'EMPTY' OR CurrentOrderId = @oid);
+            AND (@oid IS NULL OR CurrentOrderId IS NULL OR CurrentOrderId = '' OR CurrentOrderId = 'EMPTY' OR CurrentOrderId = @oid);
         `);
 
       // 🔹 QR / KIOSK ORDER: If entryStatus is 'q' or 'K', set table to Status 1 (Dining/Active)
@@ -1575,10 +1593,11 @@ router.post("/save-cart", async (req, res) => {
         const cleanTid = String(cleanId).replace(/^\{|\}$/g, "").trim().toLowerCase();
         io.emit("table_status_updated", {
           tableId: cleanTid,
-          orderId: currentOrderId,
-          currentOrderId: currentOrderId,
-          status: 1, // OCCUPIED
-          entryStatus: resolvedEntryStatus || null,
+          orderId: currentOrderId || "EMPTY",
+          currentOrderId: currentOrderId || null,
+          status: currentOrderId ? 1 : 0, // OCCUPIED or EMPTY
+          totalAmount: currentOrderId ? undefined : 0,
+          entryStatus: currentOrderId ? (resolvedEntryStatus || null) : null,
           paymentStatus: 0
         });
         io.emit("tables_updated");
