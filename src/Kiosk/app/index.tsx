@@ -9,6 +9,22 @@ import SettlementSuccessScreen from "./SettlementSuccessScreen";
 
 type ScreenState = "start" | "ordering" | "settlement_success";
 
+type CompletedOrderMetadata = {
+  items?: any[];
+  extraCharge?: number;
+  totalAmount?: number;
+  tableNo?: string;
+  tableId?: string;
+  isSelfCollect?: boolean;
+  isTentNumber?: boolean;
+  subtotal?: number;
+  serviceCharge?: number;
+  takeawayCharge?: number;
+  gst?: number;
+  total?: number;
+  [key: string]: any;
+};
+
 type IndexProps = {
   onBackToPOS?: () => void;
 };
@@ -16,7 +32,7 @@ type IndexProps = {
 export default function Index({ onBackToPOS }: IndexProps = {}) {
   const [currentPage, setCurrentPage] = useState<ScreenState>("start");
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
-  const [completedOrderMeta, setCompletedOrderMeta] = useState<{ items?: any[]; extraCharge?: number; totalAmount?: number } | null>(null);
+  const [completedOrderMeta, setCompletedOrderMeta] = useState<CompletedOrderMetadata | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
