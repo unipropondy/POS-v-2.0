@@ -3830,13 +3830,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         </View>
                       )}
 
-                      {/* Circular dish image matching reference design */}
-                      <View style={styles.dishCircularBox}>
+                      {/* Square dish image matching reference design (1:1 aspect ratio, no circular cropping) */}
+                      <View style={styles.dishImageBox}>
                         {item.Image ? (
                           <ExpoImage
                             source={{ uri: `${API}/image/${item.Image}` }}
-                            style={styles.dishImg}
-                            contentFit="cover"
+                            style={[
+                              styles.dishImg,
+                              Platform.OS === "web"
+                                ? ({ objectFit: "contain" } as any)
+                                : null,
+                            ]}
+                            contentFit="contain"
                             cachePolicy="memory-disk"
                             transition={150}
                           />
@@ -6588,20 +6593,45 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900",
   },
-  dishCircularBox: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    borderWidth: 3,
-    borderColor: "#eff6ff",
-    backgroundColor: "#f8fafc",
+  dishImageBox: {
+    width: "100%",
+    aspectRatio: 1,
+    maxWidth: 200,
+    maxHeight: 200,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#f1f5f9",
+    backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
-    marginTop: 8,
+    padding: 6,
+    marginBottom: 16,
+    marginTop: 6,
     overflow: "hidden",
+    position: "relative",
   },
-  dishImg: { width: "100%", height: "100%", borderRadius: 90 },
+  dishCircularBox: {
+    width: "100%",
+    aspectRatio: 1,
+    maxWidth: 200,
+    maxHeight: 200,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#f1f5f9",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 6,
+    marginBottom: 16,
+    marginTop: 6,
+    overflow: "hidden",
+    position: "relative",
+  },
+  dishImg: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+  },
   dishEmoji: { fontSize: 64 },
   soldOutBadge: {
     position: "absolute",
