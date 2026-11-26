@@ -51,6 +51,47 @@ const getTasteModifierText = (item: any) =>
     .filter(Boolean)
     .join(" • ");
 
+const getIncludedComboDishes = (item: any): string[] => {
+  let sels = item.comboSelections || item.combos || item.selectedCombos;
+  if (!sels || (Array.isArray(sels) && sels.length === 0)) {
+    const raw = item.ComboDetailsJSON || item.comboDetailsJSON;
+    if (raw) {
+      try {
+        const p = typeof raw === "string" ? JSON.parse(raw) : raw;
+        sels = Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+      } catch {
+        sels = [];
+      }
+    }
+  }
+  if (!Array.isArray(sels) && typeof sels === "object" && sels !== null) {
+    sels = sels.groups || sels.items || sels.selections || [];
+  }
+
+  if (!Array.isArray(sels) || sels.length === 0) {
+    const desc = item.Description || item.description || item.note || item.notes;
+    if (desc && typeof desc === "string" && !desc.toLowerCase().includes("combo promotion")) {
+      const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+    return [];
+  }
+
+  const result: string[] = [];
+  sels.forEach((g: any) => {
+    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
+    if (Array.isArray(choices)) {
+      choices.forEach((opt: any) => {
+        const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+        if (optName) {
+          result.push(optName);
+        }
+      });
+    }
+  });
+  return result;
+};
+
 const URGENCY_UI: Record<UrgencyLevel, { primary: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   fresh: { primary: Theme.success, label: "ON TRACK", icon: "checkmark-circle-outline" },
   warn: { primary: Theme.warning, label: "RUNNING LONG", icon: "time-outline" },
@@ -308,20 +349,22 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
                       <Text key={idx} style={styles.modifierText}>• {mod.ModifierName}</Text>
                     ))}
 
-                    {i.comboSelections && Array.isArray(i.comboSelections) && i.comboSelections
-                      .filter((group: any) => group.items && group.items.length > 0)
-                      .map((group: any, gIdx: number) => (
-                        <View key={`g-${gIdx}`} style={{ marginTop: 2, paddingLeft: 4 }}>
-                          <Text style={[styles.modifierText, { fontFamily: Fonts.bold, color: Theme.primary }]}>
-                            {group.groupName}:
-                          </Text>
-                          {group.items?.map((opt: any, oIdx: number) => (
-                            <Text key={`o-${oIdx}`} style={[styles.modifierText, { paddingLeft: 6 }]}>
-                              ↳ {opt.name}
-                            </Text>
-                          ))}
-                        </View>
-                      ))}
+                    {getIncludedComboDishes(i).map((dishName: string, dIdx: number) => (
+                      <Text
+                        key={`combo-dish-${dIdx}`}
+                        style={[
+                          styles.modifierText,
+                          {
+                            fontFamily: Fonts.bold,
+                            color: Theme.textSecondary || "#4B5563",
+                            fontSize: 13,
+                            marginTop: 1,
+                          },
+                        ]}
+                      >
+                        - {dishName}
+                      </Text>
+                    ))}
 
                     {getTasteModifierText(i) ? (
                       <Text style={styles.modifierText}>{getTasteModifierText(i)}</Text>

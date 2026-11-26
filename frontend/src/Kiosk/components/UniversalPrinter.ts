@@ -48,6 +48,47 @@ function generateTableFromObject(obj: Record<string, any>, symbol: string) {
     .join("")}</tbody></table>`;
 }
 
+function getIncludedComboDishes(item: any): string[] {
+  let sels = item.comboSelections || item.combos || item.selectedCombos;
+  if (!sels || (Array.isArray(sels) && sels.length === 0)) {
+    const raw = item.ComboDetailsJSON || item.comboDetailsJSON;
+    if (raw) {
+      try {
+        const p = typeof raw === "string" ? JSON.parse(raw) : raw;
+        sels = Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+      } catch {
+        sels = [];
+      }
+    }
+  }
+  if (!Array.isArray(sels) && typeof sels === "object" && sels !== null) {
+    sels = sels.groups || sels.items || sels.selections || [];
+  }
+
+  if (!Array.isArray(sels) || sels.length === 0) {
+    const desc = item.Description || item.description || item.note || item.notes;
+    if (desc && typeof desc === "string" && !desc.toLowerCase().includes("combo promotion")) {
+      const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+    return [];
+  }
+
+  const result: string[] = [];
+  sels.forEach((g: any) => {
+    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
+    if (Array.isArray(choices)) {
+      choices.forEach((opt: any) => {
+        const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+        if (optName) {
+          result.push(optName);
+        }
+      });
+    }
+  });
+  return result;
+}
+
 // ─────────────────────────────────────────────
 // iframe print helper (Web only fallback)
 // ─────────────────────────────────────────────
@@ -257,25 +298,15 @@ function generateKOTHTML(data: any, type: string) {
           .join("")}</div>`
         : ""
       }
-        ${hasCombo
-        ? `<div class="modifier-list">${comboSels
-          .map(
-            (g: any) => `
-                  <div style="font-weight:bold;margin-top:2px;">${g.groupName}:</div>
-                  ${g.items
-                ? g.items
-                  .map(
-                    (opt: any) =>
-                      `<span class="modifier-item" style="padding-left:10px;">↳ ${opt.name}</span>`
-                  )
-                  .join("")
-                : ""
-              }
-                `
-          )
-          .join("")}</div>`
-        : ""
-      }
+        ${(() => {
+          const comboDishes = getIncludedComboDishes(item);
+          if (comboDishes.length > 0) {
+            return `<div class="modifier-list">${comboDishes
+              .map((dName: string) => `<span class="modifier-item" style="font-weight:600;">- ${dName}</span>`)
+              .join("")}</div>`;
+          }
+          return "";
+        })()}
         ${noteText ? `<div class="remarks">* NOTE: ${noteText}</div>` : ""}
       </div>`;
   };
@@ -414,12 +445,10 @@ function formatKOTThermalText(data: any, type: string = "NEW") {
       });
     }
 
-    if (item.comboSelections && item.comboSelections.length > 0) {
-      item.comboSelections.forEach((g: any) => {
-        t += `[L]    ${g.groupName}:\n`;
-        g.items?.forEach((opt: any) => {
-          t += `[L]      ↳ ${opt.name}\n`;
-        });
+    const comboDishes = getIncludedComboDishes(item);
+    if (comboDishes.length > 0) {
+      comboDishes.forEach((dName: string) => {
+        t += `[L]<font size='big'><B>  - ${dName}</B></font>\n`;
       });
     }
 
@@ -532,6 +561,13 @@ function formatThermalTextWithDiscount(saleData: any, company: any, discountInfo
     if (item.modifiers && item.modifiers.length > 0) {
       item.modifiers.forEach((m: any) => {
         text += `[L]  + ${m.name || m.ModifierName}\n`;
+      });
+    }
+
+    const comboDishes = getIncludedComboDishes(item);
+    if (comboDishes.length > 0) {
+      comboDishes.forEach((dName: string) => {
+        text += `[L]   - ${dName}\n`;
       });
     }
   });

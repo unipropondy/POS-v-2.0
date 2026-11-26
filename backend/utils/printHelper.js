@@ -122,13 +122,25 @@ function _formatItem(item, disableComboPrint = false) {
         }
       }
     }
+    if (!Array.isArray(comboSels) && typeof comboSels === "object" && comboSels !== null) {
+      comboSels = comboSels.groups || comboSels.items || comboSels.selections || [];
+    }
+    if ((!comboSels || comboSels.length === 0) && (item.Description || item.description)) {
+      const desc = item.Description || item.description || "";
+      if (desc && !desc.toLowerCase().includes("combo promotion")) {
+        const parts = desc.split(/[\•\n]/).map(s => s.trim().replace(/^[\-\*\•]\s*/, '')).filter(Boolean);
+        if (parts.length > 0) {
+          comboSels = [{ items: parts.map(p => ({ name: p })) }];
+        }
+      }
+    }
 
     if (Array.isArray(comboSels) && comboSels.length > 0) {
       comboSels.forEach((g) => {
-        const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
+        const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
         if (Array.isArray(choices)) {
           choices.forEach((opt) => {
-            const optName = opt.name || opt.DishName || opt.itemName || "";
+            const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
             if (optName) {
               _wrapText(optName, BIG_MOD_WRAP).forEach((chunk, idx) => {
                 text += idx === 0
@@ -339,7 +351,7 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
   let totalItemDiscount = 0;
 
   printItems.forEach((item) => {
-    const rawName = item.name || item.DishName || item.ProductName || "";
+    const rawName = (item.name && item.name !== "Dish" ? item.name : (item.DishName && item.DishName !== "Dish" ? item.DishName : (item.ProductName && item.ProductName !== "Dish" ? item.ProductName : (item.dishName && item.dishName !== "Dish" ? item.dishName : (item.name || item.DishName || "Item")))));
     const name = rawName.substring(0, 26).padEnd(26);
     const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
     const qty = `[${qtyNum}]`.padStart(5);
@@ -366,13 +378,36 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
     }
 
     // Combos
-    const comboSels = item.comboSelections || [];
+    let comboSels = item.comboSelections || item.combos || item.selectedCombos;
+    if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
+      const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
+      if (rawCombo) {
+        try {
+          const parsed = typeof rawCombo === "string" ? JSON.parse(rawCombo) : rawCombo;
+          comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || parsed.selections || []);
+        } catch (e) {
+          comboSels = [];
+        }
+      }
+    }
+    if (!Array.isArray(comboSels) && typeof comboSels === "object" && comboSels !== null) {
+      comboSels = comboSels.groups || comboSels.items || comboSels.selections || [];
+    }
+    if ((!comboSels || comboSels.length === 0) && (item.Description || item.description)) {
+      const desc = item.Description || item.description || "";
+      if (desc && !desc.toLowerCase().includes("combo promotion")) {
+        const parts = desc.split(/[\•\n]/).map(s => s.trim().replace(/^[\-\*\•]\s*/, '')).filter(Boolean);
+        if (parts.length > 0) {
+          comboSels = [{ items: parts.map(p => ({ name: p })) }];
+        }
+      }
+    }
     if (Array.isArray(comboSels) && comboSels.length > 0) {
       comboSels.forEach((g) => {
-        const choices = g.items || g.dishes || (Array.isArray(g) ? g : [g]);
+        const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
         if (Array.isArray(choices)) {
           choices.forEach((opt) => {
-            const optName = opt.name || opt.DishName || opt.itemName || "";
+            const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
             if (optName) text += `[L]<B>   - ${optName}</B>\n`;
           });
         }

@@ -92,12 +92,12 @@ class UniversalPrinter {
       .map((i: any) =>
         String(
           i.lineItemId ??
-            i.LineItemId ??
-            i.dishId ??
-            i.DishId ??
-            i.id ??
-            i.name ??
-            "?",
+          i.LineItemId ??
+          i.dishId ??
+          i.DishId ??
+          i.id ??
+          i.name ??
+          "?",
         ),
       )
       .sort()
@@ -155,7 +155,7 @@ class UniversalPrinter {
             paperSize: "A4",
           });
         }
-      } catch (e) {}
+      } catch (e) { }
 
       this.detectedPrinters = printers;
       this.defaultPrinter =
@@ -296,12 +296,12 @@ class UniversalPrinter {
       const company = await BillPDFGenerator.loadSettings(userId);
       const html = selectedCategory
         ? this.generateCategoryDetailHTML(
-            selectedCategory,
-            categoryItems,
-            categoryTransactions,
-            company,
-            options,
-          )
+          selectedCategory,
+          categoryItems,
+          categoryTransactions,
+          company,
+          options,
+        )
         : this.generateAllCategoriesHTML(categories, company, options);
 
       // âœ… Save as PDF (no preview)
@@ -368,15 +368,14 @@ class UniversalPrinter {
         <div><div>Total Revenue</div><div style="font-size:18px;font-weight:bold">${symbol}${items.reduce((s, i) => s + (i.revenue || 0), 0).toFixed(2)}</div></div>
       </div>
       <div class="section-title">ðŸ“‹ Items Sold</div>${this.generateItemsTable(items, symbol)}
-      <div class="section-title">ðŸ“„ Transaction History</div>${
-        transactions.length
-          ? groupTransactions(transactions)
-              .map(
-                (sale: any) =>
-                  `<div class="transaction-card"><div><strong>#${sale.id}</strong> - ${symbol}${sale.total.toFixed(2)}</div><div>${formatToSingaporeDateTime(sale.date)}</div>${sale.items.map((item: any) => `<div>â€¢ ${item.name} x${item.quantity} - ${symbol}${(item.price * item.quantity).toFixed(2)}</div>`).join("")}</div>`,
-              )
-              .join("")
-          : "<p>No transactions</p>"
+      <div class="section-title">ðŸ“„ Transaction History</div>${transactions.length
+        ? groupTransactions(transactions)
+          .map(
+            (sale: any) =>
+              `<div class="transaction-card"><div><strong>#${sale.id}</strong> - ${symbol}${sale.total.toFixed(2)}</div><div>${formatToSingaporeDateTime(sale.date)}</div>${sale.items.map((item: any) => `<div>â€¢ ${item.name} x${item.quantity} - ${symbol}${(item.price * item.quantity).toFixed(2)}</div>`).join("")}</div>`,
+          )
+          .join("")
+        : "<p>No transactions</p>"
       }
       <div class="footer"><p>End of Report</p></div>
     </body></html>`;
@@ -408,8 +407,8 @@ class UniversalPrinter {
       <div class="header"><div class="company-name">${company.name || "Store"}</div><div>${company.address || ""}</div><div>GST: ${company.gstNo || "N/A"}</div><div class="report-title">ðŸ“Š CATEGORY WISE SALES</div></div>
       <div class="summary-section"><div><div>Total Sales</div><div>${summary.totalSales}</div></div><div><div>Total Items</div><div>${summary.totalItems}</div></div><div><div>Total Revenue</div><div>${symbol}${summary.totalRevenue.toFixed(2)}</div></div></div>
       <div><h3>ðŸ’³ PAYMENT BREAKDOWN</h3>${Object.entries(
-        summary.paymentBreakdown,
-      )
+      summary.paymentBreakdown,
+    )
         .map(
           ([m, a]) => `<div>${m}: ${symbol}${(a as number).toFixed(2)}</div>`,
         )
@@ -566,7 +565,7 @@ class UniversalPrinter {
               );
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
       return true;
     } catch (e: any) {
@@ -749,7 +748,7 @@ class UniversalPrinter {
     setTimeout(() => {
       try {
         frame.remove();
-      } catch (_) {}
+      } catch (_) { }
     }, 15000);
     return frame;
   }
@@ -882,7 +881,7 @@ class UniversalPrinter {
             } else {
               console.log(`🔵 KOT Bluetooth print to: ${targetIp}`);
               await ThermalPrinterImport?.getBluetoothDeviceList?.().catch(
-                () => {},
+                () => { },
               );
               const printPromise = ThermalPrinter.printBluetooth({
                 macAddress: targetIp,
@@ -1186,140 +1185,42 @@ class UniversalPrinter {
 
           <div class="item-list">
             ${(() => {
-              if (type === "KDS_PRINT") {
-                const kitchenGroups: Record<string, any[]> = {};
-                items.forEach((item: any) => {
-                  const kName = (
-                    item.KitchenTypeName ||
-                    item.kitchenTypeName ||
-                    item.dishGroupName ||
-                    item.categoryName ||
-                    "KITCHEN"
-                  )
-                    .toUpperCase()
-                    .trim();
-                  if (!kitchenGroups[kName]) kitchenGroups[kName] = [];
-                  kitchenGroups[kName].push(item);
-                });
+        if (type === "KDS_PRINT") {
+          const kitchenGroups: Record<string, any[]> = {};
+          items.forEach((item: any) => {
+            const kName = (
+              item.KitchenTypeName ||
+              item.kitchenTypeName ||
+              item.dishGroupName ||
+              item.categoryName ||
+              "KITCHEN"
+            )
+              .toUpperCase()
+              .trim();
+            if (!kitchenGroups[kName]) kitchenGroups[kName] = [];
+            kitchenGroups[kName].push(item);
+          });
 
-                return Object.entries(kitchenGroups)
-                  .map(([kName, groupItems]) => {
-                    return `
+          return Object.entries(kitchenGroups)
+            .map(([kName, groupItems]) => {
+              return `
                     <div style="font-size: 18px; font-weight: bold; margin-top: 10px; border-bottom: 1.5px solid #000; padding-bottom: 2px; text-transform: uppercase;">
                       <b>${kName}</b>
                     </div>
                     ${groupItems
-                      .map((item: any) => {
-                        const noteText =
-                          item.note ||
-                          item.notes ||
-                          item.Remarks ||
-                          item.remarks;
-                        const rawCombo =
-                          item.comboSelections ||
-                          item.selectedCombos ||
-                          item.combos ||
-                          (typeof item.ComboDetailsJSON === "string" &&
-                          item.ComboDetailsJSON
-                            ? (() => {
-                                try {
-                                  const p = JSON.parse(item.ComboDetailsJSON);
-                                  return Array.isArray(p)
-                                    ? p
-                                    : p.groups || p.items || p.selections || [];
-                                } catch {
-                                  return undefined;
-                                }
-                              })()
-                            : Array.isArray(item.ComboDetailsJSON)
-                              ? item.ComboDetailsJSON
-                              : typeof item.ComboDetailsJSON === "object" &&
-                                  item.ComboDetailsJSON
-                                ? item.ComboDetailsJSON.groups ||
-                                  item.ComboDetailsJSON.items ||
-                                  []
-                                : undefined);
-                        const comboSels = Array.isArray(rawCombo)
-                          ? rawCombo
-                          : [];
-                        const hasCombo = comboSels.length > 0;
-
-                        return `
-                        <div class="item-row">
-                          <div class="item-main">
-                            <div class="item-qty">${item.quantity || item.qty || 1}</div>
-                            <div class="item-name">
-                              <b>${(item.name || "").replace(/\n/g, "<br/>")}</b>
-                              ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ""}
-                            </div>
-                          </div>
-                          ${
-                            item.isTakeaway ||
-                            item.IsTakeaway ||
-                            item.isTakeAway ||
-                            item.IsTakeAway
-                              ? `<div class="modifier-list"><span class="modifier-item">- Takeaway</span></div>`
-                              : ""
-                          }
-                          ${
-                            item.modifiers && item.modifiers.length > 0
-                              ? `<div class="modifier-list">${item.modifiers.map((m: any) => `<span class="modifier-item">+ ${m.name || m.ModifierName}</span>`).join("")}</div>`
-                              : ""
-                          }
-                          ${
-                            hasCombo
-                              ? `<div class="modifier-list">${comboSels
-                                  .map((g: any) => {
-                                    const choices =
-                                      g.items ||
-                                      g.dishes ||
-                                      g.selections ||
-                                      g.selectedDishes ||
-                                      (Array.isArray(g)
-                                        ? g
-                                        : g.name || g.DishName || g.itemName
-                                          ? [g]
-                                          : []);
-                                    if (Array.isArray(choices)) {
-                                      return choices
-                                        .map((opt: any) => {
-                                          const optName =
-                                            opt.name ||
-                                            opt.DishName ||
-                                            opt.itemName ||
-                                            "";
-                                          return optName
-                                            ? `<span class="modifier-item">- ${optName}</span>`
-                                            : "";
-                                        })
-                                        .join("");
-                                    }
-                                    return "";
-                                  })
-                                  .join("")}</div>`
-                              : ""
-                          }
-                          ${noteText ? `<div class="remarks">* ${noteText}</div>` : ""}
-                        </div>
-                      `;
-                      })
-                      .join("")}
-                  `;
-                  })
-                  .join("");
-              }
-
-              return items
-                .map((item: any) => {
-                  const noteText =
-                    item.note || item.notes || item.Remarks || item.remarks;
-                  const rawCombo =
-                    item.comboSelections ||
-                    item.selectedCombos ||
-                    item.combos ||
-                    (typeof item.ComboDetailsJSON === "string" &&
-                    item.ComboDetailsJSON
-                      ? (() => {
+                  .map((item: any) => {
+                    const noteText =
+                      item.note ||
+                      item.notes ||
+                      item.Remarks ||
+                      item.remarks;
+                    const rawCombo =
+                      item.comboSelections ||
+                      item.selectedCombos ||
+                      item.combos ||
+                      (typeof item.ComboDetailsJSON === "string" &&
+                        item.ComboDetailsJSON
+                        ? (() => {
                           try {
                             const p = JSON.parse(item.ComboDetailsJSON);
                             return Array.isArray(p)
@@ -1329,58 +1230,41 @@ class UniversalPrinter {
                             return undefined;
                           }
                         })()
-                      : Array.isArray(item.ComboDetailsJSON)
-                        ? item.ComboDetailsJSON
-                        : typeof item.ComboDetailsJSON === "object" &&
+                        : Array.isArray(item.ComboDetailsJSON)
+                          ? item.ComboDetailsJSON
+                          : typeof item.ComboDetailsJSON === "object" &&
                             item.ComboDetailsJSON
-                          ? item.ComboDetailsJSON.groups ||
+                            ? item.ComboDetailsJSON.groups ||
                             item.ComboDetailsJSON.items ||
                             []
-                          : undefined);
-                  const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
-                  const hasCombo = comboSels.length > 0;
+                            : undefined);
+                    const comboSels = Array.isArray(rawCombo)
+                      ? rawCombo
+                      : [];
+                    const hasCombo = comboSels.length > 0;
 
-                  return `
-                  <div class="item-row">
-                    <div class="item-main">
-                      <div class="item-qty">${item.quantity || item.qty || 1}</div>
-                      <div class="item-name">
-                        <b>${(item.name || "").replace(/\n/g, "<br/>")}</b>
-                        ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ""}
-                      </div>
-                    </div>
-                    ${
-                      item.isTakeaway ||
-                      item.IsTakeaway ||
-                      item.isTakeAway ||
-                      item.IsTakeAway
-                        ? `
-                      <div class="modifier-list">
-                        <span class="modifier-item">- Takeaway</span>
-                      </div>
-                    `
+                    return `
+                        <div class="item-row">
+                          <div class="item-main">
+                            <div class="item-qty">${item.quantity || item.qty || 1}</div>
+                            <div class="item-name">
+                              <b>${(item.name || "").replace(/\n/g, "<br/>")}</b>
+                              ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ""}
+                            </div>
+                          </div>
+                          ${item.isTakeaway ||
+                        item.IsTakeaway ||
+                        item.isTakeAway ||
+                        item.IsTakeAway
+                        ? `<div class="modifier-list"><span class="modifier-item">- Takeaway</span></div>`
                         : ""
-                    }
-                    ${
-                      item.modifiers && item.modifiers.length > 0
-                        ? `
-                      <div class="modifier-list">
-                        ${item.modifiers
-                          .map(
-                            (m: any) => `
-                          <span class="modifier-item">+ ${m.name || m.ModifierName}</span>
-                        `,
-                          )
-                          .join("")}
-                      </div>
-                    `
+                      }
+                          ${item.modifiers && item.modifiers.length > 0
+                        ? `<div class="modifier-list">${item.modifiers.map((m: any) => `<span class="modifier-item">+ ${m.name || m.ModifierName}</span>`).join("")}</div>`
                         : ""
-                    }
-                    ${
-                      hasCombo
-                        ? `
-                      <div class="modifier-list">
-                        ${comboSels
+                      }
+                          ${hasCombo
+                        ? `<div class="modifier-list">${comboSels
                           .map((g: any) => {
                             const choices =
                               g.items ||
@@ -1408,25 +1292,133 @@ class UniversalPrinter {
                             }
                             return "";
                           })
-                          .join("")}
+                          .join("")}</div>`
+                        : ""
+                      }
+                          ${noteText ? `<div class="remarks">* ${noteText}</div>` : ""}
+                        </div>
+                      `;
+                  })
+                  .join("")}
+                  `;
+            })
+            .join("");
+        }
+
+        return items
+          .map((item: any) => {
+            const noteText =
+              item.note || item.notes || item.Remarks || item.remarks;
+            const rawCombo =
+              item.comboSelections ||
+              item.selectedCombos ||
+              item.combos ||
+              (typeof item.ComboDetailsJSON === "string" &&
+                item.ComboDetailsJSON
+                ? (() => {
+                  try {
+                    const p = JSON.parse(item.ComboDetailsJSON);
+                    return Array.isArray(p)
+                      ? p
+                      : p.groups || p.items || p.selections || [];
+                  } catch {
+                    return undefined;
+                  }
+                })()
+                : Array.isArray(item.ComboDetailsJSON)
+                  ? item.ComboDetailsJSON
+                  : typeof item.ComboDetailsJSON === "object" &&
+                    item.ComboDetailsJSON
+                    ? item.ComboDetailsJSON.groups ||
+                    item.ComboDetailsJSON.items ||
+                    []
+                    : undefined);
+            const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
+            const hasCombo = comboSels.length > 0;
+
+            return `
+                  <div class="item-row">
+                    <div class="item-main">
+                      <div class="item-qty">${item.quantity || item.qty || 1}</div>
+                      <div class="item-name">
+                        <b>${(item.name || "").replace(/\n/g, "<br/>")}</b>
+                        ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ""}
+                      </div>
+                    </div>
+                    ${item.isTakeaway ||
+                item.IsTakeaway ||
+                item.isTakeAway ||
+                item.IsTakeAway
+                ? `
+                      <div class="modifier-list">
+                        <span class="modifier-item">- Takeaway</span>
                       </div>
                     `
-                        : ""
+                : ""
+              }
+                    ${item.modifiers && item.modifiers.length > 0
+                ? `
+                      <div class="modifier-list">
+                        ${item.modifiers
+                  .map(
+                    (m: any) => `
+                          <span class="modifier-item">+ ${m.name || m.ModifierName}</span>
+                        `,
+                  )
+                  .join("")}
+                      </div>
+                    `
+                : ""
+              }
+                    ${hasCombo
+                ? `
+                      <div class="modifier-list">
+                        ${comboSels
+                  .map((g: any) => {
+                    const choices =
+                      g.items ||
+                      g.dishes ||
+                      g.selections ||
+                      g.selectedDishes ||
+                      (Array.isArray(g)
+                        ? g
+                        : g.name || g.DishName || g.itemName
+                          ? [g]
+                          : []);
+                    if (Array.isArray(choices)) {
+                      return choices
+                        .map((opt: any) => {
+                          const optName =
+                            opt.name ||
+                            opt.DishName ||
+                            opt.itemName ||
+                            "";
+                          return optName
+                            ? `<span class="modifier-item">- ${optName}</span>`
+                            : "";
+                        })
+                        .join("");
                     }
-                    ${
-                      noteText
-                        ? `
+                    return "";
+                  })
+                  .join("")}
+                      </div>
+                    `
+                : ""
+              }
+                    ${noteText
+                ? `
                       <div class="remarks">
                         * ${noteText}
                       </div>
                     `
-                        : ""
-                    }
+                : ""
+              }
                   </div>
                 `;
-                })
-                .join("");
-            })()}
+          })
+          .join("");
+      })()}
           </div>
 
           <div class="footer">
@@ -1615,6 +1607,18 @@ class UniversalPrinter {
           }
         }
       }
+      if (!Array.isArray(comboSels) && typeof comboSels === "object" && comboSels !== null) {
+        comboSels = (comboSels as any).groups || (comboSels as any).items || (comboSels as any).selections || [];
+      }
+      if ((!comboSels || comboSels.length === 0) && (item.Description || item.description)) {
+        const desc = item.Description || item.description || "";
+        if (desc && !desc.toLowerCase().includes("combo promotion")) {
+          const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, '')).filter(Boolean);
+          if (parts.length > 0) {
+            comboSels = [{ items: parts.map((p: string) => ({ name: p })) }];
+          }
+        }
+      }
 
       if (Array.isArray(comboSels) && comboSels.length > 0) {
         comboSels.forEach((g: any) => {
@@ -1625,12 +1629,12 @@ class UniversalPrinter {
             g.selectedDishes ||
             (Array.isArray(g)
               ? g
-              : g.name || g.DishName || g.itemName
+              : g.name || g.DishName || g.itemName || g.dishName
                 ? [g]
                 : []);
           if (Array.isArray(choices)) {
             choices.forEach((opt: any) => {
-              const optName = opt.name || opt.DishName || opt.itemName || "";
+              const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
               if (optName) {
                 wrapText(optName, BIG_MOD_WRAP).forEach(
                   (chunk: string, idx: number) => {
@@ -2049,11 +2053,11 @@ class UniversalPrinter {
         saleData.discount ||
         (saleData.discountAmount > 0
           ? {
-              applied: true,
-              type: saleData.discountType || "percentage",
-              value: saleData.discountValue || 0,
-              amount: saleData.discountAmount,
-            }
+            applied: true,
+            type: saleData.discountType || "percentage",
+            value: saleData.discountValue || 0,
+            amount: saleData.discountAmount,
+          }
           : undefined);
 
       // Set checkout flag for the template
@@ -2146,7 +2150,7 @@ class UniversalPrinter {
         });
         try {
           await FileSystem.deleteAsync(fileUri, { idempotent: true });
-        } catch (_) {}
+        } catch (_) { }
         return base64;
       }
     } catch (e) {
@@ -2201,7 +2205,7 @@ class UniversalPrinter {
         });
       } else {
         console.log(`🔵 Receipt Bluetooth print to: ${targetAddress}`);
-        await ThermalPrinterImport?.getBluetoothDeviceList?.().catch(() => {});
+        await ThermalPrinterImport?.getBluetoothDeviceList?.().catch(() => { });
         await ThermalPrinter.printBluetooth({
           macAddress: targetAddress,
           payload: text,
@@ -2378,7 +2382,8 @@ class UniversalPrinter {
 
     printItems.forEach((item: any) => {
       // Robust field mapping
-      const name = (item.name || item.DishName || item.ProductName || "")
+      const rawName = (item.name && item.name !== "Dish" ? item.name : (item.DishName && item.DishName !== "Dish" ? item.DishName : (item.ProductName && item.ProductName !== "Dish" ? item.ProductName : (item.dishName && item.dishName !== "Dish" ? item.dishName : (item.name || item.DishName || "Item")))));
+      const name = rawName
         .substring(0, 26)
         .padEnd(26);
       const qtyNum =
@@ -2400,8 +2405,8 @@ class UniversalPrinter {
       }
 
       // If name was truncated, print full name on next line
-      if ((item.name || "").length > 26) {
-        text += `[L]<B>   ${item.name}</B>\n`;
+      if (rawName.length > 26) {
+        text += `[L]<B>   ${rawName}</B>\n`;
       }
 
       // Modifiers
@@ -2415,31 +2420,55 @@ class UniversalPrinter {
       }
 
       // Combo selections
-      const comboSels =
+      let comboSels =
         item.comboSelections ||
-        (typeof item.ComboDetailsJSON === "string" && item.ComboDetailsJSON
-          ? (() => {
-              try {
-                const p = JSON.parse(item.ComboDetailsJSON);
-                return Array.isArray(p) ? p : p.groups || p.items || [];
-              } catch {
-                return undefined;
-              }
-            })()
-          : Array.isArray(item.ComboDetailsJSON)
-            ? item.ComboDetailsJSON
-            : undefined) ||
-        [];
+        item.combos ||
+        item.selectedCombos;
+      if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
+        const rawCombo =
+          item.ComboDetailsJSON ||
+          item.comboDetailsJSON ||
+          item.ComboDetails ||
+          item.comboDetails;
+        if (rawCombo) {
+          if (typeof rawCombo === "string") {
+            try {
+              const p = JSON.parse(rawCombo);
+              comboSels = Array.isArray(p) ? p : p.groups || p.items || p.selections || [];
+            } catch {
+              comboSels = [];
+            }
+          } else if (Array.isArray(rawCombo)) {
+            comboSels = rawCombo;
+          } else if (typeof rawCombo === "object") {
+            comboSels = rawCombo.groups || rawCombo.items || rawCombo.selections || [];
+          }
+        }
+      }
+      if (!Array.isArray(comboSels) && typeof comboSels === "object" && comboSels !== null) {
+        comboSels = (comboSels as any).groups || (comboSels as any).items || (comboSels as any).selections || [];
+      }
+      if ((!comboSels || comboSels.length === 0) && (item.Description || item.description)) {
+        const desc = item.Description || item.description || "";
+        if (desc && !desc.toLowerCase().includes("combo promotion")) {
+          const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, '')).filter(Boolean);
+          if (parts.length > 0) {
+            comboSels = [{ items: parts.map((p: string) => ({ name: p })) }];
+          }
+        }
+      }
       const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
       if (hasCombo) {
         comboSels.forEach((group: any) => {
           const choices =
             group.items ||
             group.dishes ||
-            (Array.isArray(group) ? group : [group]);
+            group.selections ||
+            group.selectedDishes ||
+            (Array.isArray(group) ? group : (group.name || group.DishName || group.itemName || group.dishName ? [group] : []));
           if (Array.isArray(choices)) {
             choices.forEach((opt: any) => {
-              const optName = opt.name || opt.DishName || opt.itemName || "";
+              const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
               if (optName) {
                 text += `[L]<B>   - ${optName}</B>\n`;
               }
@@ -2523,18 +2552,18 @@ class UniversalPrinter {
       discountInfo ||
       (saleData.discount
         ? {
-            applied: true,
-            type: saleData.discount.type || "percentage",
-            value: saleData.discount.value || 0,
-            amount: saleData.discount.amount || saleData.discountAmount || 0,
-          }
+          applied: true,
+          type: saleData.discount.type || "percentage",
+          value: saleData.discount.value || 0,
+          amount: saleData.discount.amount || saleData.discountAmount || 0,
+        }
         : saleData.discountAmount && saleData.discountAmount > 0
           ? {
-              applied: true,
-              type: saleData.discountType || "percentage",
-              value: saleData.discountValue || 0,
-              amount: saleData.discountAmount,
-            }
+            applied: true,
+            type: saleData.discountType || "percentage",
+            value: saleData.discountValue || 0,
+            amount: saleData.discountAmount,
+          }
           : null);
 
     const focPayment = (saleData.payments || []).find(
@@ -3125,7 +3154,7 @@ class UniversalPrinter {
               kdsPrinterIp =
                 kdsPrinter?.PrinterPath || kdsPrinter?.PrinterIP || "";
             }
-          } catch (e) {}
+          } catch (e) { }
 
           const kdsData = {
             orderId,
@@ -3808,7 +3837,7 @@ class UniversalPrinter {
                 cashierPrinter?.PrinterIP ||
                 cashierIp;
             }
-          } catch (e) {}
+          } catch (e) { }
 
           console.log(
             `📡 [Web Print Bridge] Queueing settlement report (Target IP: ${cashierIp || "default"})`,

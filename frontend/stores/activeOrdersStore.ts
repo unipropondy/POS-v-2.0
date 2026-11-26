@@ -50,11 +50,11 @@ const normalizeKitchenItem = (item: any) => {
       : [];
 
   let comboSelections = undefined;
-  const comboJson = item?.ComboDetailsJSON ?? item?.comboDetailsJSON ?? item?.comboSelections;
+  const comboJson = item?.comboSelections ?? item?.ComboDetailsJSON ?? item?.comboDetailsJSON;
   if (comboJson) {
     try {
       const parsed = typeof comboJson === "string" ? JSON.parse(comboJson) : comboJson;
-      comboSelections = Array.isArray(parsed) ? parsed : parsed?.groups;
+      comboSelections = Array.isArray(parsed) ? parsed : (parsed?.groups || parsed?.items || parsed?.selections || []);
     } catch {
       comboSelections = undefined;
     }

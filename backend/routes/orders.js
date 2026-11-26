@@ -1777,9 +1777,15 @@ router.post("/send", async (req, res) => {
         const dbItems = await transaction
           .request()
           .input("tableNo", sql.VarChar(20), cleanId).query(`SELECT 
-            d.OrderDetailId as lineItemId, d.DishId as id, dish.Name as name,
+            d.OrderDetailId as lineItemId, d.DishId as id,
+            CASE 
+              WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
+              WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
+              WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
+              ELSE ISNULL(dish.Name, 'Dish')
+            END as name,
             d.Quantity as qty, d.PricePerUnit as price, d.StatusCode, 
-            d.ModifiersJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
+            d.ModifiersJSON, d.ComboDetailsJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
             ISNULL(d.DiscountAmount, 0) as discount,
             ISNULL(d.DiscountType, NULL) as discountType,
             CAST(ISNULL(dish.IsDiscountAllowed, 1) AS INT) as IsDiscountAllowed,
@@ -3126,7 +3132,13 @@ router.get("/active-kitchen", async (req, res) => {
       SELECT 
         d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, d.StatusCode, 
         d.PricePerUnit as price,
-        h.OrderNumber as orderId, dish.Name as name, 
+        h.OrderNumber as orderId, 
+        CASE 
+          WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
+          WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
+          WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
+          ELSE ISNULL(dish.Name, 'Dish')
+        END as name, 
         ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
         DATEDIFF(SECOND, ISNULL(d.CreatedOn, h.CreatedOn), GETDATE()) as elapsedSeconds,
@@ -3226,7 +3238,14 @@ router.get("/active-kitchen", async (req, res) => {
         ...row,
         status: statusMap[row.StatusCode],
         modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : [],
-        comboSelections: row.ComboDetailsJSON ? JSON.parse(row.ComboDetailsJSON) : [],
+        comboSelections: row.ComboDetailsJSON ? (() => {
+          try {
+            const p = JSON.parse(row.ComboDetailsJSON);
+            return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+          } catch {
+            return [];
+          }
+        })() : [],
       });
     });
     res.json({ serverTime: Date.now(), orders: Object.values(orders) });
@@ -3242,7 +3261,13 @@ router.get("/active-sessions", async (req, res) => {
       SELECT 
         d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, d.StatusCode, 
         d.PricePerUnit as price,
-        h.OrderNumber as orderId, dish.Name as name, 
+        h.OrderNumber as orderId, 
+        CASE 
+          WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
+          WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
+          WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
+          ELSE ISNULL(dish.Name, 'Dish')
+        END as name, 
         ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
         DATEDIFF(SECOND, ISNULL(d.CreatedOn, h.CreatedOn), GETDATE()) as elapsedSeconds,
@@ -3338,7 +3363,14 @@ router.get("/active-sessions", async (req, res) => {
         ...row,
         status: statusMap[row.StatusCode],
         modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : [],
-        comboSelections: row.ComboDetailsJSON ? JSON.parse(row.ComboDetailsJSON) : [],
+        comboSelections: row.ComboDetailsJSON ? (() => {
+          try {
+            const p = JSON.parse(row.ComboDetailsJSON);
+            return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+          } catch {
+            return [];
+          }
+        })() : [],
       });
     });
     res.json({ serverTime: Date.now(), orders: Object.values(orders) });

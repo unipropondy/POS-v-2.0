@@ -623,21 +623,31 @@ class BillPDFGenerator {
                 .join("")
             : "";
 
-        const comboSels =
+        let comboSels =
           item.comboSelections ||
-          (typeof item.ComboDetailsJSON === "string" && item.ComboDetailsJSON
-            ? (() => {
-                try {
-                  const p = JSON.parse(item.ComboDetailsJSON);
-                  return Array.isArray(p) ? p : p.groups || p.items || [];
-                } catch {
-                  return undefined;
-                }
-              })()
-            : Array.isArray(item.ComboDetailsJSON)
-              ? item.ComboDetailsJSON
-              : undefined) ||
-          [];
+          item.combos ||
+          item.selectedCombos;
+        if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
+          const raw = item.ComboDetailsJSON || item.comboDetailsJSON;
+          if (raw) {
+            try {
+              const p = typeof raw === "string" ? JSON.parse(raw) : raw;
+              comboSels = Array.isArray(p) ? p : p.groups || p.items || p.selections || [];
+            } catch {
+              comboSels = [];
+            }
+          }
+        }
+        if (!Array.isArray(comboSels) && typeof comboSels === "object" && comboSels !== null) {
+          comboSels = (comboSels as any).groups || (comboSels as any).items || (comboSels as any).selections || [];
+        }
+        if ((!comboSels || comboSels.length === 0) && (item.Description || item.description)) {
+          const desc = item.Description || item.description || "";
+          if (desc && !desc.toLowerCase().includes("combo promotion")) {
+            const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, '')).filter(Boolean);
+            if (parts.length > 0) comboSels = [{ items: parts.map((p: string) => ({ name: p })) }];
+          }
+        }
         const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
 
         const comboSelectionsHTML = hasCombo
@@ -646,7 +656,9 @@ class BillPDFGenerator {
                 const choices =
                   group.items ||
                   group.dishes ||
-                  (Array.isArray(group) ? group : [group]);
+                  group.selections ||
+                  group.selectedDishes ||
+                  (Array.isArray(group) ? group : (group.name || group.DishName || group.itemName || group.dishName ? [group] : []));
                 if (Array.isArray(choices)) {
                   return (
                     choices
@@ -655,8 +667,8 @@ class BillPDFGenerator {
                           parseFloat(opt.surcharge || 0) +
                           parseFloat(opt.dishPrice || 0);
                         const optName =
-                          opt.name || opt.DishName || opt.itemName || "";
-                        return `<div class="item-modifiers">↳ ${optName}${effectiveAdd > 0 ? ` (+${currencySymbol}${effectiveAdd.toFixed(2)})` : ""}</div>`;
+                          opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+                        return `<div class="item-modifiers">- ${optName}${effectiveAdd > 0 ? ` (+${currencySymbol}${effectiveAdd.toFixed(2)})` : ""}</div>`;
                       })
                       .join("") || ""
                   );
