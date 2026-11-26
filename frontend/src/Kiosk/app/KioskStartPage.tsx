@@ -601,6 +601,19 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
       >
         {/* Hero Section: Centered & Balanced */}
         <View style={styles.heroSection}>
+          {hasValidLogo && (
+            <View style={styles.heroCompanyLogoWrap}>
+              <Image
+                source={{ uri: formattedLogoUri }}
+                style={[
+                  styles.heroCompanyLogo,
+                  isWide ? styles.heroCompanyLogoWide : isTablet ? styles.heroCompanyLogoTablet : null,
+                ]}
+                resizeMode="contain"
+                onError={() => setLogoError(true)}
+              />
+            </View>
+          )}
           <Text style={styles.heroWelcomeLead}>Welcome to</Text>
           <Text
             style={[
@@ -1179,6 +1192,29 @@ const styles = StyleSheet.create({
   heroSection: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  heroCompanyLogoWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  heroCompanyLogo: {
+    width: 140,
+    height: 70,
+    maxWidth: 220,
+    maxHeight: 90,
+  },
+  heroCompanyLogoTablet: {
+    width: 170,
+    height: 85,
+    maxWidth: 260,
+    maxHeight: 105,
+  },
+  heroCompanyLogoWide: {
+    width: 200,
+    height: 100,
+    maxWidth: 300,
+    maxHeight: 120,
   },
   heroWelcomeLead: {
     fontSize: 20,
