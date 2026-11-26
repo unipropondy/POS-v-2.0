@@ -4729,7 +4729,7 @@ router.get("/:orderId/takeaway-charge", async (req, res) => {
 
 async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) {
   if (isTakeaway) {
-    // 🛡️ TAKEAWAY FLOW: Concurrency-safe lookup with automatic table creation when all takeaway tables are full
+    // 🛡️ TAKEAWAY FLOW: Concurrency-safe atomic lookup of first available Takeaway table from TableMaster (TW1, TW2, etc.)
     const query = `
       SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
       BEGIN TRANSACTION;
@@ -4737,20 +4737,34 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) 
       DECLARE @FoundTableId UNIQUEIDENTIFIER = NULL;
       DECLARE @FoundTableNo VARCHAR(50) = NULL;
       DECLARE @FoundSection VARCHAR(10) = NULL;
-      DECLARE @WasAutoCreated BIT = 0;
 
-      -- 1. Check for an existing unoccupied Takeaway table (DiningSection = '4')
+      -- 1. Check for an existing unoccupied Takeaway table (DiningSection = '4' or TableNumber LIKE 'TW%')
       SELECT TOP 1 
         @FoundTableId = tm.TableId, 
         @FoundTableNo = tm.TableNumber,
         @FoundSection = tm.DiningSection
-      FROM TableMaster tm WITH (UPDLOCK, HOLDLOCK)
-      WHERE tm.DiningSection = '4'
-        AND ISNULL(tm.Status, 0) = 0
-        AND tm.CurrentOrderId IS NULL
+      FROM TableMaster tm WITH (UPDLOCK, ROWLOCK, HOLDLOCK)
+      WHERE (tm.DiningSection = '4' OR tm.TableNumber LIKE 'TW%' OR tm.IstakeAway = 1)
+        AND (
+          (ISNULL(tm.Status, 0) = 0 AND tm.CurrentOrderId IS NULL)
+          OR (
+            tm.Status = 1 
+            AND tm.entry_status IN ('q', 'K')
+            AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
+            AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderCur roc WITH (NOLOCK)
+              WHERE (roc.Tableno = tm.TableNumber OR roc.OrderNumber = tm.CurrentOrderId OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
+                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM CartItems ci WITH (NOLOCK)
+              WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) OR ci.CartId = tm.TableNumber)
+            )
+          )
+        )
         AND NOT EXISTS (
           SELECT 1 
-          FROM RestaurantOrderCur ro 
+          FROM RestaurantOrderCur ro WITH (NOLOCK)
           WHERE LTRIM(RTRIM(ro.Tableno)) = LTRIM(RTRIM(tm.TableNumber))
             AND (ro.isOrderClosed = 0 OR ro.isOrderClosed IS NULL)
             AND ro.StatusCode NOT IN (0, 3, 4)
@@ -4765,73 +4779,21 @@ async function findAvailableKioskTable(poolOrTx, isTakeaway = false, io = null) 
         END ASC,
         tm.TableNumber ASC;
 
-      -- 2. If all existing takeaway tables are occupied, automatically create the next TW table (TW41, TW42, ...)
-      IF @FoundTableId IS NULL
-      BEGIN
-        DECLARE @MaxTwNum INT = 0;
-        SELECT @MaxTwNum = ISNULL(MAX(
-          CASE 
-            WHEN ISNUMERIC(SUBSTRING(TableNumber, 3, 20)) = 1 
-            THEN CAST(SUBSTRING(TableNumber, 3, 20) AS INT) 
-            ELSE 0 
-          END
-        ), 0)
-        FROM TableMaster WITH (UPDLOCK, HOLDLOCK)
-        WHERE TableNumber LIKE 'TW%';
-
-        DECLARE @NextNum INT;
-        IF @MaxTwNum < 40
-          SET @NextNum = 41;
-        ELSE
-          SET @NextNum = @MaxTwNum + 1;
-
-        DECLARE @CandidateTableNo VARCHAR(50);
-        SET @CandidateTableNo = 'TW' + CAST(@NextNum AS VARCHAR(20));
-
-        WHILE EXISTS (SELECT 1 FROM TableMaster WHERE TableNumber = @CandidateTableNo)
-        BEGIN
-          SET @NextNum = @NextNum + 1;
-          SET @CandidateTableNo = 'TW' + CAST(@NextNum AS VARCHAR(20));
-        END
-
-        SET @FoundTableId = NEWID();
-        SET @FoundTableNo = @CandidateTableNo;
-        SET @FoundSection = '4';
-        SET @WasAutoCreated = 1;
-
-        INSERT INTO TableMaster (
-          TableId, TableNumber, Seats, ReservationAllowed, DiningSection,
-          IstakeAway, Status, SortCode, PrintSection, TotalAmount, CreatedOn, ModifiedOn
-        ) VALUES (
-          @FoundTableId, @FoundTableNo, 4, 0, '4',
-          1, 0, @NextNum, 1, 0, GETDATE(), GETDATE()
-        );
-      END
-
       COMMIT TRANSACTION;
 
       SELECT 
         @FoundTableId AS TableId, 
         @FoundTableNo AS TableNo, 
-        @FoundSection AS DiningSection,
-        @WasAutoCreated AS WasAutoCreated;
+        @FoundSection AS DiningSection;
     `;
 
     const res = await poolOrTx.request().query(query);
     if (res.recordset && res.recordset.length > 0 && res.recordset[0].TableId) {
       const row = res.recordset[0];
-      if (row.WasAutoCreated) {
-        console.log(`[Kiosk Takeaway] Auto-created new Takeaway table: ${row.TableNo} (${row.TableId}) in DiningSection 4`);
-        if (io) {
-          io.emit("table_config_updated", {});
-          io.emit("tables_updated", {});
-        }
-      }
       return {
         tableId: row.TableId,
         tableNo: row.TableNo,
         section: row.DiningSection || "4",
-        isNewlyCreated: !!row.WasAutoCreated
       };
     }
     return null;
@@ -5016,24 +4978,6 @@ router.get("/kiosk/available-tables", async (req, res) => {
         tm.TableNumber ASC
     `);
 
-    // If takeaway and all takeaway tables are occupied, auto-create via findAvailableKioskTable
-    if (isTakeaway && (!result.recordset || result.recordset.length === 0)) {
-      const autoCreated = await findAvailableKioskTable(pool, true, req.app?.get("io"));
-      if (autoCreated) {
-        result = {
-          recordset: [{
-            TableId: autoCreated.tableId,
-            TableNo: autoCreated.tableNo,
-            TableNumber: autoCreated.tableNo,
-            DiningSection: autoCreated.section,
-            SortCode: 41,
-            Seats: 4,
-            Status: 0
-          }]
-        };
-      }
-    }
-
     res.json({ success: true, tables: result.recordset || [] });
   } catch (err) {
     console.error("[Kiosk] /kiosk/available-tables ERROR:", err.message);
@@ -5068,14 +5012,52 @@ router.post("/kiosk/start", async (req, res) => {
         }
       }
     } else if (!tableNo || tableNo === "DINE_IN" || tableNo === "TAKEAWAY") {
-      const found = await findAvailableKioskTable(pool, isTakeaway, req.app?.get("io"));
+      let found = null;
+      let attempts = 0;
+      const tempOrderNo = await getOrGenerateOrderId(req, isTakeaway ? "TAKEAWAY" : "DINE_IN");
+
+      // Concurrency retry loop: finds the first available table (TW1, TW2, etc.) and atomically claims it
+      while (!found && attempts < 5) {
+        attempts++;
+        const candidate = await findAvailableKioskTable(pool, isTakeaway, req.app?.get("io"));
+        if (!candidate || !candidate.tableId) break;
+
+        const claimResult = await pool.request()
+          .input("tid", sql.UniqueIdentifier, candidate.tableId)
+          .input("orderNumber", sql.NVarChar(50), tempOrderNo)
+          .query(`
+            UPDATE TableMaster
+            SET Status = 1,
+                CurrentOrderId = @orderNumber,
+                entry_status = 'K',
+                TotalAmount = 0,
+                StartTime = GETDATE(),
+                PAYMENT_STATUS = 0,
+                ModifiedOn = GETDATE()
+            WHERE TableId = @tid 
+              AND (
+                ISNULL(Status, 0) = 0 
+                OR (entry_status IN ('q', 'K') AND DATEDIFF(MINUTE, ISNULL(StartTime, ModifiedOn), GETDATE()) >= 15)
+              );
+          `);
+
+        if (claimResult.rowsAffected && claimResult.rowsAffected[0] > 0) {
+          found = candidate;
+          tableId = candidate.tableId;
+          tableNo = candidate.tableNo;
+          break;
+        }
+      }
+
       if (found) {
         tableId = found.tableId;
         tableNo = found.tableNo;
-      } else if (!isTakeaway) {
+      } else {
         return res.status(400).json({
           success: false,
-          error: "All Dine-In tables in DiningSection 3 are currently occupied.",
+          error: isTakeaway
+            ? "All Takeaway tables are currently occupied. Please wait a moment."
+            : "All Dine-In tables in DiningSection 3 are currently occupied.",
         });
       }
     }
@@ -5083,7 +5065,7 @@ router.post("/kiosk/start", async (req, res) => {
     const finalTableNo = tableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN");
     const orderNumber = await getOrGenerateOrderId(req, tableId || finalTableNo);
 
-    // 🛡️ Pre-occupy table in TableMaster for this Kiosk session
+    // 🛡️ Ensure table in TableMaster reflects finalized orderNumber and notify connected clients
     if (tableId) {
       const cleanGuid = toGuidOrNull(tableId);
       if (cleanGuid) {
