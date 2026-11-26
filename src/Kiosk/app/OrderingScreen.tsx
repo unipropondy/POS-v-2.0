@@ -1956,50 +1956,59 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setShowClearCartConfirm(false);
   };
 
+  // Remove applied promotion completely from cart, state, and database
+  const handleRemovePromotion = async () => {
+    setAppliedPromotion(null);
+    setSelectedPromotion(null);
+    try {
+      await AsyncStorage.removeItem("kioskAppliedPromotion");
+    } catch {}
+
+    const cleanCart = cart.filter(
+      (item) => !item.isPromotionalItem && !item.isPromotion,
+    );
+    setCart(cleanCart);
+
+    try {
+      const orderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
+      if (orderId) {
+        const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+        const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
+        const activeTableId = tableId || "TAKEAWAY";
+        await fetch(`${API}/order/save-cart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tableId: activeTableId,
+            orderId: orderId,
+            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
+            isTakeaway: isTakeaway,
+            items: cleanCart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
+            userId: "00000000-0000-0000-0000-000000000000",
+            isKiosk: true,
+            entryStatus: "K",
+            discountAmount: 0,
+            discountRemarks: null,
+          }),
+        });
+      }
+    } catch (delErr) {
+      console.warn("Sync cart after promo removal error:", delErr);
+    }
+  };
+
   const confirmDeleteItem = async () => {
     if (itemToDeleteIndex !== null) {
       const deletedItem = cart[itemToDeleteIndex];
       const isPromo = !!(deletedItem?.isPromotionalItem || deletedItem?.isPromotion);
       if (isPromo) {
-        setAppliedPromotion(null);
-        setSelectedPromotion(null);
-        try {
-          await AsyncStorage.removeItem("kioskAppliedPromotion");
-        } catch {}
+        await handleRemovePromotion();
+        setItemToDeleteIndex(null);
+        return;
       }
       const updatedCart = cart.filter((_, i) => i !== itemToDeleteIndex);
       setCart(updatedCart);
       setItemToDeleteIndex(null);
-
-      // If promotional item was deleted, sync deletion to DB
-      if (isPromo) {
-        try {
-          const orderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
-          if (orderId) {
-            const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
-            const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
-            const activeTableId = tableId || "TAKEAWAY";
-            await fetch(`${API}/order/save-cart`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                tableId: activeTableId,
-                orderId: orderId,
-                orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
-                isTakeaway: isTakeaway,
-                items: updatedCart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
-                userId: "00000000-0000-0000-0000-000000000000",
-                isKiosk: true,
-                entryStatus: "K",
-                discountAmount: 0,
-                discountRemarks: null,
-              }),
-            });
-          }
-        } catch (delErr) {
-          console.warn("Sync cart after promo delete error:", delErr);
-        }
-      }
     }
   };
 
@@ -4251,14 +4260,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     >
                       {item.isBogoFree
                         ? "FREE"
-                        : item.isFlatDiscount
-                          ? `-${currencySymbol}${Number(item.discountValue || 0).toFixed(2)}`
-                          : item.isPercentageDiscount
-                            ? `-${Number(item.discountValue || 0)}%`
-                            : `${currencySymbol}${(
-                                Number(item.Price || item.finalPrice || 0) *
-                                Number(item.qty || 1)
-                              ).toFixed(2)}`}
+                        : item.isFlatDiscount || item.isPercentageDiscount
+                          ? `-${currencySymbol}${promotionDiscount.toFixed(2)}`
+                          : `${currencySymbol}${(
+                              Number(item.Price || item.finalPrice || 0) *
+                              Number(item.qty || 1)
+                            ).toFixed(2)}`}
                     </Text>
                     <TouchableOpacity
                       style={styles.cartItemDeleteBtn}
@@ -4277,8 +4284,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               );
             })}
 
-            {/* Applied Promotion Discount Entry in Cart */}
-            {appliedPromotion && promotionDiscount > 0 && (
+            {/* Applied Promotion Discount Entry in Cart (Only shown if promo is not already present as a cart line item) */}
+            {appliedPromotion && promotionDiscount > 0 && !cart.some((it) => it.isPromotionalItem || it.isPromotion) && (
               <View style={styles.appliedPromoEntryCard}>
                 <View style={styles.appliedPromoEntryIconWrap}>
                   <Ionicons name="gift" size={24} color="#ea580c" />
@@ -4303,10 +4310,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     -{currencySymbol}{promotionDiscount.toFixed(2)}
                   </Text>
                   <TouchableOpacity
-                    onPress={() => {
-                      setAppliedPromotion(null);
-                      setSelectedPromotion(null);
-                    }}
+                    onPress={handleRemovePromotion}
                     hitSlop={8}
                     style={{ marginTop: 4 }}
                   >
