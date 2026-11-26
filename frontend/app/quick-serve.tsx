@@ -1158,10 +1158,10 @@ export default function QuickServePOSScreen() {
       ? "Favorite Dishes"
       : leftPanelView === "category"
       ? (selectedCategoryId !== null
-          ? `${categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.KitchenTypeName || "Category"} Dishes`
+          ? `${categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.KitchenTypeName || "Category"}`
           : "All Category Dishes")
       : (selectedDishGroupId !== null
-          ? `${allDishGroups.find((g) => String(g.DishGroupId) === String(selectedDishGroupId))?.DishGroupName || "Dish Group"} Dishes`
+          ? `${allDishGroups.find((g) => String(g.DishGroupId) === String(selectedDishGroupId))?.DishGroupName || "Dish Group"}`
           : "All Menu Dishes");
 
     CustomerDisplaySync.syncCart({
@@ -2786,10 +2786,10 @@ export default function QuickServePOSScreen() {
                     ? "Favorite Dishes"
                     : leftPanelView === "category"
                     ? (selectedCategoryId !== null
-                        ? `${categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.KitchenTypeName || categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.CategoryName || ""} Dishes`
+                        ? `${categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.KitchenTypeName || categories.find((c) => String(c.CategoryId) === String(selectedCategoryId))?.CategoryName || ""}`
                         : "Dishes")
                     : (selectedDishGroupId !== null
-                        ? `${allDishGroups.find((g) => String(g.DishGroupId) === String(selectedDishGroupId))?.DishGroupName || "Dish Group"} Dishes`
+                        ? `${allDishGroups.find((g) => String(g.DishGroupId) === String(selectedDishGroupId))?.DishGroupName || "Dish Group"}`
                         : "Dishes")}
                 </Text>
                 {leftPanelView === "favorites" && (

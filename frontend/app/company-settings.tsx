@@ -59,6 +59,22 @@ export default function CompanySettingsScreen() {
   const [password, setPassword] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const passwordInputRef = React.useRef<TextInput>(null);
+  const pinInputRef = React.useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (!isUnlocked) {
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [isUnlocked]);
+
+  useEffect(() => {
+    if (showPinModal) {
+      const t = setTimeout(() => pinInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [showPinModal]);
 
   // USB printer scanner state
   const [usbModalVisible, setUsbModalVisible] = useState(false);
@@ -490,6 +506,7 @@ export default function CompanySettingsScreen() {
             Enter admin password to access Shop Settings
           </Text>
           <TextInput
+            ref={passwordInputRef}
             style={styles.passwordInput}
             placeholder="Enter Password"
             placeholderTextColor="#A0AEC0"
@@ -1133,7 +1150,12 @@ export default function CompanySettingsScreen() {
       </Modal>
 
       {/* Admin PIN Modal */}
-      <Modal visible={showPinModal} transparent animationType="fade">
+      <Modal
+        visible={showPinModal}
+        transparent
+        animationType="fade"
+        onShow={() => setTimeout(() => pinInputRef.current?.focus(), 80)}
+      >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 320 }]}>
             <Ionicons name="lock-closed" size={40} color={Theme.primary} style={{ alignSelf: 'center', marginBottom: 15 }} />
@@ -1141,6 +1163,7 @@ export default function CompanySettingsScreen() {
             <Text style={[styles.note, { marginBottom: 20 }]}>Enter admin password to delete this kitchen routing.</Text>
             
             <TextInput 
+              ref={pinInputRef}
               style={[styles.input, { textAlign: 'center', fontSize: 24, letterSpacing: 5 }]}
               value={pin}
               onChangeText={setPin}

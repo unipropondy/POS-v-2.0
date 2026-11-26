@@ -188,6 +188,14 @@ export default function GeneralSettingsScreen() {
   );
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (showPasswordModal) {
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [showPasswordModal]);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [verifyingPassword, setVerifyingPassword] = useState(false);
@@ -827,6 +835,7 @@ export default function GeneralSettingsScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => setShowPasswordModal(false)}
+        onShow={() => setTimeout(() => passwordInputRef.current?.focus(), 80)}
       >
         <View style={styles.modalOverlay}>
           <BlurView
@@ -900,6 +909,7 @@ export default function GeneralSettingsScreen() {
             </Text>
 
             <TextInput
+              ref={passwordInputRef}
               style={{
                 height: 46,
                 borderWidth: 1.5,

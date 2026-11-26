@@ -37,6 +37,7 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const passwordInputRef = React.useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
@@ -44,6 +45,8 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
       setQrCodeUrl(settings.payNowQrUrl || "");
       setPassword("");
       setIsUnlocked(false);
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
     }
   }, [visible, settings]);
 
@@ -157,7 +160,12 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onShow={() => !isUnlocked && setTimeout(() => passwordInputRef.current?.focus(), 80)}
+    >
       <View style={styles.overlay}>
         {!isUnlocked ? (
           <View style={styles.passwordBox}>
@@ -166,6 +174,7 @@ const StoreSettingsModal: React.FC<StoreSettingsModalProps> = ({
               Enter password to edit payment settings
             </Text>
             <TextInput
+              ref={passwordInputRef}
               style={styles.input}
               placeholder="Enter Password"
               placeholderTextColor="#A0AEC0"

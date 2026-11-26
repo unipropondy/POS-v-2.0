@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -739,6 +739,14 @@ export default function SettlementScreen() {
 
   // Supervisor Password Verification State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (showPasswordModal) {
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [showPasswordModal]);
   const [passwordValue, setPasswordValue] = useState("");
   const [passwordAction, setPasswordAction] = useState<{
     onSuccess: () => void;
@@ -1407,7 +1415,7 @@ export default function SettlementScreen() {
         terminalCode: selectedTerminal === "ALL" ? "" : selectedTerminal,
         date: getLocalDateStr(selectedDate),
         attachmentUrl: cashOutForm.AttachmentUrl || null,
-        createdBy: currentUser?.userName || currentUser?.userId || 'Admin',
+        createdBy: currentUser?.userName || currentUser?.userId || "Admin",
       };
 
       let res;
@@ -1581,7 +1589,7 @@ export default function SettlementScreen() {
         terminalCode: selectedTerminal === "ALL" ? "" : selectedTerminal,
         date: getLocalDateStr(selectedDate),
         attachmentUrl: cashInForm.AttachmentUrl || null,
-        createdBy: currentUser?.userName || currentUser?.userId || 'Admin',
+        createdBy: currentUser?.userName || currentUser?.userId || "Admin",
       };
 
       let res;
@@ -2010,7 +2018,9 @@ export default function SettlementScreen() {
                 <div class="info-row">${formatDateTime(new Date())}</div>
               </div>
 
-              ${selectedCashierId === "ALL" && loginWiseSales.length > 0 ? `
+              ${
+                selectedCashierId === "ALL" && loginWiseSales.length > 0
+                  ? `
               <div class="divider">========================================</div>
               <div class="section-title">CASHIER SALES BREAKDOWN</div>
               <div class="divider">========================================</div>
@@ -2021,15 +2031,21 @@ export default function SettlementScreen() {
                   <td class="right">NET SALES</td>
                 </tr>
                 <tr><td colspan="3"><div class="line-divider"></div></td></tr>
-                ${loginWiseSales.map(u => `
+                ${loginWiseSales
+                  .map(
+                    (u) => `
                   <tr>
-                    <td class="bold">${(u.CashierName || 'UNKNOWN').toUpperCase()}</td>
+                    <td class="bold">${(u.CashierName || "UNKNOWN").toUpperCase()}</td>
                     <td class="center">${u.TotalBills || 0}</td>
                     <td class="right">${formatCurrency(u.TotalSales || 0)}</td>
                   </tr>
-                `).join('')}
+                `,
+                  )
+                  .join("")}
               </table>
-              ` : ''}
+              `
+                  : ""
+              }
 
               <div class="divider">========================================</div>
               <div class="section-title">SALES SUMMARY</div>
@@ -2216,8 +2232,11 @@ export default function SettlementScreen() {
         text += "[C]========================================\n";
         text += "[C]<B>CASHIER SALES BREAKDOWN</B>\n";
         text += "[C]========================================\n";
-        loginWiseSales.forEach(u => {
-          text += formatTwoCols48(`${u.CashierName.toUpperCase()}`, formatCurrency(u.TotalSales || 0));
+        loginWiseSales.forEach((u) => {
+          text += formatTwoCols48(
+            `${u.CashierName.toUpperCase()}`,
+            formatCurrency(u.TotalSales || 0),
+          );
         });
         text += "[C]----------------------------------------\n\n";
       }
@@ -2456,10 +2475,10 @@ export default function SettlementScreen() {
             await SunmiModule.printText(
               `User / Cashier: ${selectedCashierId === "ALL" ? "Whole Settlement (All Users)" : (selectedUserObj?.CashierName || "USER").toUpperCase()}\n`,
             );
+            await SunmiModule.printText(`Business Date: ${businessDateStr}\n`);
             await SunmiModule.printText(
-              `Business Date: ${businessDateStr}\n`,
+              `Generated: ${formatDateTime(new Date())}\n\n`,
             );
-            await SunmiModule.printText(`Generated: ${formatDateTime(new Date())}\n\n`);
 
             const formatTwoCols32 = (left: string, right: string) => {
               const spaceCount = 32 - left.length - right.length;
@@ -2473,7 +2492,12 @@ export default function SettlementScreen() {
               await SunmiModule.printText("    CASHIER SALES BREAKDOWN\n");
               await SunmiModule.printText("================================\n");
               for (const u of loginWiseSales) {
-                await SunmiModule.printText(formatTwoCols32(`${u.CashierName.toUpperCase()}`, formatCurrency(u.TotalSales || 0)));
+                await SunmiModule.printText(
+                  formatTwoCols32(
+                    `${u.CashierName.toUpperCase()}`,
+                    formatCurrency(u.TotalSales || 0),
+                  ),
+                );
               }
               await SunmiModule.printText("--------------------------------\n");
             }
@@ -6707,6 +6731,7 @@ export default function SettlementScreen() {
         transparent={true}
         animationType="fade"
         onRequestClose={() => setShowPasswordModal(false)}
+        onShow={() => setTimeout(() => passwordInputRef.current?.focus(), 80)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 400 }]}>
@@ -6734,6 +6759,7 @@ export default function SettlementScreen() {
                 "Please enter the supervisor/admin password:"}
             </Text>
             <TextInput
+              ref={passwordInputRef}
               style={[
                 styles.premiumInput,
                 { width: "100%", marginBottom: 20, textAlign: "left" },

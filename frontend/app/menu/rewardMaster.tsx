@@ -33,6 +33,14 @@ export default function RewardMasterScreen() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [verifyingPassword, setVerifyingPassword] = useState(false);
+  const passwordInputRef = React.useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (!isAdminUnlocked) {
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [isAdminUnlocked]);
 
   // Rule configuration states
   const [spendAmount, setSpendAmount] = useState("100");
@@ -408,6 +416,7 @@ export default function RewardMasterScreen() {
         transparent
         animationType="fade"
         onRequestClose={handleBack}
+        onShow={() => setTimeout(() => passwordInputRef.current?.focus(), 80)}
       >
         <View style={styles.pwOverlay}>
           <View style={styles.pwModalContentContainer}>
@@ -420,6 +429,7 @@ export default function RewardMasterScreen() {
             </Text>
 
             <TextInput
+              ref={passwordInputRef}
               style={styles.pwInputContainer}
               secureTextEntry
               placeholder="Enter Password"

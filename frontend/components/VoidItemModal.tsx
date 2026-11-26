@@ -24,9 +24,22 @@ const VoidItemModal = ({
   itemName,
 }: VoidItemModalProps) => {
   const [password, setPassword] = useState("");
+  const passwordInputRef = React.useRef<TextInput>(null);
+
+  React.useEffect(() => {
+    if (visible) {
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [visible]);
 
   return (
-    <Modal transparent visible={visible} animationType="fade">
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onShow={() => setTimeout(() => passwordInputRef.current?.focus(), 80)}
+    >
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { maxWidth: 350 }]}>
           <Text style={styles.modalTitle}>Void Item?</Text>
@@ -35,6 +48,7 @@ const VoidItemModal = ({
           </Text>
 
           <TextInput
+            ref={passwordInputRef}
             style={styles.passwordInput}
             placeholder="Void Password"
             placeholderTextColor={Theme.textMuted}

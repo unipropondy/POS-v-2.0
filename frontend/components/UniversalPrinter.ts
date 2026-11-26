@@ -1,6 +1,5 @@
 // frontend/src/components/UniversalPrinter.ts - COMPLETE WITH DISCOUNT SUPPORT âœ…
 
-import { format } from "date-fns";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert, Platform } from "react-native";
@@ -9,25 +8,39 @@ import ThermalPrinterImport from "react-native-thermal-printer";
 // Safe wrapper around react-native-thermal-printer to prevent null-reference crashes
 const ThermalPrinter = {
   printTcp: async (args: any) => {
-    if (!ThermalPrinterImport || typeof ThermalPrinterImport.printTcp !== "function") {
-      throw new Error("ThermalPrinter module is not available on this device/platform");
+    if (
+      !ThermalPrinterImport ||
+      typeof ThermalPrinterImport.printTcp !== "function"
+    ) {
+      throw new Error(
+        "ThermalPrinter module is not available on this device/platform",
+      );
     }
     return ThermalPrinterImport.printTcp(args);
   },
   printBluetooth: async (args: any) => {
-    if (!ThermalPrinterImport || typeof ThermalPrinterImport.printBluetooth !== "function") {
-      throw new Error("ThermalPrinter module is not available on this device/platform");
+    if (
+      !ThermalPrinterImport ||
+      typeof ThermalPrinterImport.printBluetooth !== "function"
+    ) {
+      throw new Error(
+        "ThermalPrinter module is not available on this device/platform",
+      );
     }
     return ThermalPrinterImport.printBluetooth(args);
-  }
+  },
 };
 
 import { API_URL } from "../constants/Config";
-import { formatToSingaporeDate, formatToSingaporeTime, formatToSingaporeDateTime, parseDatabaseDate } from "../utils/timezoneHelper";
-import BillPDFGenerator from "./BillPDFGenerator";
-import { PrinterDetector } from "./PrinterDetector";
-import SunmiPrinterService from "./SunmiPrinterService";
 import { useCompanySettingsStore } from "../stores/companySettingsStore";
+import {
+  formatToSingaporeDate,
+  formatToSingaporeDateTime,
+  formatToSingaporeTime,
+  parseDatabaseDate,
+} from "../utils/timezoneHelper";
+import BillPDFGenerator from "./BillPDFGenerator";
+import SunmiPrinterService from "./SunmiPrinterService";
 
 // Printer types
 export type PrinterType =
@@ -76,17 +89,16 @@ class UniversalPrinter {
    */
   private static buildItemFingerprint(items: any[]): string {
     return items
-      .map(
-        (i: any) =>
-          String(
-            i.lineItemId ??
+      .map((i: any) =>
+        String(
+          i.lineItemId ??
             i.LineItemId ??
             i.dishId ??
             i.DishId ??
             i.id ??
             i.name ??
-            "?"
-          )
+            "?",
+        ),
       )
       .sort()
       .join(",");
@@ -103,7 +115,7 @@ class UniversalPrinter {
     const cacheKey = `${orderId}:${this.buildItemFingerprint(items)}`;
     if (this.printedOrdersCache.has(cacheKey)) {
       console.log(
-        `ðŸ›¡ï¸ [UniversalPrinter] Duplicate print blocked | Order: ${orderId} | Items: ${items.length}`
+        `ðŸ›¡ï¸ [UniversalPrinter] Duplicate print blocked | Order: ${orderId} | Items: ${items.length}`,
       );
       return true;
     }
@@ -118,7 +130,9 @@ class UniversalPrinter {
       if (now - ts > TTL) this.printedReceiptsCache.delete(key);
     }
     if (this.printedReceiptsCache.has(orderId)) {
-      console.log(`ðŸ›¡ï¸ [UniversalPrinter] Duplicate receipt print blocked for Order: ${orderId}`);
+      console.log(
+        `ðŸ›¡ï¸ [UniversalPrinter] Duplicate receipt print blocked for Order: ${orderId}`,
+      );
       return true;
     }
     this.printedReceiptsCache.set(orderId, now);
@@ -154,11 +168,13 @@ class UniversalPrinter {
 
   static async openCashDrawer(printerIpOverride?: string): Promise<boolean> {
     try {
-      const { default: CashDrawerService } = await import('../services/CashDrawerService');
-      const ip = printerIpOverride || await CashDrawerService.getCashierPrinterIp();
+      const { default: CashDrawerService } =
+        await import("../services/CashDrawerService");
+      const ip =
+        printerIpOverride || (await CashDrawerService.getCashierPrinterIp());
       return await CashDrawerService.openCashDrawer(ip);
     } catch (e) {
-      console.warn('[UniversalPrinter] Cash drawer open failed:', e);
+      console.warn("[UniversalPrinter] Cash drawer open failed:", e);
       return false;
     }
   }
@@ -178,7 +194,11 @@ class UniversalPrinter {
     }
   }
 
-  private static async isIpReachable(ip: string, port: number = 80, timeoutMs: number = 600): Promise<boolean> {
+  private static async isIpReachable(
+    ip: string,
+    port: number = 80,
+    timeoutMs: number = 600,
+  ): Promise<boolean> {
     if (!ip || ip.trim() === "") return false;
     const cleanIp = ip.trim();
     const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(cleanIp);
@@ -197,7 +217,7 @@ class UniversalPrinter {
         method: "GET",
         signal: controller.signal,
         mode: "no-cors",
-        headers: { "Cache-Control": "no-cache" }
+        headers: { "Cache-Control": "no-cache" },
       });
       clearTimeout(timer);
       console.log(`ðŸ”Œ [isIpReachable] Connected/Alive: ${cleanIp}`);
@@ -414,7 +434,8 @@ class UniversalPrinter {
   }
 
   // Cache bridge status for 5s to avoid hammering the endpoint on every print
-  private static _bridgeOnlineCache: { value: boolean; at: number } | null = null;
+  private static _bridgeOnlineCache: { value: boolean; at: number } | null =
+    null;
 
   private static async isBridgeOnline(): Promise<boolean> {
     const now = Date.now();
@@ -428,13 +449,18 @@ class UniversalPrinter {
       this._bridgeOnlineCache = { value: online, at: now };
       return online;
     } catch (e) {
-      console.warn("[UniversalPrinter] Failed to check print bridge status:", e);
+      console.warn(
+        "[UniversalPrinter] Failed to check print bridge status:",
+        e,
+      );
       this._bridgeOnlineCache = { value: false, at: now };
       return false;
     }
   }
 
-  static async detectUsbPrinters(): Promise<Array<{ name: string; port: string; status: string; isUsb: boolean }>> {
+  static async detectUsbPrinters(): Promise<
+    Array<{ name: string; port: string; status: string; isUsb: boolean }>
+  > {
     try {
       const res = await fetch(`http://localhost:3050/api/printers`);
       const data = await res.json();
@@ -442,14 +468,17 @@ class UniversalPrinter {
         return data.printers;
       }
     } catch (e) {
-      console.warn("[UniversalPrinter] Could not fetch USB printers from print bridge:", e);
+      console.warn(
+        "[UniversalPrinter] Could not fetch USB printers from print bridge:",
+        e,
+      );
     }
     return [];
   }
 
   private static async waitForJobCompletion(
     jobId: string,
-    timeoutMs: number = 3000
+    timeoutMs: number = 3000,
   ): Promise<{ success: boolean; error?: string }> {
     const startTime = Date.now();
     while (Date.now() - startTime < timeoutMs) {
@@ -474,7 +503,9 @@ class UniversalPrinter {
     }
     // Job is still in the queue - bridge will pick it up and print.
     // Don't treat this as a failure; return success so the UI isn't blocked.
-    console.warn(`[UniversalPrinter] Job ${jobId} still PENDING after ${timeoutMs}ms - bridge will print it shortly.`);
+    console.warn(
+      `[UniversalPrinter] Job ${jobId} still PENDING after ${timeoutMs}ms - bridge will print it shortly.`,
+    );
     return { success: true };
   }
 
@@ -483,7 +514,7 @@ class UniversalPrinter {
     kitchenTypeValue: string | number | undefined,
     content: string,
     waitForResult: boolean = true,
-    targetPrinterIp?: string
+    targetPrinterIp?: string,
   ): Promise<boolean> {
     try {
       const storeId = "STORE_001";
@@ -491,36 +522,51 @@ class UniversalPrinter {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer unipro-pos-bridge-token-2026",
-          "x-store-id": storeId
+          Authorization: "Bearer unipro-pos-bridge-token-2026",
+          "x-store-id": storeId,
         },
         body: JSON.stringify({
           printerType,
-          kitchenTypeValue: kitchenTypeValue !== undefined ? String(kitchenTypeValue) : undefined,
+          kitchenTypeValue:
+            kitchenTypeValue !== undefined
+              ? String(kitchenTypeValue)
+              : undefined,
           content,
-          targetPrinterIp
-        })
+          targetPrinterIp,
+        }),
       });
       const data = await response.json();
       if (data.success !== true || !data.jobId) {
-        console.warn(`[UniversalPrinter] queuePrintJob failed — backend returned:`, data);
+        console.warn(
+          `[UniversalPrinter] queuePrintJob failed — backend returned:`,
+          data,
+        );
         return false;
       }
 
-      console.log(`✅ [UniversalPrinter] Print job ${data.jobId} queued to bridge (Printer: ${data.printerName || data.printerIp || 'unknown'})`);
+      console.log(
+        `✅ [UniversalPrinter] Print job ${data.jobId} queued to bridge (Printer: ${data.printerName || data.printerIp || "unknown"})`,
+      );
       this._bridgeOnlineCache = null;
 
       // Fire-and-forget: Job is safely in the DB. Don't block the UI waiting for completion.
       // The Print Bridge will pick it up and print within its next poll cycle (every 500ms).
       if (waitForResult) {
         // Only wait in background without blocking; log result for debugging
-        this.waitForJobCompletion(data.jobId).then((result) => {
-          if (result.success) {
-            console.log(`🎉 [UniversalPrinter] Print job ${data.jobId} confirmed completed.`);
-          } else {
-            console.warn(`⚠️ [UniversalPrinter] Print job ${data.jobId} status:`, result.error);
-          }
-        }).catch(() => {});
+        this.waitForJobCompletion(data.jobId)
+          .then((result) => {
+            if (result.success) {
+              console.log(
+                `🎉 [UniversalPrinter] Print job ${data.jobId} confirmed completed.`,
+              );
+            } else {
+              console.warn(
+                `⚠️ [UniversalPrinter] Print job ${data.jobId} status:`,
+                result.error,
+              );
+            }
+          })
+          .catch(() => {});
       }
       return true;
     } catch (e: any) {
@@ -534,7 +580,7 @@ class UniversalPrinter {
   private static async logPrintJob(
     orderId: string,
     orderNo: string,
-    type: "NEW" | "ADDITIONAL" | "REPRINT" | "KDS_PRINT"
+    type: "NEW" | "ADDITIONAL" | "REPRINT" | "KDS_PRINT",
   ): Promise<void> {
     try {
       const baseUrl = API_URL;
@@ -565,9 +611,13 @@ class UniversalPrinter {
       try {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) {
-          console.log("ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
+          console.log(
+            "ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.",
+          );
           const html = this.generateKOTHTML(orderData, "KDS_PRINT");
-          let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
+          let frame = document.getElementById(
+            "kot-print-iframe",
+          ) as HTMLIFrameElement;
           if (!frame) {
             frame = document.createElement("iframe");
             frame.id = "kot-print-iframe";
@@ -589,7 +639,11 @@ class UniversalPrinter {
             frame.contentWindow?.addEventListener("load", triggerPrint);
             setTimeout(triggerPrint, 50);
           }
-          await this.logPrintJob(orderData.orderId, orderData.orderNo, "REPRINT");
+          await this.logPrintJob(
+            orderData.orderId,
+            orderData.orderNo,
+            "REPRINT",
+          );
           return true;
         }
 
@@ -597,14 +651,22 @@ class UniversalPrinter {
         console.log(`ðŸ“¡ [Web Print Bridge] Queueing KDS print`);
         const success = await this.queuePrintJob(4, undefined, text);
         if (success) {
-          await this.logPrintJob(orderData.orderId, orderData.orderNo, "REPRINT");
+          await this.logPrintJob(
+            orderData.orderId,
+            orderData.orderNo,
+            "REPRINT",
+          );
           return true;
         }
 
         // Web Fallback: If Print Bridge failed, trigger iframe preview
-        console.log("âš ï¸ [Web KDS Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        console.log(
+          "âš ï¸ [Web KDS Print] Print Bridge queue failed. Falling back to iframe print preview.",
+        );
         const html = this.generateKOTHTML(orderData, "KDS_PRINT");
-        let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
+        let frame = document.getElementById(
+          "kot-print-iframe",
+        ) as HTMLIFrameElement;
         if (!frame) {
           frame = document.createElement("iframe");
           frame.id = "kot-print-iframe";
@@ -629,10 +691,15 @@ class UniversalPrinter {
         await this.logPrintJob(orderData.orderId, orderData.orderNo, "REPRINT");
         return true;
       } catch (err) {
-        console.warn("[Web Print Bridge] KDS Print failed, falling back to iframe print preview:", err);
+        console.warn(
+          "[Web Print Bridge] KDS Print failed, falling back to iframe print preview:",
+          err,
+        );
         try {
           const html = this.generateKOTHTML(orderData, "KDS_PRINT");
-          let frame = document.getElementById("kot-print-iframe") as HTMLIFrameElement;
+          let frame = document.getElementById(
+            "kot-print-iframe",
+          ) as HTMLIFrameElement;
           if (!frame) {
             frame = document.createElement("iframe");
             frame.id = "kot-print-iframe";
@@ -654,7 +721,11 @@ class UniversalPrinter {
             frame.contentWindow?.addEventListener("load", triggerPrint);
             setTimeout(triggerPrint, 800);
           }
-          await this.logPrintJob(orderData.orderId, orderData.orderNo, "REPRINT");
+          await this.logPrintJob(
+            orderData.orderId,
+            orderData.orderNo,
+            "REPRINT",
+          );
           return true;
         } catch (fallbackErr) {
           console.error("Web KDS print fallback failed:", fallbackErr);
@@ -675,7 +746,11 @@ class UniversalPrinter {
     frame.style.display = "none";
     document.body.appendChild(frame);
     // Auto-remove after 15s
-    setTimeout(() => { try { frame.remove(); } catch (_) {} }, 15000);
+    setTimeout(() => {
+      try {
+        frame.remove();
+      } catch (_) {}
+    }, 15000);
     return frame;
   }
 
@@ -708,7 +783,9 @@ class UniversalPrinter {
       try {
         const isOnline = await this.isBridgeOnline();
         if (!isOnline) {
-          console.log("ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.");
+          console.log(
+            "ðŸ“¡ [Web Print Bridge] Bridge is OFFLINE. Direct fallback to preview.",
+          );
           this.printKOTViaFrame(this.generateKOTHTML(orderData, type), 50);
           await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
           return true;
@@ -716,8 +793,15 @@ class UniversalPrinter {
 
         const text = this.formatKOTThermalText(orderData, type);
         // Map kitchenCode or kitchenTypeValue
-        const kitchenTypeValue = orderData.kitchenCode || orderData.KitchenCode || orderData.kitchenTypeValue || orderData.KitchenTypeValue || "0";
-        console.log(`ðŸ“¡ [Web Print Bridge] Queueing KOT to Kitchen type: ${kitchenTypeValue}`);
+        const kitchenTypeValue =
+          orderData.kitchenCode ||
+          orderData.KitchenCode ||
+          orderData.kitchenTypeValue ||
+          orderData.KitchenTypeValue ||
+          "0";
+        console.log(
+          `ðŸ“¡ [Web Print Bridge] Queueing KOT to Kitchen type: ${kitchenTypeValue}`,
+        );
         const success = await this.queuePrintJob(2, kitchenTypeValue, text);
         if (success) {
           await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
@@ -725,12 +809,17 @@ class UniversalPrinter {
         }
 
         // ðŸš€ Fallback: If Print Bridge failed or printer not detected on web, trigger iframe print preview immediately
-        console.log("âš ï¸  [Web KOT Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        console.log(
+          "âš ï¸  [Web KOT Print] Print Bridge queue failed. Falling back to iframe print preview.",
+        );
         this.printKOTViaFrame(this.generateKOTHTML(orderData, type), 800);
         await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
         return true;
       } catch (err) {
-        console.warn("[Web Print Bridge] KOT Queue failed, falling back to iframe print preview:", err);
+        console.warn(
+          "[Web Print Bridge] KOT Queue failed, falling back to iframe print preview:",
+          err,
+        );
         try {
           this.printKOTViaFrame(this.generateKOTHTML(orderData, type), 800);
           await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
@@ -745,7 +834,7 @@ class UniversalPrinter {
     try {
       const company = await BillPDFGenerator.loadSettings(userId);
       const html = this.generateKOTHTML(orderData, type);
-      
+
       let targetIp: string = printerIpOverride || "";
       if (!targetIp) {
         if (type === "KDS_PRINT") {
@@ -792,7 +881,9 @@ class UniversalPrinter {
               await Promise.race([printPromise, timeoutPromise]);
             } else {
               console.log(`🔵 KOT Bluetooth print to: ${targetIp}`);
-              await ThermalPrinterImport?.getBluetoothDeviceList?.().catch(() => {});
+              await ThermalPrinterImport?.getBluetoothDeviceList?.().catch(
+                () => {},
+              );
               const printPromise = ThermalPrinter.printBluetooth({
                 macAddress: targetIp,
                 payload: text,
@@ -806,10 +897,14 @@ class UniversalPrinter {
             await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
             return true;
           } catch (printError) {
-            console.warn("âŒ Hardware KOT failed/timeout, falling back directly to PDF...");
+            console.warn(
+              "âŒ Hardware KOT failed/timeout, falling back directly to PDF...",
+            );
           }
         } else {
-          console.warn(`âŒ configured printer IP ${targetIp} not reachable, falling back directly to PDF...`);
+          console.warn(
+            `âŒ configured printer IP ${targetIp} not reachable, falling back directly to PDF...`,
+          );
         }
       } else {
         // âœ… 2. Try Sunmi direct print (Silent) (Only if IP is NOT entered)
@@ -824,7 +919,11 @@ class UniversalPrinter {
 
             if (printed) {
               console.log("âœ… KOT Printed with Sunmi - NO PREVIEW");
-              await this.logPrintJob(orderData.orderId, orderData.orderNo, type);
+              await this.logPrintJob(
+                orderData.orderId,
+                orderData.orderNo,
+                type,
+              );
               return true;
             }
           } catch (sunmiErr) {
@@ -865,12 +964,15 @@ class UniversalPrinter {
             : "NEW ORDER";
     title = title.replace(/\s*KOT\s*/gi, "").trim();
 
-    const items = (data.items || []).filter((item: any) => (item.status || item.Status || "").toUpperCase() !== "VOIDED");
+    const items = (data.items || []).filter(
+      (item: any) =>
+        (item.status || item.Status || "").toUpperCase() !== "VOIDED",
+    );
     const rawTableNo = data.tableNo || "";
     const deviceNo = data.deviceNo || "1";
     const orderNo = data.orderNo || data.orderId || "N/A";
     const rawWaiter = data.waiterName || "Staff";
-    
+
     const isTakeaway =
       data.orderType === "TAKEAWAY" ||
       data.orderContext?.orderType === "TAKEAWAY" ||
@@ -881,26 +983,55 @@ class UniversalPrinter {
       String(rawTableNo).toUpperCase().startsWith("TW");
 
     let displayTable = "";
-    const shortOrderNo = (orderNo && orderNo !== "N/A") ? `#${String(orderNo).slice(-4)}` : "";
+    const shortOrderNo =
+      orderNo && orderNo !== "N/A" ? `#${String(orderNo).slice(-4)}` : "";
     if (isTakeaway) {
-      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo || data.tableNo || rawTableNo;
-      const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
-        ? String(rawTw).trim()
-        : "";
-      const formattedTw = cleanTw.toUpperCase().startsWith("TW") ? cleanTw.toUpperCase() : (cleanTw ? `TW${cleanTw}` : "TW");
-      const qsSuffix = (data.isQuickServe || data.orderContext?.isQuickServe) ? " (QS)" : "";
-      displayTable = shortOrderNo ? `TW - ${formattedTw} ${shortOrderNo}${qsSuffix}` : (cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`);
+      const rawTw =
+        data.takeawayNo ||
+        data.orderContext?.takeawayNo ||
+        data.context?.takeawayNo ||
+        data.tableNo ||
+        rawTableNo;
+      const cleanTw =
+        rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== ""
+          ? String(rawTw).trim()
+          : "";
+      const formattedTw = cleanTw.toUpperCase().startsWith("TW")
+        ? cleanTw.toUpperCase()
+        : cleanTw
+          ? `TW${cleanTw}`
+          : "TW";
+      const qsSuffix =
+        data.isQuickServe || data.orderContext?.isQuickServe ? " (QS)" : "";
+      displayTable = shortOrderNo
+        ? `TW - ${formattedTw} ${shortOrderNo}${qsSuffix}`
+        : cleanTw
+          ? `TAKEAWAY #${cleanTw}${qsSuffix}`
+          : `TAKEAWAY${qsSuffix}`;
     } else {
-      const cleanTableNo = String(rawTableNo || "1")
-        .replace(/\s*\(quick serve\)/gi, "")
-        .replace(/^table\s+/gi, "")
-        .trim() || "1";
+      const cleanTableNo =
+        String(rawTableNo || "1")
+          .replace(/\s*\(quick serve\)/gi, "")
+          .replace(/^table\s+/gi, "")
+          .trim() || "1";
       displayTable = cleanTableNo;
     }
 
-    const waiter = (typeof rawWaiter === "string") ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff" : "Staff";
-    const kotDateStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date());
-    const kotTimeStr = formatToSingaporeTime(new Date(), { hour: '2-digit', minute: '2-digit', hour12: false });
+    const waiter =
+      typeof rawWaiter === "string"
+        ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff"
+        : "Staff";
+    const kotDateStr = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Singapore",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date());
+    const kotTimeStr = formatToSingaporeTime(new Date(), {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
     const timestamp = `${kotDateStr} ${kotTimeStr}`;
     const kitchenName = data.kitchenName || "";
 
@@ -1058,36 +1189,75 @@ class UniversalPrinter {
               if (type === "KDS_PRINT") {
                 const kitchenGroups: Record<string, any[]> = {};
                 items.forEach((item: any) => {
-                  const kName = (item.KitchenTypeName || item.kitchenTypeName || item.dishGroupName || item.categoryName || "KITCHEN").toUpperCase().trim();
+                  const kName = (
+                    item.KitchenTypeName ||
+                    item.kitchenTypeName ||
+                    item.dishGroupName ||
+                    item.categoryName ||
+                    "KITCHEN"
+                  )
+                    .toUpperCase()
+                    .trim();
                   if (!kitchenGroups[kName]) kitchenGroups[kName] = [];
                   kitchenGroups[kName].push(item);
                 });
 
-                return Object.entries(kitchenGroups).map(([kName, groupItems]) => {
-                  return `
+                return Object.entries(kitchenGroups)
+                  .map(([kName, groupItems]) => {
+                    return `
                     <div style="font-size: 18px; font-weight: bold; margin-top: 10px; border-bottom: 1.5px solid #000; padding-bottom: 2px; text-transform: uppercase;">
                       <b>${kName}</b>
                     </div>
-                    ${groupItems.map((item: any) => {
-                      const noteText = item.note || item.notes || item.Remarks || item.remarks;
-                      const rawCombo = item.comboSelections || item.selectedCombos || item.combos ||
-                        (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
-                          ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []); } catch { return undefined; } })() 
-                          : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : (typeof item.ComboDetailsJSON === 'object' && item.ComboDetailsJSON ? (item.ComboDetailsJSON.groups || item.ComboDetailsJSON.items || []) : undefined)));
-                      const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
-                      const hasCombo = comboSels.length > 0;
+                    ${groupItems
+                      .map((item: any) => {
+                        const noteText =
+                          item.note ||
+                          item.notes ||
+                          item.Remarks ||
+                          item.remarks;
+                        const rawCombo =
+                          item.comboSelections ||
+                          item.selectedCombos ||
+                          item.combos ||
+                          (typeof item.ComboDetailsJSON === "string" &&
+                          item.ComboDetailsJSON
+                            ? (() => {
+                                try {
+                                  const p = JSON.parse(item.ComboDetailsJSON);
+                                  return Array.isArray(p)
+                                    ? p
+                                    : p.groups || p.items || p.selections || [];
+                                } catch {
+                                  return undefined;
+                                }
+                              })()
+                            : Array.isArray(item.ComboDetailsJSON)
+                              ? item.ComboDetailsJSON
+                              : typeof item.ComboDetailsJSON === "object" &&
+                                  item.ComboDetailsJSON
+                                ? item.ComboDetailsJSON.groups ||
+                                  item.ComboDetailsJSON.items ||
+                                  []
+                                : undefined);
+                        const comboSels = Array.isArray(rawCombo)
+                          ? rawCombo
+                          : [];
+                        const hasCombo = comboSels.length > 0;
 
-                      return `
+                        return `
                         <div class="item-row">
                           <div class="item-main">
                             <div class="item-qty">${item.quantity || item.qty || 1}</div>
                             <div class="item-name">
-                              <b>${(item.name || "").replace(/\n/g, '<br/>')}</b>
-                              ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
+                              <b>${(item.name || "").replace(/\n/g, "<br/>")}</b>
+                              ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ""}
                             </div>
                           </div>
                           ${
-                            item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway
+                            item.isTakeaway ||
+                            item.IsTakeaway ||
+                            item.isTakeAway ||
+                            item.IsTakeAway
                               ? `<div class="modifier-list"><span class="modifier-item">- Takeaway</span></div>`
                               : ""
                           }
@@ -1098,42 +1268,85 @@ class UniversalPrinter {
                           }
                           ${
                             hasCombo
-                              ? `<div class="modifier-list">${comboSels.map((g: any) => {
-                                  const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
-                                  if (Array.isArray(choices)) {
-                                    return choices.map((opt: any) => {
-                                      const optName = opt.name || opt.DishName || opt.itemName || "";
-                                      return optName ? `<span class="modifier-item">- ${optName}</span>` : "";
-                                    }).join("");
-                                  }
-                                  return "";
-                                }).join("")}</div>`
+                              ? `<div class="modifier-list">${comboSels
+                                  .map((g: any) => {
+                                    const choices =
+                                      g.items ||
+                                      g.dishes ||
+                                      g.selections ||
+                                      g.selectedDishes ||
+                                      (Array.isArray(g)
+                                        ? g
+                                        : g.name || g.DishName || g.itemName
+                                          ? [g]
+                                          : []);
+                                    if (Array.isArray(choices)) {
+                                      return choices
+                                        .map((opt: any) => {
+                                          const optName =
+                                            opt.name ||
+                                            opt.DishName ||
+                                            opt.itemName ||
+                                            "";
+                                          return optName
+                                            ? `<span class="modifier-item">- ${optName}</span>`
+                                            : "";
+                                        })
+                                        .join("");
+                                    }
+                                    return "";
+                                  })
+                                  .join("")}</div>`
                               : ""
                           }
                           ${noteText ? `<div class="remarks">* ${noteText}</div>` : ""}
                         </div>
                       `;
-                    }).join("")}
+                      })
+                      .join("")}
                   `;
-                }).join("");
+                  })
+                  .join("");
               }
 
-              return items.map((item: any) => {
-                const noteText = item.note || item.notes || item.Remarks || item.remarks;
-                const rawCombo = item.comboSelections || item.selectedCombos || item.combos || 
-                  (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
-                    ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []); } catch { return undefined; } })() 
-                    : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : (typeof item.ComboDetailsJSON === 'object' && item.ComboDetailsJSON ? (item.ComboDetailsJSON.groups || item.ComboDetailsJSON.items || []) : undefined)));
-                const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
-                const hasCombo = comboSels.length > 0;
+              return items
+                .map((item: any) => {
+                  const noteText =
+                    item.note || item.notes || item.Remarks || item.remarks;
+                  const rawCombo =
+                    item.comboSelections ||
+                    item.selectedCombos ||
+                    item.combos ||
+                    (typeof item.ComboDetailsJSON === "string" &&
+                    item.ComboDetailsJSON
+                      ? (() => {
+                          try {
+                            const p = JSON.parse(item.ComboDetailsJSON);
+                            return Array.isArray(p)
+                              ? p
+                              : p.groups || p.items || p.selections || [];
+                          } catch {
+                            return undefined;
+                          }
+                        })()
+                      : Array.isArray(item.ComboDetailsJSON)
+                        ? item.ComboDetailsJSON
+                        : typeof item.ComboDetailsJSON === "object" &&
+                            item.ComboDetailsJSON
+                          ? item.ComboDetailsJSON.groups ||
+                            item.ComboDetailsJSON.items ||
+                            []
+                          : undefined);
+                  const comboSels = Array.isArray(rawCombo) ? rawCombo : [];
+                  const hasCombo = comboSels.length > 0;
 
-                return `
+                  return `
                   <div class="item-row">
                     <div class="item-main">
                       <div class="item-qty">${item.quantity || item.qty || 1}</div>
                       <div class="item-name">
-                        <b>${(item.name || "").replace(/\n/g, '<br/>')}</b>
-                        ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ''}
+                        <b>${(item.name || "").replace(/\n/g, "<br/>")}</b>
+                        ${item.songName || item.SongName ? `<div style="font-size: 12px; font-weight: normal; color: #555; margin-top: 4px;">🎵 ${item.songName || item.SongName}</div>` : ""}
                       </div>
                     </div>
                     ${
@@ -1169,12 +1382,29 @@ class UniversalPrinter {
                       <div class="modifier-list">
                         ${comboSels
                           .map((g: any) => {
-                            const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
+                            const choices =
+                              g.items ||
+                              g.dishes ||
+                              g.selections ||
+                              g.selectedDishes ||
+                              (Array.isArray(g)
+                                ? g
+                                : g.name || g.DishName || g.itemName
+                                  ? [g]
+                                  : []);
                             if (Array.isArray(choices)) {
-                              return choices.map((opt: any) => {
-                                const optName = opt.name || opt.DishName || opt.itemName || "";
-                                return optName ? `<span class="modifier-item">- ${optName}</span>` : "";
-                              }).join("");
+                              return choices
+                                .map((opt: any) => {
+                                  const optName =
+                                    opt.name ||
+                                    opt.DishName ||
+                                    opt.itemName ||
+                                    "";
+                                  return optName
+                                    ? `<span class="modifier-item">- ${optName}</span>`
+                                    : "";
+                                })
+                                .join("");
                             }
                             return "";
                           })
@@ -1194,7 +1424,8 @@ class UniversalPrinter {
                     }
                   </div>
                 `;
-              }).join("");
+                })
+                .join("");
             })()}
           </div>
 
@@ -1211,15 +1442,20 @@ class UniversalPrinter {
 
   private static formatKOTThermalText(data: any, type: string = "NEW"): string {
     const title =
-      type === "KDS_PRINT"    ? "KDS PRINT"
-      : type === "REPRINT"    ? "REPRINT"
-      : type === "ADDITIONAL" ? "ADDITIONAL ORDER"
-      : "NEW ORDER";
+      type === "KDS_PRINT"
+        ? "KDS PRINT"
+        : type === "REPRINT"
+          ? "REPRINT"
+          : type === "ADDITIONAL"
+            ? "ADDITIONAL ORDER"
+            : "NEW ORDER";
 
-    const items       = (data.items || []).filter((i: any) => (i.status || i.Status || "").toUpperCase() !== "VOIDED");
-    const rawTableNo  = data.tableNo || "";
-    const rawWaiter   = data.waiterName || "Staff";
-    const orderNo     = data.orderNo || data.orderId || "";
+    const items = (data.items || []).filter(
+      (i: any) => (i.status || i.Status || "").toUpperCase() !== "VOIDED",
+    );
+    const rawTableNo = data.tableNo || "";
+    const rawWaiter = data.waiterName || "Staff";
+    const orderNo = data.orderNo || data.orderId || "";
     const kitchenName = data.kitchenName || "";
 
     const isTakeaway =
@@ -1234,25 +1470,55 @@ class UniversalPrinter {
     let displayTable = "";
     const shortOrderNo = orderNo ? `#${String(orderNo).slice(-4)}` : "";
     if (isTakeaway) {
-      const rawTw = data.takeawayNo || data.orderContext?.takeawayNo || data.context?.takeawayNo || data.tableNo || rawTableNo;
-      const cleanTw = (rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== "")
-        ? String(rawTw).trim()
-        : "";
-      const formattedTw = cleanTw.toUpperCase().startsWith("TW") ? cleanTw.toUpperCase() : (cleanTw ? `TW${cleanTw}` : "TW");
-      const qsSuffix = (data.isQuickServe || data.orderContext?.isQuickServe) ? " (QS)" : "";
-      displayTable = shortOrderNo ? `TW - ${formattedTw} ${shortOrderNo}${qsSuffix}` : (cleanTw ? `TAKEAWAY #${cleanTw}${qsSuffix}` : `TAKEAWAY${qsSuffix}`);
+      const rawTw =
+        data.takeawayNo ||
+        data.orderContext?.takeawayNo ||
+        data.context?.takeawayNo ||
+        data.tableNo ||
+        rawTableNo;
+      const cleanTw =
+        rawTw && String(rawTw) !== "undefined" && String(rawTw).trim() !== ""
+          ? String(rawTw).trim()
+          : "";
+      const formattedTw = cleanTw.toUpperCase().startsWith("TW")
+        ? cleanTw.toUpperCase()
+        : cleanTw
+          ? `TW${cleanTw}`
+          : "TW";
+      const qsSuffix =
+        data.isQuickServe || data.orderContext?.isQuickServe ? " (QS)" : "";
+      displayTable = shortOrderNo
+        ? `TW - ${formattedTw} ${shortOrderNo}${qsSuffix}`
+        : cleanTw
+          ? `TAKEAWAY #${cleanTw}${qsSuffix}`
+          : `TAKEAWAY${qsSuffix}`;
     } else {
-      const cleanTableNo = String(rawTableNo || "1")
-        .replace(/\s*\(quick serve\)/gi, "")
-        .replace(/^table\s+/gi, "")
-        .trim() || "1";
+      const cleanTableNo =
+        String(rawTableNo || "1")
+          .replace(/\s*\(quick serve\)/gi, "")
+          .replace(/^table\s+/gi, "")
+          .trim() || "1";
       displayTable = cleanTableNo;
     }
 
-    const waiter = (typeof rawWaiter === "string") ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff" : "Staff";
+    const waiter =
+      typeof rawWaiter === "string"
+        ? rawWaiter.replace(/\s*\(quick serve\)/gi, "").trim() || "Staff"
+        : "Staff";
 
-    const kotDateStr = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Singapore", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
-    const kotTimeStr = formatToSingaporeTime(new Date(), { hour: "2-digit", minute: "2-digit", hour12: false }).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+    const kotDateStr = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Singapore",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    })
+      .format(new Date())
+      .replace(/[\u202F\u00A0\uFEFF]/g, " ");
+    const kotTimeStr = formatToSingaporeTime(new Date(), {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).replace(/[\u202F\u00A0\uFEFF]/g, " ");
 
     const DIV = "[L]------------------------------------------------\n";
 
@@ -1280,60 +1546,100 @@ class UniversalPrinter {
 
     const formatItem = (item: any): string => {
       let t = "";
-      const qtyNum   = item.quantity || item.qty || 1;
+      const qtyNum = item.quantity || item.qty || 1;
       const itemName = item.name || item.DishName || "";
 
-      wrapText(itemName.replace(/\n/g, " "), DISH_WRAP).forEach((chunk: string, idx: number) => {
-        if (idx === 0) t += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
-        else           t += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
-      });
+      wrapText(itemName.replace(/\n/g, " "), DISH_WRAP).forEach(
+        (chunk: string, idx: number) => {
+          if (idx === 0)
+            t += `[L]<font size='big'><B>[${qtyNum}] ${chunk}</B></font>\n`;
+          else t += `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+        },
+      );
 
       const songName = item.songName || item.SongName || "";
       if (songName) t += `[L]<font size='big'><B>  ♪ ${songName}</B></font>\n`;
 
-      const isTw = !!(item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway);
+      const isTw = !!(
+        item.isTakeaway ||
+        item.IsTakeaway ||
+        item.isTakeAway ||
+        item.IsTakeAway
+      );
       if (isTw) t += `[L]<font size='big'><B>  >> TAKEAWAY <<</B></font>\n`;
 
       if (item.modifiers && item.modifiers.length > 0) {
         item.modifiers.forEach((m: any) => {
-          const modName = m.ModifierName || m.modifierName || m.name || m.ModifierNameEn || "";
+          const modName =
+            m.ModifierName ||
+            m.modifierName ||
+            m.name ||
+            m.ModifierNameEn ||
+            "";
           if (modName) {
-            wrapText(modName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-              t += idx === 0 ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
-            });
+            wrapText(modName, BIG_MOD_WRAP).forEach(
+              (chunk: string, idx: number) => {
+                t +=
+                  idx === 0
+                    ? `[L]<font size='big'><B>  + ${chunk}</B></font>\n`
+                    : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+              },
+            );
           }
         });
       }
 
-      let comboSels = item.comboSelections || item.selectedCombos || item.combos;
+      let comboSels =
+        item.comboSelections || item.selectedCombos || item.combos;
       if (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) {
-        const rawCombo = item.ComboDetailsJSON || item.comboDetailsJSON || item.ComboDetails || item.comboDetails;
+        const rawCombo =
+          item.ComboDetailsJSON ||
+          item.comboDetailsJSON ||
+          item.ComboDetails ||
+          item.comboDetails;
         if (rawCombo) {
-          if (typeof rawCombo === 'string') {
+          if (typeof rawCombo === "string") {
             try {
               const parsed = JSON.parse(rawCombo);
-              comboSels = Array.isArray(parsed) ? parsed : (parsed.groups || parsed.items || parsed.selections || []);
+              comboSels = Array.isArray(parsed)
+                ? parsed
+                : parsed.groups || parsed.items || parsed.selections || [];
             } catch (e) {
               comboSels = [];
             }
           } else if (Array.isArray(rawCombo)) {
             comboSels = rawCombo;
-          } else if (typeof rawCombo === 'object') {
-            comboSels = rawCombo.groups || rawCombo.items || rawCombo.selections || [];
+          } else if (typeof rawCombo === "object") {
+            comboSels =
+              rawCombo.groups || rawCombo.items || rawCombo.selections || [];
           }
         }
       }
 
       if (Array.isArray(comboSels) && comboSels.length > 0) {
         comboSels.forEach((g: any) => {
-          const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName ? [g] : []));
+          const choices =
+            g.items ||
+            g.dishes ||
+            g.selections ||
+            g.selectedDishes ||
+            (Array.isArray(g)
+              ? g
+              : g.name || g.DishName || g.itemName
+                ? [g]
+                : []);
           if (Array.isArray(choices)) {
             choices.forEach((opt: any) => {
               const optName = opt.name || opt.DishName || opt.itemName || "";
               if (optName) {
-                wrapText(optName, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-                  t += idx === 0 ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
-                });
+                wrapText(optName, BIG_MOD_WRAP).forEach(
+                  (chunk: string, idx: number) => {
+                    t +=
+                      idx === 0
+                        ? `[L]<font size='big'><B>  - ${chunk}</B></font>\n`
+                        : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+                  },
+                );
               }
             });
           }
@@ -1342,9 +1648,14 @@ class UniversalPrinter {
 
       const noteText = item.note || item.notes || item.Remarks || item.remarks;
       if (noteText) {
-        wrapText(noteText, BIG_MOD_WRAP).forEach((chunk: string, idx: number) => {
-          t += idx === 0 ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n` : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
-        });
+        wrapText(noteText, BIG_MOD_WRAP).forEach(
+          (chunk: string, idx: number) => {
+            t +=
+              idx === 0
+                ? `[L]<font size='big'><B>  * ${chunk}</B></font>\n`
+                : `[L]<font size='big'><B>    ${chunk}</B></font>\n`;
+          },
+        );
       }
 
       return t;
@@ -1369,7 +1680,15 @@ class UniversalPrinter {
     if (type === "KDS_PRINT") {
       const groups: Record<string, any[]> = {};
       items.forEach((item: any) => {
-        const k = (item.KitchenTypeName || item.kitchenTypeName || item.dishGroupName || item.categoryName || "KITCHEN").toUpperCase().trim();
+        const k = (
+          item.KitchenTypeName ||
+          item.kitchenTypeName ||
+          item.dishGroupName ||
+          item.categoryName ||
+          "KITCHEN"
+        )
+          .toUpperCase()
+          .trim();
         if (!groups[k]) groups[k] = [];
         groups[k].push(item);
       });
@@ -1386,23 +1705,33 @@ class UniversalPrinter {
     } else {
       const kotGroups: Record<string, any[]> = {};
       items.forEach((item: any) => {
-        const k = (item.KitchenTypeName || item.kitchenTypeName || item.dishGroupName || item.categoryName || "KITCHEN").toUpperCase().trim();
+        const k = (
+          item.KitchenTypeName ||
+          item.kitchenTypeName ||
+          item.dishGroupName ||
+          item.categoryName ||
+          "KITCHEN"
+        )
+          .toUpperCase()
+          .trim();
         if (!kotGroups[k]) kotGroups[k] = [];
         kotGroups[k].push(item);
       });
 
       const kotGroupEntries = Object.entries(kotGroups);
-      kotGroupEntries.forEach(([kName, groupItems]: [string, any[]], gIdx: number) => {
-        if (kotGroupEntries.length > 1) {
-          text += `[C]<B>--- ${kName} ---</B>\n`;
+      kotGroupEntries.forEach(
+        ([kName, groupItems]: [string, any[]], gIdx: number) => {
+          if (kotGroupEntries.length > 1) {
+            text += `[C]<B>--- ${kName} ---</B>\n`;
+            text += DIV;
+          }
+          groupItems.forEach((item: any, idx: number) => {
+            text += formatItem(item);
+            if (idx < groupItems.length - 1) text += "[L]\n";
+          });
           text += DIV;
-        }
-        groupItems.forEach((item: any, idx: number) => {
-          text += formatItem(item);
-          if (idx < groupItems.length - 1) text += "[L]\n";
-        });
-        text += DIV;
-      });
+        },
+      );
     }
 
     text += `[L]<B>Order By : ${waiter}</B>\n`;
@@ -1411,13 +1740,15 @@ class UniversalPrinter {
     if (type !== "KDS_PRINT") {
       let kotLabel = "";
       if (isTakeaway) {
-        kotLabel = kitchenName && kitchenName !== "KDS"
-          ? `${kitchenName.toUpperCase()}  /  ${displayTable}`
-          : displayTable;
+        kotLabel =
+          kitchenName && kitchenName !== "KDS"
+            ? `${kitchenName.toUpperCase()}  /  ${displayTable}`
+            : displayTable;
       } else {
-        kotLabel = kitchenName && kitchenName !== "KDS"
-          ? `${kitchenName.toUpperCase()}  /  T.NO : ${displayTable}`
-          : `T.NO : ${displayTable}`;
+        kotLabel =
+          kitchenName && kitchenName !== "KDS"
+            ? `${kitchenName.toUpperCase()}  /  T.NO : ${displayTable}`
+            : `T.NO : ${displayTable}`;
       }
       if (kotLabel) {
         text += DIV;
@@ -1462,40 +1793,72 @@ class UniversalPrinter {
         try {
           const now = Date.now();
           let printers = this.cachedPrinters;
-          if (!printers || (now - this.lastPrintersFetchTime > 30000)) {
-            const response = await fetch(`${API_URL}/api/settings/kitchen-printers`);
+          if (!printers || now - this.lastPrintersFetchTime > 30000) {
+            const response = await fetch(
+              `${API_URL}/api/settings/kitchen-printers`,
+            );
             printers = await response.json();
             this.cachedPrinters = printers;
             this.lastPrintersFetchTime = now;
           }
           if (Array.isArray(printers)) {
-            const cashierPrinter = printers.find((p: any) => p.PrinterType === 1);
-            const takeawayPrinter = printers.find((p: any) => p.PrinterType === 3);
+            const cashierPrinter = printers.find(
+              (p: any) => p.PrinterType === 1,
+            );
+            const takeawayPrinter = printers.find(
+              (p: any) => p.PrinterType === 3,
+            );
             const kioskPrinter = printers.find((p: any) => p.PrinterType === 5);
-            cashierIp = cashierPrinter?.PrinterPath || cashierPrinter?.PrinterIP || cashierIp;
-            takeawayIp = takeawayPrinter?.PrinterPath || takeawayPrinter?.PrinterIP || takeawayIp;
-            kioskIp = kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP || "";
+            cashierIp =
+              cashierPrinter?.PrinterPath ||
+              cashierPrinter?.PrinterIP ||
+              cashierIp;
+            takeawayIp =
+              takeawayPrinter?.PrinterPath ||
+              takeawayPrinter?.PrinterIP ||
+              takeawayIp;
+            kioskIp =
+              kioskPrinter?.PrinterPath || kioskPrinter?.PrinterIP || "";
           }
         } catch (err) {
-          console.warn("[UniversalPrinter] Failed to fetch printer IPs from PrintMaster:", err);
+          console.warn(
+            "[UniversalPrinter] Failed to fetch printer IPs from PrintMaster:",
+            err,
+          );
         }
 
-        const isKiosk = saleData.isKiosk || (preferredType as any) === 5 || (preferredType as any) === "kiosk";
+        const isKiosk =
+          saleData.isKiosk ||
+          (preferredType as any) === 5 ||
+          (preferredType as any) === "kiosk";
         const targetIp = isKiosk
-          ? (kioskIp || cashierIp || company.printerIp || "")
+          ? kioskIp || cashierIp || company.printerIp || ""
           : isTakeaway
-          ? (takeawayIp || cashierIp || company.printerIp || "")
-          : (cashierIp || company.printerIp || "");
+            ? takeawayIp || cashierIp || company.printerIp || ""
+            : cashierIp || company.printerIp || "";
 
         const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
-        console.log(`📡 [Web Print Bridge] Queueing receipt (Type ${pType}, Target IP: ${targetIp || "default"})`);
-        const success = await this.queuePrintJob(pType, undefined, text, false, targetIp);
+        console.log(
+          `📡 [Web Print Bridge] Queueing receipt (Type ${pType}, Target IP: ${targetIp || "default"})`,
+        );
+        const success = await this.queuePrintJob(
+          pType,
+          undefined,
+          text,
+          false,
+          targetIp,
+        );
         if (success) return true;
 
-        console.log("⚠️ [Web Receipt Print] Print Bridge queue failed. Falling back to iframe print preview.");
+        console.log(
+          "⚠️ [Web Receipt Print] Print Bridge queue failed. Falling back to iframe print preview.",
+        );
         return await this.offerPDFFallback(saleData, outletId, t, discountInfo);
       } catch (err) {
-        console.warn("[Web Print Bridge] Receipt Queue failed, falling back to iframe print preview:", err);
+        console.warn(
+          "[Web Print Bridge] Receipt Queue failed, falling back to iframe print preview:",
+          err,
+        );
         return await this.offerPDFFallback(saleData, outletId, t, discountInfo);
       }
     }
@@ -1512,7 +1875,7 @@ class UniversalPrinter {
         try {
           const now = Date.now();
           let printers = this.cachedPrinters;
-          if (!printers || (now - this.lastPrintersFetchTime > 30000)) {
+          if (!printers || now - this.lastPrintersFetchTime > 30000) {
             const response = await fetch(
               `${API_URL}/api/settings/kitchen-printers`,
             );
@@ -1533,7 +1896,10 @@ class UniversalPrinter {
         }
 
         // Determine target printer IP based on order type (Dine-in vs Takeaway vs Kiosk)
-        const isKiosk = saleData.isKiosk || (preferredType as any) === 5 || (preferredType as any) === "kiosk";
+        const isKiosk =
+          saleData.isKiosk ||
+          (preferredType as any) === 5 ||
+          (preferredType as any) === "kiosk";
         const isTakeaway =
           !saleData.tableNo ||
           String(saleData.tableNo).trim() === "" ||
@@ -1556,20 +1922,31 @@ class UniversalPrinter {
           console.log(`ðŸŒ Trying configured printer: ${targetIp}`);
           const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(targetIp.trim());
 
-          const isBtMac = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(targetIp.trim());
+          const isBtMac = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(
+            targetIp.trim(),
+          );
           const isUsbTarget = !isIp && !isBtMac;
 
           // 📲 Try Print Bridge if active on network (supports USB / Shared printers from APK)
           const isBridge = await this.isBridgeOnline();
           if (isBridge) {
             try {
-              console.log(`📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`);
-              const text = this.formatThermalTextWithDiscount(saleData, company, discountInfo);
+              console.log(
+                `📡 [APK Print Bridge] Queueing receipt to Print Bridge for: ${targetIp}`,
+              );
+              const text = this.formatThermalTextWithDiscount(
+                saleData,
+                company,
+                discountInfo,
+              );
               const pType = isKiosk ? 5 : isTakeaway ? 3 : 1;
               const success = await this.queuePrintJob(pType, undefined, text);
               if (success) return;
             } catch (bridgeErr) {
-              console.warn("APK Print Bridge queue failed, trying direct connection:", bridgeErr);
+              console.warn(
+                "APK Print Bridge queue failed, trying direct connection:",
+                bridgeErr,
+              );
             }
           }
           let isReachable = false;
@@ -1594,7 +1971,10 @@ class UniversalPrinter {
               const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("WiFi Timeout")), 3000),
               );
-              const printed = await Promise.race([printPromise, timeoutPromise]);
+              const printed = await Promise.race([
+                printPromise,
+                timeoutPromise,
+              ]);
 
               if (printed) return;
             } catch (err) {
@@ -1610,7 +1990,9 @@ class UniversalPrinter {
         }
 
         // If no IP is configured, print using the Sunmi built-in printer
-        console.log("ðŸ–¨ï¸ No printer IP configured. Printing to Sunmi built-in printer.");
+        console.log(
+          "ðŸ–¨ï¸ No printer IP configured. Printing to Sunmi built-in printer.",
+        );
         try {
           const printed = await this.printThermalReceipt(
             saleData,
@@ -1646,10 +2028,15 @@ class UniversalPrinter {
   ): Promise<boolean> {
     try {
       // Check General Settings: Print Receipt & Checkout Bill
-      const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
-      const { enableReceiptPrint, enableCheckoutBill } = useGeneralSettingsStore.getState().settings;
+      const { useGeneralSettingsStore } =
+        await import("../stores/generalSettingsStore");
+      const { enableReceiptPrint, enableCheckoutBill } =
+        useGeneralSettingsStore.getState().settings;
       if (enableReceiptPrint === false || enableCheckoutBill === false) {
-        if (__DEV__) console.log("🧾 [UniversalPrinter] Checkout bill receipt printing is disabled in General Settings.");
+        if (__DEV__)
+          console.log(
+            "🧾 [UniversalPrinter] Checkout bill receipt printing is disabled in General Settings.",
+          );
         return false;
       }
 
@@ -1657,18 +2044,24 @@ class UniversalPrinter {
       const targetUserId = outletId || "1";
       const company = await BillPDFGenerator.loadSettings(targetUserId);
 
-      const effectiveDiscountInfo = discountInfo || saleData.discount || (saleData.discountAmount > 0 ? {
-        applied: true,
-        type: saleData.discountType || 'percentage',
-        value: saleData.discountValue || 0,
-        amount: saleData.discountAmount
-      } : undefined);
+      const effectiveDiscountInfo =
+        discountInfo ||
+        saleData.discount ||
+        (saleData.discountAmount > 0
+          ? {
+              applied: true,
+              type: saleData.discountType || "percentage",
+              value: saleData.discountValue || 0,
+              amount: saleData.discountAmount,
+            }
+          : undefined);
 
       // Set checkout flag for the template
       const enhancedSaleData = {
         ...saleData,
         discount: effectiveDiscountInfo,
-        discountAmount: saleData.discountAmount ?? effectiveDiscountInfo?.amount,
+        discountAmount:
+          saleData.discountAmount ?? effectiveDiscountInfo?.amount,
         isCheckout: true,
         // Ensure branding is present for the template
         shopName: company.name,
@@ -1709,9 +2102,12 @@ class UniversalPrinter {
         const effectiveDisc = discountInfo || saleData.discount;
         if (effectiveDisc?.applied !== false || saleData.discountAmount > 0) {
           enhancedSaleData.discount = effectiveDisc;
-          if (effectiveDisc?.amount) enhancedSaleData.discountAmount = effectiveDisc.amount;
-          if (effectiveDisc?.type) enhancedSaleData.discountType = effectiveDisc.type;
-          if (effectiveDisc?.value != null) enhancedSaleData.discountValue = effectiveDisc.value;
+          if (effectiveDisc?.amount)
+            enhancedSaleData.discountAmount = effectiveDisc.amount;
+          if (effectiveDisc?.type)
+            enhancedSaleData.discountType = effectiveDisc.type;
+          if (effectiveDisc?.value != null)
+            enhancedSaleData.discountValue = effectiveDisc.value;
         }
 
         const printed = await SunmiPrinterService.printReceipt(
@@ -1731,16 +2127,18 @@ class UniversalPrinter {
       return false;
     }
   }
-  private static async getBase64LogoStr(logoUrl: string): Promise<string | null> {
+  private static async getBase64LogoStr(
+    logoUrl: string,
+  ): Promise<string | null> {
     if (!logoUrl) return null;
     try {
       let url = logoUrl;
       if (url && !url.startsWith("http") && !url.startsWith("data:")) {
         url = url.startsWith("/") ? `${API_URL}${url}` : `${API_URL}/${url}`;
       }
-      if (Platform.OS === 'android' || Platform.OS === 'ios') {
-        const FileSystem = require('expo-file-system');
-        const filename = 'temp_logo_thermal_' + Date.now() + '.png';
+      if (Platform.OS === "android" || Platform.OS === "ios") {
+        const FileSystem = require("expo-file-system");
+        const filename = "temp_logo_thermal_" + Date.now() + ".png";
         const fileUri = FileSystem.cacheDirectory + filename;
         const downloadRes = await FileSystem.downloadAsync(url, fileUri);
         const base64 = await FileSystem.readAsStringAsync(downloadRes.uri, {
@@ -1849,21 +2247,35 @@ class UniversalPrinter {
 
     // Header Info
     text += `[C]<font size='big'><B>${(company.name || "YOUR STORE").toUpperCase()}</B></font>\n`;
-    if (company.address) text += `[C]${company.address}\n`;
+    if (company.address) {
+      const addrLines = String(company.address)
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      for (const line of addrLines) {
+        text += `[C]${line}\n`;
+      }
+    }
     if (company.phone) text += `[C]Tel: ${company.phone}\n`;
     if (company.email) text += `[C]Email: ${company.email}\n`;
     text += "[C]------------------------------------------------\n";
 
-    const saleDate = saleData.originalDate ? parseDatabaseDate(saleData.originalDate) : 
-                     saleData.date ? parseDatabaseDate(saleData.date) : 
-                     new Date();
+    const saleDate = saleData.originalDate
+      ? parseDatabaseDate(saleData.originalDate)
+      : saleData.date
+        ? parseDatabaseDate(saleData.date)
+        : new Date();
 
     const isReceiptTW =
       saleData.orderType === "TAKEAWAY" ||
       saleData.isTakeaway ||
       saleData.IsTakeaway ||
-      String(saleData.tableNo || "").toUpperCase().includes("TAKEAWAY") ||
-      String(saleData.tableNo || "").toUpperCase().startsWith("TW");
+      String(saleData.tableNo || "")
+        .toUpperCase()
+        .includes("TAKEAWAY") ||
+      String(saleData.tableNo || "")
+        .toUpperCase()
+        .startsWith("TW");
 
     const billNumber =
       saleData.invoiceNumber ||
@@ -1875,9 +2287,14 @@ class UniversalPrinter {
       saleData.orderId ||
       "";
 
-    const isKiosk = saleData.isKiosk || saleData.kioskOrderType || saleData.isSelfCollect;
+    const isKiosk =
+      saleData.isKiosk || saleData.kioskOrderType || saleData.isSelfCollect;
     const cleanDigits = String(billNumber || "").replace(/\D/g, "");
-    const queueNo = cleanDigits ? cleanDigits.slice(-4) : (String(billNumber).length >= 4 ? String(billNumber).slice(-4) : billNumber);
+    const queueNo = cleanDigits
+      ? cleanDigits.slice(-4)
+      : String(billNumber).length >= 4
+        ? String(billNumber).slice(-4)
+        : billNumber;
 
     if (isKiosk && queueNo) {
       text += "[C]OFFICIAL QUEUE TICKET\n";
@@ -1886,24 +2303,47 @@ class UniversalPrinter {
     }
 
     const isSelfCollect = saleData.isSelfCollect === true;
-    const cleanTableNo = String(saleData.tableNo || "").replace(/\s*\(quick serve\)/gi, "").replace(/^table\s+/gi, "").trim();
+    const cleanTableNo = String(saleData.tableNo || "")
+      .replace(/\s*\(quick serve\)/gi, "")
+      .replace(/^table\s+/gi, "")
+      .trim();
 
     if (isReceiptTW) {
       const shortOrderNo = billNumber ? String(billNumber).slice(-4) : "";
       const twLabel = shortOrderNo ? `TW#${shortOrderNo}` : "TW";
-      text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>${twLabel}</B>`);
-    } else if (!isSelfCollect && cleanTableNo && cleanTableNo.toUpperCase() !== "TAKEAWAY") {
+      text += this.formatTwoCols48(
+        `<B>Bill No: ${billNumber}</B>`,
+        `<B>${twLabel}</B>`,
+      );
+    } else if (
+      !isSelfCollect &&
+      cleanTableNo &&
+      cleanTableNo.toUpperCase() !== "TAKEAWAY"
+    ) {
       const isTent = saleData.isTentNumber === true;
       const tableLabel = isTent ? "TENT NO" : "TABLE";
-      text += this.formatTwoCols48(`<B>Bill No: ${billNumber}</B>`, `<B>${tableLabel}: ${cleanTableNo}</B>`);
+      text += this.formatTwoCols48(
+        `<B>Bill No: ${billNumber}</B>`,
+        `<B>${tableLabel}: ${cleanTableNo}</B>`,
+      );
     } else {
       text += `[L]<B>Bill No: ${billNumber}</B>\n`;
     }
-    const dateFormatted = formatToSingaporeDate(saleDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const timeFormatted = formatToSingaporeTime(saleDate).replace(/(am|pm)/gi, (m) => m.toUpperCase());
+    const dateFormatted = formatToSingaporeDate(saleDate, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const timeFormatted = formatToSingaporeTime(saleDate).replace(
+      /(am|pm)/gi,
+      (m) => m.toUpperCase(),
+    );
     text += `[L]<B>Date: ${dateFormatted} ${timeFormatted}</B>\n`;
     if (saleData.waiterName && saleData.waiterName !== "Staff") {
-      const displayWaiter = String(saleData.waiterName).replace(/\s*\(quick serve\)/gi, "").trim() || "Staff";
+      const displayWaiter =
+        String(saleData.waiterName)
+          .replace(/\s*\(quick serve\)/gi, "")
+          .trim() || "Staff";
       text += `[L]<B>Waiter: ${displayWaiter}</B>\n`;
     }
     // Print Member Mobile Number on receipt
@@ -1919,11 +2359,22 @@ class UniversalPrinter {
     const printItems = (saleData.items || []).filter(
       (i: any) => i.status !== "VOIDED",
     );
-    const activeItems = (saleData.items || []).filter((i: any) => i.status !== "VOIDED" && i.statusCode !== 0);
-    const allItemsHaveSC = activeItems.length > 0 && activeItems.every((item: any) => {
-      const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
-      return !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true);
-    });
+    const activeItems = (saleData.items || []).filter(
+      (i: any) => i.status !== "VOIDED" && i.statusCode !== 0,
+    );
+    const allItemsHaveSC =
+      activeItems.length > 0 &&
+      activeItems.every((item: any) => {
+        const isTakeawayItem =
+          item.isTakeaway ||
+          item.IsTakeaway ||
+          item.isTakeAway ||
+          item.IsTakeAway;
+        return (
+          !isTakeawayItem &&
+          (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true)
+        );
+      });
 
     printItems.forEach((item: any) => {
       // Robust field mapping
@@ -1964,14 +2415,28 @@ class UniversalPrinter {
       }
 
       // Combo selections
-      const comboSels = item.comboSelections || 
-        (typeof item.ComboDetailsJSON === 'string' && item.ComboDetailsJSON 
-          ? (() => { try { const p = JSON.parse(item.ComboDetailsJSON); return Array.isArray(p) ? p : p.groups || p.items || []; } catch { return undefined; } })() 
-          : (Array.isArray(item.ComboDetailsJSON) ? item.ComboDetailsJSON : undefined)) || [];
+      const comboSels =
+        item.comboSelections ||
+        (typeof item.ComboDetailsJSON === "string" && item.ComboDetailsJSON
+          ? (() => {
+              try {
+                const p = JSON.parse(item.ComboDetailsJSON);
+                return Array.isArray(p) ? p : p.groups || p.items || [];
+              } catch {
+                return undefined;
+              }
+            })()
+          : Array.isArray(item.ComboDetailsJSON)
+            ? item.ComboDetailsJSON
+            : undefined) ||
+        [];
       const hasCombo = Array.isArray(comboSels) && comboSels.length > 0;
       if (hasCombo) {
         comboSels.forEach((group: any) => {
-          const choices = group.items || group.dishes || (Array.isArray(group) ? group : [group]);
+          const choices =
+            group.items ||
+            group.dishes ||
+            (Array.isArray(group) ? group : [group]);
           if (Array.isArray(choices)) {
             choices.forEach((opt: any) => {
               const optName = opt.name || opt.DishName || opt.itemName || "";
@@ -1987,13 +2452,21 @@ class UniversalPrinter {
       const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
       if (discAmt > 0) {
         const discType = item.discountType || "percentage";
-        const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
-        const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
-        const qtyNumItem = Number(item.qty ?? item.quantity ?? item.Quantity ?? 1) || 1;
-        const baseItemTotal = (Number(item.price ?? item.Price ?? item.Cost ?? 0) || 0) * qtyNumItem;
+        const isCombo =
+          item.isCombo === true ||
+          String(item.isCombo) === "1" ||
+          item.isCombo === 1;
+        const discountBasis = isCombo
+          ? (item.basePrice ?? item.price ?? 0)
+          : (item.price ?? 0);
+        const qtyNumItem =
+          Number(item.qty ?? item.quantity ?? item.Quantity ?? 1) || 1;
+        const baseItemTotal =
+          (Number(item.price ?? item.Price ?? item.Cost ?? 0) || 0) *
+          qtyNumItem;
         let itemDiscount = 0;
         if (discType === "percentage") {
-          itemDiscount = (discountBasis * (discAmt / 100)) * qtyNumItem;
+          itemDiscount = discountBasis * (discAmt / 100) * qtyNumItem;
         } else if (discType === "FOC") {
           itemDiscount = baseItemTotal;
         } else {
@@ -2004,8 +2477,8 @@ class UniversalPrinter {
           discType === "FOC"
             ? "Discount (FOC):"
             : discType === "percentage"
-            ? `Discount (${discAmt}%):`
-            : "Discount:";
+              ? `Discount (${discAmt}%):`
+              : "Discount:";
         const leftDisc = `  ${discLabel}`;
         const rightDisc = `-${symbol}${itemDiscount.toFixed(2)}`;
         const padDisc = Math.max(1, 48 - leftDisc.length - rightDisc.length);
@@ -2022,15 +2495,20 @@ class UniversalPrinter {
     (saleData.items || []).forEach((item: any) => {
       if (item.status === "VOIDED") return;
       const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
-      const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
-      const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
+      const isCombo =
+        item.isCombo === true ||
+        String(item.isCombo) === "1" ||
+        item.isCombo === 1;
+      const discountBasis = isCombo
+        ? (item.basePrice ?? item.price ?? 0)
+        : (item.price ?? 0);
       const baseTotal = (item.price || 0) * qtyNum;
       let itemDiscount = 0;
       const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
       const discType = item.discountType || "percentage";
       if (discAmt > 0) {
         if (discType === "percentage") {
-          itemDiscount = (discountBasis * (discAmt / 100)) * qtyNum;
+          itemDiscount = discountBasis * (discAmt / 100) * qtyNum;
         } else if (discType === "FOC") {
           itemDiscount = baseTotal;
         } else {
@@ -2059,11 +2537,24 @@ class UniversalPrinter {
             }
           : null);
 
-    const focPayment = (saleData.payments || []).find((p: any) => String(p.payMode || p.payModeName || p.Remarks || '').trim().toUpperCase() === 'FOC');
-    const focAmt = focPayment ? Number(focPayment.amount ?? focPayment.Amount ?? 0) : 0;
-    
-    let orderDiscount = finalDiscountInfo?.amount || saleData.discountAmount || 0;
-    if (orderDiscount === 0 && finalDiscountInfo && finalDiscountInfo.applied !== false && finalDiscountInfo.value > 0) {
+    const focPayment = (saleData.payments || []).find(
+      (p: any) =>
+        String(p.payMode || p.payModeName || p.Remarks || "")
+          .trim()
+          .toUpperCase() === "FOC",
+    );
+    const focAmt = focPayment
+      ? Number(focPayment.amount ?? focPayment.Amount ?? 0)
+      : 0;
+
+    let orderDiscount =
+      finalDiscountInfo?.amount || saleData.discountAmount || 0;
+    if (
+      orderDiscount === 0 &&
+      finalDiscountInfo &&
+      finalDiscountInfo.applied !== false &&
+      finalDiscountInfo.value > 0
+    ) {
       const subtotalPostItemDisc = Math.max(0, grossTotal - totalItemDiscount);
       if (finalDiscountInfo.type === "percentage") {
         orderDiscount = (subtotalPostItemDisc * finalDiscountInfo.value) / 100;
@@ -2075,12 +2566,21 @@ class UniversalPrinter {
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
     // FOC is a payment method, not a pre-tax discount — exclude from subtotal calculation
     const hasAnyDiscount = totalItemDiscount > 0 || normalDiscount > 0;
-    let currentSubtotal = Math.max(0, grossTotal - totalItemDiscount - normalDiscount);
+    let currentSubtotal = Math.max(
+      0,
+      grossTotal - totalItemDiscount - normalDiscount,
+    );
 
-    text += this.formatTwoCols48("<B>Sub Total:</B>", `<B>${symbol}${grossTotal.toFixed(2)}</B>`);
+    text += this.formatTwoCols48(
+      "<B>Sub Total:</B>",
+      `<B>${symbol}${grossTotal.toFixed(2)}</B>`,
+    );
 
     if (totalItemDiscount > 0) {
-      text += this.formatTwoCols48("<B>Item Discounts:</B>", `<B>-${symbol}${totalItemDiscount.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        "<B>Item Discounts:</B>",
+        `<B>-${symbol}${totalItemDiscount.toFixed(2)}</B>`,
+      );
     }
 
     if (normalDiscount > 0) {
@@ -2088,13 +2588,19 @@ class UniversalPrinter {
         finalDiscountInfo?.type === "percentage"
           ? `<B>Discount (${finalDiscountInfo.value}%):</B>`
           : "<B>Discount:</B>";
-      text += this.formatTwoCols48(discLabel, `<B>-${symbol}${normalDiscount.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        discLabel,
+        `<B>-${symbol}${normalDiscount.toFixed(2)}</B>`,
+      );
     }
 
     if (hasAnyDiscount) {
       text += "[L]------------------------------------------------\n";
       const netLabel = "<B>Net Amount:</B>";
-      text += this.formatTwoCols48(netLabel, `<B>${symbol}${currentSubtotal.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        netLabel,
+        `<B>${symbol}${currentSubtotal.toFixed(2)}</B>`,
+      );
     }
 
     let finalTotal = saleData.total || saleData.totalAmount || currentSubtotal;
@@ -2102,8 +2608,11 @@ class UniversalPrinter {
     const gstRate = company.gstPercentage || 0;
     const scPercentage = company.serviceChargePercentage || 0;
     // For reprints, use stored SC amount; otherwise calculate fresh
-    const savedSC = saleData.serviceCharge != null ? parseFloat(String(saleData.serviceCharge)) : null;
-    
+    const savedSC =
+      saleData.serviceCharge != null
+        ? parseFloat(String(saleData.serviceCharge))
+        : null;
+
     let serviceChargeAmount = 0;
     if (savedSC !== null) {
       serviceChargeAmount = savedSC;
@@ -2112,22 +2621,33 @@ class UniversalPrinter {
       (saleData.items || []).forEach((item: any) => {
         if (item.status === "VOIDED") return;
         const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
-        const isCombo = item.isCombo === true || String(item.isCombo) === "1" || item.isCombo === 1;
-        const discountBasis = isCombo ? (item.basePrice ?? item.price ?? 0) : (item.price ?? 0);
+        const isCombo =
+          item.isCombo === true ||
+          String(item.isCombo) === "1" ||
+          item.isCombo === 1;
+        const discountBasis = isCombo
+          ? (item.basePrice ?? item.price ?? 0)
+          : (item.price ?? 0);
         const baseTotal = (item.price || 0) * qtyNum;
         let itemDiscount = 0;
         const discAmt = Number(item.discountAmount ?? item.discount ?? 0);
         const discType = item.discountType || "percentage";
         if (discAmt > 0) {
           if (discType === "percentage") {
-            itemDiscount = (discountBasis * (discAmt / 100)) * qtyNum;
+            itemDiscount = discountBasis * (discAmt / 100) * qtyNum;
           } else {
             itemDiscount = Math.min(discAmt, discountBasis) * qtyNum;
           }
         }
         const itemSubtotal = baseTotal - itemDiscount;
-        const isTakeawayItem = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
-        const isSC = !isTakeawayItem && (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true);
+        const isTakeawayItem =
+          item.isTakeaway ||
+          item.IsTakeaway ||
+          item.isTakeAway ||
+          item.IsTakeAway;
+        const isSC =
+          !isTakeawayItem &&
+          (Number(item.isServiceCharge) === 1 || item.isServiceCharge === true);
         if (isSC) {
           scEligibleSubtotal += itemSubtotal;
         }
@@ -2137,35 +2657,49 @@ class UniversalPrinter {
         const subtotalPostItemDisc = grossTotal - totalItemDiscount;
         if (subtotalPostItemDisc > 0) {
           const proportion = scEligibleSubtotal / subtotalPostItemDisc;
-          scEligibleNet = Math.max(0, scEligibleSubtotal - proportion * orderDiscount);
+          scEligibleNet = Math.max(
+            0,
+            scEligibleSubtotal - proportion * orderDiscount,
+          );
         }
       }
       serviceChargeAmount = scEligibleNet * (scPercentage / 100);
     }
 
     const hasSC = serviceChargeAmount > 0;
-    const effectiveSCPercentage = serviceChargeAmount > 0 && currentSubtotal > 0
-      ? Math.round((serviceChargeAmount / currentSubtotal) * 100)
-      : scPercentage;
+    const effectiveSCPercentage =
+      serviceChargeAmount > 0 && currentSubtotal > 0
+        ? Math.round((serviceChargeAmount / currentSubtotal) * 100)
+        : scPercentage;
 
     const companySettings = useCompanySettingsStore.getState().settings;
     const takeawayRateFromSettings = companySettings?.takeawayCharges || 0;
-    let takeawayCharge = saleData.takeawayCharge !== undefined ? parseFloat(String(saleData.takeawayCharge)) : 0;
-    
+    let takeawayCharge =
+      saleData.takeawayCharge !== undefined
+        ? parseFloat(String(saleData.takeawayCharge))
+        : 0;
+
     let firstRate: number | null = null;
     let mixed = false;
     let calculatedTWCharge = 0;
     let takeawayQty = 0;
 
     (saleData.items || []).forEach((item: any) => {
-      const isTW = item.isTakeaway || item.IsTakeaway || item.isTakeAway || item.IsTakeAway;
+      const isTW =
+        item.isTakeaway ||
+        item.IsTakeaway ||
+        item.isTakeAway ||
+        item.IsTakeAway;
       const isVoided = item.status === "VOIDED" || item.StatusCode === 0;
       if (isTW && !isVoided) {
         const qtyNum = parseInt(String(item.qty || item.quantity || 1)) || 1;
         takeawayQty += qtyNum;
 
-        const dishSpecificTW = Number(item.takeawayCharge ?? item.TakeawayCharge ?? 0);
-        const effectiveTWRate = dishSpecificTW > 0 ? dishSpecificTW : takeawayRateFromSettings;
+        const dishSpecificTW = Number(
+          item.takeawayCharge ?? item.TakeawayCharge ?? 0,
+        );
+        const effectiveTWRate =
+          dishSpecificTW > 0 ? dishSpecificTW : takeawayRateFromSettings;
         calculatedTWCharge += qtyNum * effectiveTWRate;
 
         if (firstRate === null) {
@@ -2177,67 +2711,109 @@ class UniversalPrinter {
     });
 
     if (takeawayQty === 0 && takeawayCharge > 0) {
-      const effectiveRate = takeawayRateFromSettings > 0 ? takeawayRateFromSettings : takeawayCharge;
+      const effectiveRate =
+        takeawayRateFromSettings > 0
+          ? takeawayRateFromSettings
+          : takeawayCharge;
       takeawayQty = Math.round(takeawayCharge / effectiveRate) || 1;
     } else if (takeawayQty > 0 && takeawayCharge === 0) {
-      takeawayCharge = calculatedTWCharge > 0 ? calculatedTWCharge : takeawayQty * takeawayRateFromSettings;
+      takeawayCharge =
+        calculatedTWCharge > 0
+          ? calculatedTWCharge
+          : takeawayQty * takeawayRateFromSettings;
     }
-    const takeawayRate = takeawayQty > 0 ? (firstRate !== null && !mixed ? firstRate : takeawayCharge / takeawayQty) : takeawayRateFromSettings;
-    const taxableAmount = currentSubtotal + serviceChargeAmount + takeawayCharge;
+    const takeawayRate =
+      takeawayQty > 0
+        ? firstRate !== null && !mixed
+          ? firstRate
+          : takeawayCharge / takeawayQty
+        : takeawayRateFromSettings;
+    const taxableAmount =
+      currentSubtotal + serviceChargeAmount + takeawayCharge;
     const gstAmountRaw = hasGST ? taxableAmount * (gstRate / 100) : 0;
     const gstAmount = Math.round(gstAmountRaw * 100) / 100;
-    
+
     // FOC Fix: When FOC is involved, always recompute finalTotal from
     // taxableAmount + GST so payments (FOC + Cash) add up to the displayed total.
     if (finalTotal === 0 || isCheckout || focAmt > 0) {
       finalTotal = taxableAmount + gstAmount;
     }
-    
-    const printedRoundOff = saleData.roundOff && saleData.roundOff !== 0
-      ? parseFloat((finalTotal - (taxableAmount + gstAmount)).toFixed(2))
-      : 0;
 
+    const printedRoundOff =
+      saleData.roundOff && saleData.roundOff !== 0
+        ? parseFloat((finalTotal - (taxableAmount + gstAmount)).toFixed(2))
+        : 0;
 
     if (hasSC) {
-      text += this.formatTwoCols48(allItemsHaveSC ? "<B>Service Charge:</B>" : "<B>Item Service Charge:</B>", `<B>${symbol}${serviceChargeAmount.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        allItemsHaveSC
+          ? "<B>Service Charge:</B>"
+          : "<B>Item Service Charge:</B>",
+        `<B>${symbol}${serviceChargeAmount.toFixed(2)}</B>`,
+      );
     }
 
     if (takeawayCharge > 0) {
-      text += this.formatTwoCols48("<B>Takeaway Charges:</B>", `<B>${symbol}${takeawayCharge.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        "<B>Takeaway Charges:</B>",
+        `<B>${symbol}${takeawayCharge.toFixed(2)}</B>`,
+      );
     }
 
     if (hasGST && gstAmount > 0) {
-      text += this.formatTwoCols48(`<B>GST (${gstRate}%):</B>`, `<B>${symbol}${gstAmount.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        `<B>GST (${gstRate}%):</B>`,
+        `<B>${symbol}${gstAmount.toFixed(2)}</B>`,
+      );
       text += "[L]------------------------------------------------\n";
     }
 
     if (printedRoundOff && printedRoundOff !== 0) {
       const roSign = printedRoundOff > 0 ? "+" : "";
-      text += this.formatTwoCols48("<B>Round Off:</B>", `<B>${roSign}${symbol}${printedRoundOff.toFixed(2)}</B>`);
+      text += this.formatTwoCols48(
+        "<B>Round Off:</B>",
+        `<B>${roSign}${symbol}${printedRoundOff.toFixed(2)}</B>`,
+      );
       text += "[L]------------------------------------------------\n";
     }
 
     // Payment Details (only print on settled receipts, hide on checkout bills)
     if (!isCheckout) {
-      if (!text.endsWith("[L]------------------------------------------------\n")) {
+      if (
+        !text.endsWith("[L]------------------------------------------------\n")
+      ) {
         text += "[L]------------------------------------------------\n";
       }
-      if (saleData.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0) {
+      if (
+        saleData.payments &&
+        Array.isArray(saleData.payments) &&
+        saleData.payments.length > 0
+      ) {
         text += "[L]<B>Payment Details:</B>\n";
         saleData.payments.forEach((p: any) => {
-          let modeText = String(p.payMode || p.payModeName || p.Remarks || "Payment");
-          if (modeText.toUpperCase().trim() === "FOC") modeText = "FOC (Discount)";
+          let modeText = String(
+            p.payMode || p.payModeName || p.Remarks || "Payment",
+          );
+          if (modeText.toUpperCase().trim() === "FOC")
+            modeText = "FOC (Discount)";
           const modeLabel = `  ${modeText}`;
           const amountVal = `${symbol}${parseFloat(p.amount).toFixed(2)}`;
-          text += this.formatTwoCols48(`<B>${modeLabel}</B>`, `<B>${amountVal}</B>`);
+          text += this.formatTwoCols48(
+            `<B>${modeLabel}</B>`,
+            `<B>${amountVal}</B>`,
+          );
         });
         text += "[L]------------------------------------------------\n";
       } else {
         let methodText = String(saleData.paymentMethod || "Payment");
-        if (methodText.toUpperCase().trim() === "FOC") methodText = "FOC (Discount)";
+        if (methodText.toUpperCase().trim() === "FOC")
+          methodText = "FOC (Discount)";
         const methodLabel = `  ${methodText}`;
         const amountVal = `${symbol}${parseFloat(finalTotal).toFixed(2)}`;
-        text += this.formatTwoCols48(`<B>${methodLabel}</B>`, `<B>${amountVal}</B>`);
+        text += this.formatTwoCols48(
+          `<B>${methodLabel}</B>`,
+          `<B>${amountVal}</B>`,
+        );
         text += "[L]------------------------------------------------\n";
       }
     }
@@ -2257,7 +2833,7 @@ class UniversalPrinter {
     text += "[C]<B>THANK YOU! COME AGAIN!</B>\n";
     text += "[C]SMART-CAFE BY UNIPROSG\n";
 
-    return text.replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+    return text.replace(/[\u202F\u00A0\uFEFF]/g, " ");
   }
 
   // ==================== PDF FALLBACK WITH DISCOUNT ====================
@@ -2359,28 +2935,45 @@ class UniversalPrinter {
 
   static async routeAndPrintOrderKOT(
     orderId: string,
-    orderContext: { orderType?: string; tableNo?: string; takeawayNo?: string; section?: string; isQuickServe?: boolean; isQuick?: boolean; isQuickServeMode?: boolean },
+    orderContext: {
+      orderType?: string;
+      tableNo?: string;
+      takeawayNo?: string;
+      section?: string;
+      isQuickServe?: boolean;
+      isQuick?: boolean;
+      isQuickServeMode?: boolean;
+    },
     items: any[],
     isAdditional: boolean = false,
     waiterName: string = "Staff",
     skipDuplicateGuard: boolean = false,
-    isReprint: boolean = false
+    isReprint: boolean = false,
   ): Promise<boolean> {
     try {
       // 1. Duplicate-print guard (QR socket path only; cashier path passes skipDuplicateGuard=true)
-      if (!isReprint && !skipDuplicateGuard && this.isDuplicatePrint(orderId, items)) {
+      if (
+        !isReprint &&
+        !skipDuplicateGuard &&
+        this.isDuplicatePrint(orderId, items)
+      ) {
         return false;
       }
 
       // 2. Check enableKOT & enableKDS / enableKDSPrint settings
-      const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
-      const { enableKOT, enableKDS, enableKDSPrint, enableComboPrint } = useGeneralSettingsStore.getState().settings;
+      const { useGeneralSettingsStore } =
+        await import("../stores/generalSettingsStore");
+      const { enableKOT, enableKDS, enableKDSPrint, enableComboPrint } =
+        useGeneralSettingsStore.getState().settings;
 
       const shouldPrintKOT = enableKOT !== false;
       const shouldPrintKDS = enableKDS !== false && enableKDSPrint !== false;
 
       if (!shouldPrintKOT && !shouldPrintKDS) {
-        if (__DEV__) console.log("🖨️ [UniversalPrinter] Both KOT and KDS printing are disabled in General Settings.");
+        if (__DEV__)
+          console.log(
+            "🖨️ [UniversalPrinter] Both KOT and KDS printing are disabled in General Settings.",
+          );
         return false;
       }
 
@@ -2388,7 +2981,9 @@ class UniversalPrinter {
         orderContext.orderType === "TAKEAWAY" ||
         orderContext.tableNo?.toUpperCase?.() === "TAKEAWAY" ||
         orderContext.section?.toUpperCase?.() === "TAKEAWAY" ||
-        String(orderContext.tableNo || "").toUpperCase().startsWith("TW");
+        String(orderContext.tableNo || "")
+          .toUpperCase()
+          .startsWith("TW");
 
       let tableNo = "";
       let takeawayNo = orderContext.takeawayNo;
@@ -2398,9 +2993,17 @@ class UniversalPrinter {
         }
         tableNo = `TAKEAWAY #${takeawayNo}`;
       } else {
-        const cleanT = (orderContext.tableNo || "Table 1").replace(/\s*\(quick serve\)/gi, "").trim();
-        const baseTableNo = cleanT.toLowerCase().startsWith("table") ? cleanT : `Table ${cleanT}`;
-        const isQS = !!(orderContext.isQuickServe || orderContext.isQuick || orderContext.isQuickServeMode);
+        const cleanT = (orderContext.tableNo || "Table 1")
+          .replace(/\s*\(quick serve\)/gi, "")
+          .trim();
+        const baseTableNo = cleanT.toLowerCase().startsWith("table")
+          ? cleanT
+          : `Table ${cleanT}`;
+        const isQS = !!(
+          orderContext.isQuickServe ||
+          orderContext.isQuick ||
+          orderContext.isQuickServeMode
+        );
         tableNo = isQS ? `${baseTableNo} (QS)` : baseTableNo;
       }
 
@@ -2410,14 +3013,23 @@ class UniversalPrinter {
         const expandedItems: any[] = [];
         items.forEach((item: any) => {
           expandedItems.push(item);
-          if (!enableComboPrint && item.comboSelections && item.comboSelections.length > 0) {
+          if (
+            !enableComboPrint &&
+            item.comboSelections &&
+            item.comboSelections.length > 0
+          ) {
             item.comboSelections.forEach((g: any) => {
               if (Array.isArray(g.items)) {
                 g.items.forEach((opt: any) => {
                   const optKitchenCode =
-                    opt.KitchenTypeCode || opt.kitchenCode || opt.kitchenTypeCode;
+                    opt.KitchenTypeCode ||
+                    opt.kitchenCode ||
+                    opt.kitchenTypeCode;
                   const parentKitchenCode =
-                    item.KitchenTypeCode || item.kitchenCode || item.kitchenTypeCode || "0";
+                    item.KitchenTypeCode ||
+                    item.kitchenCode ||
+                    item.kitchenTypeCode ||
+                    "0";
                   if (optKitchenCode && optKitchenCode !== parentKitchenCode) {
                     expandedItems.push({
                       ...opt,
@@ -2426,7 +3038,8 @@ class UniversalPrinter {
                       price: 0,
                       name: `${opt.name} (Combo: ${item.name})`,
                       KitchenTypeCode: optKitchenCode,
-                      KitchenTypeName: opt.KitchenTypeName || opt.kitchenTypeName,
+                      KitchenTypeName:
+                        opt.KitchenTypeName || opt.kitchenTypeName,
                       PrinterIP: opt.PrinterIP || opt.printerIp,
                     });
                   }
@@ -2454,27 +3067,40 @@ class UniversalPrinter {
             orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
             isTakeaway,
             waiterName,
-            isQuickServe: !!(orderContext.isQuickServe || orderContext.isQuick || orderContext.isQuickServeMode),
+            isQuickServe: !!(
+              orderContext.isQuickServe ||
+              orderContext.isQuick ||
+              orderContext.isQuickServeMode
+            ),
             items: groupItems,
             kitchenCode: kCode,
             kitchenName:
-              groupItems[0].KitchenTypeName || (kCode === "0" ? "KITCHEN" : kCode),
+              groupItems[0].KitchenTypeName ||
+              (kCode === "0" ? "KITCHEN" : kCode),
             disableComboPrint: false,
           };
           try {
-            console.log(`🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`);
+            console.log(
+              `🖨️ [UniversalPrinter] Printing KOT for kitchen ${kotData.kitchenName} to ${printerIp}`,
+            );
             await this.printKOT(
               kotData,
               "SYSTEM",
-              isReprint ? "REPRINT" : (isAdditional ? "ADDITIONAL" : "NEW"),
-              printerIp
+              isReprint ? "REPRINT" : isAdditional ? "ADDITIONAL" : "NEW",
+              printerIp,
             );
           } catch (grpErr: any) {
-            console.error(`❌ [UniversalPrinter] KOT print failed for kitchen group ${kCode} (${kotData.kitchenName}):`, grpErr.message);
+            console.error(
+              `❌ [UniversalPrinter] KOT print failed for kitchen group ${kCode} (${kotData.kitchenName}):`,
+              grpErr.message,
+            );
           }
         }
       } else {
-        if (__DEV__) console.log("🖨️ [UniversalPrinter] KOT printing is disabled in General Settings.");
+        if (__DEV__)
+          console.log(
+            "🖨️ [UniversalPrinter] KOT printing is disabled in General Settings.",
+          );
       }
 
       // 6. KDS backup copy (respects enableKDSPrint setting)
@@ -2484,13 +3110,20 @@ class UniversalPrinter {
           try {
             let printers = this.cachedPrinters;
             if (!printers) {
-              const res = await fetch(`${API_URL}/api/settings/kitchen-printers`);
+              const res = await fetch(
+                `${API_URL}/api/settings/kitchen-printers`,
+              );
               printers = await res.json();
               this.cachedPrinters = printers;
             }
             if (Array.isArray(printers)) {
-              const kdsPrinter = printers.find((p: any) => p.PrinterType === 4 || (p.KitchenName && p.KitchenName.toUpperCase() === "KDS"));
-              kdsPrinterIp = kdsPrinter?.PrinterPath || kdsPrinter?.PrinterIP || "";
+              const kdsPrinter = printers.find(
+                (p: any) =>
+                  p.PrinterType === 4 ||
+                  (p.KitchenName && p.KitchenName.toUpperCase() === "KDS"),
+              );
+              kdsPrinterIp =
+                kdsPrinter?.PrinterPath || kdsPrinter?.PrinterIP || "";
             }
           } catch (e) {}
 
@@ -2502,11 +3135,17 @@ class UniversalPrinter {
             orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
             isTakeaway,
             waiterName,
-            isQuickServe: !!(orderContext.isQuickServe || orderContext.isQuick || orderContext.isQuickServeMode),
+            isQuickServe: !!(
+              orderContext.isQuickServe ||
+              orderContext.isQuick ||
+              orderContext.isQuickServeMode
+            ),
             items,
             kitchenName: "KDS",
           };
-          console.log(`🖨️ [UniversalPrinter] Printing KDS order (Printer IP: ${kdsPrinterIp || "default"})`);
+          console.log(
+            `🖨️ [UniversalPrinter] Printing KDS order (Printer IP: ${kdsPrinterIp || "default"})`,
+          );
           await this.printKDSOrder(kdsData, "SYSTEM", kdsPrinterIp);
         } catch (kdsErr) {
           console.error("[UniversalPrinter] KDS backup print failed:", kdsErr);
@@ -2523,10 +3162,15 @@ class UniversalPrinter {
   static async printReceiptAuto(settlementData: any): Promise<boolean> {
     try {
       // Check General Settings: Print Receipt
-      const { useGeneralSettingsStore } = await import("../stores/generalSettingsStore");
-      const { enableReceiptPrint } = useGeneralSettingsStore.getState().settings;
+      const { useGeneralSettingsStore } =
+        await import("../stores/generalSettingsStore");
+      const { enableReceiptPrint } =
+        useGeneralSettingsStore.getState().settings;
       if (enableReceiptPrint === false) {
-        if (__DEV__) console.log("🧾 [UniversalPrinter] Automatic receipt printing is disabled in General Settings.");
+        if (__DEV__)
+          console.log(
+            "🧾 [UniversalPrinter] Automatic receipt printing is disabled in General Settings.",
+          );
         return false;
       }
 
@@ -2571,11 +3215,12 @@ class UniversalPrinter {
           payMode: p.PayModeName || p.Remarks || "CASH",
           payModeName: p.PayModeName || p.Remarks || "CASH",
           amount: Number(p.Amount ?? 0),
-          referenceNo: p.ReferenceNo || ""
+          referenceNo: p.ReferenceNo || "",
         })),
         roundOff: Number(header.RoundedBy ?? 0),
         date: header.SettlementDate || header.LastSettlementDate || new Date(),
-        originalDate: header.SettlementDate || header.LastSettlementDate || null,
+        originalDate:
+          header.SettlementDate || header.LastSettlementDate || null,
         discountAmount: Number(header.DiscountAmount ?? 0),
         discountType: header.DiscountType || null,
         discountValue: discountValue,
@@ -2604,22 +3249,24 @@ class UniversalPrinter {
         return; // Only ADMIN, MANAGER, CASHIER, SUPERVISOR devices process the print queue
       }
     } catch (authErr) {
-      console.warn("[UniversalPrinter] Could not check auth state for print queue:", authErr);
+      console.warn(
+        "[UniversalPrinter] Could not check auth state for print queue:",
+        authErr,
+      );
     }
-
 
     try {
       const storeId = "STORE_001";
       const headers = {
-        "Authorization": "Bearer unipro-pos-bridge-token-2026",
+        Authorization: "Bearer unipro-pos-bridge-token-2026",
         "x-store-id": storeId,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       };
 
       // 1. Fetch pending print jobs from backend
       const response = await fetch(`${API_URL}/api/print-jobs/pending`, {
         method: "GET",
-        headers
+        headers,
       });
       const data = await response.json();
       if (!data.success || !Array.isArray(data.data)) {
@@ -2640,95 +3287,122 @@ class UniversalPrinter {
       }
 
       // Process each printer's queue sequentially, but run different printers in parallel
-      const printerPromises = Array.from(jobsByPrinter.values()).map(async (printerJobs) => {
-        for (const job of printerJobs) {
-          const { JobId, PrinterIp, PrinterPort, Content } = job;
-          if (!Content || !PrinterIp) {
-            await fetch(`${API_URL}/api/print-jobs/${JobId}/failed`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({ errorMessage: "Missing Printer IP or Content" })
-            });
-            continue;
-          }
-
-          try {
-            const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(PrinterIp.trim());
-            let printSuccess = false;
-
-            if ((Platform.OS as string) === "web") {
-              // Web fallback: cashier web client shouldn't process directly if daemon is used.
-              // For now, let the desktop print bridge process it.
+      const printerPromises = Array.from(jobsByPrinter.values()).map(
+        async (printerJobs) => {
+          for (const job of printerJobs) {
+            const { JobId, PrinterIp, PrinterPort, Content } = job;
+            if (!Content || !PrinterIp) {
+              await fetch(`${API_URL}/api/print-jobs/${JobId}/failed`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  errorMessage: "Missing Printer IP or Content",
+                }),
+              });
               continue;
             }
 
-            console.log(`[PrintQueue] Printer connection started: PrinterIp=${PrinterIp}, Port=${PrinterPort || 9100}, JobId=${JobId}`);
-
-            if (isIp) {
-              console.log(`ðŸŒ [UniversalPrinter] WiFi print to: ${PrinterIp}`);
-              const printPromise = ThermalPrinter.printTcp({
-                ip: PrinterIp,
-                port: PrinterPort || 9100,
-                payload: Content,
-                mmFeedPaper: 25,
-              });
-              const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection to printer timed out")), 15000)
+            try {
+              const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(
+                PrinterIp.trim(),
               );
-              await Promise.race([printPromise, timeoutPromise]);
-              printSuccess = true;
-            } else {
-              console.log(`ðŸ”µ [UniversalPrinter] Bluetooth print to: ${PrinterIp}`);
-              const printPromise = ThermalPrinter.printBluetooth({
-                macAddress: PrinterIp,
-                payload: Content,
-                mmFeedPaper: 25,
-              });
-              const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection to printer timed out")), 15000)
-              );
-              await Promise.race([printPromise, timeoutPromise]);
-              printSuccess = true;
-            }
+              let printSuccess = false;
 
-            if (printSuccess) {
-              console.log(`[PrintQueue] Print successful: JobId=${JobId}`);
-              await fetch(`${API_URL}/api/print-jobs/${JobId}/complete`, {
+              if ((Platform.OS as string) === "web") {
+                // Web fallback: cashier web client shouldn't process directly if daemon is used.
+                // For now, let the desktop print bridge process it.
+                continue;
+              }
+
+              console.log(
+                `[PrintQueue] Printer connection started: PrinterIp=${PrinterIp}, Port=${PrinterPort || 9100}, JobId=${JobId}`,
+              );
+
+              if (isIp) {
+                console.log(
+                  `ðŸŒ [UniversalPrinter] WiFi print to: ${PrinterIp}`,
+                );
+                const printPromise = ThermalPrinter.printTcp({
+                  ip: PrinterIp,
+                  port: PrinterPort || 9100,
+                  payload: Content,
+                  mmFeedPaper: 25,
+                });
+                const timeoutPromise = new Promise((_, reject) =>
+                  setTimeout(
+                    () => reject(new Error("Connection to printer timed out")),
+                    15000,
+                  ),
+                );
+                await Promise.race([printPromise, timeoutPromise]);
+                printSuccess = true;
+              } else {
+                console.log(
+                  `ðŸ”µ [UniversalPrinter] Bluetooth print to: ${PrinterIp}`,
+                );
+                const printPromise = ThermalPrinter.printBluetooth({
+                  macAddress: PrinterIp,
+                  payload: Content,
+                  mmFeedPaper: 25,
+                });
+                const timeoutPromise = new Promise((_, reject) =>
+                  setTimeout(
+                    () => reject(new Error("Connection to printer timed out")),
+                    15000,
+                  ),
+                );
+                await Promise.race([printPromise, timeoutPromise]);
+                printSuccess = true;
+              }
+
+              if (printSuccess) {
+                console.log(`[PrintQueue] Print successful: JobId=${JobId}`);
+                await fetch(`${API_URL}/api/print-jobs/${JobId}/complete`, {
+                  method: "POST",
+                  headers,
+                });
+                console.log(
+                  `âœ… [UniversalPrinter] Print job ${JobId} completed successfully`,
+                );
+              }
+            } catch (printErr: any) {
+              const errorMsg = printErr.message || "Hardware print error";
+              console.log(
+                `[PrintQueue] Printer connection failed: ${errorMsg}. JobId=${JobId}`,
+              );
+              console.error(
+                `âŒ [UniversalPrinter] Failed to print job ${JobId}:`,
+                printErr,
+              );
+              // If it's a network timeout/connection error, release the job back to queue so other local devices can print it
+              const isTimeoutOrNetworkError =
+                errorMsg.toLowerCase().includes("timeout") ||
+                errorMsg.toLowerCase().includes("connect") ||
+                errorMsg.toLowerCase().includes("unreachable") ||
+                errorMsg.toLowerCase().includes("host");
+
+              const endpoint = isTimeoutOrNetworkError
+                ? `${API_URL}/api/print-jobs/${JobId}/release`
+                : `${API_URL}/api/print-jobs/${JobId}/failed`;
+
+              await fetch(endpoint, {
                 method: "POST",
-                headers
+                headers,
+                body: JSON.stringify({ errorMessage: errorMsg }),
               });
-              console.log(`âœ… [UniversalPrinter] Print job ${JobId} completed successfully`);
             }
-          } catch (printErr: any) {
-            const errorMsg = printErr.message || "Hardware print error";
-            console.log(`[PrintQueue] Printer connection failed: ${errorMsg}. JobId=${JobId}`);
-            console.error(`âŒ [UniversalPrinter] Failed to print job ${JobId}:`, printErr);
-            // If it's a network timeout/connection error, release the job back to queue so other local devices can print it
-            const isTimeoutOrNetworkError = 
-              errorMsg.toLowerCase().includes("timeout") || 
-              errorMsg.toLowerCase().includes("connect") || 
-              errorMsg.toLowerCase().includes("unreachable") ||
-              errorMsg.toLowerCase().includes("host");
-
-            const endpoint = isTimeoutOrNetworkError
-              ? `${API_URL}/api/print-jobs/${JobId}/release`
-              : `${API_URL}/api/print-jobs/${JobId}/failed`;
-
-            await fetch(endpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({ errorMessage: errorMsg })
-            });
+            // Delay for 1 second between consecutive jobs to the same printer to clear the TCP socket
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
-          // Delay for 1 second between consecutive jobs to the same printer to clear the TCP socket
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      });
+        },
+      );
 
       await Promise.all(printerPromises);
-
     } catch (err: any) {
-      console.error("[UniversalPrinter] processPendingPrintJobs error:", err.message);
+      console.error(
+        "[UniversalPrinter] processPendingPrintJobs error:",
+        err.message,
+      );
     }
   }
 
@@ -2741,24 +3415,24 @@ class UniversalPrinter {
   private static async buildQREscPosBase64(
     tableLabel: string,
     sectionName: string,
-    qrUrl: string
+    qrUrl: string,
   ): Promise<string | null> {
     try {
       // Text helper: encode UTF-8 string to bytes
       const enc = (s: string) => Array.from(new TextEncoder().encode(s));
 
       // ESC/POS command bytes
-      const ESC = 0x1B;
-      const GS = 0x1D;
-      const LF = 0x0A;
+      const ESC = 0x1b;
+      const GS = 0x1d;
+      const LF = 0x0a;
 
       const alignCenter = [ESC, 0x61, 0x01];
-      const alignLeft   = [ESC, 0x61, 0x00];
-      const boldOn      = [ESC, 0x45, 0x01];
-      const boldOff     = [ESC, 0x45, 0x00];
-      const dblSize     = [GS,  0x21, 0x11]; // double width + height
-      const normalSize  = [GS,  0x21, 0x00];
-      const cut         = [GS,  0x56, 0x42, 0x00];
+      const alignLeft = [ESC, 0x61, 0x00];
+      const boldOn = [ESC, 0x45, 0x01];
+      const boldOff = [ESC, 0x45, 0x00];
+      const dblSize = [GS, 0x21, 0x11]; // double width + height
+      const normalSize = [GS, 0x21, 0x00];
+      const cut = [GS, 0x56, 0x42, 0x00];
 
       // ── Download QR image (350x350 px PNG) ──────────────────────────
       const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(qrUrl)}&format=png&margin=5`;
@@ -2787,8 +3461,11 @@ class UniversalPrinter {
             if (col < W) {
               const px = (row * W + col) * 4;
               // Luminance threshold: pixel is "black" if it's dark enough
-              const lum = 0.299 * pixels[px] + 0.587 * pixels[px + 1] + 0.114 * pixels[px + 2];
-              if (lum < 128) byte |= (0x80 >> bit);
+              const lum =
+                0.299 * pixels[px] +
+                0.587 * pixels[px + 1] +
+                0.114 * pixels[px + 2];
+              if (lum < 128) byte |= 0x80 >> bit;
             }
           }
           rasterBytes.push(byte);
@@ -2797,10 +3474,10 @@ class UniversalPrinter {
 
       // GS v 0: [GS 0x76 0x30 m xL xH yL yH d1...dk]
       //   m=0 (normal), xL/xH = bytes per row (little-endian), yL/yH = rows
-      const xL = bytesPerRow & 0xFF;
-      const xH = (bytesPerRow >> 8) & 0xFF;
-      const yL = H & 0xFF;
-      const yH = (H >> 8) & 0xFF;
+      const xL = bytesPerRow & 0xff;
+      const xH = (bytesPerRow >> 8) & 0xff;
+      const yL = H & 0xff;
+      const yH = (H >> 8) & 0xff;
       const gsv0Header = [GS, 0x76, 0x30, 0x00, xL, xH, yL, yH];
 
       // ── Assemble full ESC/POS payload ────────────────────────────────
@@ -2808,15 +3485,21 @@ class UniversalPrinter {
         [LF],
         alignCenter,
         enc("================================\n"),
-        alignCenter, boldOn, dblSize,
+        alignCenter,
+        boldOn,
+        dblSize,
         enc(`TABLE QR CODE\n`),
-        normalSize, boldOff,
+        normalSize,
+        boldOff,
         alignCenter,
         enc("================================\n"),
         [LF],
-        alignCenter, boldOn, dblSize,
+        alignCenter,
+        boldOn,
+        dblSize,
         enc(`Table ${tableLabel}\n`),
-        normalSize, boldOff,
+        normalSize,
+        boldOff,
         alignCenter,
         enc(`${sectionName}\n`),
         [LF],
@@ -2825,7 +3508,8 @@ class UniversalPrinter {
         gsv0Header,
         rasterBytes,
         [LF, LF],
-        alignCenter, boldOn,
+        alignCenter,
+        boldOn,
         enc(`Scan to Order\n`),
         boldOff,
         alignCenter,
@@ -2834,7 +3518,10 @@ class UniversalPrinter {
         cut,
       ];
 
-      const allBytes = parts.reduce<number[]>((acc, arr) => acc.concat(arr), []);
+      const allBytes = parts.reduce<number[]>(
+        (acc, arr) => acc.concat(arr),
+        [],
+      );
       const buf = new Uint8Array(allBytes);
       // Base64-encode
       let binary = "";
@@ -2850,7 +3537,7 @@ class UniversalPrinter {
     tableLabel: string,
     sectionName: string,
     qrUrl: string,
-    outletId?: string | number
+    outletId?: string | number,
   ): Promise<boolean> {
     // Fallback text-only payload (used if image conversion fails or for BT/LAN path)
     const payload = `\n[C]================================================\n[C]<font size='big'><B>TABLE QR CODE</B></font>\n[C]================================================\n[C]<font size='big'><B>Table ${tableLabel}</B></font>\n[C]${sectionName}\n[C]\n[C]<qrcode size='22'>${qrUrl}</qrcode>\n[C]\n[C]<font size='normal'><B>Scan to Order</B></font>\n[C]================================================\n\n\n\n`;
@@ -2862,13 +3549,19 @@ class UniversalPrinter {
 
         // âœ… Build proper ESC/POS binary with QR bitmap â€” the bridge sends it raw
         // bypassing parseFormatting() which doesn't understand <qrcode> tags
-        const escPosBase64 = await this.buildQREscPosBase64(tableLabel, sectionName, qrUrl);
+        const escPosBase64 = await this.buildQREscPosBase64(
+          tableLabel,
+          sectionName,
+          qrUrl,
+        );
         if (escPosBase64) {
           return await this.queuePrintJob(1, undefined, escPosBase64);
         }
 
         // Fallback: send text payload (QR won't be a real barcode image)
-        console.warn("[printQRDirect] Falling back to text payload â€” QR image will not print correctly");
+        console.warn(
+          "[printQRDirect] Falling back to text payload â€” QR image will not print correctly",
+        );
         return await this.queuePrintJob(1, undefined, payload);
       } catch {
         return false;
@@ -2882,13 +3575,22 @@ class UniversalPrinter {
       // NOT by the Sunmi built-in printer â€” sending it there prints raw text.
       if (Platform.OS === "android") {
         try {
-          const sunmiPrinted = await SunmiPrinterService.printQR(qrUrl, tableLabel, sectionName);
+          const sunmiPrinted = await SunmiPrinterService.printQR(
+            qrUrl,
+            tableLabel,
+            sectionName,
+          );
           if (sunmiPrinted) {
-            console.log("âœ… QR printed via Sunmi built-in printer (native SDK)");
+            console.log(
+              "âœ… QR printed via Sunmi built-in printer (native SDK)",
+            );
             return true;
           }
         } catch (sunmiErr) {
-          console.warn("Sunmi QR print failed, trying LAN/BT fallback:", sunmiErr);
+          console.warn(
+            "Sunmi QR print failed, trying LAN/BT fallback:",
+            sunmiErr,
+          );
         }
       }
 
@@ -2896,7 +3598,9 @@ class UniversalPrinter {
       const company = await BillPDFGenerator.loadSettings(outletId);
       let cashierIp = "";
       try {
-        const response = await fetch(`${API_URL}/api/settings/kitchen-printers`);
+        const response = await fetch(
+          `${API_URL}/api/settings/kitchen-printers`,
+        );
         const printers = await response.json();
         if (Array.isArray(printers)) {
           const cashierPrinter = printers.find((p) => p.PrinterType === 1);
@@ -2909,7 +3613,9 @@ class UniversalPrinter {
       const targetIp = cashierIp || company.printerIp || "";
 
       if (!targetIp || targetIp.trim().length === 0) {
-        console.warn("No LAN/BT printer IP configured and Sunmi SDK unavailable.");
+        console.warn(
+          "No LAN/BT printer IP configured and Sunmi SDK unavailable.",
+        );
         return false;
       }
 
@@ -2936,10 +3642,22 @@ class UniversalPrinter {
   }
 
   // ==================== SETTLEMENT REPORT HTML ====================
-  static generateSettlementReportHTML(settlementRows: any[], company: any, period?: string): string {
+  static generateSettlementReportHTML(
+    settlementRows: any[],
+    company: any,
+    period?: string,
+  ): string {
     const symbol = company.currencySymbol || "$";
     const now = new Date();
-    const printDate = (now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+    const printDate = (
+      now.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }) +
+      " " +
+      now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+    ).replace(/[\u202F\u00A0\uFEFF]/g, " ");
 
     // Aggregate totals by payment mode
     const paymentTotals: Record<string, number> = {};
@@ -2952,7 +3670,11 @@ class UniversalPrinter {
         orderSet.add(sId);
         totalOrders++;
       }
-      const mode = String(row.PayMode || row.PayModeName || row.payMode || "CASH").trim().toUpperCase();
+      const mode = String(
+        row.PayMode || row.PayModeName || row.payMode || "CASH",
+      )
+        .trim()
+        .toUpperCase();
       const amt = Number(row.Amount || row.SysAmount || 0);
       paymentTotals[mode] = (paymentTotals[mode] || 0) + amt;
       if (mode !== "FOC") {
@@ -2961,7 +3683,10 @@ class UniversalPrinter {
     });
 
     const paymentRows = Object.entries(paymentTotals)
-      .map(([mode, amt]) => `<tr><td>${mode}</td><td class="amount">${symbol}${(amt as number).toFixed(2)}</td></tr>`)
+      .map(
+        ([mode, amt]) =>
+          `<tr><td>${mode}</td><td class="amount">${symbol}${(amt as number).toFixed(2)}</td></tr>`,
+      )
       .join("");
 
     return `<!DOCTYPE html><html><head><style>
@@ -2997,16 +3722,24 @@ class UniversalPrinter {
       <div class="footer"><p>© ${new Date().getFullYear()} UNIPRO SOFTWARES SG PTE LTD</p></div>
     </body></html>`;
   }
-  
+
   static async printSettlementReportDirect(
     settlementRows: any[],
     company: any,
-    period: string
+    period: string,
   ): Promise<boolean> {
     try {
       const symbol = company.currencySymbol || "$";
       const now = new Date();
-      const printDate = (now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })).replace(/[\u202F\u00A0\uFEFF]/g, ' ');
+      const printDate = (
+        now.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        }) +
+        " " +
+        now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+      ).replace(/[\u202F\u00A0\uFEFF]/g, " ");
 
       // Aggregate totals by payment mode
       const paymentTotals: Record<string, number> = {};
@@ -3019,7 +3752,11 @@ class UniversalPrinter {
           orderSet.add(sId);
           totalOrders++;
         }
-        const mode = String(row.PayMode || row.PayModeName || row.payMode || "CASH").trim().toUpperCase();
+        const mode = String(
+          row.PayMode || row.PayModeName || row.payMode || "CASH",
+        )
+          .trim()
+          .toUpperCase();
         const amt = Number(row.Amount || row.SysAmount || 0);
         paymentTotals[mode] = (paymentTotals[mode] || 0) + amt;
         if (mode !== "FOC") {
@@ -3056,18 +3793,33 @@ class UniversalPrinter {
           try {
             let printers = this.cachedPrinters;
             if (!printers) {
-              const res = await fetch(`${API_URL}/api/settings/kitchen-printers`);
+              const res = await fetch(
+                `${API_URL}/api/settings/kitchen-printers`,
+              );
               printers = await res.json();
               this.cachedPrinters = printers;
             }
             if (Array.isArray(printers)) {
-              const cashierPrinter = printers.find((p: any) => p.PrinterType === 1);
-              cashierIp = cashierPrinter?.PrinterPath || cashierPrinter?.PrinterIP || cashierIp;
+              const cashierPrinter = printers.find(
+                (p: any) => p.PrinterType === 1,
+              );
+              cashierIp =
+                cashierPrinter?.PrinterPath ||
+                cashierPrinter?.PrinterIP ||
+                cashierIp;
             }
           } catch (e) {}
 
-          console.log(`📡 [Web Print Bridge] Queueing settlement report (Target IP: ${cashierIp || "default"})`);
-          const success = await this.queuePrintJob(1, undefined, text, true, cashierIp);
+          console.log(
+            `📡 [Web Print Bridge] Queueing settlement report (Target IP: ${cashierIp || "default"})`,
+          );
+          const success = await this.queuePrintJob(
+            1,
+            undefined,
+            text,
+            true,
+            cashierIp,
+          );
           if (success) return true;
         } catch (err) {
           console.warn("Print Bridge failed for Z-Report:", err);

@@ -1762,7 +1762,7 @@ export default function MenuScreen() {
                         {debouncedSearch.trim()
                           ? `Search Results for "${debouncedSearch.trim()}"`
                           : selectedGroup
-                          ? `${groups.find((g) => String(g.DishGroupId) === String(selectedGroup))?.DishGroupName || "Dish Group"} Dishes`
+                          ? `${groups.find((g) => String(g.DishGroupId) === String(selectedGroup))?.DishGroupName || "Dish Group"}`
                           : "Menu Dishes"}
                       </Text>
                       {filteredItems.length > 0 && (

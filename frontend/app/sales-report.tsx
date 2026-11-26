@@ -414,6 +414,14 @@ export default function SalesReport() {
 
   // Supervisor Password Verification State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const passwordInputRef = React.useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (showPasswordModal) {
+      const t = setTimeout(() => passwordInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+  }, [showPasswordModal]);
   const [passwordValue, setPasswordValue] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [passwordAction, setPasswordAction] = useState<{
@@ -5402,6 +5410,7 @@ export default function SalesReport() {
             transparent
             animationType="fade"
             onRequestClose={() => setShowPasswordModal(false)}
+            onShow={() => setTimeout(() => passwordInputRef.current?.focus(), 80)}
           >
             <View style={styles.modalOverlay}>
               <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
@@ -5420,6 +5429,7 @@ export default function SalesReport() {
                 </Text>
 
                 <TextInput
+                  ref={passwordInputRef}
                   placeholder="Enter Password"
                   placeholderTextColor={Theme.textSecondary + "90"}
                   secureTextEntry

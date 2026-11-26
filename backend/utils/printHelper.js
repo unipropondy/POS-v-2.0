@@ -277,7 +277,15 @@ function formatReceiptThermalText(saleData, companySettings = {}, discountInfo =
   text += `[C]<font size='big'><B>${receiptTitle}</B></font>\n`;
   text += "[C]================================================\n";
   text += `[C]<font size='big'><B>${storeName}</B></font>\n`;
-  if (address) text += `[C]${address}\n`;
+  if (address) {
+    const addrLines = String(address)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    for (const line of addrLines) {
+      text += `[C]${line}\n`;
+    }
+  }
   if (phone) text += `[C]Tel: ${phone}\n`;
   if (email) text += `[C]Email: ${email}\n`;
   text += "[C]------------------------------------------------\n";
