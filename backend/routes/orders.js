@@ -4181,7 +4181,48 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
       `);
 
     // 9. Insert SettlementItemDetail
+    let defaultComboInfo = { catId: null, catName: 'Food', groupName: 'Set Meal' };
+    try {
+      const defComboRes = await transaction.request().query(`
+        SELECT TOP 1 dg_c.DishGroupId, dg_c.CategoryId, dg_c.DishGroupName, cm_c.CategoryName
+        FROM DishGroupMaster dg_c
+        JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+        WHERE dg_c.DishGroupName LIKE '%Combo%' 
+           OR dg_c.DishGroupName = 'Set Meal'
+           OR dg_c.DishGroupName LIKE '%Set Meal%' 
+           OR cm_c.CategoryName = 'Food'
+        ORDER BY 
+          CASE 
+            WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+            WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+            WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+            WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+            WHEN cm_c.CategoryName = 'Food' THEN 5 
+            ELSE 6 
+          END ASC
+      `);
+      if (defComboRes.recordset.length > 0) {
+        defaultComboInfo = {
+          catId: defComboRes.recordset[0].CategoryId,
+          catName: defComboRes.recordset[0].CategoryName,
+          groupName: defComboRes.recordset[0].DishGroupName,
+        };
+      }
+    } catch (_) {}
+
     for (const item of items) {
+      const isComboItem =
+        Boolean(item.isCombo || item.comboSelections || item.ComboDetailsJSON) ||
+        (item.DishName || item.Description || '').toLowerCase().includes('combo');
+
+      const resolvedCatId = item.CategoryId || (isComboItem ? defaultComboInfo.catId : null);
+      const resolvedCatName = (item.CategoryName && item.CategoryName !== 'MAIN' && item.CategoryName !== 'Unmapped')
+        ? item.CategoryName
+        : (isComboItem ? defaultComboInfo.catName : (item.CategoryName || 'MAIN'));
+      const resolvedGroupName = (item.DishGroupName && item.DishGroupName !== 'GENERAL' && item.DishGroupName !== 'Unmapped')
+        ? item.DishGroupName
+        : (isComboItem ? defaultComboInfo.groupName : (item.DishGroupName || 'GENERAL'));
+
       await transaction.request()
         .input('sid', sql.UniqueIdentifier, settlementId)
         .input('dishId', sql.UniqueIdentifier, item.DishId)
@@ -4189,9 +4230,9 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
         .input('songName', sql.NVarChar(255), item.SongName || '')
         .input('qty', sql.Int, item.Quantity)
         .input('price', sql.Decimal(18, 2), item.PricePerUnit)
-        .input('catId', sql.UniqueIdentifier, item.CategoryId || null)
-        .input('catName', sql.NVarChar(255), item.CategoryName || 'MAIN')
-        .input('groupName', sql.NVarChar(255), item.DishGroupName || 'GENERAL')
+        .input('catId', sql.UniqueIdentifier, resolvedCatId)
+        .input('catName', sql.NVarChar(255), resolvedCatName)
+        .input('groupName', sql.NVarChar(255), resolvedGroupName)
         .input('startDate', sql.Date, formattedStartDate)
         .query(`
           INSERT INTO SettlementItemDetail (

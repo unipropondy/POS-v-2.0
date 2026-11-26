@@ -99,10 +99,9 @@ router.get("/all", async (req, res) => {
           AND (
             (EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = tm.CurrentOrderId) AND CAST(tm.DiningSection AS VARCHAR(10)) = '4')
             OR (
-              -- 🛡️ Clear abandoned Kiosk tables: entry_status = 'K', TotalAmount = 0 or NULL, inactive for >= 2 minutes, and no actual order items
+              -- 🛡️ Clear abandoned Kiosk tables: entry_status = 'K', TotalAmount = 0 or NULL, and no actual order items
               tm.entry_status = 'K'
               AND (tm.TotalAmount = 0 OR tm.TotalAmount IS NULL)
-              AND DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 2
               AND NOT EXISTS (
                 SELECT 1 FROM RestaurantOrderDetailCur rodc
                 INNER JOIN RestaurantOrderCur roc ON rodc.OrderId = roc.OrderId

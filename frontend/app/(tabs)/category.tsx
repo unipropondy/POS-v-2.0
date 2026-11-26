@@ -676,13 +676,6 @@ const TableItemComponent = React.memo(
         Number(item.isOvertime) === 1 ||
         Number(item.isHoldOvertime) === 1);
 
-    let ui = getStatusUI(status, item.DiningSection);
-
-    // Dynamic Overtime: If occupied (Dining/Hold) and flagged as overtime, override UI
-    if ((status === 1 || status === 3) && isOvertime) {
-      ui = getStatusUI(4, item.DiningSection);
-    }
-
     // 🌹 QR PAID: ONLY if entryStatus='q' AND paymentStatus=1 AND table is actively occupied (status !== 0)
     const rawEntryStatus =
       (tableData?.entryStatus !== undefined && tableData?.entryStatus !== null)
@@ -692,14 +685,31 @@ const TableItemComponent = React.memo(
       (tableData as any)?.paymentStatus !== undefined
         ? (tableData as any).paymentStatus
         : item.paymentStatus;
-    const isPaid = status !== 0 && rawEntryStatus === "q" && Number(rawPaymentStatus) === 1;
+
+    // 🛡️ KIOSK ABANDONED / DRAFT SHIELD:
+    // When a customer enters Kiosk or abandons it without placing an order, billAmount is 0 and entryStatus is 'K'.
+    // POS must display the table as AVAILABLE, not DINING or OCCUPIED with $0.00.
+    const isKioskDraftOrAbandoned =
+      (rawEntryStatus === "K" || item.entryStatus === "K" || item.entry_status === "K") &&
+      billAmount === 0;
+
+    const displayStatus = isKioskDraftOrAbandoned ? 0 : status;
+
+    let ui = getStatusUI(displayStatus, item.DiningSection);
+
+    // Dynamic Overtime: If occupied (Dining/Hold) and flagged as overtime, override UI
+    if ((displayStatus === 1 || displayStatus === 3) && isOvertime) {
+      ui = getStatusUI(4, item.DiningSection);
+    }
+
+    const isPaid = displayStatus !== 0 && rawEntryStatus === "q" && Number(rawPaymentStatus) === 1;
 
     if (isPaid) {
       ui = { text: "PAID", color: "#f43f5e", lightBg: "#fff1f2" };
     }
 
-    let borderColor = status === 0 ? Theme.border : ui.color;
-    let borderWidth = status !== 0 ? 2 : 1.5;
+    let borderColor = displayStatus === 0 ? Theme.border : ui.color;
+    let borderWidth = displayStatus !== 0 ? 2 : 1.5;
 
     if (terminalStatus === "processing") {
       borderColor = "#3b82f6";
@@ -709,13 +719,12 @@ const TableItemComponent = React.memo(
       borderWidth = 3;
     }
 
-    const bgColor = status !== 0 ? ui.lightBg : Theme.bgCard;
-    const textColor = status === 0 ? Theme.textPrimary : ui.color;
+    const bgColor = displayStatus !== 0 ? ui.lightBg : Theme.bgCard;
+    const textColor = displayStatus === 0 ? Theme.textPrimary : ui.color;
     let labelColor = Theme.textPrimary;
 
-
     let timeText = "";
-    if (rawStartTime && status !== 0 && status !== 5) {
+    if (rawStartTime && displayStatus !== 0 && displayStatus !== 5) {
       timeText = formatToSingaporeTime(rawStartTime, {
         hour: "2-digit",
         minute: "2-digit",
@@ -1075,14 +1084,14 @@ const TableItemComponent = React.memo(
                 </Text>
               </View>
 
-              {status !== 5 && (
+              {displayStatus !== 0 && displayStatus !== 5 && (
                 <View style={styles.tableStats}>
                   {timeText ? (
                     <Text style={[styles.timeText, { fontSize: smallFont - 1, color: textColor }]}>
                       <Ionicons name="time-outline" size={smallFont - 1} color={textColor} /> {timeText}
                     </Text>
                   ) : null}
-                  {billAmount >= 0 && (
+                  {billAmount > 0 && (
                     <Text style={[styles.billText, { fontSize: smallFont + 1, color: textColor, fontWeight: "800" }]}>
                       {(useCompanySettingsStore.getState().settings.currencySymbol || "$")}{billAmount.toFixed(2)}
                     </Text>
@@ -1092,7 +1101,7 @@ const TableItemComponent = React.memo(
             </View>
           )}
 
-          {status === 5 && (
+          {displayStatus === 5 && (
             <View style={[styles.lockedOverlay, { marginTop: 1, gap: 1 }]}>
               <Ionicons name="lock-closed" size={16} color={ui.color} />
               {tableData?.lockedByName ? (
@@ -1130,7 +1139,7 @@ const TableItemComponent = React.memo(
             borderColor,
             backgroundColor: bgColor,
             borderWidth,
-            elevation: status !== 0 ? 0 : 2,
+            elevation: displayStatus !== 0 ? 0 : 2,
             opacity: isPaid ? 0.92 : 1,
           },
         ]}
@@ -1142,7 +1151,7 @@ const TableItemComponent = React.memo(
           tableH={tableH}
           borderRadius={borderRadius}
           seatsCount={seatsCount}
-          status={status}
+          status={displayStatus}
           activeColor={activeColor}
           activeBg={activeBg}
           labelColor={labelColor}

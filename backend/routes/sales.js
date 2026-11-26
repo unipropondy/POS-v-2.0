@@ -1520,7 +1520,15 @@ router.get("/category", async (req, res) => {
     const result = await pool.request().query(`
         WITH AppReport AS (
           SELECT
-            ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped')) AS categoryName,
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              CASE WHEN sid.CategoryName NOT IN ('Unmapped', 'MAIN', '') THEN sid.CategoryName ELSE NULL END,
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN sid.DishName LIKE '%Combo%' OR sid.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ) AS categoryName,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') = 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN 
@@ -1540,15 +1548,65 @@ router.get("/category", async (req, res) => {
           LEFT JOIN DishMaster d ON sid.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON COALESCE(sid.DishGroupId, d.DishGroupId) = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON COALESCE(sid.CategoryId, dg.CategoryId) = cm.CategoryId
+          LEFT JOIN DishMaster d_name ON d_name.Name = sid.DishName
+          LEFT JOIN DishGroupMaster dg_name ON d_name.DishGroupId = dg_name.DishGroupId
+          LEFT JOIN CategoryMaster cm_name ON dg_name.CategoryId = cm_name.CategoryId
+          LEFT JOIN ComboGroupMaster cgm ON cgm.ParentComboDishId = d.DishId OR cgm.ComboGroupId = sid.DishId
+          LEFT JOIN DishMaster parent_d ON cgm.ParentComboDishId = parent_d.DishId
+          LEFT JOIN DishGroupMaster dg_cgm ON parent_d.DishGroupId = dg_cgm.DishGroupId
+          LEFT JOIN CategoryMaster cm_cgm ON dg_cgm.CategoryId = cm_cgm.CategoryId
+          OUTER APPLY (
+            SELECT TOP 1 cm_sub.CategoryName AS ChildCategoryName, dg_sub.DishGroupName AS ChildDishGroupName
+            FROM ComboGroupDishMapping m
+            JOIN DishMaster d_sub ON m.DishId = d_sub.DishId
+            JOIN DishGroupMaster dg_sub ON d_sub.DishGroupId = dg_sub.DishGroupId
+            JOIN CategoryMaster cm_sub ON dg_sub.CategoryId = cm_sub.CategoryId
+            WHERE m.ComboGroupId = cgm.ComboGroupId
+            ORDER BY m.IsDefault DESC, m.SortOrder ASC
+          ) child_info
+          OUTER APPLY (
+            SELECT TOP 1 dg_c.DishGroupName AS ComboDishGroupName, cm_c.CategoryName AS ComboCategoryName
+            FROM DishGroupMaster dg_c
+            JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+            WHERE dg_c.DishGroupName LIKE '%Combo%' 
+               OR dg_c.DishGroupName = 'Set Meal'
+               OR dg_c.DishGroupName LIKE '%Set Meal%' 
+               OR cm_c.CategoryName = 'Food'
+            ORDER BY 
+              CASE 
+                WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                WHEN cm_c.CategoryName = 'Food' THEN 5 
+                ELSE 6 
+              END ASC
+          ) default_combo
           WHERE ${appDateWhereSql}
             AND ISNULL(sid.Qty, 0) > 0
             AND ISNULL(sh.IsCancelled, 0) = 0
             AND EXISTS (SELECT 1 FROM SettlementTotalSales WHERE SettlementID = sh.SettlementID)
-          GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped'))
+          GROUP BY 
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              CASE WHEN sid.CategoryName NOT IN ('Unmapped', 'MAIN', '') THEN sid.CategoryName ELSE NULL END,
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN sid.DishName LIKE '%Combo%' OR sid.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            )
         ),
         LegacyReport AS (
           SELECT
-            ISNULL(cm.CategoryName, 'Unmapped') AS categoryName,
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ) AS categoryName,
             SUM(CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3))) AS totalQty,
             CAST(0 AS decimal(18, 3)) AS voidQty,
             CAST(0 AS decimal(18, 2)) AS discountAmount,
@@ -1569,16 +1627,65 @@ router.get("/category", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+          LEFT JOIN DishMaster d_name ON d_name.Name = rod.DishName
+          LEFT JOIN DishGroupMaster dg_name ON d_name.DishGroupId = dg_name.DishGroupId
+          LEFT JOIN CategoryMaster cm_name ON dg_name.CategoryId = cm_name.CategoryId
+          LEFT JOIN ComboGroupMaster cgm ON cgm.ParentComboDishId = d.DishId OR cgm.ComboGroupId = rod.DishId
+          LEFT JOIN DishMaster parent_d ON cgm.ParentComboDishId = parent_d.DishId
+          LEFT JOIN DishGroupMaster dg_cgm ON parent_d.DishGroupId = dg_cgm.DishGroupId
+          LEFT JOIN CategoryMaster cm_cgm ON dg_cgm.CategoryId = cm_cgm.CategoryId
+          OUTER APPLY (
+            SELECT TOP 1 cm_sub.CategoryName AS ChildCategoryName, dg_sub.DishGroupName AS ChildDishGroupName
+            FROM ComboGroupDishMapping m
+            JOIN DishMaster d_sub ON m.DishId = d_sub.DishId
+            JOIN DishGroupMaster dg_sub ON d_sub.DishGroupId = dg_sub.DishGroupId
+            JOIN CategoryMaster cm_sub ON dg_sub.CategoryId = cm_sub.CategoryId
+            WHERE m.ComboGroupId = cgm.ComboGroupId
+            ORDER BY m.IsDefault DESC, m.SortOrder ASC
+          ) child_info
+          OUTER APPLY (
+            SELECT TOP 1 dg_c.DishGroupName AS ComboDishGroupName, cm_c.CategoryName AS ComboCategoryName
+            FROM DishGroupMaster dg_c
+            JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+            WHERE dg_c.DishGroupName LIKE '%Combo%' 
+               OR dg_c.DishGroupName = 'Set Meal'
+               OR dg_c.DishGroupName LIKE '%Set Meal%' 
+               OR cm_c.CategoryName = 'Food'
+            ORDER BY 
+              CASE 
+                WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                WHEN cm_c.CategoryName = 'Food' THEN 5 
+                ELSE 6 
+              END ASC
+          ) default_combo
           WHERE ${legacyDateWhereSql}
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
               WHERE sh_dup.SettlementID = ri.RestaurantBillId
             )
-          GROUP BY ISNULL(cm.CategoryName, 'Unmapped')
+          GROUP BY 
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            )
         ),
         ProfessionalReport AS (
           SELECT
-            ISNULL(cm.CategoryName, 'Unmapped') AS categoryName,
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ) AS categoryName,
             SUM(CASE WHEN rod.StatusCode <> 0 THEN CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN rod.StatusCode = 0 THEN CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
             CAST(0 AS decimal(18, 2)) AS discountAmount,
@@ -1588,13 +1695,55 @@ router.get("/category", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+          LEFT JOIN DishMaster d_name ON d_name.Name = rod.DishName
+          LEFT JOIN DishGroupMaster dg_name ON d_name.DishGroupId = dg_name.DishGroupId
+          LEFT JOIN CategoryMaster cm_name ON dg_name.CategoryId = cm_name.CategoryId
+          LEFT JOIN ComboGroupMaster cgm ON cgm.ParentComboDishId = d.DishId OR cgm.ComboGroupId = rod.DishId
+          LEFT JOIN DishMaster parent_d ON cgm.ParentComboDishId = parent_d.DishId
+          LEFT JOIN DishGroupMaster dg_cgm ON parent_d.DishGroupId = dg_cgm.DishGroupId
+          LEFT JOIN CategoryMaster cm_cgm ON dg_cgm.CategoryId = cm_cgm.CategoryId
+          OUTER APPLY (
+            SELECT TOP 1 cm_sub.CategoryName AS ChildCategoryName, dg_sub.DishGroupName AS ChildDishGroupName
+            FROM ComboGroupDishMapping m
+            JOIN DishMaster d_sub ON m.DishId = d_sub.DishId
+            JOIN DishGroupMaster dg_sub ON d_sub.DishGroupId = dg_sub.DishGroupId
+            JOIN CategoryMaster cm_sub ON dg_sub.CategoryId = cm_sub.CategoryId
+            WHERE m.ComboGroupId = cgm.ComboGroupId
+            ORDER BY m.IsDefault DESC, m.SortOrder ASC
+          ) child_info
+          OUTER APPLY (
+            SELECT TOP 1 dg_c.DishGroupName AS ComboDishGroupName, cm_c.CategoryName AS ComboCategoryName
+            FROM DishGroupMaster dg_c
+            JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+            WHERE dg_c.DishGroupName LIKE '%Combo%' 
+               OR dg_c.DishGroupName = 'Set Meal'
+               OR dg_c.DishGroupName LIKE '%Set Meal%' 
+               OR cm_c.CategoryName = 'Food'
+            ORDER BY 
+              CASE 
+                WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                WHEN cm_c.CategoryName = 'Food' THEN 5 
+                ELSE 6 
+              END ASC
+          ) default_combo
           WHERE ${roDateWhereSql}
             AND ISNULL(ro.StatusCode, 0) = 3
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
               WHERE sh_dup.BillNo = ro.OrderNumber
             )
-          GROUP BY ISNULL(cm.CategoryName, 'Unmapped')
+          GROUP BY 
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            )
         )
         SELECT categoryName, SUM(totalQty) AS totalQty, SUM(voidQty) AS voidQty, SUM(discountAmount) AS discountAmount, SUM(totalAmount) AS totalAmount
         FROM (
@@ -1664,8 +1813,24 @@ router.get("/dish", async (req, res) => {
         WITH AppReport AS (
           SELECT
             ISNULL(NULLIF(LTRIM(RTRIM(sid.DishName)), ''), ISNULL(d.Name, 'Unknown')) AS dishName,
-            ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped')) AS categoryName,
-            ISNULL(NULLIF(LTRIM(RTRIM(sid.SubCategoryName)), ''), ISNULL(dg.DishGroupName, 'Unmapped')) AS subCategoryName,
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              CASE WHEN sid.CategoryName NOT IN ('Unmapped', 'MAIN', '') THEN sid.CategoryName ELSE NULL END,
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN sid.DishName LIKE '%Combo%' OR sid.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ) AS categoryName,
+            COALESCE(
+              CASE WHEN sid.SubCategoryName NOT IN ('Unmapped', 'GENERAL', '') THEN sid.SubCategoryName ELSE NULL END,
+              NULLIF(dg.DishGroupName, 'Unmapped'),
+              NULLIF(dg_name.DishGroupName, 'Unmapped'),
+              NULLIF(dg_cgm.DishGroupName, 'Unmapped'),
+              NULLIF(child_info.ChildDishGroupName, 'Unmapped'),
+              CASE WHEN sid.DishName LIKE '%Combo%' OR sid.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboDishGroupName ELSE NULL END,
+              'Set Meal'
+            ) AS subCategoryName,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') = 'VOIDED' THEN CAST(ISNULL(sid.Qty, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
             SUM(CASE WHEN ISNULL(sid.Status, 'NORMAL') <> 'VOIDED' THEN 
@@ -1689,18 +1854,82 @@ router.get("/dish", async (req, res) => {
           LEFT JOIN DishMaster d ON sid.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON COALESCE(sid.DishGroupId, d.DishGroupId) = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON COALESCE(sid.CategoryId, dg.CategoryId) = cm.CategoryId
+          LEFT JOIN DishMaster d_name ON d_name.Name = sid.DishName
+          LEFT JOIN DishGroupMaster dg_name ON d_name.DishGroupId = dg_name.DishGroupId
+          LEFT JOIN CategoryMaster cm_name ON dg_name.CategoryId = cm_name.CategoryId
+          LEFT JOIN ComboGroupMaster cgm ON cgm.ParentComboDishId = d.DishId OR cgm.ComboGroupId = sid.DishId
+          LEFT JOIN DishMaster parent_d ON cgm.ParentComboDishId = parent_d.DishId
+          LEFT JOIN DishGroupMaster dg_cgm ON parent_d.DishGroupId = dg_cgm.DishGroupId
+          LEFT JOIN CategoryMaster cm_cgm ON dg_cgm.CategoryId = cm_cgm.CategoryId
+          OUTER APPLY (
+            SELECT TOP 1 cm_sub.CategoryName AS ChildCategoryName, dg_sub.DishGroupName AS ChildDishGroupName
+            FROM ComboGroupDishMapping m
+            JOIN DishMaster d_sub ON m.DishId = d_sub.DishId
+            JOIN DishGroupMaster dg_sub ON d_sub.DishGroupId = dg_sub.DishGroupId
+            JOIN CategoryMaster cm_sub ON dg_sub.CategoryId = cm_sub.CategoryId
+            WHERE m.ComboGroupId = cgm.ComboGroupId
+            ORDER BY m.IsDefault DESC, m.SortOrder ASC
+          ) child_info
+          OUTER APPLY (
+            SELECT TOP 1 dg_c.DishGroupName AS ComboDishGroupName, cm_c.CategoryName AS ComboCategoryName
+            FROM DishGroupMaster dg_c
+            JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+            WHERE dg_c.DishGroupName LIKE '%Combo%' 
+               OR dg_c.DishGroupName = 'Set Meal'
+               OR dg_c.DishGroupName LIKE '%Set Meal%' 
+               OR cm_c.CategoryName = 'Food'
+            ORDER BY 
+              CASE 
+                WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                WHEN cm_c.CategoryName = 'Food' THEN 5 
+                ELSE 6 
+              END ASC
+          ) default_combo
           WHERE ${appDateWhereSql} AND ISNULL(sh.IsCancelled, 0) = 0
             AND EXISTS (SELECT 1 FROM SettlementTotalSales WHERE SettlementID = sh.SettlementID)
           GROUP BY 
             ISNULL(NULLIF(LTRIM(RTRIM(sid.DishName)), ''), ISNULL(d.Name, 'Unknown')), 
-            ISNULL(NULLIF(LTRIM(RTRIM(sid.CategoryName)), ''), ISNULL(cm.CategoryName, 'Unmapped')), 
-            ISNULL(NULLIF(LTRIM(RTRIM(sid.SubCategoryName)), ''), ISNULL(dg.DishGroupName, 'Unmapped'))
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              CASE WHEN sid.CategoryName NOT IN ('Unmapped', 'MAIN', '') THEN sid.CategoryName ELSE NULL END,
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN sid.DishName LIKE '%Combo%' OR sid.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ), 
+            COALESCE(
+              CASE WHEN sid.SubCategoryName NOT IN ('Unmapped', 'GENERAL', '') THEN sid.SubCategoryName ELSE NULL END,
+              NULLIF(dg.DishGroupName, 'Unmapped'),
+              NULLIF(dg_name.DishGroupName, 'Unmapped'),
+              NULLIF(dg_cgm.DishGroupName, 'Unmapped'),
+              NULLIF(child_info.ChildDishGroupName, 'Unmapped'),
+              CASE WHEN sid.DishName LIKE '%Combo%' OR sid.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboDishGroupName ELSE NULL END,
+              'Set Meal'
+            )
         ),
         LegacyReport AS (
           SELECT
             ISNULL(d.Name, 'Unknown') AS dishName,
-            ISNULL(cm.CategoryName, 'Unmapped') AS categoryName,
-            ISNULL(dg.DishGroupName, 'Unmapped') AS subCategoryName,
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ) AS categoryName,
+            COALESCE(
+              NULLIF(dg.DishGroupName, 'Unmapped'),
+              NULLIF(dg_name.DishGroupName, 'Unmapped'),
+              NULLIF(dg_cgm.DishGroupName, 'Unmapped'),
+              NULLIF(child_info.ChildDishGroupName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboDishGroupName ELSE NULL END,
+              'Set Meal'
+            ) AS subCategoryName,
             SUM(CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3))) AS totalQty,
             CAST(0 AS decimal(18, 3)) AS voidQty,
             CAST(0 AS decimal(18, 2)) AS discountAmount,
@@ -1724,6 +1953,40 @@ router.get("/dish", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+          LEFT JOIN DishMaster d_name ON d_name.Name = rod.DishName
+          LEFT JOIN DishGroupMaster dg_name ON d_name.DishGroupId = dg_name.DishGroupId
+          LEFT JOIN CategoryMaster cm_name ON dg_name.CategoryId = cm_name.CategoryId
+          LEFT JOIN ComboGroupMaster cgm ON cgm.ParentComboDishId = d.DishId OR cgm.ComboGroupId = rod.DishId
+          LEFT JOIN DishMaster parent_d ON cgm.ParentComboDishId = parent_d.DishId
+          LEFT JOIN DishGroupMaster dg_cgm ON parent_d.DishGroupId = dg_cgm.DishGroupId
+          LEFT JOIN CategoryMaster cm_cgm ON dg_cgm.CategoryId = cm_cgm.CategoryId
+          OUTER APPLY (
+            SELECT TOP 1 cm_sub.CategoryName AS ChildCategoryName, dg_sub.DishGroupName AS ChildDishGroupName
+            FROM ComboGroupDishMapping m
+            JOIN DishMaster d_sub ON m.DishId = d_sub.DishId
+            JOIN DishGroupMaster dg_sub ON d_sub.DishGroupId = dg_sub.DishGroupId
+            JOIN CategoryMaster cm_sub ON dg_sub.CategoryId = cm_sub.CategoryId
+            WHERE m.ComboGroupId = cgm.ComboGroupId
+            ORDER BY m.IsDefault DESC, m.SortOrder ASC
+          ) child_info
+          OUTER APPLY (
+            SELECT TOP 1 dg_c.DishGroupName AS ComboDishGroupName, cm_c.CategoryName AS ComboCategoryName
+            FROM DishGroupMaster dg_c
+            JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+            WHERE dg_c.DishGroupName LIKE '%Combo%' 
+               OR dg_c.DishGroupName = 'Set Meal'
+               OR dg_c.DishGroupName LIKE '%Set Meal%' 
+               OR cm_c.CategoryName = 'Food'
+            ORDER BY 
+              CASE 
+                WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                WHEN cm_c.CategoryName = 'Food' THEN 5 
+                ELSE 6 
+              END ASC
+          ) default_combo
           WHERE ${legacyDateWhereSql}
             AND NOT EXISTS (
               SELECT 1 FROM SettlementHeader sh_dup 
@@ -1731,14 +1994,42 @@ router.get("/dish", async (req, res) => {
             )
           GROUP BY 
             ISNULL(d.Name, 'Unknown'), 
-            ISNULL(cm.CategoryName, 'Unmapped'), 
-            ISNULL(dg.DishGroupName, 'Unmapped')
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ), 
+            COALESCE(
+              NULLIF(dg.DishGroupName, 'Unmapped'),
+              NULLIF(dg_name.DishGroupName, 'Unmapped'),
+              NULLIF(dg_cgm.DishGroupName, 'Unmapped'),
+              NULLIF(child_info.ChildDishGroupName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboDishGroupName ELSE NULL END,
+              'Set Meal'
+            )
         ),
         ProfessionalReport AS (
           SELECT
             ISNULL(rod.DishName, 'Unknown') AS dishName,
-            ISNULL(cm.CategoryName, 'Unmapped') AS categoryName,
-            ISNULL(dg.DishGroupName, 'Unmapped') AS subCategoryName,
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ) AS categoryName,
+            COALESCE(
+              NULLIF(dg.DishGroupName, 'Unmapped'),
+              NULLIF(dg_name.DishGroupName, 'Unmapped'),
+              NULLIF(dg_cgm.DishGroupName, 'Unmapped'),
+              NULLIF(child_info.ChildDishGroupName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboDishGroupName ELSE NULL END,
+              'Set Meal'
+            ) AS subCategoryName,
             SUM(CASE WHEN rod.StatusCode <> 0 THEN CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3)) ELSE 0 END) AS totalQty,
             SUM(CASE WHEN rod.StatusCode = 0 THEN CAST(ISNULL(rod.Quantity, 0) AS decimal(18, 3)) ELSE 0 END) AS voidQty,
             CAST(0 AS decimal(18, 2)) AS discountAmount,
@@ -1751,6 +2042,40 @@ router.get("/dish", async (req, res) => {
           LEFT JOIN DishMaster d ON rod.DishId = d.DishId
           LEFT JOIN DishGroupMaster dg ON d.DishGroupId = dg.DishGroupId
           LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
+          LEFT JOIN DishMaster d_name ON d_name.Name = rod.DishName
+          LEFT JOIN DishGroupMaster dg_name ON d_name.DishGroupId = dg_name.DishGroupId
+          LEFT JOIN CategoryMaster cm_name ON dg_name.CategoryId = cm_name.CategoryId
+          LEFT JOIN ComboGroupMaster cgm ON cgm.ParentComboDishId = d.DishId OR cgm.ComboGroupId = rod.DishId
+          LEFT JOIN DishMaster parent_d ON cgm.ParentComboDishId = parent_d.DishId
+          LEFT JOIN DishGroupMaster dg_cgm ON parent_d.DishGroupId = dg_cgm.DishGroupId
+          LEFT JOIN CategoryMaster cm_cgm ON dg_cgm.CategoryId = cm_cgm.CategoryId
+          OUTER APPLY (
+            SELECT TOP 1 cm_sub.CategoryName AS ChildCategoryName, dg_sub.DishGroupName AS ChildDishGroupName
+            FROM ComboGroupDishMapping m
+            JOIN DishMaster d_sub ON m.DishId = d_sub.DishId
+            JOIN DishGroupMaster dg_sub ON d_sub.DishGroupId = dg_sub.DishGroupId
+            JOIN CategoryMaster cm_sub ON dg_sub.CategoryId = cm_sub.CategoryId
+            WHERE m.ComboGroupId = cgm.ComboGroupId
+            ORDER BY m.IsDefault DESC, m.SortOrder ASC
+          ) child_info
+          OUTER APPLY (
+            SELECT TOP 1 dg_c.DishGroupName AS ComboDishGroupName, cm_c.CategoryName AS ComboCategoryName
+            FROM DishGroupMaster dg_c
+            JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+            WHERE dg_c.DishGroupName LIKE '%Combo%' 
+               OR dg_c.DishGroupName = 'Set Meal'
+               OR dg_c.DishGroupName LIKE '%Set Meal%' 
+               OR cm_c.CategoryName = 'Food'
+            ORDER BY 
+              CASE 
+                WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                WHEN cm_c.CategoryName = 'Food' THEN 5 
+                ELSE 6 
+              END ASC
+          ) default_combo
           WHERE ${roDateWhereSql}
             AND ISNULL(ro.StatusCode, 0) = 3
             AND NOT EXISTS (
@@ -1759,8 +2084,22 @@ router.get("/dish", async (req, res) => {
             )
           GROUP BY 
             ISNULL(rod.DishName, 'Unknown'), 
-            ISNULL(cm.CategoryName, 'Unmapped'), 
-            ISNULL(dg.DishGroupName, 'Unmapped')
+            COALESCE(
+              NULLIF(cm.CategoryName, 'Unmapped'),
+              NULLIF(cm_name.CategoryName, 'Unmapped'),
+              NULLIF(cm_cgm.CategoryName, 'Unmapped'),
+              NULLIF(child_info.ChildCategoryName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboCategoryName ELSE NULL END,
+              'Food'
+            ), 
+            COALESCE(
+              NULLIF(dg.DishGroupName, 'Unmapped'),
+              NULLIF(dg_name.DishGroupName, 'Unmapped'),
+              NULLIF(dg_cgm.DishGroupName, 'Unmapped'),
+              NULLIF(child_info.ChildDishGroupName, 'Unmapped'),
+              CASE WHEN rod.DishName LIKE '%Combo%' OR rod.ComboDetailsJSON IS NOT NULL THEN default_combo.ComboDishGroupName ELSE NULL END,
+              'Set Meal'
+            )
         )
         SELECT dishName, categoryName, subCategoryName, SUM(totalQty) AS totalQty, SUM(voidQty) AS voidQty, SUM(discountAmount) AS discountAmount, SUM(totalAmount) AS totalAmount, SUM(takeawayCharge) AS takeawayCharge
         FROM (
@@ -2983,6 +3322,36 @@ router.post("/save", async (req, res) => {
             .filter((name) => name.trim() !== "");
 
           let metaMap = {};
+          let fallbackCombo = {
+            CategoryName: 'Food',
+            DishGroupName: 'Set Meal',
+            CategoryId: null,
+            DishGroupId: null
+          };
+          try {
+            const defaultComboCategory = await transaction.request().query(`
+              SELECT TOP 1 dg_c.DishGroupId, dg_c.CategoryId, dg_c.DishGroupName, cm_c.CategoryName
+              FROM DishGroupMaster dg_c
+              JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
+              WHERE dg_c.DishGroupName LIKE '%Combo%' 
+                 OR dg_c.DishGroupName = 'Set Meal'
+                 OR dg_c.DishGroupName LIKE '%Set Meal%' 
+                 OR cm_c.CategoryName = 'Food'
+              ORDER BY 
+                CASE 
+                  WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
+                  WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
+                  WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
+                  WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
+                  WHEN cm_c.CategoryName = 'Food' THEN 5 
+                  ELSE 6 
+                END ASC
+            `);
+            if (defaultComboCategory.recordset.length > 0) {
+              fallbackCombo = defaultComboCategory.recordset[0];
+            }
+          } catch (_) {}
+
           if (dishIds.length > 0 || dishNames.length > 0) {
             const req = transaction.request();
             let whereClauses = [];
@@ -3035,6 +3404,23 @@ router.post("/save", async (req, res) => {
                 metaMap[nameKey] ||
                 {};
 
+              const isComboItem =
+                Boolean(item.isCombo || item.isPromotion || item.isPromotionalItem || item.comboSelections || item.ComboDetailsJSON) ||
+                (item.dish_name || item.name || "").toLowerCase().includes("combo");
+
+              const resolvedCatName =
+                meta.CategoryName ||
+                (item.categoryName && item.categoryName !== "Unmapped" && item.categoryName !== "MAIN" ? item.categoryName : null) ||
+                (isComboItem ? fallbackCombo.CategoryName : "Unmapped");
+
+              const resolvedSubCatName =
+                meta.DishGroupName ||
+                (item.subCategoryName && item.subCategoryName !== "Unmapped" && item.subCategoryName !== "GENERAL" ? item.subCategoryName : null) ||
+                (isComboItem ? fallbackCombo.DishGroupName : "Unmapped");
+
+              const resolvedCatId = meta.CategoryId || (isComboItem ? fallbackCombo.CategoryId : null);
+              const resolvedGroupId = meta.DishGroupId || (isComboItem ? fallbackCombo.DishGroupId : null);
+
               insertReq.input(
                 `DishId_${idx}`,
                 sql.UniqueIdentifier,
@@ -3043,12 +3429,12 @@ router.post("/save", async (req, res) => {
               insertReq.input(
                 `DishGroupId_${idx}`,
                 sql.UniqueIdentifier,
-                toGuidOrNull(meta.DishGroupId),
+                toGuidOrNull(resolvedGroupId),
               );
               insertReq.input(
                 `CategoryId_${idx}`,
                 sql.UniqueIdentifier,
-                toGuidOrNull(meta.CategoryId),
+                toGuidOrNull(resolvedCatId),
               );
               insertReq.input(
                 `DishName_${idx}`,
@@ -3063,12 +3449,12 @@ router.post("/save", async (req, res) => {
               insertReq.input(
                 `CategoryName_${idx}`,
                 sql.NVarChar(255),
-                meta.CategoryName || item.categoryName || "Unmapped",
+                resolvedCatName,
               );
               insertReq.input(
                 `SubCategoryName_${idx}`,
                 sql.NVarChar(255),
-                meta.DishGroupName || "Unmapped",
+                resolvedSubCatName,
               );
               insertReq.input(`Qty_${idx}`, sql.Decimal(18, 3), item.qty || 1);
               insertReq.input(

@@ -273,8 +273,8 @@ export const FloorPlanTable = React.memo(({
 
 
 
-          {/* Time + Amount (occupied, non-reserved) */}
-          {status !== 0 && status !== 5 && (timeText || billAmount >= 0) ? (
+          {/* Time + Amount (occupied, non-reserved with bill > 0) */}
+          {status !== 0 && status !== 5 && (timeText || billAmount > 0) ? (
             <View style={{ alignItems: "center", marginTop: 2, gap: 1 }}>
               {timeText ? (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
@@ -294,7 +294,7 @@ export const FloorPlanTable = React.memo(({
                   </Text>
                 </View>
               ) : null}
-              {billAmount >= 0 ? (
+              {billAmount > 0 ? (
                 <Text
                   style={{
                     fontFamily: Fonts.bold,
