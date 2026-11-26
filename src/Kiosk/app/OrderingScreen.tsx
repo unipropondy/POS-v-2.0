@@ -1440,7 +1440,26 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (!item) return;
 
     setEditingCartItemIndex(index);
-    setSelectedDish(item);
+
+    const originalDish = dishes.find(
+      (d) => String(d.DishId || d.id) === String(item.DishId || item.id),
+    );
+    const existingModTotal = (item.selectedMods || item.modifiers || []).reduce(
+      (s: number, m: any) => s + Number(m.Price || 0),
+      0,
+    );
+    const trueBasePrice = originalDish
+      ? Number(originalDish.Price ?? originalDish.price ?? 0)
+      : item.basePrice !== undefined
+        ? Number(item.basePrice)
+        : Math.max(0, Number(item.Price ?? item.price ?? 0) - existingModTotal);
+
+    setSelectedDish({
+      ...item,
+      basePrice: trueBasePrice,
+      Price: trueBasePrice,
+      price: trueBasePrice,
+    });
     setComboQty(item.qty || 1);
     setComboError(null);
 
@@ -1855,6 +1874,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           name: dish.Name,
           dishName: dish.Name,
           qty: 1,
+          basePrice: basePrice,
           Price: basePrice,
           price: basePrice,
           finalPrice: basePrice,
@@ -1883,9 +1903,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       selectedModifierIds.includes(String(m.ModifierID || m.ModifierId)),
     );
     const extra = chosenMods.reduce((s, m) => s + Number(m.Price || 0), 0);
-    const origBase = Number(
-      selectedDish?.basePrice ?? selectedDish?.Price ?? selectedDish?.price ?? 0,
-    );
+    const origBase =
+      selectedDish?.basePrice !== undefined
+        ? Number(selectedDish.basePrice)
+        : editingCartItemIndex !== null
+          ? Math.max(
+              0,
+              Number(selectedDish?.Price ?? selectedDish?.price ?? 0) -
+                (selectedDish?.selectedMods || []).reduce(
+                  (s: number, m: any) => s + Number(m.Price || 0),
+                  0,
+                ),
+            )
+          : Number(selectedDish?.Price ?? selectedDish?.price ?? 0);
     const finalPrice = origBase + extra;
 
     if (editingCartItemIndex !== null && editingCartItemIndex >= 0 && editingCartItemIndex < cart.length) {
@@ -1898,6 +1928,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               lineItemId: item.lineItemId || selectedDish.lineItemId,
               OrderDetailId: item.OrderDetailId || selectedDish.OrderDetailId,
               qty: comboQty,
+              basePrice: origBase,
               Price: finalPrice,
               price: finalPrice,
               finalPrice: finalPrice,
@@ -1939,6 +1970,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         name: selectedDish.Name,
         dishName: selectedDish.Name,
         qty: comboQty,
+        basePrice: origBase,
         Price: finalPrice,
         price: finalPrice,
         finalPrice: finalPrice,
@@ -3353,7 +3385,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       <Text style={styles.customizePriceText}>
                         $
                         {Number(
-                          selectedDish?.Price || selectedDish?.price || 0,
+                          selectedDish?.basePrice !== undefined
+                            ? selectedDish.basePrice
+                            : selectedDish?.Price || selectedDish?.price || 0,
                         ).toFixed(2)}
                       </Text>
                     </View>
@@ -3706,10 +3740,29 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         (s, m) => s + Number(m.Price || 0),
                         0,
                       );
-                      const unitPrice =
-                        Number(
-                          selectedDish?.Price || selectedDish?.price || 0,
-                        ) + extra;
+                      const baseDishPrice =
+                        selectedDish?.basePrice !== undefined
+                          ? Number(selectedDish.basePrice)
+                          : editingCartItemIndex !== null
+                            ? Math.max(
+                                0,
+                                Number(
+                                  selectedDish?.Price ??
+                                    selectedDish?.price ??
+                                    0,
+                                ) -
+                                  (selectedDish?.selectedMods || []).reduce(
+                                    (s: number, m: any) =>
+                                      s + Number(m.Price || 0),
+                                    0,
+                                  ),
+                              )
+                            : Number(
+                                selectedDish?.Price ??
+                                  selectedDish?.price ??
+                                  0,
+                              );
+                      const unitPrice = baseDishPrice + extra;
                       totalPrice = (unitPrice * comboQty).toFixed(2);
                     }
 
