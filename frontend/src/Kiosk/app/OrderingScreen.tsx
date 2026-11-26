@@ -1933,6 +1933,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const handleCheckoutClick = async () => {
     if (cart.length === 0) return;
 
+    // If a promotion has already been added to the cart, proceed directly to Checkout Option
+    if (appliedPromotion) {
+      proceedToCheckoutOption();
+      return;
+    }
+
     // Check for active promotions from PromotionMaster (entry_status = 'K') FIRST
     try {
       setCheckingPromotions(true);
@@ -1946,7 +1952,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       if (validPromos.length > 0) {
         setActivePromotions(validPromos);
-        setSelectedPromotion(appliedPromotion || null);
+        setSelectedPromotion(null);
         // Display Promotion Popup FIRST (ensure other modals are closed)
         setShowTableModal(false);
         setShowPaymentPopup(false);
@@ -1964,12 +1970,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     proceedToCheckoutOption();
   };
 
-  // Apply selected promotion to cart & continue
-  const handleApplyPromotionAndContinue = () => {
+  // Add selected promotion to cart & return to cart screen
+  const handleAddToCartPromotion = () => {
     if (!selectedPromotion) {
-      setAppliedPromotion(null);
-      setShowPromotionModal(false);
-      proceedToCheckoutOption();
       return;
     }
 
@@ -1993,7 +1996,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       return;
     }
 
-    // 2. Remove previously added promotional items to prevent duplication
+    // 2. Remove previously added promotional items to prevent duplicate promotion entries
     const cleanCart = cart.filter(
       (item) => !item.isPromotionalItem && !item.isPromotion,
     );
@@ -2062,10 +2065,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
     // 4. Save selected promotion state
     setAppliedPromotion(selectedPromotion);
-    setShowPromotionModal(false);
 
-    // 5. Proceed to existing Checkout Option popup
-    proceedToCheckoutOption();
+    // 5. Close Promotion Popup and return to cart screen so customer can review the added promotion
+    setShowPromotionModal(false);
+    setShowCartPage(true);
   };
 
   const handleNoThanks = () => {
@@ -4646,7 +4649,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.promotionSubHeader}>
               <Text style={styles.promotionSubHeaderTitle}>Select an offer to apply</Text>
               <Text style={styles.promotionSubHeaderSubtitle}>
-                Choose a promotion offer below, or tap No Thanks to continue.
+                Choose a promotion offer below, or tap No Thanks.
               </Text>
             </View>
 
@@ -4796,7 +4799,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               })}
             </ScrollView>
 
-            {/* Modal Footer: No Thanks & Continue Buttons */}
+            {/* Modal Footer: [ No Thanks ]  [ Add to Cart ] */}
             <View style={styles.promotionFooter}>
               <TouchableOpacity
                 style={styles.promotionSkipBtn}
@@ -4807,12 +4810,27 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.promotionContinueBtn}
-                onPress={handleApplyPromotionAndContinue}
+                style={[
+                  styles.promotionAddToCartBtn,
+                  !selectedPromotion && styles.promotionAddToCartBtnDisabled,
+                ]}
+                onPress={handleAddToCartPromotion}
+                disabled={!selectedPromotion}
                 activeOpacity={0.85}
               >
-                <Text style={styles.promotionContinueBtnText}>Continue</Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                <Ionicons
+                  name="cart-outline"
+                  size={20}
+                  color={selectedPromotion ? "#FFFFFF" : "#94A3B8"}
+                />
+                <Text
+                  style={[
+                    styles.promotionAddToCartBtnText,
+                    !selectedPromotion && styles.promotionAddToCartBtnTextDisabled,
+                  ]}
+                >
+                  Add to Cart
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -7157,7 +7175,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
   },
-  promotionContinueBtn: {
+  promotionAddToCartBtn: {
     flex: 1,
     height: 54,
     borderRadius: 16,
@@ -7172,11 +7190,19 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  promotionContinueBtnText: {
+  promotionAddToCartBtnDisabled: {
+    backgroundColor: "#E2E8F0",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  promotionAddToCartBtnText: {
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "900",
     letterSpacing: 0.3,
+  },
+  promotionAddToCartBtnTextDisabled: {
+    color: "#94A3B8",
   },
   paymentPromoAppliedBadge: {
     flexDirection: "row",
