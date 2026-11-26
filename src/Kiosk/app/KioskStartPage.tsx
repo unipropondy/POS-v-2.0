@@ -93,6 +93,40 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
 
   const [companyName, setCompanyName] = useState<string>("RESTAURANT");
 
+  // 🛡️ Ensure any abandoned session from an earlier page reload/crash is released back to AVAILABLE in POS
+  useEffect(() => {
+    const cleanupLingeringSession = async () => {
+      try {
+        const storedTableId = await AsyncStorage.getItem("tableId");
+        const storedTableNo = await AsyncStorage.getItem("tableNo");
+        const storedKioskOrder = await AsyncStorage.getItem("kioskOrderId");
+        if (storedTableId || storedTableNo || storedKioskOrder) {
+          fetch(`${API}/order/kiosk/cancel-session`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tableId: storedTableId,
+              tableNo: storedTableNo,
+              orderNumber: storedKioskOrder,
+            }),
+          }).catch(() => {});
+
+          await AsyncStorage.multiRemove([
+            "kioskOrderId",
+            "tableId",
+            "tableNo",
+            "kioskCarNumber",
+            "kioskCustomerName",
+            "kioskCustomerVehicleId",
+            "kioskDefaultDishId",
+            "kioskOrderType",
+          ]);
+        }
+      } catch (_) {}
+    };
+    cleanupLingeringSession();
+  }, []);
+
   // Fetch Company Name dynamically from dbo.CompanySettings
   useEffect(() => {
     let isMounted = true;

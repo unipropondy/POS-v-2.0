@@ -229,6 +229,39 @@ async function pollTables() {
     if (pool && pool.connected) {
       const holdMinutes = await getHoldOvertimeMinutes();
 
+      // 🛡️ Auto-reconcile abandoned Kiosk sessions (inactive >= 2 minutes with $0 and no items)
+      try {
+        await pool.request().query(`
+          UPDATE TableMaster
+          SET Status = 0,
+              CurrentOrderId = NULL,
+              entry_status = NULL,
+              TotalAmount = 0,
+              StartTime = NULL,
+              PAYMENT_STATUS = 0,
+              CustomerName = NULL,
+              Pax = NULL,
+              LockedByName = NULL,
+              ModifiedOn = GETDATE()
+          WHERE entry_status = 'K'
+            AND (TotalAmount = 0 OR TotalAmount IS NULL)
+            AND Status IN (1, 2, 3, 4)
+            AND DATEDIFF(MINUTE, ISNULL(ModifiedOn, ISNULL(StartTime, GETDATE())), GETDATE()) >= 2
+            AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderDetailCur rodc
+              INNER JOIN RestaurantOrderCur roc ON rodc.OrderId = roc.OrderId
+              WHERE (roc.OrderNumber = TableMaster.CurrentOrderId OR RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(TableMaster.TableNumber)))
+                AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                AND roc.StatusCode NOT IN (0, 4)
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM CartItems ci 
+              WHERE ci.CartId = CAST(TableMaster.TableId AS NVARCHAR(128)) 
+                 OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(TableMaster.TableNumber))
+            );
+        `);
+      } catch (_) {}
+
       const result = await pool.request()
         .input("holdMinutes", sql.Int, holdMinutes)
         .query(`

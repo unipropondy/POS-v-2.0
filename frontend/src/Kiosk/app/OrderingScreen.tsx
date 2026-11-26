@@ -318,6 +318,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (promoSlides.length > 0) {
       setShowAttractLoop(true);
       setCurrentSlideIndex(0);
+      // 🛡️ When inactivity times out, release table immediately so POS doesn't show $0.00 DINING!
+      if (onLogout) {
+        onLogout();
+      }
     } else if (onLogout) {
       onLogout();
     }
@@ -382,11 +386,39 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       resetIdleTimer();
     };
 
+    // 🛡️ Release table if browser tab/window is closed or refreshed before order is placed
+    const handleBeforeUnload = () => {
+      try {
+        const storedTableId = localStorage.getItem("tableId");
+        const storedTableNo = localStorage.getItem("tableNo");
+        const storedKioskOrder = localStorage.getItem("kioskOrderId");
+        if (storedTableId || storedTableNo || storedKioskOrder) {
+          const payload = JSON.stringify({
+            tableId: storedTableId,
+            tableNo: storedTableNo,
+            orderNumber: storedKioskOrder,
+          });
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(`${API}/order/kiosk/cancel-session`, new Blob([payload], { type: "application/json" }));
+          } else {
+            fetch(`${API}/order/kiosk/cancel-session`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: payload,
+              keepalive: true,
+            }).catch(() => {});
+          }
+        }
+      } catch (_) {}
+    };
+
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.addEventListener("pointerdown", handleGlobalInteraction, true);
       window.addEventListener("touchstart", handleGlobalInteraction, true);
       window.addEventListener("mousedown", handleGlobalInteraction, true);
       window.addEventListener("keydown", handleGlobalInteraction, true);
+      window.addEventListener("beforeunload", handleBeforeUnload);
+      window.addEventListener("pagehide", handleBeforeUnload);
     }
 
     return () => {
@@ -402,6 +434,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         window.removeEventListener("touchstart", handleGlobalInteraction, true);
         window.removeEventListener("mousedown", handleGlobalInteraction, true);
         window.removeEventListener("keydown", handleGlobalInteraction, true);
+        window.removeEventListener("beforeunload", handleBeforeUnload);
+        window.removeEventListener("pagehide", handleBeforeUnload);
       }
     };
   }, []);

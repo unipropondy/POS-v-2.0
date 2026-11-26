@@ -98,6 +98,24 @@ router.get("/all", async (req, res) => {
           AND (
             (EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = tm.CurrentOrderId) AND CAST(tm.DiningSection AS VARCHAR(10)) = '4')
             OR (
+              -- 🛡️ Clear abandoned Kiosk tables: entry_status = 'K', TotalAmount = 0 or NULL, inactive for >= 2 minutes, and no actual order items
+              tm.entry_status = 'K'
+              AND (tm.TotalAmount = 0 OR tm.TotalAmount IS NULL)
+              AND DATEDIFF(MINUTE, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 2
+              AND NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderDetailCur rodc
+                INNER JOIN RestaurantOrderCur roc ON rodc.OrderId = roc.OrderId
+                WHERE (roc.OrderNumber = tm.CurrentOrderId OR RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)))
+                  AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+                  AND roc.StatusCode NOT IN (0, 4)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM CartItems ci 
+                WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
+                   OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
+              )
+            )
+            OR (
               -- Only check if CurrentOrderId is NOT NULL, AND give a 15-minute grace period for newly occupied tables (e.g. Kiosk session in progress)
               tm.CurrentOrderId IS NOT NULL
               AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) >= 15
@@ -120,7 +138,7 @@ router.get("/all", async (req, res) => {
             AND tm.LockedByName IS NOT NULL
             AND DATEDIFF(MINUTE, ISNULL(tm.StartTime, tm.ModifiedOn), GETDATE()) < 15
           )
-          -- 🛡️ DO NOT clear active Dine-In orders (DiningSection 1, 2, 3) or Kiosk sessions (entry_status = 'K') with active orders
+          -- 🛡️ DO NOT clear active Dine-In orders (DiningSection 1, 2, 3) or Kiosk sessions (entry_status = 'K') with actual active orders
           AND NOT (
             CAST(tm.DiningSection AS VARCHAR(10)) IN ('1', '2', '3')
             AND EXISTS (
@@ -128,6 +146,10 @@ router.get("/all", async (req, res) => {
               WHERE (roc.OrderNumber = tm.CurrentOrderId OR RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)))
                 AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
                 AND roc.StatusCode NOT IN (0, 4)
+                AND (
+                  ISNULL(roc.TotalAmount, 0) > 0 
+                  OR EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId)
+                )
             )
           )
           -- 🛡️ Must NOT have any active CartItems
@@ -136,12 +158,16 @@ router.get("/all", async (req, res) => {
             WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
                OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
           )
-          -- 🛡️ Must NOT have any active unclosed orders in RestaurantOrderCur (Dine-In or Kiosk)
+          -- 🛡️ Must NOT have any active unclosed orders with items in RestaurantOrderCur (Dine-In or Kiosk)
           AND NOT EXISTS (
             SELECT 1 FROM RestaurantOrderCur roc 
             WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
               AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
               AND roc.StatusCode NOT IN (0, 4)
+              AND (
+                ISNULL(roc.TotalAmount, 0) > 0 
+                OR EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId)
+              )
           )
           -- 🛡️ Must be verified closed
           AND (

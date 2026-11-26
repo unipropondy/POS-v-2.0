@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
+import { API } from "@/config";
 import KioskStartPage from "./KioskStartPage";
 import LoginPage from "./LoginPage";
 import OrderingScreen from "./OrderingScreen";
@@ -22,9 +23,32 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
     // Initial launch: ensure clean state and session check before revealing screen
     const checkSession = async () => {
       try {
+        const storedTableId = await AsyncStorage.getItem("tableId");
+        const storedTableNo = await AsyncStorage.getItem("tableNo");
         const storedKioskOrder = await AsyncStorage.getItem("kioskOrderId");
-        if (storedKioskOrder) {
-          await AsyncStorage.removeItem("kioskOrderId");
+
+        // 🛡️ Auto-release any lingering/abandoned session from an earlier crash or page refresh
+        if (storedTableId || storedTableNo || storedKioskOrder) {
+          fetch(`${API}/order/kiosk/cancel-session`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tableId: storedTableId,
+              tableNo: storedTableNo,
+              orderNumber: storedKioskOrder,
+            }),
+          }).catch(() => {});
+
+          await AsyncStorage.multiRemove([
+            "kioskOrderId",
+            "tableId",
+            "tableNo",
+            "kioskCarNumber",
+            "kioskCustomerName",
+            "kioskCustomerVehicleId",
+            "kioskDefaultDishId",
+            "kioskOrderType",
+          ]);
         }
       } catch (err) {
         console.error("Error checking initial session:", err);
@@ -95,6 +119,23 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
         }}
         onLogout={async () => {
           try {
+            const storedTableId = await AsyncStorage.getItem("tableId");
+            const storedTableNo = await AsyncStorage.getItem("tableNo");
+            const storedKioskOrder = await AsyncStorage.getItem("kioskOrderId");
+
+            // 🛡️ Explicitly cancel Kiosk session and release Table in TableMaster to AVAILABLE (Status 0)
+            if (storedTableId || storedTableNo || storedKioskOrder) {
+              fetch(`${API}/order/kiosk/cancel-session`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  tableId: storedTableId,
+                  tableNo: storedTableNo,
+                  orderNumber: storedKioskOrder,
+                }),
+              }).catch(() => {});
+            }
+
             await AsyncStorage.multiRemove([
               "kioskOrderId",
               "tableId",

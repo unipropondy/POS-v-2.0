@@ -14,6 +14,8 @@ router.use((req, res, next) => {
     "/payment-status",
     "/complete-online-payment",
     "/kiosk/start",
+    "/kiosk/cancel-session",
+    "/kiosk/release-table",
     "/kiosk/tables",
     "/kiosk/available-tables",
     "/kiosk/update-tent-number",
@@ -5121,6 +5123,150 @@ router.post("/kiosk/start", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+const cancelKioskSessionHandler = async (req, res) => {
+  try {
+    let { tableId, tableNo, orderNumber, orderId } = req.body || {};
+    const pool = await poolPromise;
+
+    console.log(`[Kiosk] cancel-session requested: tableId=${tableId}, tableNo=${tableNo}, orderNumber=${orderNumber}, orderId=${orderId}`);
+
+    let cleanGuid = toGuidOrNull(tableId);
+    let resolvedTableNo = tableNo ? String(tableNo).trim() : null;
+    let resolvedSection = "3";
+
+    // 1. Locate table if tableId was omitted or missing
+    if (!cleanGuid && resolvedTableNo) {
+      const tblRes = await pool.request()
+        .input("tblNo", sql.VarChar(50), resolvedTableNo)
+        .query(`SELECT TableId, TableNumber, DiningSection FROM TableMaster WHERE RTRIM(LTRIM(TableNumber)) = RTRIM(LTRIM(@tblNo))`);
+      if (tblRes.recordset.length > 0) {
+        cleanGuid = tblRes.recordset[0].TableId;
+        resolvedTableNo = tblRes.recordset[0].TableNumber;
+        resolvedSection = String(tblRes.recordset[0].DiningSection || "3");
+      }
+    } else if (!cleanGuid && orderNumber) {
+      const tblRes = await pool.request()
+        .input("ordNo", sql.NVarChar(50), String(orderNumber).trim())
+        .query(`SELECT TableId, TableNumber, DiningSection FROM TableMaster WHERE CurrentOrderId = @ordNo`);
+      if (tblRes.recordset.length > 0) {
+        cleanGuid = tblRes.recordset[0].TableId;
+        resolvedTableNo = tblRes.recordset[0].TableNumber;
+        resolvedSection = String(tblRes.recordset[0].DiningSection || "3");
+      }
+    } else if (cleanGuid) {
+      const tblRes = await pool.request()
+        .input("tid", sql.UniqueIdentifier, cleanGuid)
+        .query(`SELECT TableNumber, DiningSection FROM TableMaster WHERE TableId = @tid`);
+      if (tblRes.recordset.length > 0) {
+        resolvedTableNo = tblRes.recordset[0].TableNumber;
+        resolvedSection = String(tblRes.recordset[0].DiningSection || "3");
+      }
+    }
+
+    if (!cleanGuid && !resolvedTableNo) {
+      return res.json({ success: true, message: "No active session or table to release" });
+    }
+
+    // 🛡️ Safety check: If an actual unclosed order with active details/items exists, DO NOT release the table!
+    const activeOrderCheck = await pool.request()
+      .input("tid", sql.UniqueIdentifier, cleanGuid)
+      .input("tblNo", sql.VarChar(50), resolvedTableNo || "")
+      .input("ordNo", sql.NVarChar(50), orderNumber || "")
+      .query(`
+        SELECT COUNT(1) AS ItemCount
+        FROM RestaurantOrderDetailCur rodc
+        INNER JOIN RestaurantOrderCur roc ON rodc.OrderId = roc.OrderId
+        WHERE (roc.OrderNumber = @ordNo OR RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(@tblNo)))
+          AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+          AND roc.StatusCode NOT IN (0, 4)
+      `);
+
+    const itemCount = activeOrderCheck.recordset[0]?.ItemCount || 0;
+    if (itemCount > 0) {
+      console.log(`[Kiosk] cancel-session prevented: table ${resolvedTableNo} has ${itemCount} active order items`);
+      return res.json({ success: false, message: "Cannot release table: active order with items exists" });
+    }
+
+    // 🛡️ Reset TableMaster record back to available state
+    const releaseReq = pool.request();
+    if (cleanGuid) {
+      releaseReq.input("tid", sql.UniqueIdentifier, cleanGuid);
+    }
+    releaseReq.input("tblNo", sql.VarChar(50), resolvedTableNo || "");
+
+    await releaseReq.query(`
+      UPDATE TableMaster
+      SET Status = 0,
+          CurrentOrderId = NULL,
+          entry_status = NULL,
+          TotalAmount = 0,
+          StartTime = NULL,
+          PAYMENT_STATUS = 0,
+          CustomerName = NULL,
+          Pax = NULL,
+          LockedByName = NULL,
+          ModifiedOn = GETDATE()
+      WHERE (${cleanGuid ? "TableId = @tid" : "1=0"} OR RTRIM(LTRIM(TableNumber)) = RTRIM(LTRIM(@tblNo)))
+        AND (ISNULL(TotalAmount, 0) = 0 OR entry_status = 'K');
+    `);
+
+    // Clean up any empty draft CartItems
+    try {
+      const cartDelReq = pool.request();
+      if (cleanGuid) cartDelReq.input("tid", sql.NVarChar(128), String(cleanGuid));
+      cartDelReq.input("tblNo", sql.NVarChar(128), resolvedTableNo || "");
+      await cartDelReq.query(`
+        DELETE FROM CartItems 
+        WHERE ${cleanGuid ? "CartId = @tid OR " : ""} CartId = @tblNo;
+      `);
+    } catch (_) {}
+
+    // Clean up empty draft in RestaurantOrderCur if it has no details
+    if (orderNumber) {
+      try {
+        await pool.request()
+          .input("ordNo", sql.NVarChar(50), String(orderNumber).trim())
+          .query(`
+            DELETE FROM RestaurantOrderCur
+            WHERE OrderNumber = @ordNo
+              AND (TotalAmount = 0 OR TotalAmount IS NULL)
+              AND NOT EXISTS (
+                SELECT 1 FROM RestaurantOrderDetailCur d WHERE d.OrderId = RestaurantOrderCur.OrderId
+              );
+          `);
+      } catch (_) {}
+    }
+
+    // Broadcast table status updated to POS and other clients
+    const io = req.app.get("io");
+    if (io) {
+      const cleanTid = cleanGuid ? String(cleanGuid).replace(/^\{|\}$/g, "").trim().toLowerCase() : "";
+      const secStr = resolvedSection === "4" ? "TAKEAWAY" : `SECTION_${resolvedSection}`;
+      io.emit("table_status_updated", {
+        tableId: cleanTid,
+        rawTableId: cleanGuid,
+        tableNo: resolvedTableNo,
+        section: secStr,
+        status: 0,
+        paymentStatus: 0,
+        totalAmount: 0,
+        currentOrderId: null,
+        entryStatus: null
+      });
+      io.emit("tables_updated");
+    }
+
+    console.log(`[Kiosk] Table ${resolvedTableNo} (${cleanGuid}) successfully released to AVAILABLE`);
+    res.json({ success: true, released: true, tableNo: resolvedTableNo });
+  } catch (err) {
+    console.error("[Kiosk] /kiosk/cancel-session ERROR:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+router.post("/kiosk/cancel-session", cancelKioskSessionHandler);
+router.post("/kiosk/release-table", cancelKioskSessionHandler);
 
 router.post("/kiosk/update-tent-number", async (req, res) => {
   const pool = await poolPromise;
