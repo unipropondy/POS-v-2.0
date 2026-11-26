@@ -1210,7 +1210,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       .trim()
       .toUpperCase();
     const discVal = Number(appliedPromotion.DiscountValue || 0);
-    const minPurchase = Number(appliedPromotion.MinPurchaseAmount || 0);
 
     // Calculate subtotal of non-promotional base items
     const nonPromoSubtotal = cart
@@ -1222,11 +1221,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             Number(item.qty || 1),
         0,
       );
-
-    // If minimum purchase requirement is configured and subtotal does not reach it, discount does not apply
-    if (minPurchase > 0 && nonPromoSubtotal < minPurchase) {
-      return 0;
-    }
 
     let calculatedDisc = 0;
     if (pType.includes("PERCENT") || pType.includes("%")) {
@@ -2085,31 +2079,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setIsAddingPromo(true);
 
     try {
-      // 1. MinPurchaseAmount Validation
-      const minPurchase = Number(selectedPromotion.MinPurchaseAmount || 0);
-      const nonPromoSubtotal = cart
-        .filter((i) => !i.isPromotionalItem && !i.isPromotion)
-        .reduce(
-          (sum, item) =>
-            sum +
-            Number(item.Price || item.finalPrice || item.price || 0) *
-              Number(item.qty || 1),
-          0,
-        );
-
-      if (minPurchase > 0 && nonPromoSubtotal < minPurchase) {
-        const errorMsg = `The offer "${selectedPromotion.PromotionName}" requires a minimum purchase of ${currencySymbol}${minPurchase.toFixed(2)}. Your current subtotal is ${currencySymbol}${nonPromoSubtotal.toFixed(2)}. Please add more items to cart.`;
-        setPromoErrorMessage(errorMsg);
-        if (typeof window !== "undefined" && window.alert) {
-          window.alert(errorMsg);
-        } else {
-          Alert.alert("Minimum Purchase Required", errorMsg);
-        }
-        setIsAddingPromo(false);
-        return;
-      }
-
-      // 2. Remove previously added promotional items to prevent duplicate promotion entries
+      // 1. Remove previously added promotional items to prevent duplicate promotion entries
       const cleanCart = cart.filter(
         (item) => !item.isPromotionalItem && !item.isPromotion,
       );
