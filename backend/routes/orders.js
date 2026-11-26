@@ -2899,8 +2899,8 @@ router.post("/remove-item", async (req, res) => {
         `);
       await transaction.commit();
 
-      // 🚀 Refresh total immediately
-      syncTableStatus(req, tableId).catch(() => { });
+      // 🚀 Refresh total & clear empty table immediately before responding
+      await syncTableStatus(req, tableId).catch(() => { });
 
       req.app.get("io")?.emit("cart_updated", {
         tableId: String(tableId || "").toLowerCase(),
@@ -2945,10 +2945,14 @@ router.post("/update-item-status", async (req, res) => {
     await pool
       .request()
       .input("id", sql.UniqueIdentifier, lineItemId)
-      .input("code", sql.Int, statusMap[status] || 2)
+      .input("code", sql.Int, statusMap[status] !== undefined ? statusMap[status] : 2)
       .query(
         "UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id",
       );
+
+    if (status === "VOIDED" && resolvedTableId) {
+      await syncTableStatus(req, resolvedTableId).catch(() => { });
+    }
 
     // 🌟 Auto-clear QR Table if all items are Served/Voided
     try {

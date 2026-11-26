@@ -111,8 +111,18 @@ router.get("/all", async (req, res) => {
               )
               AND NOT EXISTS (
                 SELECT 1 FROM CartItems ci 
-                WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
-                   OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
+                WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
+                   OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber)))
+                  AND ISNULL(ci.IsVoided, 0) = 0
+                  AND DATEDIFF(HOUR, ISNULL(ci.DateCreated, GETDATE()), GETDATE()) < 12
+              )
+            )
+            OR (
+              tm.CurrentOrderId IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM RestaurantOrderCur roc
+                WHERE roc.OrderNumber = tm.CurrentOrderId
+                  AND (roc.isOrderClosed = 1 OR roc.StatusCode IN (0, 4))
               )
             )
             OR (
@@ -152,11 +162,13 @@ router.get("/all", async (req, res) => {
                 )
             )
           )
-          -- 🛡️ Must NOT have any active CartItems
+          -- 🛡️ Must NOT have any active recent CartItems (ignore legacy/stale CartItems > 12h old)
           AND NOT EXISTS (
             SELECT 1 FROM CartItems ci 
-            WHERE ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
-               OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber))
+            WHERE (ci.CartId = CAST(tm.TableId AS NVARCHAR(128)) 
+               OR RTRIM(LTRIM(ci.CartId)) = RTRIM(LTRIM(tm.TableNumber)))
+              AND ISNULL(ci.IsVoided, 0) = 0
+              AND DATEDIFF(HOUR, ISNULL(ci.DateCreated, GETDATE()), GETDATE()) < 12
           )
           -- 🛡️ Must NOT have any active unclosed orders with items in RestaurantOrderCur (Dine-In or Kiosk)
           AND NOT EXISTS (
