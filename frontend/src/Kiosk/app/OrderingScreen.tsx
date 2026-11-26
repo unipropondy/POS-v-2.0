@@ -2210,6 +2210,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       // 6. Cart Persistence: Sync to Database via /order/save-cart immediately
       try {
+        const nonPromoSubtotal = cleanCart.reduce(
+          (sum, item) =>
+            sum +
+            Number(item.Price || item.finalPrice || item.price || 0) *
+              Number(item.qty || 1),
+          0,
+        );
         let calculatedDisc = 0;
         if (pType.includes("PERCENT") || pType.includes("%")) {
           calculatedDisc = (nonPromoSubtotal * discVal) / 100;
