@@ -16,6 +16,7 @@ export type OrderItem = CartItem & {
   sentAt?: number;
   readyAt?: number;
   dishGroupName?: string; // 🔥 Added
+  childStatuses?: Record<string, "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED" | "HOLD">;
 };
 
 
@@ -431,7 +432,8 @@ const storeCreator: StateCreator<
             });
           }
 
-          const overallStatus = hasChildren && allReady ? "READY" : (hasChildren ? "SENT" : (status === "READY" ? "READY" : "SENT"));
+          const overallStatus: "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED" | "HOLD" =
+            hasChildren && allReady ? "READY" : hasChildren ? "SENT" : status === "READY" ? "READY" : "SENT";
 
           return {
             ...item,
