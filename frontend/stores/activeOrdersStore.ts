@@ -61,19 +61,19 @@ const normalizeKitchenItem = (item: any) => {
     }
   }
 
-  const name =
-    (item?.name && item?.name !== "Dish" && String(item?.name).trim() !== "" ? item.name : undefined) ||
-    (item?.DishName && item.DishName !== "Dish" && String(item?.DishName).trim() !== "" ? item.DishName : undefined) ||
-    (item?.dishName && item.dishName !== "Dish" && String(item?.dishName).trim() !== "" ? item.dishName : undefined) ||
-    (item?.PromotionName && item.PromotionName !== "Dish" && String(item?.PromotionName).trim() !== "" ? item.PromotionName : undefined) ||
-    (item?.Name && item.Name !== "Dish" && String(item?.Name).trim() !== "" ? item.Name : undefined) ||
-    (item?.ProductName && item.ProductName !== "Dish" && String(item?.ProductName).trim() !== "" ? item.ProductName : undefined) ||
-    (item?.Description && item.Description !== "Dish" && !String(item?.Description).includes("•") && String(item?.Description).trim() !== "" ? item.Description : undefined) ||
+  const rawItemName = String(
     item?.name ||
     item?.DishName ||
     item?.dishName ||
+    item?.PromotionName ||
     item?.Name ||
-    "Dish";
+    item?.ProductName ||
+    (item?.Description && !String(item.Description).includes("•") && !String(item.Description).includes("+") ? item.Description : "") ||
+    ""
+  ).trim();
+  const name = (rawItemName && rawItemName !== "Dish")
+    ? rawItemName
+    : (comboSelections?.length ? "Combo Meal" : (item?.Description ? String(item.Description).trim() : "Item"));
 
   return {
     ...item,

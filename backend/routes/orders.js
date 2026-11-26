@@ -720,8 +720,10 @@ async function syncToProfessionalTables(
         .trim();
       const finalProdId = toGuidOrNull(cleanProdId) || DEFAULT_GUID;
       const rawLineItemId = item.lineItemId || item.OrderDetailId || item.line_item_id;
+      const cleanLineItemId = rawLineItemId ? String(rawLineItemId).replace(/^\{|\}$/g, "").trim().toLowerCase() : "";
+      const isPlaceholderGuid = !cleanLineItemId || cleanLineItemId === DEFAULT_GUID || cleanLineItemId.startsWith("00000000-0000-0000-0000-");
       const lineItemId =
-        toGuidOrNull(rawLineItemId) ||
+        (!isPlaceholderGuid ? toGuidOrNull(cleanLineItemId) : null) ||
         require("crypto").randomUUID();
       item.lineItemId = lineItemId;
       item.OrderDetailId = lineItemId;
@@ -737,7 +739,7 @@ async function syncToProfessionalTables(
         }
       }
       console.log(`[syncToProfessionalTables] Item: ${item.name || item.DishName || item.PromotionName || 'Dish'} | isKiosk: ${isKioskOrder} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
-      const dishName = (
+      const rawDishName = String(
         item.PromotionName ||
         item.DishName ||
         item.dishName ||
@@ -745,8 +747,10 @@ async function syncToProfessionalTables(
         item.name ||
         item.ProductName ||
         item.productName ||
-        "Dish"
-      ).substring(0, 150);
+        (item.Description && !String(item.Description).includes("•") ? item.Description : "") ||
+        ""
+      ).trim();
+      const dishName = (rawDishName && rawDishName !== "Dish" ? rawDishName : (item.Description ? String(item.Description).trim() : "Dish")).substring(0, 150);
       const songName = (item.songName || item.SongName || "").substring(0, 200);
       const unitPrice = item.price || item.Cost || 0;
       const basePrice = item.basePrice !== undefined ? item.basePrice : unitPrice;
@@ -3215,10 +3219,10 @@ router.get("/active-kitchen", async (req, res) => {
         d.PricePerUnit as price,
         h.OrderNumber as orderId, 
         CASE 
-          WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
-          WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
-          WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
-          ELSE ISNULL(dish.Name, 'Dish')
+          WHEN NULLIF(RTRIM(LTRIM(d.DishName)), '') IS NOT NULL AND RTRIM(LTRIM(d.DishName)) <> 'Dish' THEN RTRIM(LTRIM(d.DishName))
+          WHEN NULLIF(RTRIM(LTRIM(dish.Name)), '') IS NOT NULL AND RTRIM(LTRIM(dish.Name)) <> 'Dish' THEN RTRIM(LTRIM(dish.Name))
+          WHEN NULLIF(RTRIM(LTRIM(d.Description)), '') IS NOT NULL AND RTRIM(LTRIM(d.Description)) <> 'Dish' THEN RTRIM(LTRIM(d.Description))
+          ELSE ISNULL(NULLIF(RTRIM(LTRIM(dish.Name)), ''), 'Dish')
         END as name, 
         ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
@@ -3360,10 +3364,13 @@ router.get("/active-kitchen", async (req, res) => {
         }
       }
 
-      const resolvedName = (row.name && row.name !== "Dish" && row.name.trim() !== "" ? row.name : null) ||
-        (row.DishName && row.DishName !== "Dish" && row.DishName.trim() !== "" ? row.DishName : null) ||
-        (row.Description && row.Description !== "Dish" && !row.Description.includes("•") && row.Description.trim() !== "" ? row.Description : null) ||
-        row.name || row.DishName || "Weekend Combo";
+      const cleanRowName = String(row.name || "").trim();
+      const cleanDishName = String(row.DishName || "").trim();
+      const cleanDesc = String(row.Description || "").trim();
+      const resolvedName = (cleanRowName && cleanRowName !== "Dish" ? cleanRowName : null) ||
+        (cleanDishName && cleanDishName !== "Dish" ? cleanDishName : null) ||
+        (cleanDesc && cleanDesc !== "Dish" && !cleanDesc.includes("•") && !cleanDesc.includes("+") ? cleanDesc : null) ||
+        (cleanRowName || cleanDishName || (comboSels.length > 0 ? "Combo Meal" : "Item"));
 
       orders[row.orderId].items.push({
         ...row,
@@ -3389,10 +3396,10 @@ router.get("/active-sessions", async (req, res) => {
         d.PricePerUnit as price,
         h.OrderNumber as orderId, 
         CASE 
-          WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
-          WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
-          WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
-          ELSE ISNULL(dish.Name, 'Dish')
+          WHEN NULLIF(RTRIM(LTRIM(d.DishName)), '') IS NOT NULL AND RTRIM(LTRIM(d.DishName)) <> 'Dish' THEN RTRIM(LTRIM(d.DishName))
+          WHEN NULLIF(RTRIM(LTRIM(dish.Name)), '') IS NOT NULL AND RTRIM(LTRIM(dish.Name)) <> 'Dish' THEN RTRIM(LTRIM(dish.Name))
+          WHEN NULLIF(RTRIM(LTRIM(d.Description)), '') IS NOT NULL AND RTRIM(LTRIM(d.Description)) <> 'Dish' THEN RTRIM(LTRIM(d.Description))
+          ELSE ISNULL(NULLIF(RTRIM(LTRIM(dish.Name)), ''), 'Dish')
         END as name, 
         ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
@@ -3530,10 +3537,13 @@ router.get("/active-sessions", async (req, res) => {
         }
       }
 
-      const resolvedName = (row.name && row.name !== "Dish" && row.name.trim() !== "" ? row.name : null) ||
-        (row.DishName && row.DishName !== "Dish" && row.DishName.trim() !== "" ? row.DishName : null) ||
-        (row.Description && row.Description !== "Dish" && !row.Description.includes("•") && row.Description.trim() !== "" ? row.Description : null) ||
-        row.name || row.DishName || "Weekend Combo";
+      const cleanRowName = String(row.name || "").trim();
+      const cleanDishName = String(row.DishName || "").trim();
+      const cleanDesc = String(row.Description || "").trim();
+      const resolvedName = (cleanRowName && cleanRowName !== "Dish" ? cleanRowName : null) ||
+        (cleanDishName && cleanDishName !== "Dish" ? cleanDishName : null) ||
+        (cleanDesc && cleanDesc !== "Dish" && !cleanDesc.includes("•") && !cleanDesc.includes("+") ? cleanDesc : null) ||
+        (cleanRowName || cleanDishName || (comboSels.length > 0 ? "Combo Meal" : "Item"));
 
       orders[row.orderId].items.push({
         ...row,

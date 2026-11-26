@@ -72,7 +72,7 @@ const getIncludedComboDishes = (item: any): string[] => {
   if (!Array.isArray(sels) || sels.length === 0) {
     const desc = item.Description || item.description || item.note || item.notes;
     if (desc && typeof desc === "string" && !desc.toLowerCase().includes("combo promotion")) {
-      const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+      const parts = desc.split(/[\+\|•\n,]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
       if (parts.length > 0) return parts;
     }
     return [];
@@ -80,10 +80,10 @@ const getIncludedComboDishes = (item: any): string[] => {
 
   const result: string[] = [];
   sels.forEach((g: any) => {
-    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
+    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName || typeof g === "string" ? [g] : []));
     if (Array.isArray(choices)) {
       choices.forEach((opt: any) => {
-        const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+        const optName = (typeof opt === "string" ? opt : (opt.name || opt.DishName || opt.itemName || opt.dishName || "")).trim();
         if (optName) {
           result.push(optName);
         }

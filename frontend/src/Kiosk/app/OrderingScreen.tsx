@@ -1,4 +1,4 @@
-import { API } from "@/config";
+import { API, BASE_URL } from "@/config";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image as ExpoImage } from "expo-image";
@@ -26,6 +26,13 @@ const payNowPaymentImg = require("../assets/images/paynow_logo.png");
 
 const generateBizOrderId = (orderId: string | null) =>
   orderId || `YP${Date.now()}`;
+
+const generateUniqueLineItemId = () =>
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 
 const formatData = (dataList: any[], numCols: number) => {
   if (numCols <= 1 || !Array.isArray(dataList)) return dataList;
@@ -184,6 +191,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [isAddingPromo, setIsAddingPromo] = useState(false);
   const [promoErrorMessage, setPromoErrorMessage] = useState<string | null>(null);
   const [promoSuccessToast, setPromoSuccessToast] = useState<string | null>(null);
+  const [promoImageErrors, setPromoImageErrors] = useState<Record<string, boolean>>({});
   const [totalAmount, setTotalAmount] = useState("0.00");
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [companyBrand, setCompanyBrand] = useState<{
@@ -922,7 +930,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           const promoItem = {
             id: promoGuid,
             DishId: promoGuid,
-            lineItemId: promoGuid,
+            lineItemId: generateUniqueLineItemId(),
             isPromotionalItem: true,
             isPromotion: true,
             PromotionId: restoredPromo.PromotionId,
@@ -1176,7 +1184,17 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     ) {
       return cleanUrl;
     }
-    return `${API}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
+    const cleanBase = (BASE_URL || API.replace(/\/api\/?$/, "")).replace(/\/$/, "");
+    if (
+      cleanUrl.startsWith("/images") ||
+      cleanUrl.startsWith("images/") ||
+      cleanUrl.startsWith("/uploads") ||
+      cleanUrl.startsWith("uploads/")
+    ) {
+      const p = cleanUrl.startsWith("/") ? cleanUrl : `/${cleanUrl}`;
+      return `${cleanBase}${p}`;
+    }
+    return `${cleanBase}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
   };
 
   const companyLogoUri = formatLogoUrl(rawLogoUrl);
@@ -2236,7 +2254,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         promoItem = {
           id: promoGuid,
           DishId: promoGuid,
-          lineItemId: promoGuid,
+          lineItemId: generateUniqueLineItemId(),
           isPromotionalItem: true,
           isPromotion: true,
           isCombo: true,
@@ -2268,7 +2286,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         promoItem = {
           id: bogoGuid,
           DishId: bogoGuid,
-          lineItemId: bogoGuid,
+          lineItemId: generateUniqueLineItemId(),
           isPromotionalItem: true,
           isPromotion: true,
           isBogoFree: true,
@@ -2292,7 +2310,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         promoItem = {
           id: promoGuid,
           DishId: promoGuid,
-          lineItemId: promoGuid,
+          lineItemId: generateUniqueLineItemId(),
           isPromotionalItem: true,
           isPromotion: true,
           isFlatDiscount: true,
@@ -2318,7 +2336,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         promoItem = {
           id: promoGuid,
           DishId: promoGuid,
-          lineItemId: promoGuid,
+          lineItemId: generateUniqueLineItemId(),
           isPromotionalItem: true,
           isPromotion: true,
           isPercentageDiscount: true,
@@ -5121,12 +5139,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     activeOpacity={0.88}
                   >
                     {/* Promotion Image or Banner */}
-                    {promoImgUri ? (
+                    {promoImgUri && !promoImageErrors[String(promo.PromotionId)] ? (
                       <View style={styles.promotionImageWrap}>
                         <ExpoImage
                           source={{ uri: promoImgUri }}
                           style={styles.promotionImage}
                           contentFit="cover"
+                          onError={() => {
+                            setPromoImageErrors((prev) => ({
+                              ...prev,
+                              [String(promo.PromotionId)]: true,
+                            }));
+                          }}
                         />
                       </View>
                     ) : (

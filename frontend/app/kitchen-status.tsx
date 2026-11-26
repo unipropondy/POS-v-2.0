@@ -59,11 +59,11 @@ export const getComboChildDishes = (item: any, parentOrderId: string): ComboChil
 
   const childStatuses = item.childStatuses || {};
 
-  // If sels is empty, fallback to Description split (e.g. "Burger • Fries • Pepsi")
+  // If sels is empty, fallback to Description split (e.g. "Burger + Fries + Pepsi" or "Burger • Fries • Pepsi")
   if (!Array.isArray(sels) || sels.length === 0) {
     const desc = item.Description || item.description || item.note || item.notes;
     if (desc && typeof desc === "string" && !desc.toLowerCase().includes("combo promotion")) {
-      const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+      const parts = desc.split(/[\+\|•\n,]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
       if (parts.length > 0) {
         return parts.map((dishName: string, idx: number) => {
           const childKey = `desc_${dishName.toLowerCase().replace(/\s+/g, '_')}`;
@@ -85,18 +85,18 @@ export const getComboChildDishes = (item: any, parentOrderId: string): ComboChil
 
   const result: ComboChildDish[] = [];
   sels.forEach((g: any, gIdx: number) => {
-    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
+    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName || typeof g === "string" ? [g] : []));
     if (Array.isArray(choices)) {
       choices.forEach((opt: any, optIdx: number) => {
-        const dishName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+        const dishName = (typeof opt === "string" ? opt : (opt.name || opt.DishName || opt.itemName || opt.dishName || "")).trim();
         if (!dishName) return;
-        const dishId = opt.dishId || opt.DishId || opt.mappingId || `opt_${gIdx}_${optIdx}`;
-        const cleanChildKey = String(dishId || dishName).toLowerCase();
+        const rawDishId = typeof opt === "string" ? `item_${gIdx}_${optIdx}` : (opt.dishId || opt.DishId || opt.mappingId || `opt_${gIdx}_${optIdx}`);
+        const cleanChildKey = String(rawDishId || dishName).toLowerCase();
         const currentStatus = (childStatuses[cleanChildKey] || opt.status || (item.status === "READY" ? "READY" : "SENT")) as "SENT" | "READY" | "SERVED";
         const singleQty = Number(opt.qty || opt.quantity || 1) || 1;
         result.push({
           childId: cleanChildKey,
-          dishId: String(dishId),
+          dishId: String(rawDishId || cleanChildKey),
           name: dishName,
           qty: singleQty * parentQty,
           status: currentStatus,
@@ -173,15 +173,19 @@ export default function KitchenStatusScreen() {
     const isReady = item.status === "READY";
     const childDishes = getComboChildDishes(item, orderId);
     const isCombo = childDishes.length > 0;
-    const itemName =
+    const rawItemName = String(
       item.name ||
       item.DishName ||
       item.dishName ||
       item.PromotionName ||
       item.Name ||
       item.ProductName ||
-      item.Description ||
-      "Dish";
+      (item.Description && !String(item.Description).includes("•") && !String(item.Description).includes("+") ? item.Description : "") ||
+      ""
+    ).trim();
+    const itemName = (rawItemName && rawItemName !== "Dish")
+      ? rawItemName
+      : (isCombo ? "Combo Meal" : (item.Description ? String(item.Description).trim() : "Item"));
 
     if (isCombo) {
       return (

@@ -375,6 +375,17 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads"), {
   maxAge: '1d', 
   immutable: true
 }));
+// 🖼️ Ensure images directory structure exists for promotions and static media
+const imagesDir = path.join(__dirname, "images");
+if (!fs.existsSync(imagesDir)) {
+  fs.mkdirSync(imagesDir, { recursive: true });
+}
+const promoImagesDir = path.join(imagesDir, "Promotions");
+if (!fs.existsSync(promoImagesDir)) {
+  fs.mkdirSync(promoImagesDir, { recursive: true });
+}
+app.use("/images", express.static(imagesDir));
+app.use("/api/images", express.static(imagesDir));
 app.use(express.static(path.join(__dirname, "dist")));
 
 // 🏢 Dynamic Tenancy Context Middleware (resolves company database per request)
