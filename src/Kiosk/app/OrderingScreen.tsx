@@ -3879,8 +3879,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       onPress={() => handleDishClick(item)}
                       activeOpacity={0.88}
                     >
-                      {/* Top Right Badge: Shows quantity (e.g. 1) with scale pop animation if added to cart, otherwise heart outline */}
-                      {dishQty > 0 ? (
+                      {/* Top Right Badge: Shows quantity with scale pop animation if added to cart */}
+                      {dishQty > 0 && (
                         <Animated.View
                           style={[
                             styles.dishCardQtyBadge,
@@ -3895,13 +3895,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             {dishQty}
                           </Text>
                         </Animated.View>
-                      ) : (
-                        <View style={styles.dishCardHeartWrap}>
-                          <Text style={styles.dishCardHeartIcon}>♡</Text>
-                        </View>
                       )}
 
-                      {/* Square dish image matching reference design (1:1 aspect ratio, no circular cropping) */}
+                      {/* Square full-bleed dish image matching reference design (1:1 edge-to-edge cover fit) */}
                       <View style={styles.dishImageBox}>
                         {item.Image ? (
                           <ExpoImage
@@ -3909,10 +3905,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             style={[
                               styles.dishImg,
                               Platform.OS === "web"
-                                ? ({ objectFit: "contain" } as any)
+                                ? ({ objectFit: "cover" } as any)
                                 : null,
                             ]}
-                            contentFit="contain"
+                            contentFit="cover"
                             cachePolicy="memory-disk"
                             transition={150}
                           />
@@ -6263,18 +6259,19 @@ const styles = StyleSheet.create({
   dishesList: { paddingTop: 2, paddingBottom: 170, paddingHorizontal: 2 },
   dishCard: {
     flex: 1,
-    margin: 10,
+    margin: 12,
     backgroundColor: "#ffffff",
     borderRadius: 28,
-    paddingVertical: 26,
-    paddingHorizontal: 22,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
     alignItems: "center",
     justifyContent: "flex-start",
     position: "relative",
-    shadowColor: "#64748b",
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowRadius: 18,
     elevation: 4,
   },
   dishCardInvisible: {
@@ -6283,6 +6280,7 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     shadowOpacity: 0,
     elevation: 0,
+    overflow: "visible",
   },
   dishSoldOut: { opacity: 0.5 },
   dishCardHeartWrap: {
@@ -6298,27 +6296,27 @@ const styles = StyleSheet.create({
   },
   dishCardQtyBadge: {
     position: "absolute",
-    top: 16,
-    right: 18,
-    zIndex: 5,
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
+    top: 14,
+    right: 14,
+    zIndex: 10,
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#ff641f",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     shadowColor: "#ff641f",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
-    elevation: 4,
+    elevation: 5,
     borderWidth: 2,
     borderColor: "#ffffff",
   },
   dishCardQtyBadgeText: {
     color: "#ffffff",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "900",
     textAlign: "center",
   },
@@ -6673,72 +6671,62 @@ const styles = StyleSheet.create({
   dishImageBox: {
     width: "100%",
     aspectRatio: 1,
-    maxWidth: 200,
-    maxHeight: 200,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: "#f1f5f9",
-    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: "#f8fafc",
     alignItems: "center",
     justifyContent: "center",
-    padding: 6,
-    marginBottom: 16,
-    marginTop: 6,
     overflow: "hidden",
     position: "relative",
   },
   dishCircularBox: {
     width: "100%",
     aspectRatio: 1,
-    maxWidth: 200,
-    maxHeight: 200,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: "#f1f5f9",
-    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: "#f8fafc",
     alignItems: "center",
     justifyContent: "center",
-    padding: 6,
-    marginBottom: 16,
-    marginTop: 6,
     overflow: "hidden",
     position: "relative",
   },
   dishImg: {
     width: "100%",
     height: "100%",
-    borderRadius: 12,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   dishEmoji: { fontSize: 64 },
   soldOutBadge: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 12,
+    right: 12,
     backgroundColor: "#ef4444",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
     zIndex: 9999,
   },
-  soldOutText: { color: "#ffffff", fontSize: 10, fontWeight: "800" },
+  soldOutText: { color: "#ffffff", fontSize: 11, fontWeight: "800" },
   dishInfo: {
     width: "100%",
     alignItems: "center",
-    flex: 1,
-    justifyContent: "space-between",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 22,
   },
   dishTopContent: {
     width: "100%",
     alignItems: "center",
-    flex: 1,
-    justifyContent: "flex-start",
+    justifyContent: "center",
   },
   dishName: {
     fontSize: 24,
     fontWeight: "900",
     color: "#0f172a",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 6,
     letterSpacing: -0.3,
   },
   dishBulletsContainer: {
@@ -6778,12 +6766,12 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   dishPrice: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: "900",
     color: "#f97316",
     textAlign: "center",
     letterSpacing: -0.5,
-    marginTop: 6,
+    marginTop: 0,
   },
   emptyDishes: { padding: 40, alignItems: "center" },
   emptyDishesText: { color: "#9ca3af", fontSize: 15 },
