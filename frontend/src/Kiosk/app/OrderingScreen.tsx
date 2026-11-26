@@ -2171,7 +2171,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       if (validPromos.length > 0) {
         setActivePromotions(validPromos);
-        setSelectedPromotion(null);
+        setSelectedPromotion(validPromos[0]);
         // Display Promotion Popup FIRST (ensure other modals are closed)
         setShowTableModal(false);
         setShowPaymentPopup(false);
@@ -5060,7 +5060,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
-      {/* ── Promotion Popup Modal (PromotionMaster) ── */}
+      {/* ── Promotion Popup Modal (Special Offers) ── */}
       <Modal
         visible={showPromotionModal && activePromotions.length > 0}
         transparent
@@ -5069,45 +5069,33 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       >
         <View style={styles.promotionModalOverlay}>
           <View style={styles.promotionModalContainer}>
-            {/* Modal Header */}
+            {/* Modal Header: [🏷️ Special Offers | Select an offer to apply]   [✕] */}
             <View style={styles.promotionModalHeader}>
-              <View style={styles.promotionBadgeTag}>
-                <Ionicons name="sparkles" size={16} color="#EA580C" />
-                <Text style={styles.promotionBadgeTagText}>SPECIAL OFFERS</Text>
+              <View style={styles.promotionHeaderLeft}>
+                <Ionicons name="pricetag" size={26} color="#DC2626" style={{ marginRight: 10 }} />
+                <Text style={styles.promotionTitleText}>Special Offers</Text>
+                <View style={styles.promotionHeaderDivider} />
+                <Text style={styles.promotionSubtitleText}>Select an offer to apply</Text>
               </View>
               <TouchableOpacity
                 style={styles.promotionCloseBtn}
                 onPress={handleNoThanks}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <Ionicons name="close" size={24} color="#64748B" />
+                <Ionicons name="close" size={22} color="#0F172A" />
               </TouchableOpacity>
             </View>
 
-            {/* Instruction Header */}
-            <View style={styles.promotionSubHeader}>
-              <Text style={styles.promotionSubHeaderTitle}>Select an offer to apply</Text>
-              <Text style={styles.promotionSubHeaderSubtitle}>
-                Choose a promotion offer below, or tap No Thanks.
-              </Text>
-            </View>
-
-            {/* Promotions Scroll Content */}
+            {/* Horizontal Offer Cards Row / Carousel */}
             <ScrollView
-              showsVerticalScrollIndicator={false}
+              horizontal
+              showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.promotionScrollContent}
-              style={{ maxHeight: 480 }}
+              style={{ width: "100%" }}
             >
               {activePromotions.map((promo, idx) => {
                 const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
                 const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
-                const promoDesc = promo.Description || promo.PromotionDescription;
-                const minPurchase =
-                  promo.MinPurchaseAmount !== null &&
-                  promo.MinPurchaseAmount !== undefined &&
-                  Number(promo.MinPurchaseAmount) > 0
-                    ? Number(promo.MinPurchaseAmount)
-                    : null;
                 const promoAmt =
                   promo.PromotionAmount !== null &&
                   promo.PromotionAmount !== undefined &&
@@ -5120,6 +5108,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   Number(promo.DiscountValue) > 0
                     ? Number(promo.DiscountValue)
                     : null;
+                const displayPrice =
+                  promoAmt !== null
+                    ? `${currencySymbol}${promoAmt.toFixed(2)}`
+                    : discVal !== null
+                      ? `${currencySymbol}${discVal.toFixed(2)}`
+                      : `${currencySymbol}0.00`;
 
                 return (
                   <TouchableOpacity
@@ -5134,13 +5128,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     }}
                     activeOpacity={0.88}
                   >
-                    {/* Promotion Image or Banner */}
-                    {promoImgUri && !promoImageErrors[String(promo.PromotionId)] ? (
-                      <View style={styles.promotionImageWrap}>
+                    {/* Left Food Image */}
+                    <View style={styles.promotionImageWrap}>
+                      {promoImgUri && !promoImageErrors[String(promo.PromotionId)] ? (
                         <ExpoImage
                           source={{ uri: promoImgUri }}
                           style={styles.promotionImage}
-                          contentFit="cover"
+                          contentFit="contain"
                           onError={() => {
                             setPromoImageErrors((prev) => ({
                               ...prev,
@@ -5148,26 +5142,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             }));
                           }}
                         />
-                      </View>
-                    ) : (
-                      <View style={styles.promotionPlaceholderBanner}>
-                        <Ionicons name="sparkles" size={28} color="#EA580C" />
-                        <Text style={styles.promotionPlaceholderBannerText}>
-                          {promo.PromotionType || "SPECIAL PROMOTION"}
-                        </Text>
-                      </View>
-                    )}
+                      ) : (
+                        <Ionicons name="fast-food" size={48} color="#DC2626" />
+                      )}
+                    </View>
 
-                    {/* Promotion Info */}
+                    {/* Right Info: Dish Name, Radio Circle, Price Pill */}
                     <View style={styles.promotionInfoWrap}>
-                      <View style={styles.promotionTitleRow}>
+                      <View style={styles.promotionCardTopRow}>
                         <Text
-                          style={[
-                            styles.promotionNameText,
-                            isSelected && styles.promotionNameTextSelected,
-                          ]}
+                          style={styles.promotionNameText}
+                          numberOfLines={2}
+                          ellipsizeMode="tail"
                         >
-                          {promo.PromotionName || "Exclusive Promotion"}
+                          {promo.PromotionName || "Special Combo"}
                         </Text>
                         <View
                           style={[
@@ -5175,69 +5163,29 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                             isSelected && styles.promotionRadioCircleSelected,
                           ]}
                         >
-                          {isSelected && (
-                            <Ionicons
-                              name="checkmark"
-                              size={16}
-                              color="#FFFFFF"
-                            />
-                          )}
+                          {isSelected && <View style={styles.promotionRadioDot} />}
                         </View>
                       </View>
 
-                      {promoDesc ? (
-                        <Text style={styles.promotionDescText}>
-                          {promoDesc}
+                      {/* Red / Light-Red Price Pill Badge */}
+                      <View
+                        style={[
+                          styles.promotionPricePill,
+                          isSelected
+                            ? styles.promotionPricePillSelected
+                            : styles.promotionPricePillUnselected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.promotionPricePillText,
+                            isSelected
+                              ? styles.promotionPricePillTextSelected
+                              : styles.promotionPricePillTextUnselected,
+                          ]}
+                        >
+                          {displayPrice}
                         </Text>
-                      ) : null}
-
-                      {/* Badges: Type, Amount, Discount */}
-                      <View style={styles.promotionBadgesRow}>
-                        {promo.PromotionType ? (
-                          <View style={styles.promotionTypePill}>
-                            <Ionicons
-                              name="pricetag-outline"
-                              size={14}
-                              color="#EA580C"
-                            />
-                            <Text style={styles.promotionTypePillText}>
-                              {promo.PromotionType}
-                            </Text>
-                          </View>
-                        ) : null}
-
-                        {minPurchase ? (
-                          <View style={styles.promotionAmountPill}>
-                            <Text style={styles.promotionAmountPillText}>
-                              Min Spend: {currencySymbol}
-                              {minPurchase.toFixed(2)}
-                            </Text>
-                          </View>
-                        ) : null}
-
-                        {promoAmt ? (
-                          <View style={styles.promotionAmountPill}>
-                            <Text style={styles.promotionAmountPillText}>
-                              Price: {currencySymbol}
-                              {promoAmt.toFixed(2)}
-                            </Text>
-                          </View>
-                        ) : null}
-
-                        {discVal ? (
-                          <View style={styles.promotionDiscountPill}>
-                            <Ionicons
-                              name="gift-outline"
-                              size={14}
-                              color="#059669"
-                            />
-                            <Text style={styles.promotionDiscountPillText}>
-                              {String(promo.PromotionType || "").toUpperCase().includes("PERCENT")
-                                ? `Discount: ${discVal}% OFF`
-                                : `Save ${currencySymbol}${discVal.toFixed(2)}`}
-                            </Text>
-                          </View>
-                        ) : null}
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -5253,7 +5201,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </View>
             )}
 
-            {/* Modal Footer: [ No Thanks ]  [ Add to Cart ] */}
+            {/* Modal Footer: [ No Thanks ]   [ 🛒 Add to Cart ] */}
             <View style={styles.promotionFooter}>
               <TouchableOpacity
                 style={styles.promotionSkipBtn}
@@ -5278,17 +5226,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   <>
                     <Ionicons
                       name="cart-outline"
-                      size={20}
-                      color={selectedPromotion ? "#FFFFFF" : "#94A3B8"}
+                      size={24}
+                      color="#FFFFFF"
+                      style={{ marginRight: 6 }}
                     />
-                    <Text
-                      style={[
-                        styles.promotionAddToCartBtnText,
-                        !selectedPromotion && styles.promotionAddToCartBtnTextDisabled,
-                      ]}
-                    >
-                      Add to Cart
-                    </Text>
+                    <Text style={styles.promotionAddToCartBtnText}>Add to Cart</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -7417,7 +7359,7 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
   },
 
-  /* PROMOTION POPUP MODAL */
+  /* PROMOTION POPUP MODAL (SPECIAL OFFERS) */
   promotionModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.75)",
@@ -7426,10 +7368,10 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   promotionModalContainer: {
-    width: "100%",
-    maxWidth: 620,
+    width: "95%",
+    maxWidth: 880,
     backgroundColor: "#FFFFFF",
-    borderRadius: 28,
+    borderRadius: 24,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
@@ -7437,34 +7379,39 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 10,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   promotionModalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingTop: 22,
+    paddingTop: 18,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
   },
-  promotionBadgeTag: {
+  promotionHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: "#FFF7ED",
-    borderWidth: 1,
-    borderColor: "#FFEDD5",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    flex: 1,
+    flexWrap: "wrap",
   },
-  promotionBadgeTagText: {
-    fontSize: 12,
+  promotionTitleText: {
+    fontSize: 22,
     fontWeight: "900",
-    color: "#EA580C",
-    letterSpacing: 0.8,
+    color: "#0F172A",
+  },
+  promotionHeaderDivider: {
+    width: 1.5,
+    height: 20,
+    backgroundColor: "#CBD5E1",
+    marginHorizontal: 14,
+  },
+  promotionSubtitleText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1E293B",
   },
   promotionCloseBtn: {
     width: 36,
@@ -7474,84 +7421,66 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  promotionSubHeader: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 4,
-  },
-  promotionSubHeaderTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#0F172A",
-    marginBottom: 4,
-  },
-  promotionSubHeaderSubtitle: {
-    fontSize: 13,
-    color: "#64748B",
-    lineHeight: 18,
-  },
   promotionScrollContent: {
-    padding: 20,
-    gap: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    flexDirection: "row",
+    gap: 14,
   },
   promotionCard: {
-    backgroundColor: "#FAF8F5",
-    borderRadius: 20,
+    width: 255,
+    height: 125,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: "#EFE6DC",
+    borderColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
     overflow: "hidden",
   },
   promotionCardSelected: {
-    borderColor: "#EA580C",
-    backgroundColor: "#FFFBF7",
+    borderColor: "#DC2626",
     borderWidth: 2,
-    shadowColor: "#EA580C",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 3,
+    backgroundColor: "#FFFFFF",
   },
   promotionImageWrap: {
-    width: "100%",
-    height: 190,
-    backgroundColor: "#F1F5F9",
-  },
-  promotionPlaceholderBanner: {
-    width: "100%",
-    height: 100,
-    backgroundColor: "#FFF7ED",
-    borderBottomWidth: 1,
-    borderBottomColor: "#FFEDD5",
-    flexDirection: "row",
+    width: 90,
+    height: 90,
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-  },
-  promotionPlaceholderBannerText: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#EA580C",
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    backgroundColor: "transparent",
+    borderRadius: 12,
+    overflow: "hidden",
   },
   promotionImage: {
     width: "100%",
     height: "100%",
   },
   promotionInfoWrap: {
-    padding: 18,
-  },
-  promotionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flex: 1,
+    height: "100%",
     justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 6,
+    paddingLeft: 10,
+    paddingVertical: 2,
+  },
+  promotionCardTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  promotionNameText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    lineHeight: 20,
+    paddingRight: 6,
   },
   promotionRadioCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
     borderColor: "#CBD5E1",
     alignItems: "center",
@@ -7559,127 +7488,88 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   promotionRadioCircleSelected: {
-    borderColor: "#EA580C",
-    backgroundColor: "#EA580C",
+    borderColor: "#DC2626",
   },
-  promotionNameText: {
-    flex: 1,
-    fontSize: 20,
+  promotionRadioDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#DC2626",
+  },
+  promotionPricePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
+    alignSelf: "flex-start",
+  },
+  promotionPricePillSelected: {
+    backgroundColor: "#DC2626",
+  },
+  promotionPricePillUnselected: {
+    backgroundColor: "#FEE2E2",
+  },
+  promotionPricePillText: {
+    fontSize: 17,
     fontWeight: "900",
-    color: "#0F172A",
   },
-  promotionNameTextSelected: {
-    color: "#EA580C",
+  promotionPricePillTextSelected: {
+    color: "#FFFFFF",
   },
-  promotionDescText: {
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 20,
-    marginBottom: 14,
-  },
-  promotionBadgesRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  promotionTypePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#FFF7ED",
-    borderWidth: 1,
-    borderColor: "#FFEDD5",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  promotionTypePillText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#EA580C",
-  },
-  promotionAmountPill: {
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#DBEAFE",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    justifyContent: "center",
-  },
-  promotionAmountPillText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#1D4ED8",
-  },
-  promotionDiscountPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  promotionDiscountPillText: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#059669",
+  promotionPricePillTextUnselected: {
+    color: "#DC2626",
   },
   promotionFooter: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    padding: 18,
+    justifyContent: "center",
+    gap: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
     backgroundColor: "#FFFFFF",
   },
   promotionSkipBtn: {
-    height: 54,
-    paddingHorizontal: 26,
-    borderRadius: 16,
-    backgroundColor: "#F1F5F9",
+    minWidth: 180,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
   },
   promotionSkipBtnText: {
-    color: "#475569",
-    fontSize: 16,
+    color: "#0F172A",
+    fontSize: 18,
     fontWeight: "800",
   },
   promotionAddToCartBtn: {
     flex: 1,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: "#EA580C",
+    maxWidth: 280,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#DC2626",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    shadowColor: "#EA580C",
+    shadowColor: "#DC2626",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
   },
   promotionAddToCartBtnDisabled: {
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#CBD5E1",
     shadowOpacity: 0,
     elevation: 0,
   },
   promotionAddToCartBtnText: {
     color: "#FFFFFF",
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: "900",
     letterSpacing: 0.3,
-  },
-  promotionAddToCartBtnTextDisabled: {
-    color: "#94A3B8",
   },
   promotionErrorBanner: {
     flexDirection: "row",
