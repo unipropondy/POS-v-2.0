@@ -614,6 +614,7 @@ export default function SettlementScreen() {
   const [selectedTerminal, setSelectedTerminal] = useState<string>("");
   const [showLov, setShowLov] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [activeDayDate, setActiveDayDate] = useState<string | null>(null);
 
   const executeDayEnd = async () => {
     setLoading(true);
@@ -624,6 +625,7 @@ export default function SettlementScreen() {
       });
       const data = res.data;
       if (data.success) {
+        setActiveDayDate(null);
         const AsyncStorage =
           require("@react-native-async-storage/async-storage").default;
         await AsyncStorage.removeItem("selected_business_date");
@@ -657,7 +659,9 @@ export default function SettlementScreen() {
   };
 
   const handleDayEnd = () => {
-    if (!dayLog || !dayLog.StartedAt) {
+    const selectedDateStr = getLocalDateStr(selectedDate);
+    const isDateEntryActive = activeDayDate === selectedDateStr;
+    if (!isDateEntryActive && (!dayLog || !dayLog.StartedAt)) {
       showToast({
         type: "warning",
         message: "Day Not Started",
@@ -665,7 +669,7 @@ export default function SettlementScreen() {
       });
       return;
     }
-    if (dayLog.EndedAt) {
+    if (dayLog?.EndedAt && !isDateEntryActive) {
       showToast({
         type: "warning",
         message: "Day Already Ended",
@@ -878,6 +882,7 @@ export default function SettlementScreen() {
         try {
           const res = await API.get(`/settlement/active-day`);
           if (res.data?.success && res.data?.active && res.data?.startDate) {
+            setActiveDayDate(String(res.data.startDate));
             const parts = res.data.startDate.split("-");
             if (parts.length === 3) {
               initialDate = new Date(
@@ -7312,7 +7317,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.4)",
   },
   modalDismiss: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
   },
   modalContent: {
     width: "90%",

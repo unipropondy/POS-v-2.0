@@ -22,7 +22,7 @@ router.post("/day-start", async (req, res) => {
     if (!startDate) {
       return res.status(400).json({ error: "StartDate is required" });
     }
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     
     // Check if there is already an active business day
     const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
@@ -80,7 +80,7 @@ router.post("/day-start", async (req, res) => {
 
 router.post("/day-end", async (req, res) => {
   try {
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     // Fetch active start date before deleting DateEntry
     const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
@@ -178,7 +178,7 @@ router.get("/active-day", async (req, res) => {
 router.get("/users-settlement", async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const dateStr = fromDate || new Date().toISOString().split('T')[0];
     const endDateStr = toDate || dateStr;
 
@@ -341,7 +341,7 @@ router.get("/day-log", async (req, res) => {
     if (!date) {
       return res.status(400).json({ error: "Date parameter is required" });
     }
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input("date", sql.Date, date)
       .query("SELECT CONVERT(VARCHAR(19), StartedAt, 120) AS StartedAt, StartedBy, CONVERT(VARCHAR(19), EndedAt, 120) AS EndedAt, EndedBy FROM BusinessDayLog WHERE BusinessDate = @date");
@@ -389,7 +389,7 @@ router.get("/day-log", async (req, res) => {
 router.get("/day-history", async (req, res) => {
   try {
     const { date, fromDate, toDate } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const request = pool.request();
 
     let query = `
@@ -432,7 +432,7 @@ router.get('/check', authenticateToken, async (req, res) => {
 
     console.log('📡 Check settlement:', { outletId, date });
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input('outletId', sql.Int, outletId)
       .input('settlementDate', sql.Date, date)
@@ -462,7 +462,7 @@ router.get('/opening-cash', authenticateToken, async (req, res) => {
       outletId = 1;
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input('outletId', sql.Int, outletId)
       .input('settlementDate', sql.Date, date)
@@ -505,7 +505,7 @@ router.post('/opening-cash', authenticateToken, async (req, res) => {
     }
 
     const openingCashJSON = JSON.stringify({ notes, coins });
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     await pool.request()
       .input('outletId', sql.Int, outletId)
@@ -545,7 +545,7 @@ router.get('/physical-cash', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid outletId' });
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input('outletId', sql.Int, outletId)
       .input('settlementDate', sql.Date, date)
@@ -584,7 +584,7 @@ router.post('/physical-cash', authenticateToken, async (req, res) => {
     }
 
     const physicalCashJSON = JSON.stringify({ notes, coins });
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     await pool.request()
       .input('outletId', sql.Int, outletId)
@@ -629,7 +629,7 @@ router.post('/finalize', authenticateToken, async (req, res) => {
       paynow: paynowAmount || 0, valuecard: valueCardAmount || 0
     });
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     // Check if already settled
     const checkResult = await pool.request()
@@ -704,7 +704,7 @@ router.get('/denominations', authenticateToken, async (req, res) => {
   try {
     const type = req.query.type === 'CLOSE' ? 'CLOSE' : 'OPEN';
     const { date, screenType } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const request = pool.request();
 
     let query = `
@@ -746,7 +746,7 @@ router.post('/save-denominations', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid denominations data' });
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -872,7 +872,7 @@ router.get('/cash-out/:terminal', authenticateToken, async (req, res) => {
   try {
     const { terminal } = req.params;
     const { fromDate, toDate, userId } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const request = pool.request();
 
     let dateFilter = "COALESCE(CAST(CashOutDate as DATE), start_date) = CAST(GETDATE() as DATE)";
@@ -914,7 +914,7 @@ router.get('/cash-in/:terminal', authenticateToken, async (req, res) => {
   try {
     const { terminal } = req.params;
     const { fromDate, toDate, userId } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const request = pool.request();
 
     let dateFilter = "COALESCE(CAST(CashInDate as DATE), start_date) = CAST(GETDATE() as DATE)";
@@ -990,7 +990,7 @@ router.post('/cash-in', authenticateToken, async (req, res) => {
     }
 
     const createdBy = req.body.createdBy || req.user?.userName || req.user?.username || req.user?.id || req.user?.userId || 'Admin';
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     const targetDate = date ? new Date(date) : new Date();
     const dateStr = targetDate.toISOString().slice(0, 10).replace(/-/g, '');
@@ -1027,7 +1027,7 @@ router.post('/cash-in', authenticateToken, async (req, res) => {
 router.delete('/cash-in/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     await pool.request()
       .input('CashInId', sql.UniqueIdentifier, id)
       .query('DELETE FROM CashInEntry WHERE CashInId = @CashInId');
@@ -1050,7 +1050,7 @@ router.put('/cash-in/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Valid amount is required' });
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input('CashInId', sql.UniqueIdentifier, id)
       .input('Amount', sql.Decimal(18, 2), amount)
@@ -1091,7 +1091,7 @@ router.post('/cash-out', authenticateToken, async (req, res) => {
     }
 
     const createdBy = req.body.createdBy || req.user?.userName || req.user?.username || req.user?.id || req.user?.userId || 'Admin';
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     // Generate simple auto-incrementing/timestamp-based CashOutNo
     const targetDate = date ? new Date(date) : new Date();
@@ -1135,7 +1135,7 @@ router.put('/cash-out/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Valid amount is required' });
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input('CashOutId', sql.UniqueIdentifier, id)
       .input('Amount', sql.Decimal(18, 2), amount)
@@ -1170,7 +1170,7 @@ router.put('/cash-out/:id', authenticateToken, async (req, res) => {
 router.delete('/cash-out/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const result = await pool.request()
       .input('CashOutId', sql.UniqueIdentifier, id)
       .query(`
@@ -1196,7 +1196,7 @@ router.delete('/cash-out/:id', authenticateToken, async (req, res) => {
 router.get('/artist-cashbox', authenticateToken, async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const request = pool.request();
 
     let query = `SELECT * FROM ArtistCashBox`;
@@ -1227,7 +1227,7 @@ router.post('/artist-cashbox', authenticateToken, async (req, res) => {
       });
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -1417,7 +1417,7 @@ router.post('/artist-cashbox', authenticateToken, async (req, res) => {
 router.delete('/artist-cashbox/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params; // CashBoxId
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     
     // First, find the SettlementID associated with this CashBoxId
     const findRes = await pool.request()
@@ -1467,7 +1467,7 @@ router.delete('/artist-cashbox/:id', authenticateToken, async (req, res) => {
 
 router.get('/artist-list', authenticateToken, async (req, res) => {
   try {
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
 
     const result = await pool.request().query(`
       SELECT
@@ -1497,7 +1497,7 @@ router.get('/artist-list', authenticateToken, async (req, res) => {
 router.get('/artist-sales', authenticateToken, async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const request = pool.request();
     
     // Set fallback date parameters if none provided
@@ -1543,7 +1543,7 @@ router.get('/artist-sales', authenticateToken, async (req, res) => {
 // joined with TargetAmount from dishOrderItemShare
 router.get('/artist-target-live', authenticateToken, async (req, res) => {
   try {
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const { fromDate, toDate } = req.query;
 
     const parsedFrom = fromDate ? new Date(fromDate) : new Date();
@@ -1674,7 +1674,7 @@ router.post('/artist-target', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'dishId, targetAmount, fromDate, and toDate are required' });
     }
 
-    const pool = getPool();
+    const pool = req.pool || req.db || getPool();
     const parsedFrom = new Date(fromDate);
     const parsedTo = new Date(toDate);
     
