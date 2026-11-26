@@ -306,6 +306,51 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
     const filterClause = isKiosk
       ? "AND ISNULL(d.IsPublished, 0) = 0 AND ISNULL(cat.IsPublished, 0) = 0 AND ISNULL(dgm.IsPublished, 0) = 0"
       : "";
+
+    if (String(dishGroupId).toLowerCase() === "favourites") {
+      const favResult = await pool.request().query(`
+        SELECT DISTINCT
+          d.DishId,
+          d.Name,
+          d.DishGroupId,
+          d.currentcost AS Price,
+          d.DishCode,
+          d.Description,
+          d.AvailableTimeFrom,
+          d.AvailableTimeTo,
+          d.Imageid AS Image,
+          CASE WHEN d.Imageid IS NOT NULL THEN 1 ELSE 0 END AS HasImage,
+          ISNULL(d.isServiceCharge, 1) AS isServiceCharge,
+          ISNULL(d.IsOpenItem, 0) AS IsOpenItem,
+          ISNULL(d.IsCombo, 0) AS IsCombo,
+          ISNULL(d.IsSoldOut, 0) AS IsSoldOut,
+          ISNULL(d.IsPublished, 0) AS IsPublished,
+          1 AS isFavourite,
+          1 AS Favourite,
+          ISNULL(d.TakeawayCharge, 0) AS TakeawayCharge,
+          ISNULL(d.TakeawayCharge, 0) AS takeawayCharge,
+          ISNULL(cat.IsPublished, 0) AS CategoryPublished,
+          ISNULL(dgm.IsPublished, 0) AS GroupPublished,
+          (SELECT COUNT(1) FROM DishModifier dm WHERE dm.DishId = d.DishId) AS HasModifiers,
+          CAST(ISNULL(d.IsDiscountAllowed, 1) AS INT) AS IsDiscountAllowed,
+          ISNULL(ckt.KitchenTypeCode, '2') AS KitchenTypeCode,
+          ISNULL(ISNULL(ckt.KitchenTypeName, cat.CategoryName), 'KITCHEN') AS KitchenTypeName,
+          pm.PrinterPath AS PrinterIP,
+          ISNULL(d.SordCode, 0) AS SordCode
+        FROM DishMaster d
+        LEFT JOIN DishGroupMaster dgm ON d.DishGroupId = dgm.DishGroupId
+        LEFT JOIN CategoryMaster cat ON dgm.CategoryId = cat.CategoryId
+        LEFT JOIN CenterKitchenType ckt ON d.CenterKitchen = ckt.KitchenTypeCode
+        LEFT JOIN PrinterMaster pm ON ckt.KitchenTypeCode = pm.KitchenTypeCode
+        WHERE ${favClause.whereCondition}
+          AND ISNULL(d.IsSoldOut, 0) = 0
+          ${filterClause}
+        ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
+      `);
+      setCached(cacheKey, favResult.recordset);
+      return res.json(favResult.recordset);
+    }
+
     const result = await pool
       .request()
       .input("DishGroupId", dishGroupId).query(`

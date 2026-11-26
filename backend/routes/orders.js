@@ -5199,10 +5199,20 @@ router.get("/cart/kiosk/:orderId", async (req, res) => {
   try {
     const rawOrderId = req.params.orderId || "";
     if (!rawOrderId || rawOrderId === "null" || rawOrderId === "undefined") {
-      return res.json({ items: [], currentOrderId: null });
+      return res.json({ items: [], currentOrderId: null, discountAmount: 0, discountRemarks: null });
     }
     const cleanOrderId = String(rawOrderId).split(":")[0].trim();
     const pool = await poolPromise;
+
+    const ordReq = pool.request().input("oid", sql.NVarChar(100), cleanOrderId);
+    const orderHeaderRes = await ordReq.query(`
+      SELECT TOP 1 DiscountAmount, DiscountRemarks, OrderId, OrderNumber
+      FROM RestaurantOrderCur
+      WHERE (OrderNumber = @oid OR CONVERT(varchar(50), OrderId) = @oid)
+        AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
+    `);
+    const ordHeader = orderHeaderRes.recordset[0] || null;
+
     const itemsResult = await pool.request()
       .input("oid", sql.NVarChar(100), cleanOrderId)
       .query(`
@@ -5223,7 +5233,20 @@ router.get("/cart/kiosk/:orderId", async (req, res) => {
           d.ModifiersJSON,
           d.ComboDetailsJSON,
           d.Remarks as note,
+          d.Remarks,
+          d.Description,
+          d.DiscountAmount,
+          d.DiscountType,
+          d.PROMO_AMOUNT,
           d.isTakeAway as isTakeaway,
+          CASE 
+            WHEN CONVERT(varchar(50), d.DishId) LIKE '00000000-0000-0000-%'
+              OR d.Remarks LIKE '%Promotion%'
+              OR d.Description LIKE '%Promotion%'
+              OR d.DiscountType IN ('Combo', 'BOGO', 'Flat', 'Percentage')
+            THEN 1
+            ELSE 0
+          END AS isPromotionalItem,
           CASE d.StatusCode
             WHEN 1 THEN 'NEW'
             WHEN 2 THEN 'SENT'
@@ -5240,9 +5263,14 @@ router.get("/cart/kiosk/:orderId", async (req, res) => {
           AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
           AND d.StatusCode <> 0
       `);
-    return res.json({ items: itemsResult.recordset || [], currentOrderId: cleanOrderId });
+    return res.json({
+      items: itemsResult.recordset || [],
+      currentOrderId: cleanOrderId,
+      discountAmount: Number(ordHeader?.DiscountAmount || 0),
+      discountRemarks: ordHeader?.DiscountRemarks || null,
+    });
   } catch (err) {
-    return res.json({ items: [], currentOrderId: req.params.orderId });
+    return res.json({ items: [], currentOrderId: req.params.orderId, discountAmount: 0, discountRemarks: null });
   }
 });
 

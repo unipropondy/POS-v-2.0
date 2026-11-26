@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image as ExpoImage } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -176,8 +176,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   // Payment Modal State
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
+  const [showPromotionModal, setShowPromotionModal] = useState(false);
+  const [activePromotions, setActivePromotions] = useState<any[]>([]);
+  const [checkingPromotions, setCheckingPromotions] = useState(false);
+  const [selectedPromotion, setSelectedPromotion] = useState<any | null>(null);
+  const [appliedPromotion, setAppliedPromotion] = useState<any | null>(null);
+  const [isAddingPromo, setIsAddingPromo] = useState(false);
+  const [promoErrorMessage, setPromoErrorMessage] = useState<string | null>(null);
+  const [promoSuccessToast, setPromoSuccessToast] = useState<string | null>(null);
   const [totalAmount, setTotalAmount] = useState("0.00");
   const [companySettings, setCompanySettings] = useState<any>(null);
+  const [companyBrand, setCompanyBrand] = useState<{
+    CompanyLogoUrl?: string | null;
+    CompanyName?: string | null;
+  } | null>(null);
   const [serviceChargePercent, setServiceChargePercent] = useState(0);
   const [twServiceChargePercent, setTwServiceChargePercent] = useState(0);
   const [takeawayChargeRate, setTakeawayChargeRate] = useState(0);
@@ -291,6 +303,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
     setCart([]);
+    setAppliedPromotion(null);
+    setSelectedPromotion(null);
+    setShowPromotionModal(false);
     setShowCartPage(false);
     setShowModifier(false);
     setShowComboCustomizer(false);
@@ -547,6 +562,32 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       .trim()
       .toUpperCase();
 
+  const isCategoryFavourite = (categoryOrId?: any) => {
+    const target = categoryOrId !== undefined ? categoryOrId : activeCategory;
+    if (!target) return false;
+    if (typeof target === "object") {
+      return (
+        target.isFavouriteCategory === true ||
+        target.CategoryId === "FAVOURITE_CATEGORY" ||
+        (target.KitchenTypeName || "").trim().toLowerCase() === "favourite" ||
+        (target.KitchenTypeName || "").trim().toLowerCase() === "favorite"
+      );
+    }
+    const targetStr = String(target);
+    if (targetStr === "FAVOURITE_CATEGORY") return true;
+    const catObj = categories.find(
+      (c) =>
+        c.CategoryId === target ||
+        normalizeGuid(c.CategoryId) === normalizeGuid(target),
+    );
+    return (
+      catObj?.isFavouriteCategory === true ||
+      catObj?.CategoryId === "FAVOURITE_CATEGORY" ||
+      (catObj?.KitchenTypeName || "").trim().toLowerCase() === "favourite" ||
+      (catObj?.KitchenTypeName || "").trim().toLowerCase() === "favorite"
+    );
+  };
+
   const isCategoryPrevious = (categoryOrId?: any) => {
     const target = categoryOrId !== undefined ? categoryOrId : activeCategory;
     if (!target) return false;
@@ -664,6 +705,36 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
+  const loadFavouriteCategory = async () => {
+    try {
+      setGroups([
+        {
+          DishGroupId: "FAVOURITE_GROUP",
+          DishGroupName: "Favourites",
+          SortCode: 0,
+        },
+      ]);
+      setActiveGroup("FAVOURITE_GROUP");
+
+      const res = await fetch(`${API}/dishes/favourites?isKiosk=true`, {
+        headers: { "x-kiosk": "true" },
+      });
+      const data = await res.json();
+      const rawDishes = Array.isArray(data) ? data : [];
+      const safeDishes = rawDishes.filter(
+        (d: any) =>
+          isPublishedForKiosk(d.IsPublished) &&
+          (d.CategoryPublished === undefined ||
+            isPublishedForKiosk(d.CategoryPublished)) &&
+          (d.GroupPublished === undefined ||
+            isPublishedForKiosk(d.GroupPublished)),
+      );
+      setDishes(safeDishes);
+    } catch (e) {
+      console.log("Error loading favourite dishes:", e);
+    }
+  };
+
   const loadDishes = async (groupId: any) => {
     try {
       const res = await fetch(`${API}/dishes/group/${groupId}?isKiosk=true`, {
@@ -684,6 +755,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const loadGroups = async (categoryId: any) => {
+    if (isCategoryFavourite(categoryId)) {
+      await loadFavouriteCategory();
+      return;
+    }
+
     if (isCategoryPrevious(categoryId)) {
       await loadPreviousCategory();
       return;
@@ -717,55 +793,117 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       const data = await res.json();
 
       if (data && Array.isArray(data.items)) {
-        const fromDB = data.items.map((item: any) => ({
-          ...item,
-          DishId: item.DishId || item.id,
-          Name: item.Name || item.DishName || item.name || "Item",
-          qty: Number(item.qty || item.Quantity || 1),
-          Price: Number(item.price || item.Price || item.PricePerUnit || 0),
-          finalPrice: Number(
-            item.price || item.Price || item.PricePerUnit || 0,
-          ),
-          isServiceCharge:
-            item.isServiceCharge !== undefined
-              ? item.isServiceCharge
-              : item.IsServiceCharge !== undefined
-                ? item.IsServiceCharge
-                : true,
-          takeawayCharge: Number(
-            item.takeawayCharge ?? item.TakeawayCharge ?? 0,
-          ),
-          isTakeaway: !!(
-            item.isTakeaway ||
-            item.IsTakeaway ||
-            item.isTakeAway ||
-            item.IsTakeAway
-          ),
-          status: item.status || (item.StatusCode === 1 ? "NEW" : "SENT"),
-          selectedMods:
-            item.modifiers ||
-            (item.ModifiersJSON
-              ? (() => {
-                  try {
-                    return JSON.parse(item.ModifiersJSON);
-                  } catch {
-                    return [];
-                  }
-                })()
-              : []),
-          comboSelections:
-            item.comboSelections ||
-            (item.ComboDetailsJSON
-              ? (() => {
-                  try {
-                    return JSON.parse(item.ComboDetailsJSON);
-                  } catch {
-                    return [];
-                  }
-                })()
-              : []),
-        }));
-        setCart(fromDB);
+        let restoredPromo: any = null;
+        try {
+          const storedPromoStr = await AsyncStorage.getItem("kioskAppliedPromotion");
+          if (storedPromoStr) {
+            restoredPromo = JSON.parse(storedPromoStr);
+          }
+        } catch {}
+
+        const fromDB = data.items.map((item: any) => {
+          const isPromo =
+            item.isPromotionalItem === 1 ||
+            item.isPromotionalItem === true ||
+            String(item.DishId || "").startsWith("00000000-0000-0000-") ||
+            (restoredPromo && String(item.PromotionId) === String(restoredPromo.PromotionId));
+
+          return {
+            ...item,
+            DishId: item.DishId || item.id,
+            Name: item.Name || item.DishName || item.name || "Item",
+            qty: Number(item.qty || item.Quantity || 1),
+            Price: Number(item.price || item.Price || item.PricePerUnit || 0),
+            finalPrice: Number(
+              item.price || item.Price || item.PricePerUnit || 0,
+            ),
+            isPromotionalItem: isPromo,
+            isPromotion: isPromo,
+            isBogoFree: item.isBogoFree || item.PromotionType === "BOGO" || String(item.DishId || "").includes("b090"),
+            isFlatDiscount: item.isFlatDiscount || item.PromotionType === "Flat",
+            isPercentageDiscount: item.isPercentageDiscount || item.PromotionType === "Percentage",
+            discountValue: item.discountValue !== undefined ? Number(item.discountValue) : Number(item.DiscountAmount || 0),
+            PromotionType: item.PromotionType || item.DiscountType || (isPromo ? (restoredPromo?.PromotionType || "Promotion") : undefined),
+            PromotionId: item.PromotionId || (isPromo ? restoredPromo?.PromotionId : undefined),
+            Description: item.Description || item.Remarks || (isPromo ? (restoredPromo?.Description || restoredPromo?.PromotionDescription) : undefined),
+            isServiceCharge:
+              item.isServiceCharge !== undefined
+                ? item.isServiceCharge
+                : item.IsServiceCharge !== undefined
+                  ? item.IsServiceCharge
+                  : true,
+            takeawayCharge: Number(
+              item.takeawayCharge ?? item.TakeawayCharge ?? 0,
+            ),
+            isTakeaway: !!(
+              item.isTakeaway ||
+              item.IsTakeaway ||
+              item.isTakeAway ||
+              item.IsTakeAway
+            ),
+            status: item.status || (item.StatusCode === 1 ? "NEW" : "SENT"),
+            selectedMods:
+              item.modifiers ||
+              (item.ModifiersJSON
+                ? (() => {
+                    try {
+                      return JSON.parse(item.ModifiersJSON);
+                    } catch {
+                      return [];
+                    }
+                  })()
+                : []),
+            comboSelections:
+              item.comboSelections ||
+              (item.ComboDetailsJSON
+                ? (() => {
+                    try {
+                      return JSON.parse(item.ComboDetailsJSON);
+                    } catch {
+                      return [];
+                    }
+                  })()
+                : []),
+          };
+        });
+
+        if (restoredPromo && !appliedPromotion) {
+          setAppliedPromotion(restoredPromo);
+        }
+
+        const hasPromoItemInDB = fromDB.some((i: any) => i.isPromotionalItem || i.isPromotion);
+        if (restoredPromo && !hasPromoItemInDB) {
+          const promoGuid = `00000000-0000-0000-0000-${String(restoredPromo.PromotionId).padStart(12, "0")}`;
+          const pType = String(restoredPromo.PromotionType || "").trim().toUpperCase();
+          const pDisc = Number(restoredPromo.DiscountValue || 0);
+          const pAmt = Number(restoredPromo.PromotionAmount || 0);
+          const promoItem = {
+            id: promoGuid,
+            DishId: promoGuid,
+            lineItemId: promoGuid,
+            isPromotionalItem: true,
+            isPromotion: true,
+            PromotionId: restoredPromo.PromotionId,
+            Name: restoredPromo.PromotionName,
+            DishName: restoredPromo.PromotionName,
+            KitchenTypeName: "Special Offer",
+            PromotionType: restoredPromo.PromotionType,
+            Description: restoredPromo.Description || restoredPromo.PromotionDescription || "Promotion Applied",
+            Price: pType === "COMBO" ? pAmt : 0,
+            finalPrice: pType === "COMBO" ? pAmt : 0,
+            price: pType === "COMBO" ? pAmt : 0,
+            discountValue: pDisc,
+            qty: 1,
+            isTakeaway: false,
+            isServiceCharge: pType === "COMBO",
+            isBogoFree: pType === "BOGO",
+            isFlatDiscount: pType === "FLAT",
+            isPercentageDiscount: pType === "PERCENTAGE",
+          };
+          setCart([...fromDB, promoItem]);
+        } else {
+          setCart(fromDB);
+        }
       }
     } catch (e) {
       console.log("Load cart error:", e);
@@ -784,8 +922,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         setTableNo(storedTableNo || "");
         setTableId(storedTableId || "");
 
-        // Fetch settings, paymodes, kitchens and orderType
-        const [settingsRes, paymodesRes, kitchensRes, storedOrderType] =
+        // Fetch settings, paymodes, kitchens, brand and orderType
+        const [settingsRes, paymodesRes, kitchensRes, brandRes, storedOrderType] =
           await Promise.all([
             fetch(`${API}/company-settings/1`)
               .then((r) => r.json())
@@ -802,6 +940,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             })
               .then((r) => r.json())
               .catch(() => []),
+            fetch(`${API}/company-settings/brand`)
+              .then((r) => r.json())
+              .catch(() => ({})),
             AsyncStorage.getItem("kioskOrderType").then(
               (t) =>
                 t ||
@@ -811,6 +952,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
         const rawSettings = settingsRes?.settings || settingsRes || {};
         setCompanySettings(rawSettings);
+
+        const brandData = brandRes?.success ? brandRes : null;
+        setCompanyBrand({
+          CompanyLogoUrl:
+            brandData?.CompanyLogoUrl ?? rawSettings?.CompanyLogoUrl ?? null,
+          CompanyName:
+            brandData?.CompanyName ?? rawSettings?.CompanyName ?? null,
+        });
 
         const sc = Number(
           rawSettings.ServiceChargePercentage ??
@@ -865,13 +1014,60 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         const safeKitchens = rawKitchens.filter((k: any) =>
           isPublishedForKiosk(k.IsPublished),
         );
-        setCategories(safeKitchens);
 
-        if (safeKitchens.length > 0) {
-          const firstCat = safeKitchens[0];
+        // Dynamically fetch Favourite dishes to check if any have Favourite = 1
+        let initialFavDishes: any[] = [];
+        try {
+          const favRes = await fetch(`${API}/dishes/favourites?isKiosk=true`, {
+            headers: { "x-kiosk": "true" },
+          });
+          const favData = await favRes.json();
+          if (Array.isArray(favData)) {
+            initialFavDishes = favData.filter(
+              (d: any) =>
+                isPublishedForKiosk(d.IsPublished) &&
+                (d.CategoryPublished === undefined ||
+                  isPublishedForKiosk(d.CategoryPublished)) &&
+                (d.GroupPublished === undefined ||
+                  isPublishedForKiosk(d.GroupPublished)),
+            );
+          }
+        } catch (e) {
+          console.log("Error loading favourite dishes on init:", e);
+        }
+
+        const hasFavourites = initialFavDishes.length > 0;
+        const allCategories: any[] = [];
+
+        if (hasFavourites) {
+          allCategories.push({
+            CategoryId: "FAVOURITE_CATEGORY",
+            KitchenTypeName: "Favourite",
+            KitchenTypeCode: "FAVOURITE",
+            SortCode: -999,
+            IsPublished: 0,
+            isFavouriteCategory: true,
+          });
+        }
+
+        allCategories.push(...safeKitchens);
+        setCategories(allCategories);
+
+        if (allCategories.length > 0) {
+          const firstCat = allCategories[0];
           setActiveCategory(firstCat.CategoryId);
           setExpandedCategoryId(firstCat.CategoryId);
-          if (isCategoryPrevious(firstCat)) {
+          if (isCategoryFavourite(firstCat)) {
+            setGroups([
+              {
+                DishGroupId: "FAVOURITE_GROUP",
+                DishGroupName: "Favourites",
+                SortCode: 0,
+              },
+            ]);
+            setActiveGroup("FAVOURITE_GROUP");
+            setDishes(initialFavDishes);
+          } else if (isCategoryPrevious(firstCat)) {
             await loadPreviousCategory();
           } else {
             await loadGroups(firstCat.CategoryId);
@@ -891,6 +1087,36 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
     initData();
   }, []);
+
+  // ── Company Branding for Sidebar Header ──
+  const companyName = String(
+    companyBrand?.CompanyName ||
+      companySettings?.CompanyName ||
+      companySettings?.companyName ||
+      "",
+  ).trim();
+
+  const rawLogoUrl =
+    companyBrand?.CompanyLogoUrl ||
+    companySettings?.CompanyLogoUrl ||
+    companySettings?.companyLogoUrl ||
+    "";
+
+  const formatLogoUrl = (url?: string) => {
+    if (!url || typeof url !== "string") return null;
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return null;
+    if (
+      cleanUrl.startsWith("data:image") ||
+      cleanUrl.startsWith("http://") ||
+      cleanUrl.startsWith("https://")
+    ) {
+      return cleanUrl;
+    }
+    return `${API}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
+  };
+
+  const companyLogoUri = formatLogoUrl(rawLogoUrl);
 
   // ── ACCURATE CHARGE CALCULATIONS (ALIGNED WITH POS & QR CUSTOMER FLOW) ──
   const isTakeawayOrder =
@@ -977,12 +1203,76 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   }
 
-  // 6. Final Total
+  // 5.5 Promotion Discount (from selected promotion in PromotionMaster)
+  const promotionDiscount = useMemo(() => {
+    if (!appliedPromotion) return 0;
+    const pType = String(appliedPromotion.PromotionType || "")
+      .trim()
+      .toUpperCase();
+    const discVal = Number(appliedPromotion.DiscountValue || 0);
+    const minPurchase = Number(appliedPromotion.MinPurchaseAmount || 0);
+
+    // Calculate subtotal of non-promotional base items
+    const nonPromoSubtotal = cart
+      .filter((i) => !i.isPromotionalItem && !i.isPromotion)
+      .reduce(
+        (sum, item) =>
+          sum +
+          Number(item.Price || item.finalPrice || item.price || 0) *
+            Number(item.qty || 1),
+        0,
+      );
+
+    // If minimum purchase requirement is configured and subtotal does not reach it, discount does not apply
+    if (minPurchase > 0 && nonPromoSubtotal < minPurchase) {
+      return 0;
+    }
+
+    let calculatedDisc = 0;
+    if (pType.includes("PERCENT") || pType.includes("%")) {
+      // Percentage: Calculate discount based on DiscountValue
+      calculatedDisc = (nonPromoSubtotal * discVal) / 100;
+    } else if (pType === "FLAT") {
+      // Flat: Deduct configured DiscountValue
+      calculatedDisc = discVal;
+    } else if (pType === "BOGO") {
+      // If BOGO was not added as a separate $0 item, discount 1 unit of the base item
+      const hasBogoItem = cart.some((i) => i.isBogoFree);
+      if (!hasBogoItem && cart.length > 0) {
+        calculatedDisc = Number(
+          cart[0].Price || cart[0].finalPrice || cart[0].price || 0,
+        );
+      } else {
+        calculatedDisc = 0;
+      }
+    } else if (pType === "COMBO") {
+      // Combo price is set directly on the item added to the cart
+      calculatedDisc = 0;
+    } else if (discVal > 0 && discVal <= 100) {
+      calculatedDisc = (nonPromoSubtotal * discVal) / 100;
+    } else if (discVal > 0) {
+      calculatedDisc = discVal;
+    }
+
+    return Math.min(
+      nonPromoSubtotal,
+      Math.max(0, Number(calculatedDisc.toFixed(2))),
+    );
+  }, [appliedPromotion, cart]);
+
+  // 6. Final Total (deducting promotionDiscount without duplicate application)
   let totalBeforeRound = subTotal + serviceCharge + takeawayCharge;
   if (taxMode === "exclusive") {
     totalBeforeRound += gstAmount;
   }
-  const calculatedTotal = Math.max(0, totalBeforeRound).toFixed(2);
+  const calculatedTotal = Math.max(
+    0,
+    totalBeforeRound - promotionDiscount,
+  ).toFixed(2);
+
+  useEffect(() => {
+    setTotalAmount(calculatedTotal);
+  }, [calculatedTotal]);
 
   // Open Combo Customizer or Modifiers or Add Direct
   const handleDishClick = async (dish: any) => {
@@ -1132,22 +1422,33 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 const gId = grp.groupId || grp.comboGroupId;
                 if (gId) {
                   existingSelections[gId] = (grp.items || []).map(
-                    (opt: any) => opt.dishId || opt.id,
-                  );
+                    (opt: any) => opt.dishId || opt.DishId || opt.id || opt.DishID,
+                  ).filter(Boolean);
                 }
               });
             }
 
-            // Fallback: match by groupName if group IDs differ
+            // Fallback: match by groupName and option name if group IDs differ or options matched by name
             (config.groups || []).forEach((group: any) => {
-              if (!existingSelections[group.comboGroupId] || existingSelections[group.comboGroupId].length === 0) {
+              const currentList = existingSelections[group.comboGroupId] || [];
+              if (currentList.length === 0) {
                 const matchingGrp = (item.comboSelections || []).find(
-                  (g: any) => g.groupName === group.groupName || g.groupId === group.comboGroupId
+                  (g: any) =>
+                    g.groupName?.toLowerCase() === group.groupName?.toLowerCase() ||
+                    g.groupId === group.comboGroupId ||
+                    g.comboGroupId === group.comboGroupId
                 );
                 if (matchingGrp) {
-                  existingSelections[group.comboGroupId] = (matchingGrp.items || []).map(
-                    (opt: any) => opt.dishId || opt.id
-                  );
+                  const resolvedIds = (matchingGrp.items || []).map((opt: any) => {
+                    const match = (group.options || []).find(
+                      (o: any) =>
+                        String(o.dishId) === String(opt.dishId || opt.DishId || opt.id || opt.DishID) ||
+                        (o.name && (opt.name || opt.dishName) && o.name.toLowerCase() === (opt.name || opt.dishName).toLowerCase()) ||
+                        (o.dishName && (opt.name || opt.dishName) && o.dishName.toLowerCase() === (opt.name || opt.dishName).toLowerCase())
+                    );
+                    return match ? match.dishId : (opt.dishId || opt.DishId || opt.id || opt.DishID);
+                  }).filter(Boolean);
+                  existingSelections[group.comboGroupId] = resolvedIds;
                 }
               }
             });
@@ -1537,6 +1838,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             return {
               ...item,
               ...selectedDish,
+              lineItemId: item.lineItemId || selectedDish.lineItemId,
+              OrderDetailId: item.OrderDetailId || selectedDish.OrderDetailId,
               qty: comboQty,
               Price: finalPrice,
               price: finalPrice,
@@ -1649,15 +1952,60 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     );
   };
 
-  const handleClearCart = () => {
+  const handleClearCart = async () => {
     setCart([]);
+    setAppliedPromotion(null);
+    setSelectedPromotion(null);
+    try {
+      await AsyncStorage.removeItem("kioskAppliedPromotion");
+    } catch {}
     setShowClearCartConfirm(false);
   };
 
-  const confirmDeleteItem = () => {
+  const confirmDeleteItem = async () => {
     if (itemToDeleteIndex !== null) {
-      setCart((prev) => prev.filter((_, i) => i !== itemToDeleteIndex));
+      const deletedItem = cart[itemToDeleteIndex];
+      const isPromo = !!(deletedItem?.isPromotionalItem || deletedItem?.isPromotion);
+      if (isPromo) {
+        setAppliedPromotion(null);
+        setSelectedPromotion(null);
+        try {
+          await AsyncStorage.removeItem("kioskAppliedPromotion");
+        } catch {}
+      }
+      const updatedCart = cart.filter((_, i) => i !== itemToDeleteIndex);
+      setCart(updatedCart);
       setItemToDeleteIndex(null);
+
+      // If promotional item was deleted, sync deletion to DB
+      if (isPromo) {
+        try {
+          const orderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
+          if (orderId) {
+            const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+            const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
+            const activeTableId = tableId || "TAKEAWAY";
+            await fetch(`${API}/order/save-cart`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                tableId: activeTableId,
+                orderId: orderId,
+                orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
+                isTakeaway: isTakeaway,
+                items: updatedCart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
+                userId: "00000000-0000-0000-0000-000000000000",
+                isKiosk: true,
+                entryStatus: "K",
+                discountAmount: 0,
+                discountRemarks: null,
+              }),
+            });
+          }
+        } catch (delErr) {
+          console.warn("Sync cart after promo delete error:", delErr);
+        }
+      }
     }
   };
 
@@ -1684,8 +2032,300 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
-  // Checkout button click handler
+  // Step 1: Checkout button click handler - Checks PromotionMaster FIRST
   const handleCheckoutClick = async () => {
+    if (cart.length === 0) return;
+
+    // If a promotion has already been added to the cart, proceed directly to Checkout Option
+    if (appliedPromotion) {
+      proceedToCheckoutOption();
+      return;
+    }
+
+    // Check for active promotions from PromotionMaster (entry_status = 'K') FIRST
+    try {
+      setCheckingPromotions(true);
+      const promoRes = await fetch(`${API}/promotions/active?entry_status=K`, {
+        headers: { "x-entry-status": "K" },
+      });
+      const promoData = await promoRes.json();
+      const validPromos = Array.isArray(promoData?.promotions)
+        ? promoData.promotions
+        : [];
+
+      if (validPromos.length > 0) {
+        setActivePromotions(validPromos);
+        setSelectedPromotion(null);
+        // Display Promotion Popup FIRST (ensure other modals are closed)
+        setShowTableModal(false);
+        setShowPaymentPopup(false);
+        setShowPromotionModal(true);
+        setCheckingPromotions(false);
+        return;
+      }
+    } catch (promoErr) {
+      console.warn("Promotion check error:", promoErr);
+    } finally {
+      setCheckingPromotions(false);
+    }
+
+    // If no valid promotion records exist, skip promotion popup and proceed directly to Checkout Option
+    proceedToCheckoutOption();
+  };
+
+  // Add selected promotion to cart & return to cart screen
+  const handleAddToCartPromotion = async () => {
+    setPromoErrorMessage(null);
+
+    if (!selectedPromotion) {
+      setPromoErrorMessage("Please select a promotion offer to add.");
+      return;
+    }
+
+    setIsAddingPromo(true);
+
+    try {
+      // 1. MinPurchaseAmount Validation
+      const minPurchase = Number(selectedPromotion.MinPurchaseAmount || 0);
+      const nonPromoSubtotal = cart
+        .filter((i) => !i.isPromotionalItem && !i.isPromotion)
+        .reduce(
+          (sum, item) =>
+            sum +
+            Number(item.Price || item.finalPrice || item.price || 0) *
+              Number(item.qty || 1),
+          0,
+        );
+
+      if (minPurchase > 0 && nonPromoSubtotal < minPurchase) {
+        const errorMsg = `The offer "${selectedPromotion.PromotionName}" requires a minimum purchase of ${currencySymbol}${minPurchase.toFixed(2)}. Your current subtotal is ${currencySymbol}${nonPromoSubtotal.toFixed(2)}. Please add more items to cart.`;
+        setPromoErrorMessage(errorMsg);
+        if (typeof window !== "undefined" && window.alert) {
+          window.alert(errorMsg);
+        } else {
+          Alert.alert("Minimum Purchase Required", errorMsg);
+        }
+        setIsAddingPromo(false);
+        return;
+      }
+
+      // 2. Remove previously added promotional items to prevent duplicate promotion entries
+      const cleanCart = cart.filter(
+        (item) => !item.isPromotionalItem && !item.isPromotion,
+      );
+
+      const pType = String(selectedPromotion.PromotionType || "")
+        .trim()
+        .toUpperCase();
+      const discVal = Number(selectedPromotion.DiscountValue || 0);
+      const comboPrice = Number(selectedPromotion.PromotionAmount || 0);
+
+      // 3. Add separate promotional item entry according to PromotionType
+      const promoGuid = `00000000-0000-0000-0000-${String(selectedPromotion.PromotionId).padStart(12, "0")}`;
+      let promoItem: any = null;
+
+      if (pType === "COMBO") {
+        promoItem = {
+          id: promoGuid,
+          DishId: promoGuid,
+          lineItemId: promoGuid,
+          isPromotionalItem: true,
+          isPromotion: true,
+          PromotionId: selectedPromotion.PromotionId,
+          Name: selectedPromotion.PromotionName,
+          DishName: selectedPromotion.PromotionName,
+          KitchenTypeName: "Combo Offer",
+          Description:
+            selectedPromotion.Description ||
+            selectedPromotion.PromotionDescription ||
+            "Special Combo Promotion",
+          Price: comboPrice,
+          finalPrice: comboPrice,
+          price: comboPrice,
+          qty: 1,
+          PromotionType: "Combo",
+          isTakeaway: false,
+          isServiceCharge: true,
+        };
+      } else if (pType === "BOGO") {
+        const baseItem = cleanCart[0];
+        const bogoGuid = `00000000-0000-0000-b090-${String(selectedPromotion.PromotionId).padStart(12, "0")}`;
+        promoItem = {
+          id: bogoGuid,
+          DishId: bogoGuid,
+          lineItemId: bogoGuid,
+          isPromotionalItem: true,
+          isPromotion: true,
+          isBogoFree: true,
+          PromotionId: selectedPromotion.PromotionId,
+          Name: `${baseItem?.Name || "Selected Item"} (BOGO Free)`,
+          DishName: `${baseItem?.Name || "Selected Item"} (BOGO Free)`,
+          KitchenTypeName: "BOGO Offer",
+          Description:
+            selectedPromotion.Description ||
+            selectedPromotion.PromotionDescription ||
+            "Buy 1 Get 1 Free Offer",
+          Price: 0,
+          finalPrice: 0,
+          price: 0,
+          qty: 1,
+          PromotionType: "BOGO",
+          isTakeaway: baseItem?.isTakeaway || false,
+          isServiceCharge: false,
+        };
+      } else if (pType === "FLAT") {
+        promoItem = {
+          id: promoGuid,
+          DishId: promoGuid,
+          lineItemId: promoGuid,
+          isPromotionalItem: true,
+          isPromotion: true,
+          isFlatDiscount: true,
+          PromotionId: selectedPromotion.PromotionId,
+          Name: selectedPromotion.PromotionName,
+          DishName: selectedPromotion.PromotionName,
+          KitchenTypeName: "Special Discount",
+          Description:
+            selectedPromotion.Description ||
+            selectedPromotion.PromotionDescription ||
+            `Special Flat Discount (${currencySymbol}${discVal.toFixed(2)} OFF)`,
+          Price: 0,
+          finalPrice: 0,
+          price: 0,
+          discountValue: discVal,
+          qty: 1,
+          PromotionType: "Flat",
+          isTakeaway: false,
+          isServiceCharge: false,
+        };
+      } else {
+        // Percentage
+        promoItem = {
+          id: promoGuid,
+          DishId: promoGuid,
+          lineItemId: promoGuid,
+          isPromotionalItem: true,
+          isPromotion: true,
+          isPercentageDiscount: true,
+          PromotionId: selectedPromotion.PromotionId,
+          Name: selectedPromotion.PromotionName,
+          DishName: selectedPromotion.PromotionName,
+          KitchenTypeName: "Special Discount",
+          Description:
+            selectedPromotion.Description ||
+            selectedPromotion.PromotionDescription ||
+            `Special ${discVal}% Discount`,
+          Price: 0,
+          finalPrice: 0,
+          price: 0,
+          discountValue: discVal,
+          qty: 1,
+          PromotionType: "Percentage",
+          isTakeaway: false,
+          isServiceCharge: false,
+        };
+      }
+
+      const updatedCart = promoItem ? [...cleanCart, promoItem] : cleanCart;
+
+      // 4. Update cart state and appliedPromotion state
+      setCart(updatedCart);
+      setAppliedPromotion(selectedPromotion);
+
+      // 5. Cart Persistence: Save to AsyncStorage
+      await AsyncStorage.setItem(
+        "kioskAppliedPromotion",
+        JSON.stringify(selectedPromotion),
+      );
+
+      // 6. Cart Persistence: Sync to Database via /order/save-cart immediately
+      try {
+        let calculatedDisc = 0;
+        if (pType.includes("PERCENT") || pType.includes("%")) {
+          calculatedDisc = (nonPromoSubtotal * discVal) / 100;
+        } else if (pType === "FLAT") {
+          calculatedDisc = discVal;
+        }
+
+        const orderId =
+          currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
+        const storedOrderType =
+          (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
+        const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
+        const activeTableId = tableId || "TAKEAWAY";
+
+        const saveRes = await fetch(`${API}/order/save-cart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tableId: activeTableId,
+            orderId: orderId,
+            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
+            isTakeaway: isTakeaway,
+            items: updatedCart.map((item) => ({
+              ...item,
+              status: "SENT",
+              Status: "SENT",
+              StatusCode: 2,
+            })),
+            userId: "00000000-0000-0000-0000-000000000000",
+            isKiosk: true,
+            entryStatus: "K",
+            discountAmount: calculatedDisc,
+            discountRemarks: selectedPromotion.PromotionName,
+            promotionId: selectedPromotion.PromotionId,
+            promotionName: selectedPromotion.PromotionName,
+          }),
+        });
+
+        const saveJson = await saveRes.json();
+        if (saveJson?.orderId && saveJson.orderId !== orderId) {
+          setCurrentOrderId(saveJson.orderId);
+          await AsyncStorage.setItem("kioskOrderId", saveJson.orderId);
+        }
+      } catch (saveErr) {
+        console.warn("⚠️ [handleAddToCartPromotion] Save cart sync warning:", saveErr);
+      }
+
+      // 7. Show success toast, close modal, and return to cart screen
+      setPromoSuccessToast(`Offer "${selectedPromotion.PromotionName}" added to cart!`);
+      setTimeout(() => setPromoSuccessToast(null), 3500);
+
+      setShowPromotionModal(false);
+      setShowCartPage(true);
+    } catch (err: any) {
+      console.error("Error adding promotion to cart:", err);
+      const errMsg = err?.message || "Failed to add promotion to cart. Please try again.";
+      setPromoErrorMessage(errMsg);
+      if (typeof window !== "undefined" && window.alert) {
+        window.alert(errMsg);
+      } else {
+        Alert.alert("Error", errMsg);
+      }
+    } finally {
+      setIsAddingPromo(false);
+    }
+  };
+
+  const handleNoThanks = async () => {
+    // Clear any promotional items from cart
+    setCart((prev) =>
+      prev.filter((item) => !item.isPromotionalItem && !item.isPromotion),
+    );
+    setSelectedPromotion(null);
+    setAppliedPromotion(null);
+    setPromoErrorMessage(null);
+    try {
+      await AsyncStorage.removeItem("kioskAppliedPromotion");
+    } catch {}
+    setShowPromotionModal(false);
+    proceedToCheckoutOption();
+  };
+
+  // Step 2: Proceed to Checkout Option (Self Collect / Enter Tent Number) or Payment if Takeaway / prompt disabled
+  const proceedToCheckoutOption = async () => {
+    setShowPromotionModal(false);
+
     // Check if order is Takeaway (TW) -> Skip table/tent prompt completely
     const storedOrderType =
       (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
@@ -1845,6 +2485,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             userId: "00000000-0000-0000-0000-000000000000",
             isKiosk: true,
             entryStatus: "K",
+            isSelfCollect: isSelfCollect,
+            isTentNumber: isTentNumber,
+            tentNumber: isTentNumber ? tableNo : undefined,
+            discountAmount: promotionDiscount || 0,
+            discountRemarks: appliedPromotion ? appliedPromotion.PromotionName : null,
+            promotionId: appliedPromotion?.PromotionId || undefined,
+            promotionName: appliedPromotion?.PromotionName || undefined,
           }),
         });
         const saveJson = await saveRes.json();
@@ -1858,6 +2505,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       }
     }
 
+    // Ensure previous modals are closed, then open payment modal
+    setShowPromotionModal(false);
+    setShowTableModal(false);
     setShowPaymentPopup(true);
   };
 
@@ -2061,6 +2711,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           tableId: resolvedTableId,
           isSelfCollect: isSelfCollect,
           isTentNumber: isTentNumber,
+          tentNumber: isTentNumber ? resolvedTableNo : undefined,
           kioskOrderType: orderType,
           kioskCarNumber: carNumber || undefined,
           kioskCustomerName: customerName || undefined,
@@ -2072,6 +2723,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           cart: cart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
           isKiosk: true,
           entryStatus: "K",
+          discount: promotionDiscount || 0,
+          discountAmount: promotionDiscount || 0,
+          discountRemarks: appliedPromotion ? appliedPromotion.PromotionName : null,
+          promotionId: appliedPromotion?.PromotionId || undefined,
+          promotionName: appliedPromotion?.PromotionName || undefined,
         }),
       });
 
@@ -2112,6 +2768,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       setIsCartLoading(false);
       setShowCartPage(false);
       setCart([]);
+      setAppliedPromotion(null);
+      setSelectedPromotion(null);
 
       // Clear session
       await AsyncStorage.multiRemove([
@@ -2302,9 +2960,41 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
         {/* Categories Sidebar with Accordion Dropdown for Dish Groups */}
         <View style={styles.sidebar}>
+          {/* Company Branding Header at the top of the sidebar */}
+          {(companyLogoUri || companyName) ? (
+            <View style={styles.sidebarBrandHeader}>
+              {companyLogoUri ? (
+                <View style={styles.sidebarBrandLogoWrap}>
+                  <ExpoImage
+                    source={{ uri: companyLogoUri }}
+                    style={styles.sidebarBrandLogo}
+                    contentFit="contain"
+                  />
+                </View>
+              ) : null}
+              {companyName ? (
+                <Text
+                  style={[
+                    styles.sidebarBrandName,
+                    !companyLogoUri && styles.sidebarBrandNameOnly,
+                  ]}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {companyName}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.sidebarContent}
+            contentContainerStyle={[
+              styles.sidebarContent,
+              (companyLogoUri || companyName)
+                ? { paddingTop: 14 }
+                : undefined,
+            ]}
           >
             {categories.map((cat) => {
               const isActive = activeCategory === cat.CategoryId;
@@ -2324,7 +3014,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         // Expand it and make active
                         setExpandedCategoryId(cat.CategoryId);
                         setActiveCategory(cat.CategoryId);
-                        if (isCategoryPrevious(cat)) {
+                        if (isCategoryFavourite(cat)) {
+                          loadFavouriteCategory();
+                        } else if (isCategoryPrevious(cat)) {
                           loadPreviousCategory();
                         } else {
                           loadGroups(cat.CategoryId);
@@ -2344,9 +3036,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     {/* Category Food Icon */}
                     <View style={styles.catIconWrap}>
                       <Ionicons
-                        name="restaurant-outline"
+                        name={
+                          isCategoryFavourite(cat)
+                            ? "heart"
+                            : "restaurant-outline"
+                        }
                         size={28}
-                        color="#f97316"
+                        color={isCategoryFavourite(cat) ? "#FF5A16" : "#f97316"}
                       />
                     </View>
 
@@ -2403,7 +3099,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                               setShowComboCustomizer(false);
                               setSelectedDish(null);
                               setActiveGroup(grp.DishGroupId);
-                              if (isCategoryPrevious(cat)) {
+                              if (isCategoryFavourite(cat)) {
+                                loadFavouriteCategory();
+                              } else if (isCategoryPrevious(cat)) {
                                 loadPreviousCategory();
                               } else {
                                 loadDishes(grp.DishGroupId);
@@ -2935,14 +3633,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                           </View>
                         )}
                         <Ionicons
-                          name={editingCartItemIndex !== null ? "checkmark-circle-outline" : "cart-outline"}
+                          name={editingCartItemIndex !== null ? "checkmark-circle" : "cart-outline"}
                           size={24}
                           color="#ffffff"
                           style={{ marginRight: 10 }}
                         />
                         <Text style={styles.customizeAddToCartBtnText}>
                           {editingCartItemIndex !== null
-                            ? `Update Item $${totalPrice}`
+                            ? `Save & Confirm $${totalPrice}`
                             : `Add to Cart $${totalPrice}`}
                         </Text>
                       </TouchableOpacity>
@@ -3364,6 +4062,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             </TouchableOpacity>
           </View>
 
+          {/* Promotional Offer Success Notification */}
+          {promoSuccessToast && (
+            <View style={styles.cartPromoSuccessBanner}>
+              <Ionicons name="checkmark-circle" size={20} color="#059669" />
+              <Text style={styles.cartPromoSuccessBannerText}>{promoSuccessToast}</Text>
+            </View>
+          )}
+
           {/* Scrollable Items List */}
           <ScrollView
             style={styles.cartItemsScrollView}
@@ -3379,11 +4085,39 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   : null;
               const imageFilename = item.Image || matchedDish?.Image;
 
+              const isComboItem =
+                item.isCombo === true ||
+                item.IsCombo === true ||
+                item.isCombo === 1 ||
+                item.IsCombo === 1 ||
+                String(item.isCombo) === "1" ||
+                String(item.IsCombo) === "1" ||
+                (Array.isArray(item.comboSelections) && item.comboSelections.length > 0) ||
+                matchedDish?.IsCombo === true ||
+                matchedDish?.IsCombo === 1 ||
+                String(matchedDish?.IsCombo) === "1";
+
+              const hasModifiers =
+                (Array.isArray(item.selectedMods) && item.selectedMods.length > 0) ||
+                (Array.isArray(item.modifiers) && item.modifiers.length > 0) ||
+                (Array.isArray(matchedDish?.modifiers) && matchedDish.modifiers.length > 0);
+
+              const isConfigurable = isComboItem || hasModifiers;
+
               return (
                 <View key={String(index)} style={styles.cartItemRow}>
-                  {/* Dish Thumbnail on Left */}
-                  <View style={styles.cartItemThumbWrap}>
-                    {imageFilename ? (
+                  {/* Dish Thumbnail on Left - Clickable to open Modifier/Combo Popup */}
+                  <TouchableOpacity
+                    style={styles.cartItemThumbWrap}
+                    onPress={() => isConfigurable && handleEditCartItem(index)}
+                    activeOpacity={isConfigurable ? 0.75 : 1}
+                    disabled={!isConfigurable}
+                  >
+                    {item.isPromotionalItem ? (
+                      <View style={styles.cartItemPromoThumb}>
+                        <Ionicons name="sparkles" size={26} color="#ea580c" />
+                      </View>
+                    ) : imageFilename ? (
                       <ExpoImage
                         source={{ uri: `${API}/image/${imageFilename}` }}
                         style={styles.cartItemThumb}
@@ -3399,57 +4133,74 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         />
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
 
                   <View style={styles.cartItemLeft}>
-                    <Text style={styles.cartItemName}>
-                      {item.Name || item.name}
-                    </Text>
-
-                    {item.selectedMods?.length > 0 && (
-                      <TouchableOpacity
-                        style={styles.cartCustomizationGroup}
-                        onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.cartCustomizationHeaderRow}>
-                          <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
-                          <View style={styles.cartInlineEditBadge}>
-                            <Ionicons name="pencil" size={11} color="#ea580c" />
-                            <Text style={styles.cartInlineEditText}>Edit</Text>
-                          </View>
-                        </View>
-                        <Text style={styles.cartModifierValueText}>
-                          {item.selectedMods
-                            .map((m: any) => m.ModifierName)
-                            .join(", ")}
+                    {/* Item Title - Clickable to open Modifier/Combo Popup */}
+                    <TouchableOpacity
+                      onPress={() => isConfigurable && handleEditCartItem(index)}
+                      activeOpacity={isConfigurable ? 0.75 : 1}
+                      disabled={!isConfigurable}
+                      style={{ width: "100%" }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <Text style={styles.cartItemName}>
+                          {item.Name || item.name}
                         </Text>
-                      </TouchableOpacity>
-                    )}
+                        {item.isPromotionalItem && (
+                          <View style={styles.cartItemPromoBadge}>
+                            <Ionicons name="sparkles" size={11} color="#ea580c" />
+                            <Text style={styles.cartItemPromoBadgeText}>
+                              {item.PromotionType || "OFFER"}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      {item.Description ? (
+                        <Text style={styles.cartItemPromoDescText}>
+                          {item.Description}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
 
-                    {item.comboSelections?.length > 0 && (
+                    {/* Customizations Section (Modifiers & Combo Selections) - Clean, borderless & clickable */}
+                    {(item.selectedMods?.length > 0 || item.comboSelections?.length > 0) && (
                       <TouchableOpacity
                         style={styles.cartCustomizationGroup}
                         onPress={() => handleEditCartItem(index)}
-                        activeOpacity={0.7}
+                        activeOpacity={0.65}
                       >
-                        {item.comboSelections.map((grp: any, gIdx: number) => (
-                          <View key={gIdx} style={{ marginTop: gIdx > 0 ? 5 : 2 }}>
+                        {item.selectedMods?.length > 0 && (
+                          <View style={{ marginTop: 3, width: "100%" }}>
                             <View style={styles.cartCustomizationHeaderRow}>
-                              <Text style={styles.cartModifierGroupTitle}>
-                                {grp.groupName}:
-                              </Text>
+                              <Text style={styles.cartModifierGroupTitle}>Modifiers:</Text>
                               <View style={styles.cartInlineEditBadge}>
-                                <Ionicons name="pencil" size={11} color="#ea580c" />
+                                <Ionicons name="pencil" size={15} color="#ea580c" />
+                                <Text style={styles.cartInlineEditText}>Edit</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.cartModifierValueText}>
+                              ↳ {item.selectedMods.map((m: any) => m.ModifierName).join(", ")}
+                            </Text>
+                          </View>
+                        )}
+
+                        {item.comboSelections?.length > 0 &&
+                          item.comboSelections.map((grp: any, gIdx: number) => (
+                            <View key={gIdx} style={{ marginTop: (gIdx > 0 || item.selectedMods?.length > 0) ? 6 : 3, width: "100%" }}>
+                              <View style={styles.cartCustomizationHeaderRow}>
+                                <Text style={styles.cartModifierGroupTitle}>
+                                  {grp.groupName}:
+                                </Text>
+                                <View style={styles.cartInlineEditBadge}>
+                                <Ionicons name="pencil" size={15} color="#ea580c" />
                                 <Text style={styles.cartInlineEditText}>Edit</Text>
                               </View>
                             </View>
                             {(grp.items || []).map((opt: any, oIdx: number) => (
                               <Text key={oIdx} style={styles.cartModifierValueText}>
-                                ↳ {opt.name}
-                                {Number(opt.surcharge || 0) +
-                                  Number(opt.dishPrice || 0) >
-                                0
+                                ↳ {opt.name || opt.dishName}
+                                {Number(opt.surcharge || 0) + Number(opt.dishPrice || 0) > 0
                                   ? ` (+${(Number(opt.surcharge || 0) + Number(opt.dishPrice || 0)).toFixed(2)})`
                                   : ""}
                               </Text>
@@ -3458,41 +4209,79 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                         ))}
                       </TouchableOpacity>
                     )}
+
+                    {/* Fallback for configurable item without current selections */}
+                    {isConfigurable && !item.selectedMods?.length && !item.comboSelections?.length && (
+                      <TouchableOpacity
+                        style={[styles.cartCustomizationGroup, { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }]}
+                        onPress={() => handleEditCartItem(index)}
+                        activeOpacity={0.65}
+                      >
+                        <Text style={[styles.cartModifierGroupTitle, { fontSize: 13 }]}>
+                          Customize / Choose Options
+                        </Text>
+                        <View style={styles.cartInlineEditBadge}>
+                          <Ionicons name="pencil" size={10} color="#ea580c" />
+                          <Text style={styles.cartInlineEditText}>Edit</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   <View style={styles.cartItemCenter}>
-                    <View style={styles.qtyControlsContainer}>
-                      <TouchableOpacity
-                        style={styles.qtyBtn}
-                        onPress={() => decreaseQty(index)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="remove" size={18} color="#ffffff" />
-                      </TouchableOpacity>
+                    {item.isPromotionalItem ? (
+                      <View style={styles.promoAppliedBadgePill}>
+                        <Ionicons name="sparkles" size={13} color="#ea580c" />
+                        <Text style={styles.promoAppliedBadgePillText}>Offer</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.qtyControlsContainer}>
+                        <TouchableOpacity
+                          style={styles.qtyBtn}
+                          onPress={() => decreaseQty(index)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="remove" size={26} color="#ffffff" />
+                        </TouchableOpacity>
 
-                      <Text style={styles.qtyVal}>
-                        {item.qty || 1}
-                      </Text>
+                        <Text style={styles.qtyVal}>
+                          {item.qty || 1}
+                        </Text>
 
-                      <TouchableOpacity
-                        style={styles.qtyBtn}
-                        onPress={() => increaseQty(index)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="add" size={18} color="#ffffff" />
-                      </TouchableOpacity>
-                    </View>
+                        <TouchableOpacity
+                          style={styles.qtyBtn}
+                          onPress={() => increaseQty(index)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="add" size={26} color="#ffffff" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
 
                   <View style={styles.cartItemRight}>
-                    <Text style={styles.cartItemPrice}>
-                      $
-                      {(
-                        Number(item.Price || item.finalPrice || 0) *
-                        Number(item.qty || 1)
-                      ).toFixed(2)}
+                    <Text
+                      style={[
+                        styles.cartItemPrice,
+                        item.isPromotionalItem &&
+                          (item.isBogoFree || item.isFlatDiscount || item.isPercentageDiscount) && {
+                            color: "#059669",
+                            fontWeight: "900",
+                          },
+                      ]}
+                    >
+                      {item.isBogoFree
+                        ? "FREE"
+                        : item.isFlatDiscount
+                          ? `-${currencySymbol}${Number(item.discountValue || 0).toFixed(2)}`
+                          : item.isPercentageDiscount
+                            ? `-${Number(item.discountValue || 0)}%`
+                            : `${currencySymbol}${(
+                                Number(item.Price || item.finalPrice || 0) *
+                                Number(item.qty || 1)
+                              ).toFixed(2)}`}
                     </Text>
                     <TouchableOpacity
                       style={styles.cartItemDeleteBtn}
@@ -3510,6 +4299,45 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </View>
               );
             })}
+
+            {/* Applied Promotion Discount Entry in Cart */}
+            {appliedPromotion && promotionDiscount > 0 && (
+              <View style={styles.appliedPromoEntryCard}>
+                <View style={styles.appliedPromoEntryIconWrap}>
+                  <Ionicons name="gift" size={24} color="#ea580c" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <Text style={styles.appliedPromoEntryTitle}>
+                      {appliedPromotion.PromotionName}
+                    </Text>
+                    <View style={styles.appliedPromoEntryTypePill}>
+                      <Text style={styles.appliedPromoEntryTypePillText}>
+                        {appliedPromotion.PromotionType || "DISCOUNT"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.appliedPromoEntryDesc}>
+                    {appliedPromotion.Description || appliedPromotion.PromotionDescription || "Promotional Discount Applied"}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={styles.appliedPromoEntryDiscountVal}>
+                    -{currencySymbol}{promotionDiscount.toFixed(2)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setAppliedPromotion(null);
+                      setSelectedPromotion(null);
+                    }}
+                    hitSlop={8}
+                    style={{ marginTop: 4 }}
+                  >
+                    <Text style={styles.appliedPromoEntryRemoveBtn}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           {/* Fixed Down Summary & Actions Card */}
@@ -3595,6 +4423,27 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </View>
               )}
 
+              {promotionDiscount > 0 && (
+                <View style={styles.totalRow}>
+                  <View style={styles.totalLabelGroup}>
+                    <View style={[styles.totalRowIconWrap, { backgroundColor: "#FFF7ED" }]}>
+                      <Ionicons
+                        name="sparkles"
+                        size={17}
+                        color="#ea580c"
+                      />
+                    </View>
+                    <Text style={[styles.totalLabel, { color: "#ea580c", fontWeight: "700" }]}>
+                      Promo: {appliedPromotion?.PromotionName || "Offer Discount"}
+                    </Text>
+                  </View>
+                  <Text style={[styles.totalValue, { color: "#ea580c", fontWeight: "800" }]}>
+                    -{currencySymbol}
+                    {promotionDiscount.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+
               {/* Grand Total Row with Badge & Accent Color */}
               <View style={[styles.totalRow, styles.grandTotalRow]}>
                 <View style={styles.grandTotalLabelWrap}>
@@ -3613,20 +4462,33 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
               {/* Primary Action Button: Proceed to Checkout */}
               <TouchableOpacity
-                style={styles.checkoutBtn}
+                style={[
+                  styles.checkoutBtn,
+                  checkingPromotions && { opacity: 0.8 },
+                ]}
                 onPress={handleCheckoutClick}
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || checkingPromotions}
                 activeOpacity={0.88}
               >
                 <View style={styles.checkoutBtnInner}>
-                  <Ionicons
-                    name="card-outline"
-                    size={22}
-                    color="#ffffff"
-                    style={{ marginRight: 8 }}
-                  />
+                  {checkingPromotions ? (
+                    <ActivityIndicator
+                      size="small"
+                      color="#ffffff"
+                      style={{ marginRight: 8 }}
+                    />
+                  ) : (
+                    <Ionicons
+                      name="card-outline"
+                      size={22}
+                      color="#ffffff"
+                      style={{ marginRight: 8 }}
+                    />
+                  )}
                   <Text style={styles.checkoutBtnText}>
-                    Proceed to Checkout
+                    {checkingPromotions
+                      ? "Checking Offers..."
+                      : "Proceed to Checkout"}
                   </Text>
                   <Ionicons
                     name="arrow-forward"
@@ -4028,6 +4890,237 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
+      {/* ── Promotion Popup Modal (PromotionMaster) ── */}
+      <Modal
+        visible={showPromotionModal && activePromotions.length > 0}
+        transparent
+        animationType="fade"
+        onRequestClose={handleNoThanks}
+      >
+        <View style={styles.promotionModalOverlay}>
+          <View style={styles.promotionModalContainer}>
+            {/* Modal Header */}
+            <View style={styles.promotionModalHeader}>
+              <View style={styles.promotionBadgeTag}>
+                <Ionicons name="sparkles" size={16} color="#EA580C" />
+                <Text style={styles.promotionBadgeTagText}>SPECIAL OFFERS</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.promotionCloseBtn}
+                onPress={handleNoThanks}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Instruction Header */}
+            <View style={styles.promotionSubHeader}>
+              <Text style={styles.promotionSubHeaderTitle}>Select an offer to apply</Text>
+              <Text style={styles.promotionSubHeaderSubtitle}>
+                Choose a promotion offer below, or tap No Thanks.
+              </Text>
+            </View>
+
+            {/* Promotions Scroll Content */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.promotionScrollContent}
+              style={{ maxHeight: 480 }}
+            >
+              {activePromotions.map((promo, idx) => {
+                const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
+                const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
+                const promoDesc = promo.Description || promo.PromotionDescription;
+                const minPurchase =
+                  promo.MinPurchaseAmount !== null &&
+                  promo.MinPurchaseAmount !== undefined &&
+                  Number(promo.MinPurchaseAmount) > 0
+                    ? Number(promo.MinPurchaseAmount)
+                    : null;
+                const promoAmt =
+                  promo.PromotionAmount !== null &&
+                  promo.PromotionAmount !== undefined &&
+                  Number(promo.PromotionAmount) > 0
+                    ? Number(promo.PromotionAmount)
+                    : null;
+                const discVal =
+                  promo.DiscountValue !== null &&
+                  promo.DiscountValue !== undefined &&
+                  Number(promo.DiscountValue) > 0
+                    ? Number(promo.DiscountValue)
+                    : null;
+
+                return (
+                  <TouchableOpacity
+                    key={promo.PromotionId || idx}
+                    style={[
+                      styles.promotionCard,
+                      isSelected && styles.promotionCardSelected,
+                    ]}
+                    onPress={() => {
+                      setPromoErrorMessage(null);
+                      setSelectedPromotion(isSelected ? null : promo);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    {/* Promotion Image or Banner */}
+                    {promoImgUri ? (
+                      <View style={styles.promotionImageWrap}>
+                        <ExpoImage
+                          source={{ uri: promoImgUri }}
+                          style={styles.promotionImage}
+                          contentFit="cover"
+                        />
+                      </View>
+                    ) : (
+                      <View style={styles.promotionPlaceholderBanner}>
+                        <Ionicons name="sparkles" size={28} color="#EA580C" />
+                        <Text style={styles.promotionPlaceholderBannerText}>
+                          {promo.PromotionType || "SPECIAL PROMOTION"}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Promotion Info */}
+                    <View style={styles.promotionInfoWrap}>
+                      <View style={styles.promotionTitleRow}>
+                        <Text
+                          style={[
+                            styles.promotionNameText,
+                            isSelected && styles.promotionNameTextSelected,
+                          ]}
+                        >
+                          {promo.PromotionName || "Exclusive Promotion"}
+                        </Text>
+                        <View
+                          style={[
+                            styles.promotionRadioCircle,
+                            isSelected && styles.promotionRadioCircleSelected,
+                          ]}
+                        >
+                          {isSelected && (
+                            <Ionicons
+                              name="checkmark"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                          )}
+                        </View>
+                      </View>
+
+                      {promoDesc ? (
+                        <Text style={styles.promotionDescText}>
+                          {promoDesc}
+                        </Text>
+                      ) : null}
+
+                      {/* Badges: Type, Amount, Discount */}
+                      <View style={styles.promotionBadgesRow}>
+                        {promo.PromotionType ? (
+                          <View style={styles.promotionTypePill}>
+                            <Ionicons
+                              name="pricetag-outline"
+                              size={14}
+                              color="#EA580C"
+                            />
+                            <Text style={styles.promotionTypePillText}>
+                              {promo.PromotionType}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {minPurchase ? (
+                          <View style={styles.promotionAmountPill}>
+                            <Text style={styles.promotionAmountPillText}>
+                              Min Spend: {currencySymbol}
+                              {minPurchase.toFixed(2)}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {promoAmt ? (
+                          <View style={styles.promotionAmountPill}>
+                            <Text style={styles.promotionAmountPillText}>
+                              Price: {currencySymbol}
+                              {promoAmt.toFixed(2)}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {discVal ? (
+                          <View style={styles.promotionDiscountPill}>
+                            <Ionicons
+                              name="gift-outline"
+                              size={14}
+                              color="#059669"
+                            />
+                            <Text style={styles.promotionDiscountPillText}>
+                              {String(promo.PromotionType || "").toUpperCase().includes("PERCENT")
+                                ? `Discount: ${discVal}% OFF`
+                                : `Save ${currencySymbol}${discVal.toFixed(2)}`}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Promotion Error Notification */}
+            {promoErrorMessage && (
+              <View style={styles.promotionErrorBanner}>
+                <Ionicons name="alert-circle" size={20} color="#DC2626" />
+                <Text style={styles.promotionErrorText}>{promoErrorMessage}</Text>
+              </View>
+            )}
+
+            {/* Modal Footer: [ No Thanks ]  [ Add to Cart ] */}
+            <View style={styles.promotionFooter}>
+              <TouchableOpacity
+                style={styles.promotionSkipBtn}
+                onPress={handleNoThanks}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.promotionSkipBtnText}>No Thanks</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.promotionAddToCartBtn,
+                  (!selectedPromotion || isAddingPromo) && styles.promotionAddToCartBtnDisabled,
+                ]}
+                onPress={handleAddToCartPromotion}
+                disabled={!selectedPromotion || isAddingPromo}
+                activeOpacity={0.85}
+              >
+                {isAddingPromo ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="cart-outline"
+                      size={20}
+                      color={selectedPromotion ? "#FFFFFF" : "#94A3B8"}
+                    />
+                    <Text
+                      style={[
+                        styles.promotionAddToCartBtnText,
+                        !selectedPromotion && styles.promotionAddToCartBtnTextDisabled,
+                      ]}
+                    >
+                      Add to Cart
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Payment Mode Full Screen ── */}
       <Modal
         visible={showPaymentPopup}
@@ -4057,6 +5150,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               TOTAL: {currencySymbol}
               {totalAmount}
             </Text>
+            {promotionDiscount > 0 && appliedPromotion && (
+              <View style={styles.paymentPromoAppliedBadge}>
+                <Ionicons name="sparkles" size={15} color="#15803d" />
+                <Text style={styles.paymentPromoAppliedText}>
+                  {appliedPromotion.PromotionName}: -{currencySymbol}
+                  {promotionDiscount.toFixed(2)} applied
+                </Text>
+              </View>
+            )}
             <Text style={styles.paymentPrompt}>Choose your payment mode</Text>
 
             <View style={styles.paymentOptionsRow}>
@@ -4618,6 +5720,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 16,
     paddingBottom: 170,
+  },
+
+  /* Company Branding Header at the top of Sidebar */
+  sidebarBrandHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 22,
+    borderBottomWidth: 1.8,
+    borderBottomColor: "#EFE6DC",
+    backgroundColor: "#FBF7F2",
+  },
+  sidebarBrandLogoWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#EFE6DC",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sidebarBrandLogo: {
+    width: "92%",
+    height: "92%",
+  },
+  sidebarBrandName: {
+    flex: 1,
+    fontSize: 36,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.5,
+    lineHeight: 40,
+  },
+  sidebarBrandNameOnly: {
+    fontSize: 36,
+    textAlign: "left",
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.5,
+    lineHeight: 40,
   },
 
   /* Card styling matching the reference image */
@@ -5748,6 +6899,96 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#fff7ed",
   },
+  cartItemPromoThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 16,
+    backgroundColor: "#FFF7ED",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFEDD5",
+  },
+  cartItemPromoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+  },
+  cartItemPromoBadgeText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#EA580C",
+    letterSpacing: 0.5,
+  },
+  cartItemPromoDescText: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  appliedPromoEntryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#FFFBF7",
+    borderWidth: 1.8,
+    borderColor: "#FDBA74",
+    borderRadius: 20,
+    padding: 16,
+    marginTop: 10,
+    marginBottom: 10,
+    shadowColor: "#EA580C",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  appliedPromoEntryIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFEDD5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  appliedPromoEntryTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  appliedPromoEntryTypePill: {
+    backgroundColor: "#EA580C",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  appliedPromoEntryTypePillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
+  },
+  appliedPromoEntryDesc: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  appliedPromoEntryDiscountVal: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#059669",
+  },
+  appliedPromoEntryRemoveBtn: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#EF4444",
+  },
   cartItemThumbPlaceholder: {
     width: 68,
     height: 68,
@@ -5791,39 +7032,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f8fafc",
-    borderRadius: 24,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    borderWidth: 1,
+    borderRadius: 32,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderWidth: 1.5,
     borderColor: "#e2e8f0",
   },
   qtyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: "#ea580c",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#ea580c",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   qtyBtnText: {
     color: "#ffffff",
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: "800",
-    lineHeight: 20,
+    lineHeight: 26,
     textAlign: "center",
   },
   qtyVal: {
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 24,
+    fontWeight: "900",
     color: "#0f172a",
-    paddingHorizontal: 10,
+    paddingHorizontal: 16,
     textAlign: "center",
-    minWidth: 26,
+    minWidth: 36,
   },
   cartItemPrice: {
     fontSize: 22,
@@ -5981,6 +7222,351 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#94a3b8",
+  },
+
+  /* PROMOTION POPUP MODAL */
+  promotionModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  promotionModalContainer: {
+    width: "100%",
+    maxWidth: 620,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  promotionModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingTop: 22,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  promotionBadgeTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  promotionBadgeTagText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#EA580C",
+    letterSpacing: 0.8,
+  },
+  promotionCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  promotionSubHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  promotionSubHeaderTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0F172A",
+    marginBottom: 4,
+  },
+  promotionSubHeaderSubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    lineHeight: 18,
+  },
+  promotionScrollContent: {
+    padding: 20,
+    gap: 16,
+  },
+  promotionCard: {
+    backgroundColor: "#FAF8F5",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#EFE6DC",
+    overflow: "hidden",
+  },
+  promotionCardSelected: {
+    borderColor: "#EA580C",
+    backgroundColor: "#FFFBF7",
+    borderWidth: 2,
+    shadowColor: "#EA580C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  promotionImageWrap: {
+    width: "100%",
+    height: 190,
+    backgroundColor: "#F1F5F9",
+  },
+  promotionPlaceholderBanner: {
+    width: "100%",
+    height: 100,
+    backgroundColor: "#FFF7ED",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFEDD5",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  promotionPlaceholderBannerText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#EA580C",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  promotionImage: {
+    width: "100%",
+    height: "100%",
+  },
+  promotionInfoWrap: {
+    padding: 18,
+  },
+  promotionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 6,
+  },
+  promotionRadioCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  promotionRadioCircleSelected: {
+    borderColor: "#EA580C",
+    backgroundColor: "#EA580C",
+  },
+  promotionNameText: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  promotionNameTextSelected: {
+    color: "#EA580C",
+  },
+  promotionDescText: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  promotionBadgesRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  promotionTypePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  promotionTypePillText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#EA580C",
+  },
+  promotionAmountPill: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    justifyContent: "center",
+  },
+  promotionAmountPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1D4ED8",
+  },
+  promotionDiscountPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  promotionDiscountPillText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#059669",
+  },
+  promotionFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 18,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    backgroundColor: "#FFFFFF",
+  },
+  promotionSkipBtn: {
+    height: 54,
+    paddingHorizontal: 26,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  promotionSkipBtnText: {
+    color: "#475569",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  promotionAddToCartBtn: {
+    flex: 1,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: "#EA580C",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    shadowColor: "#EA580C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  promotionAddToCartBtnDisabled: {
+    backgroundColor: "#E2E8F0",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  promotionAddToCartBtnText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  promotionAddToCartBtnTextDisabled: {
+    color: "#94A3B8",
+  },
+  promotionErrorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  promotionErrorText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#DC2626",
+    lineHeight: 18,
+  },
+  promoAppliedBadgePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  promoAppliedBadgePillText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#EA580C",
+    letterSpacing: 0.3,
+  },
+  cartPromoSuccessBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1.5,
+    borderColor: "#A7F3D0",
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 6,
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cartPromoSuccessBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#065F46",
+  },
+  paymentPromoAppliedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#DCFCE7",
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  paymentPromoAppliedText: {
+    color: "#15803d",
+    fontSize: 15,
+    fontWeight: "800",
   },
 
   /* PAYMENT FULL MODAL (.full-screen-payment) */
@@ -6330,10 +7916,13 @@ const styles = StyleSheet.create({
     color: "#475569",
   },
 
-  /* Cart Item Customizations Display (Clean, borderless, readable) */
+  /* Cart Item Customizations Display (Clean, borderless & integrated) */
   cartCustomizationGroup: {
-    marginTop: 5,
+    marginTop: 6,
+    width: "100%",
+    alignSelf: "stretch",
     paddingVertical: 2,
+    backgroundColor: "transparent",
   },
   cartCustomizationHeaderRow: {
     flexDirection: "row",
@@ -6341,7 +7930,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   cartModifierGroupTitle: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: "800",
     color: "#ea580c",
   },
@@ -6349,25 +7938,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "#fff7ed",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#ffedd5",
+    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
   cartInlineEditText: {
-    fontSize: 11,
+    fontSize: 15,
     fontWeight: "800",
     color: "#ea580c",
   },
   cartModifierValueText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#334155",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1e293b",
     paddingLeft: 4,
-    marginTop: 2,
-    lineHeight: 21,
+    marginTop: 3,
+    lineHeight: 25,
   },
 
   /* Combo Customizer Modal Styles */
