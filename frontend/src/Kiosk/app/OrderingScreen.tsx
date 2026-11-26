@@ -5100,6 +5100,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               {activePromotions.map((promo, idx) => {
                 const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
                 const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
+                const promoDesc = (promo.Description || promo.PromotionDescription || "").trim();
                 const promoAmt =
                   promo.PromotionAmount !== null &&
                   promo.PromotionAmount !== undefined &&
@@ -5151,24 +5152,36 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       )}
                     </View>
 
-                    {/* Right Info: Dish Name, Radio Circle, Price Pill */}
+                    {/* Right Info: Dish Name, Radio Circle, Description, Price Pill */}
                     <View style={styles.promotionInfoWrap}>
-                      <View style={styles.promotionCardTopRow}>
-                        <Text
-                          style={styles.promotionNameText}
-                          numberOfLines={2}
-                          ellipsizeMode="tail"
-                        >
-                          {promo.PromotionName || "Special Combo"}
-                        </Text>
-                        <View
-                          style={[
-                            styles.promotionRadioCircle,
-                            isSelected && styles.promotionRadioCircleSelected,
-                          ]}
-                        >
-                          {isSelected && <View style={styles.promotionRadioDot} />}
+                      <View style={styles.promotionCardTopContent}>
+                        <View style={styles.promotionCardTopRow}>
+                          <Text
+                            style={styles.promotionNameText}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {promo.PromotionName || "Special Combo"}
+                          </Text>
+                          <View
+                            style={[
+                              styles.promotionRadioCircle,
+                              isSelected && styles.promotionRadioCircleSelected,
+                            ]}
+                          >
+                            {isSelected && <View style={styles.promotionRadioDot} />}
+                          </View>
                         </View>
+
+                        {!!promoDesc && (
+                          <Text
+                            style={styles.promotionDescText}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {promoDesc}
+                          </Text>
+                        )}
                       </View>
 
                       {/* Red / Light-Red Price Pill Badge */}
@@ -7429,8 +7442,8 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   promotionCard: {
-    width: 255,
-    height: 125,
+    width: 280,
+    minHeight: 132,
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1.5,
@@ -7465,6 +7478,9 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     paddingVertical: 2,
   },
+  promotionCardTopContent: {
+    width: "100%",
+  },
   promotionCardTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -7477,6 +7493,15 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     lineHeight: 20,
     paddingRight: 6,
+  },
+  promotionDescText: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "500",
+    lineHeight: 17,
+    marginTop: 2,
+    marginBottom: 6,
+    paddingRight: 4,
   },
   promotionRadioCircle: {
     width: 22,
