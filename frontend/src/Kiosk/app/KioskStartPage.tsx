@@ -572,35 +572,22 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
 
       <View style={styles.overlay} />
 
-      {/* Top Header - Dynamic Company Logo */}
+      {/* Top Header - Smart Cafe */}
       <View style={[styles.header, isSmallScreen && styles.compactHeader]}>
         <View style={styles.logoRow}>
-          {hasValidLogo ? (
-            <View style={styles.companyLogoContainer}>
-              <Image
-                source={{ uri: formattedLogoUri }}
-                style={[
-                  styles.dynamicCompanyLogo,
-                  isSmallScreen && styles.compactDynamicCompanyLogo,
-                ]}
-                resizeMode="contain"
-                onError={() => setLogoError(true)}
-              />
-            </View>
-          ) : logoLoading ? (
-            <View style={styles.companyLogoLoading}>
-              <ActivityIndicator size="small" color="#ea580c" />
-            </View>
-          ) : (
-            <View style={styles.fallbackRow}>
-              <View style={styles.fallbackLogoCircle}>
-                <Ionicons name="restaurant" size={24} color="#ea580c" />
-              </View>
-              {companyName && companyName !== "RESTAURANT" ? (
-                <Text style={styles.fallbackCompanyName}>{companyName}</Text>
-              ) : null}
-            </View>
-          )}
+          <View style={styles.logoCircle}>
+            <Image
+              source={require("./assets/images/app_logo.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
+          <View style={styles.brandTextGroup}>
+            <Text style={styles.brandTitle}>
+              Smart <Text style={styles.brandTitleAccent}>Cafe</Text>
+            </Text>
+            <Text style={styles.brandSubtitle}>Delicious Food. Exceptional Experience.</Text>
+          </View>
         </View>
       </View>
 
