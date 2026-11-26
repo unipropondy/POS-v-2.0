@@ -18,7 +18,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { API } from "@/config";
+import { API, BASE_URL } from "@/config";
 
 type Props = {
   onStart?: (user: any, tableInfo?: { tableId: any; tableNo: any }) => void;
@@ -92,6 +92,36 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
   const idleTimerRef = useRef<any>(null);
 
   const [companyName, setCompanyName] = useState<string>("RESTAURANT");
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState(false);
+  const [logoLoading, setLogoLoading] = useState(true);
+
+  const formatLogoUrl = (url?: string | null) => {
+    if (!url || typeof url !== "string") return null;
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return null;
+    if (
+      cleanUrl.startsWith("data:image") ||
+      cleanUrl.startsWith("http://") ||
+      cleanUrl.startsWith("https://")
+    ) {
+      return cleanUrl;
+    }
+    const cleanBase = (BASE_URL || API.replace(/\/api\/?$/, "")).replace(/\/$/, "");
+    if (
+      cleanUrl.startsWith("/images") ||
+      cleanUrl.startsWith("images/") ||
+      cleanUrl.startsWith("/uploads") ||
+      cleanUrl.startsWith("uploads/")
+    ) {
+      const p = cleanUrl.startsWith("/") ? cleanUrl : `/${cleanUrl}`;
+      return `${cleanBase}${p}`;
+    }
+    return `${cleanBase}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
+  };
+
+  const formattedLogoUri = formatLogoUrl(companyLogoUrl);
+  const hasValidLogo = !!formattedLogoUri && !logoError;
 
   // 🛡️ Ensure any abandoned session from an earlier page reload/crash is released back to AVAILABLE in POS
   useEffect(() => {
@@ -138,20 +168,45 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
     cleanupLingeringSession();
   }, []);
 
-  // Fetch Company Name dynamically from dbo.CompanySettings
+  // Fetch Company Name & Logo dynamically from dbo.CompanySettings
   useEffect(() => {
     let isMounted = true;
     const loadCompanySettings = async () => {
       try {
-        const res = await fetch(`${API}/company-settings/1`);
-        const data = await res.json();
-        const settings = data?.settings || data;
-        const resolvedName = settings?.CompanyName || settings?.name || settings?.companyName;
-        if (isMounted && resolvedName) {
-          setCompanyName(String(resolvedName).trim());
+        setLogoLoading(true);
+        let res = await fetch(`${API}/company-settings/brand`).catch(() => null);
+        if (!res || !res.ok) {
+          res = await fetch(`${API}/company-settings/1`).catch(() => null);
+        }
+        if (!res || !res.ok) {
+          res = await fetch(`${API}/company-settings`).catch(() => null);
+        }
+        if (res && res.ok) {
+          const data = await res.json();
+          const settings = data?.settings || data;
+          const resolvedName =
+            settings?.CompanyName || settings?.name || settings?.companyName || data?.CompanyName;
+          const resolvedLogo =
+            settings?.CompanyLogoUrl ||
+            settings?.logoUrl ||
+            settings?.companyLogoUrl ||
+            data?.CompanyLogoUrl;
+          if (isMounted) {
+            if (resolvedName) {
+              setCompanyName(String(resolvedName).trim());
+            }
+            if (resolvedLogo && typeof resolvedLogo === "string" && resolvedLogo.trim()) {
+              setCompanyLogoUrl(resolvedLogo.trim());
+              setLogoError(false);
+            }
+          }
         }
       } catch (err) {
         console.log("Failed to fetch company settings for kiosk start page:", err);
+      } finally {
+        if (isMounted) {
+          setLogoLoading(false);
+        }
       }
     };
     loadCompanySettings();
@@ -517,22 +572,35 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
 
       <View style={styles.overlay} />
 
-      {/* Top Header - Restored to Smart Cafe */}
+      {/* Top Header - Dynamic Company Logo */}
       <View style={[styles.header, isSmallScreen && styles.compactHeader]}>
         <View style={styles.logoRow}>
-          <View style={styles.logoCircle}>
-            <Image
-              source={require("./assets/images/app_logo.png")}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-          </View>
-          <View style={styles.brandTextGroup}>
-            <Text style={styles.brandTitle}>
-              Smart <Text style={styles.brandTitleAccent}>Cafe</Text>
-            </Text>
-            <Text style={styles.brandSubtitle}>Delicious Food. Exceptional Experience.</Text>
-          </View>
+          {hasValidLogo ? (
+            <View style={styles.companyLogoContainer}>
+              <Image
+                source={{ uri: formattedLogoUri }}
+                style={[
+                  styles.dynamicCompanyLogo,
+                  isSmallScreen && styles.compactDynamicCompanyLogo,
+                ]}
+                resizeMode="contain"
+                onError={() => setLogoError(true)}
+              />
+            </View>
+          ) : logoLoading ? (
+            <View style={styles.companyLogoLoading}>
+              <ActivityIndicator size="small" color="#ea580c" />
+            </View>
+          ) : (
+            <View style={styles.fallbackRow}>
+              <View style={styles.fallbackLogoCircle}>
+                <Ionicons name="restaurant" size={24} color="#ea580c" />
+              </View>
+              {companyName && companyName !== "RESTAURANT" ? (
+                <Text style={styles.fallbackCompanyName}>{companyName}</Text>
+              ) : null}
+            </View>
+          )}
         </View>
       </View>
 
@@ -983,6 +1051,70 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+  },
+  companyLogoContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+  },
+  dynamicCompanyLogo: {
+    width: 160,
+    height: 52,
+    maxWidth: 220,
+    maxHeight: 60,
+  },
+  compactDynamicCompanyLogo: {
+    width: 120,
+    height: 42,
+    maxWidth: 160,
+    maxHeight: 46,
+  },
+  companyLogoLoading: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fallbackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  fallbackLogoCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+  },
+  fallbackCompanyName: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: 0.3,
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   logoCircle: {
     width: 54,

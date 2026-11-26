@@ -23,7 +23,7 @@ import { Theme } from "../../constants/theme";
 import { OrderItem, useActiveOrdersStore } from "../../stores/activeOrdersStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useGeneralSettingsStore } from "../../stores/generalSettingsStore";
-import { getComboChildDishes, ComboChildDish } from "../kitchen-status";
+import { ComboChildDish, getComboChildDishes } from "../kitchen-status";
 
 const URGENCY_FRESH = 15;
 const URGENCY_WARN = 30;
@@ -350,6 +350,22 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
                       <Text key={idx} style={styles.modifierText}>• {mod.ModifierName}</Text>
                     ))}
 
+                    {getIncludedComboDishes(i).map((dishName: string, dIdx: number) => (
+                      <Text
+                        key={`combo-dish-${dIdx}`}
+                        style={[
+                          styles.modifierText,
+                          {
+                            fontFamily: Fonts.bold,
+                            color: Theme.textSecondary || "#4B5563",
+                            fontSize: 13,
+                            marginTop: 1,
+                          },
+                        ]}
+                      >
+                        - {dishName}
+                      </Text>
+                    ))}
                     {getComboChildDishes(i, item.orderId).map((child: ComboChildDish, dIdx: number) => {
                       const isChildReady = child.status === "READY" || child.status === "SERVED";
                       return (
