@@ -734,12 +734,26 @@ async function syncToProfessionalTables(
           currentStatusCode = 2;
         }
       }
-      console.log(`[syncToProfessionalTables] Item: ${item.name || 'Dish'} | isKiosk: ${isKioskOrder} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
-      const dishName = (item.name || item.ProductName || "Dish").substring(0, 150);
+      console.log(`[syncToProfessionalTables] Item: ${item.name || item.DishName || item.PromotionName || 'Dish'} | isKiosk: ${isKioskOrder} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
+      const dishName = (
+        item.PromotionName ||
+        item.DishName ||
+        item.dishName ||
+        item.Name ||
+        item.name ||
+        item.ProductName ||
+        item.productName ||
+        "Dish"
+      ).substring(0, 150);
       const songName = (item.songName || item.SongName || "").substring(0, 200);
       const unitPrice = item.price || item.Cost || 0;
       const basePrice = item.basePrice !== undefined ? item.basePrice : unitPrice;
-      const isCombo = item.isCombo === true || item.IsCombo === true || !!item.ComboDetailsJSON;
+      const isCombo =
+        item.isCombo === true ||
+        item.IsCombo === true ||
+        String(item.PromotionType || "").toUpperCase() === "COMBO" ||
+        !!item.ComboDetailsJSON ||
+        (Array.isArray(item.comboSelections) && item.comboSelections.length > 0);
 
       let resolvedUnitPrice = unitPrice;
       let comboDetailsJSON = null;
@@ -753,6 +767,20 @@ async function syncToProfessionalTables(
         if (selections && !Array.isArray(selections) && typeof selections === 'object') {
           if (Array.isArray(selections.groups)) {
             selections = selections.groups;
+          }
+        }
+        // If selections are empty, parse included dishes from Description or notes
+        if ((!selections || selections.length === 0) && (item.Description || item.description || item.note || item.notes)) {
+          const rawDesc = item.Description || item.description || item.note || item.notes || "";
+          if (rawDesc && !rawDesc.toLowerCase().includes("combo promotion")) {
+            const parts = rawDesc.split(/[\+\|•\n,]/).map(s => s.trim().replace(/^[•\-\*]\s*/, '')).filter(Boolean);
+            if (parts.length > 0) {
+              selections = [{
+                groupId: `COMBO_${item.PromotionId || 'INCLUDED'}`,
+                groupName: 'Included Items',
+                items: parts.map(n => ({ name: n, dishName: n, surcharge: 0, dishPrice: 0 }))
+              }];
+            }
           }
         }
         const comboObj = {
@@ -2203,7 +2231,15 @@ router.get("/cart/:tableId", async (req, res) => {
         SELECT 
           d.OrderDetailId as lineItemId, d.DishId as id,ISNULL(d.SongName,'') as songName,d.Quantity as qty, 
           d.PricePerUnit as price, 
-          ISNULL(NULLIF(d.DishName,''), dish.Name) as name,
+          CASE 
+            WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
+            WHEN dish.Name IS NOT NULL AND dish.Name <> '' THEN dish.Name
+            WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
+            ELSE 'Dish'
+          END as name,
+          d.DishName as DishName,
+          d.Description as Description,
+          d.Description as description,
           h.OrderNumber as OrderNumber,
           h.OrderNumber as orderNumber,
           d.ModifiersJSON, d.ComboDetailsJSON, d.Remarks as note, d.isTakeAway as isTakeaway,
@@ -2237,27 +2273,33 @@ router.get("/cart/:tableId", async (req, res) => {
         ORDER BY d.CreatedOn ASC
       `);
 
-    const items = result.recordset.map((i) => ({
-      ...i,
-      modifiers: i.ModifiersJSON
-        ? (() => {
-          try {
-            return JSON.parse(i.ModifiersJSON);
-          } catch {
-            return [];
-          }
-        })()
-        : [],
-      comboSelections: i.ComboDetailsJSON
-        ? (() => {
-          try {
-            return JSON.parse(i.ComboDetailsJSON);
-          } catch {
-            return [];
-          }
-        })()
-        : [],
-    }));
+    const items = result.recordset.map((i) => {
+      let comboSelections = [];
+      if (i.ComboDetailsJSON) {
+        try {
+          const parsed = JSON.parse(i.ComboDetailsJSON);
+          comboSelections = Array.isArray(parsed) ? parsed : (parsed.groups || []);
+        } catch {
+          comboSelections = [];
+        }
+      }
+      const isCombo = (comboSelections && comboSelections.length > 0) || !!i.ComboDetailsJSON;
+      return {
+        ...i,
+        isCombo,
+        IsCombo: isCombo,
+        modifiers: i.ModifiersJSON
+          ? (() => {
+            try {
+              return JSON.parse(i.ModifiersJSON);
+            } catch {
+              return [];
+            }
+          })()
+          : [],
+        comboSelections,
+      };
+    });
 
     res.json({
       items,

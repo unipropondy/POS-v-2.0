@@ -2104,23 +2104,60 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       let promoItem: any = null;
 
       if (pType === "COMBO") {
+        const rawDesc =
+          selectedPromotion.Description ||
+          selectedPromotion.PromotionDescription ||
+          "";
+        const includedDishNames = parseDescriptionBullets(rawDesc);
+        const comboItems = includedDishNames.map((name) => {
+          const trimmed = name.trim();
+          const matched = (dishes || []).find(
+            (d: any) =>
+              (d.Name && d.Name.trim().toLowerCase() === trimmed.toLowerCase()) ||
+              (d.name && d.name.trim().toLowerCase() === trimmed.toLowerCase())
+          );
+          return {
+            dishId: matched?.DishId || matched?.id || null,
+            name: matched?.Name || matched?.name || trimmed,
+            dishName: matched?.Name || matched?.name || trimmed,
+            surcharge: 0,
+            dishPrice: 0,
+          };
+        });
+
+        const comboSelections = [
+          {
+            groupId: `PROMO_COMBO_${selectedPromotion.PromotionId}`,
+            groupName: "Included Items",
+            items: comboItems,
+          },
+        ];
+
+        const formattedDesc =
+          includedDishNames.length > 0
+            ? includedDishNames.join(" • ")
+            : rawDesc || "Special Combo Promotion";
+
         promoItem = {
           id: promoGuid,
           DishId: promoGuid,
           lineItemId: promoGuid,
           isPromotionalItem: true,
           isPromotion: true,
+          isCombo: true,
+          IsCombo: true,
+          comboSelections: comboSelections,
           PromotionId: selectedPromotion.PromotionId,
           Name: selectedPromotion.PromotionName,
+          name: selectedPromotion.PromotionName,
+          dishName: selectedPromotion.PromotionName,
           DishName: selectedPromotion.PromotionName,
           KitchenTypeName: "Combo Offer",
-          Description:
-            selectedPromotion.Description ||
-            selectedPromotion.PromotionDescription ||
-            "Special Combo Promotion",
+          Description: formattedDesc,
           Price: comboPrice,
           finalPrice: comboPrice,
           price: comboPrice,
+          basePrice: comboPrice,
           qty: 1,
           PromotionType: "Combo",
           isTakeaway: false,
@@ -4150,7 +4187,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     </TouchableOpacity>
 
                     {/* Customizations Section (Modifiers & Combo Selections) - Clean, borderless & clickable */}
-                    {(item.selectedMods?.length > 0 || item.comboSelections?.length > 0) && (
+                    {!item.isPromotionalItem && (item.selectedMods?.length > 0 || item.comboSelections?.length > 0) && (
                       <TouchableOpacity
                         style={styles.cartCustomizationGroup}
                         onPress={() => handleEditCartItem(index)}

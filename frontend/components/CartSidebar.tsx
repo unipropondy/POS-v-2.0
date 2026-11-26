@@ -715,25 +715,46 @@ const CartItemRow = React.memo(
                     {m.Price > 0 ? ` (+${currencySymbol}${m.Price.toFixed(2)})` : ""}
                   </Text>
                 ))}
-              {item.isCombo && item.comboSelections && Array.isArray(item.comboSelections) &&
-                item.comboSelections
-                  .filter((group: any) => group.items && group.items.length > 0)
-                  .map((group: any, gIdx: number) => (
-                    <View key={`g-${gIdx}`} style={{ marginTop: 2, paddingLeft: 2 }}>
-                      <Text style={[styles.modifierTextSmall, { fontFamily: Fonts.bold, color: Theme.primary }]}>
-                        {group.groupName}:
-                      </Text>
-                      {(group.items || []).map((opt: any, oIdx: number) => {
-                        const effectiveAdd = (parseFloat(opt.surcharge || 0) + parseFloat(opt.dishPrice || 0));
-                        const sym = useCompanySettingsStore.getState().settings.currencySymbol || "$";
-                        return (
-                          <Text key={`o-${oIdx}`} style={[styles.modifierTextSmall, { paddingLeft: 6 }]}>
-                            ↳ {opt.name}{effectiveAdd > 0 ? ` (+${sym}${effectiveAdd.toFixed(2)})` : ""}
-                          </Text>
-                        );
-                      })}
-                    </View>
-                  ))}
+              {/* Combo Included Dishes Display */}
+              {item.isCombo && (() => {
+                const sym = useCompanySettingsStore.getState().settings.currencySymbol || "$";
+                const dishItems: string[] = [];
+
+                if (Array.isArray(item.comboSelections) && item.comboSelections.length > 0) {
+                  item.comboSelections.forEach((group: any) => {
+                    const opts = group.items || group.options || [];
+                    if (Array.isArray(opts)) {
+                      opts.forEach((opt: any) => {
+                        const optName = typeof opt === "string" ? opt : (opt.name || opt.DishName || opt.dishName || opt.Name);
+                        if (optName) {
+                          const surcharge = parseFloat(opt.surcharge || 0) + parseFloat(opt.dishPrice || 0);
+                          dishItems.push(`${optName}${surcharge > 0 ? ` (+${sym}${surcharge.toFixed(2)})` : ""}`);
+                        }
+                      });
+                    }
+                  });
+                }
+
+                if (dishItems.length === 0 && (item.Description || item.description || item.note || item.notes)) {
+                  const descText = item.Description || item.description || item.note || item.notes || "";
+                  if (descText && !descText.toLowerCase().includes("combo promotion")) {
+                    const parts = descText.split(/[\+\|•\n,]/).map((s: string) => s.trim().replace(/^[•\-\*]\s*/, "")).filter(Boolean);
+                    if (parts.length > 0) {
+                      dishItems.push(...parts);
+                    }
+                  }
+                }
+
+                if (dishItems.length === 0) return null;
+
+                return (
+                  <View style={{ marginTop: 2, paddingLeft: 2 }}>
+                    <Text style={[styles.modifierTextSmall, { color: "#64748b", fontFamily: Fonts.medium, fontSize: isPhone ? 11 : 12 }]}>
+                      {dishItems.join(" • ")}
+                    </Text>
+                  </View>
+                );
+              })()}
               {item.note || item.notes ? (
                 <Text style={styles.modifierTextSmall}>
                   • Note: {item.note || item.notes}
