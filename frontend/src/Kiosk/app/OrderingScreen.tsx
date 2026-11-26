@@ -313,6 +313,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setShowTableModal(false);
     setShowExtraChargeModal(false);
     setSelectedDish(null);
+    AsyncStorage.removeItem("kioskAppliedPromotion").catch(() => {});
+    AsyncStorage.removeItem("kioskCart").catch(() => {});
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("kioskAppliedPromotion");
+        localStorage.removeItem("kioskCart");
+      } catch (_) {}
+    }
 
     // If promo slides exist, enter Attract Loop screensaver!
     if (promoSlides.length > 0) {
@@ -901,12 +909,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           };
         });
 
-        if (restoredPromo && !appliedPromotion) {
+        if (restoredPromo && !appliedPromotion && fromDB.length > 0) {
           setAppliedPromotion(restoredPromo);
         }
 
         const hasPromoItemInDB = fromDB.some((i: any) => i.isPromotionalItem || i.isPromotion);
-        if (restoredPromo && !hasPromoItemInDB) {
+        if (restoredPromo && !hasPromoItemInDB && fromDB.length > 0) {
           const promoGuid = `00000000-0000-0000-0000-${String(restoredPromo.PromotionId).padStart(12, "0")}`;
           const pType = String(restoredPromo.PromotionType || "").trim().toUpperCase();
           const pDisc = Number(restoredPromo.DiscountValue || 0);
@@ -935,6 +943,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             isPercentageDiscount: pType === "PERCENTAGE",
           };
           setCart([...fromDB, promoItem]);
+        } else if (fromDB.length === 0) {
+          // If database returns no active items, ensure cart and promotion are completely empty!
+          setCart([]);
+          setAppliedPromotion(null);
+          AsyncStorage.removeItem("kioskAppliedPromotion").catch(() => {});
         } else {
           setCart(fromDB);
         }
@@ -1108,9 +1121,25 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           }
         }
 
-        // Hydrate Cart
-        if (storedOrderId) {
-          await loadCart(storedOrderId);
+        // 🛡️ CRITICAL REQUIREMENT: A new Kiosk ordering session MUST ALWAYS start with an empty cart!
+        // Never restore completed or abandoned order items into a new session.
+        const isNewSession = await AsyncStorage.getItem("kioskIsNewSession");
+        if (isNewSession === "true") {
+          await AsyncStorage.removeItem("kioskIsNewSession");
+          await AsyncStorage.removeItem("kioskAppliedPromotion");
+          setCart([]);
+          setAppliedPromotion(null);
+          setSelectedPromotion(null);
+          setShowCartPage(false);
+        } else {
+          // If continuing same session, only load if there are genuinely active unclosed items
+          setCart([]);
+          setAppliedPromotion(null);
+          setSelectedPromotion(null);
+          setShowCartPage(false);
+          if (storedOrderId) {
+            await loadCart(storedOrderId);
+          }
         }
       } catch (e) {
         console.log("Init error:", e);
@@ -2828,7 +2857,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       setAppliedPromotion(null);
       setSelectedPromotion(null);
 
-      // Clear session
+      // Clear session completely so next session starts with an empty cart
       await AsyncStorage.multiRemove([
         "kioskOrderId",
         "kioskOrderType",
@@ -2836,7 +2865,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         "kioskCustomerName",
         "kioskCustomerVehicleId",
         "kioskDefaultDishId",
+        "kioskAppliedPromotion",
+        "kioskCart",
+        "orderId",
+        "tableId",
+        "tableNo",
+        "returnToKioskStart",
+        "kioskIsNewSession",
       ]);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem("kioskAppliedPromotion");
+          localStorage.removeItem("kioskCart");
+        } catch (_) {}
+      }
 
       if (onOrderCompleted) {
         onOrderCompleted(completedId, {

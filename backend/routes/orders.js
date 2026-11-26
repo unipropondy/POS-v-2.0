@@ -5095,7 +5095,36 @@ router.post("/kiosk/start", async (req, res) => {
     }
 
     const finalTableNo = tableNo || (isTakeaway ? "TAKEAWAY" : "DINE_IN");
-    const orderNumber = await getOrGenerateOrderId(req, tableId || finalTableNo);
+    
+    // 🛡️ KIOSK REQUIREMENT: Every new Kiosk ordering session MUST receive a fresh, unique OrderNumber.
+    // Never reuse an old order number from previous completed/settled orders or table history!
+    let orderNumber;
+    try {
+      const activeOrg = await getActiveOrganization(pool);
+      const currentBizId = activeOrg.businessUnitId;
+      const datePrefix = getSingaporeDateString();
+      const todayStr = `${datePrefix.slice(0, 4)}-${datePrefix.slice(4, 6)}-${datePrefix.slice(6, 8)}`;
+
+      const seqResult = await pool
+        .request()
+        .input("RestId", sql.UniqueIdentifier, String(currentBizId))
+        .input("Today", sql.Date, todayStr).query(`
+          BEGIN TRANSACTION;
+          IF NOT EXISTS (SELECT 1 FROM OrderSequences WITH (UPDLOCK, HOLDLOCK) WHERE RestaurantId = @RestId AND SequenceDate = @Today)
+          BEGIN
+              INSERT INTO OrderSequences (RestaurantId, SequenceDate, LastNumber) VALUES (@RestId, @Today, 0);
+          END
+          UPDATE OrderSequences SET LastNumber = LastNumber + 1 OUTPUT INSERTED.LastNumber
+          WHERE RestaurantId = @RestId AND SequenceDate = @Today;
+          COMMIT TRANSACTION;
+        `);
+
+      const dailySequence = seqResult.recordset[0]?.LastNumber || 1;
+      orderNumber = `${datePrefix}-${String(dailySequence).padStart(4, "0")}`;
+    } catch (genErr) {
+      console.warn("[Kiosk] Fallback order number generation:", genErr.message);
+      orderNumber = await getOrGenerateOrderId(req, isTakeaway ? "TAKEAWAY" : "DINE_IN");
+    }
 
     // 🛡️ Ensure table in TableMaster reflects finalized orderNumber and notify connected clients
     if (tableId) {
@@ -5104,6 +5133,7 @@ router.post("/kiosk/start", async (req, res) => {
         await pool.request()
           .input("tid", sql.UniqueIdentifier, cleanGuid)
           .input("orderNumber", sql.NVarChar(50), orderNumber)
+          .input("tableNo", sql.VarChar(50), finalTableNo)
           .query(`
             UPDATE TableMaster
             SET Status = 1,
@@ -5114,6 +5144,11 @@ router.post("/kiosk/start", async (req, res) => {
                 PAYMENT_STATUS = 0,
                 ModifiedOn = GETDATE()
             WHERE TableId = @tid;
+
+            -- 🛡️ Clear any stale temporary CartItems for this table
+            DELETE FROM CartItems 
+            WHERE CartId = CAST(@tid AS NVARCHAR(128)) 
+               OR CartId = @tableNo;
           `);
 
         const io = req.app.get("io");
@@ -5428,8 +5463,14 @@ router.get("/cart/kiosk/:orderId", async (req, res) => {
       FROM RestaurantOrderCur
       WHERE (OrderNumber = @oid OR CONVERT(varchar(50), OrderId) = @oid)
         AND (isOrderClosed = 0 OR isOrderClosed IS NULL)
+        AND (PAYMENT_STATUS = 0 OR PAYMENT_STATUS IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = RestaurantOrderCur.OrderNumber OR sh.BillNo = @oid)
     `);
     const ordHeader = orderHeaderRes.recordset[0] || null;
+
+    if (!ordHeader) {
+      return res.json({ items: [], currentOrderId: cleanOrderId, discountAmount: 0, discountRemarks: null });
+    }
 
     const itemsResult = await pool.request()
       .input("oid", sql.NVarChar(100), cleanOrderId)
@@ -5479,6 +5520,8 @@ router.get("/cart/kiosk/:orderId", async (req, res) => {
         LEFT JOIN DishMaster dish ON d.DishId = dish.DishId
         WHERE (h.OrderNumber = @oid OR d.OrderNumber = @oid OR CONVERT(varchar(50), h.OrderId) = @oid)
           AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
+          AND (h.PAYMENT_STATUS = 0 OR h.PAYMENT_STATUS IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM SettlementHeader sh WHERE sh.BillNo = h.OrderNumber OR sh.BillNo = @oid)
           AND d.StatusCode <> 0
       `);
     return res.json({

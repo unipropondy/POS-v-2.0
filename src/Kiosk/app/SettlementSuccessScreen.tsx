@@ -329,10 +329,23 @@ export default function SettlementSuccessScreen({
       await AsyncStorage.multiRemove([
         "kioskOrderId",
         "kioskOrderType",
+        "kioskAppliedPromotion",
+        "kioskCart",
+        "kioskCarNumber",
+        "kioskCustomerName",
+        "kioskCustomerVehicleId",
+        "kioskDefaultDishId",
         "orderId",
         "tableId",
         "tableNo",
+        "kioskIsNewSession",
       ]);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem("kioskAppliedPromotion");
+          localStorage.removeItem("kioskCart");
+        } catch (_) {}
+      }
       await AsyncStorage.setItem("returnToKioskStart", "true");
     } catch (e) {
       console.log("Error clearing storage on return:", e);

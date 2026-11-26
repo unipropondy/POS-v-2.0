@@ -120,7 +120,18 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
             "kioskCustomerVehicleId",
             "kioskDefaultDishId",
             "kioskOrderType",
+            "kioskAppliedPromotion",
+            "kioskCart",
+            "orderId",
+            "returnToKioskStart",
+            "kioskIsNewSession",
           ]);
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.removeItem("kioskAppliedPromotion");
+              localStorage.removeItem("kioskCart");
+            } catch (_) {}
+          }
         }
       } catch (_) {}
     };
@@ -373,11 +384,23 @@ export default function KioskStartPage({ onStart, onBackToLogin }: Props) {
       const assignedTableNo = data.tableNo || (orderType === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN");
 
       // Store the kiosk session info for the ordering screen
+      await AsyncStorage.setItem("kioskIsNewSession", "true");
       await AsyncStorage.setItem("kioskOrderId", String(data.orderNumber || ""));
       await AsyncStorage.setItem("kioskOrderType", orderType);
       await AsyncStorage.setItem("tableId", assignedTableId);
       await AsyncStorage.setItem("tableNo", assignedTableNo);
-      await AsyncStorage.multiRemove(["orderId", "returnToKioskStart"]);
+      await AsyncStorage.multiRemove([
+        "kioskAppliedPromotion",
+        "kioskCart",
+        "orderId",
+        "returnToKioskStart",
+      ]);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem("kioskAppliedPromotion");
+          localStorage.removeItem("kioskCart");
+        } catch (_) {}
+      }
 
       let currentUser = null;
       try {

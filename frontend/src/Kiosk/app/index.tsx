@@ -64,7 +64,19 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
             "kioskCustomerVehicleId",
             "kioskDefaultDishId",
             "kioskOrderType",
+            "kioskAppliedPromotion",
+            "kioskCart",
+            "orderId",
+            "returnToKioskStart",
+            "kioskIsNewSession",
           ]);
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.removeItem("kioskAppliedPromotion");
+              localStorage.removeItem("kioskCart");
+              localStorage.removeItem("kioskOrderId");
+            } catch (_) {}
+          }
         }
       } catch (err) {
         console.error("Error checking initial session:", err);
@@ -116,7 +128,31 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
         gst={completedOrderMeta?.gst}
         total={completedOrderMeta?.total}
         showActionButtons={true}
-        onReturnToOrder={() => {
+        onReturnToOrder={async () => {
+          try {
+            await AsyncStorage.multiRemove([
+              "kioskOrderId",
+              "tableId",
+              "tableNo",
+              "kioskCarNumber",
+              "kioskCustomerName",
+              "kioskCustomerVehicleId",
+              "kioskDefaultDishId",
+              "kioskOrderType",
+              "kioskAppliedPromotion",
+              "kioskCart",
+              "orderId",
+              "returnToKioskStart",
+              "kioskIsNewSession",
+            ]);
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.removeItem("kioskAppliedPromotion");
+                localStorage.removeItem("kioskCart");
+                localStorage.removeItem("kioskOrderId");
+              } catch (_) {}
+            }
+          } catch (_) {}
           setCompletedOrderId(null);
           setCompletedOrderMeta(null);
           setCurrentPage("start");
@@ -161,7 +197,19 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
               "kioskCustomerVehicleId",
               "kioskDefaultDishId",
               "kioskOrderType",
+              "kioskAppliedPromotion",
+              "kioskCart",
+              "orderId",
+              "returnToKioskStart",
+              "kioskIsNewSession",
             ]);
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.removeItem("kioskAppliedPromotion");
+                localStorage.removeItem("kioskCart");
+                localStorage.removeItem("kioskOrderId");
+              } catch (_) {}
+            }
           } catch (_) {}
           setCurrentPage("start");
         }}
