@@ -85,6 +85,7 @@ router.get("/all", async (req, res) => {
         WHERE CAST(tm.DiningSection AS VARCHAR(10)) IN ('1', '2', '3')
           AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
           AND roc.StatusCode NOT IN (0, 4)
+          AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId AND rodc.StatusCode <> 0)
           AND (tm.CurrentOrderId IS NULL OR tm.TotalAmount = 0 OR tm.Status = 0);
 
         DECLARE @cleared TABLE (TableId UNIQUEIDENTIFIER, TableNumber NVARCHAR(50), DiningSection INT);
@@ -119,10 +120,20 @@ router.get("/all", async (req, res) => {
             )
             OR (
               tm.CurrentOrderId IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM RestaurantOrderCur roc
-                WHERE roc.OrderNumber = tm.CurrentOrderId
-                  AND (roc.isOrderClosed = 1 OR roc.StatusCode IN (0, 4))
+              AND (
+                EXISTS (
+                  SELECT 1 FROM RestaurantOrderCur roc
+                  WHERE roc.OrderNumber = tm.CurrentOrderId
+                    AND (roc.isOrderClosed = 1 OR roc.StatusCode IN (0, 4))
+                )
+                OR (
+                  DATEDIFF(SECOND, ISNULL(tm.ModifiedOn, ISNULL(tm.StartTime, GETDATE())), GETDATE()) >= 15
+                  AND NOT EXISTS (
+                    SELECT 1 FROM RestaurantOrderDetailCur rodc
+                    INNER JOIN RestaurantOrderCur roc ON rodc.OrderId = roc.OrderId
+                    WHERE roc.OrderNumber = tm.CurrentOrderId AND rodc.StatusCode <> 0
+                  )
+                )
               )
             )
             OR (
@@ -156,10 +167,7 @@ router.get("/all", async (req, res) => {
               WHERE (roc.OrderNumber = tm.CurrentOrderId OR RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)))
                 AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
                 AND roc.StatusCode NOT IN (0, 4)
-                AND (
-                  ISNULL(roc.TotalAmount, 0) > 0 
-                  OR EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId)
-                )
+                AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId AND rodc.StatusCode <> 0)
             )
           )
           -- 🛡️ Must NOT have any active recent CartItems (ignore legacy/stale CartItems > 12h old)
@@ -176,15 +184,25 @@ router.get("/all", async (req, res) => {
             WHERE (RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(tm.TableNumber)) OR TRY_CAST(roc.OrderId AS NVARCHAR(100)) = TRY_CAST(tm.CurrentOrderId AS NVARCHAR(100)))
               AND (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
               AND roc.StatusCode NOT IN (0, 4)
-              AND (
-                ISNULL(roc.TotalAmount, 0) > 0 
-                OR EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId)
-              )
+              AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur rodc WHERE rodc.OrderId = roc.OrderId AND rodc.StatusCode <> 0)
           )
           -- 🛡️ Must be verified closed
           AND (
             tm.CurrentOrderId IS NOT NULL 
             OR tm.TotalAmount = 0
+          );
+
+        -- Close any empty/all-voided open orders on the cleared tables so AUTO-LINK never re-links them
+        UPDATE roc
+        SET roc.isOrderClosed = 1,
+            roc.TotalAmount = 0,
+            roc.ModifiedOn = GETDATE()
+        FROM RestaurantOrderCur roc
+        INNER JOIN @cleared c ON RTRIM(LTRIM(roc.Tableno)) = RTRIM(LTRIM(c.TableNumber))
+        WHERE (roc.isOrderClosed = 0 OR roc.isOrderClosed IS NULL)
+          AND NOT EXISTS (
+            SELECT 1 FROM RestaurantOrderDetailCur rodc
+            WHERE rodc.OrderId = roc.OrderId AND rodc.StatusCode <> 0
           );
 
         SELECT TableId, TableNumber, DiningSection FROM @cleared;
