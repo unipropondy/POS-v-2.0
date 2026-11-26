@@ -23,6 +23,7 @@ import { OrderItem, useActiveOrdersStore } from "../../stores/activeOrdersStore"
 import { useAuthStore } from "../../stores/authStore";
 import { API_URL } from "../../constants/Config";
 import { useGeneralSettingsStore } from "../../stores/generalSettingsStore";
+import { getComboChildDishes, ComboChildDish } from "../kitchen-status";
 
 const URGENCY_FRESH = 15;
 const URGENCY_WARN = 30;
@@ -318,7 +319,7 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
                           ]} 
                           numberOfLines={2}
                         >
-                          {i.name}
+                          {i.name || i.DishName || i.dishName || i.PromotionName || i.Name || i.ProductName || i.Description || "Dish"}
                         </Text>
                         {(!!i.isTakeaway || !!i.IsTakeaway || !!i.isTakeAway || !!i.IsTakeAway) && (
                           <View style={styles.takeawayBadge}>
@@ -349,22 +350,33 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
                       <Text key={idx} style={styles.modifierText}>• {mod.ModifierName}</Text>
                     ))}
 
-                    {getIncludedComboDishes(i).map((dishName: string, dIdx: number) => (
-                      <Text
-                        key={`combo-dish-${dIdx}`}
-                        style={[
-                          styles.modifierText,
-                          {
-                            fontFamily: Fonts.bold,
-                            color: Theme.textSecondary || "#4B5563",
-                            fontSize: 13,
-                            marginTop: 1,
-                          },
-                        ]}
-                      >
-                        - {dishName}
-                      </Text>
-                    ))}
+                    {getComboChildDishes(i, item.orderId).map((child: ComboChildDish, dIdx: number) => {
+                      const isChildReady = child.status === "READY" || child.status === "SERVED";
+                      return (
+                        <View key={`combo-dish-${dIdx}`} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2, marginLeft: 8 }}>
+                          <Text
+                            style={[
+                              styles.modifierText,
+                              {
+                                fontFamily: Fonts.bold,
+                                color: isChildReady ? Theme.success : Theme.textSecondary || "#4B5563",
+                                fontSize: 13,
+                                marginLeft: 0,
+                                marginTop: 0,
+                                textDecorationLine: isChildReady ? "line-through" : "none",
+                              },
+                            ]}
+                          >
+                            - {child.name} ({child.qty}x)
+                          </Text>
+                          {isChildReady && (
+                            <View style={[styles.itemStatusBadge, { backgroundColor: Theme.success, paddingHorizontal: 4, paddingVertical: 1, height: 16 }]}>
+                              <Text style={[styles.itemStatusText, { fontSize: 8 }]}>READY</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
 
                     {getTasteModifierText(i) ? (
                       <Text style={styles.modifierText}>{getTasteModifierText(i)}</Text>
@@ -418,6 +430,7 @@ export default function KDSScreen() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [kdsPrinterIp, setKdsPrinterIp] = useState("");
   const markItemReady = useActiveOrdersStore((s) => s.markItemReady);
+  const markChildDishStatus = useActiveOrdersStore((s) => s.markChildDishStatus);
  
   const pulseAnim = useRef(new Animated.Value(1)).current;
  
@@ -686,12 +699,83 @@ export default function KDSScreen() {
               <ScrollView style={styles.modalItemsList} contentContainerStyle={{ paddingBottom: 10 }}>
                 {selectedOrder?.items.map((i: any) => {
                   const isReady = i.status === "READY";
+                  const childDishes = getComboChildDishes(i, selectedOrder.orderId);
+                  const isCombo = childDishes.length > 0;
+                  const itemName = i.name || i.DishName || i.dishName || i.PromotionName || i.Name || i.ProductName || i.Description || "Dish";
+
+                  if (isCombo) {
+                    return (
+                      <View key={i.lineItemId} style={[styles.modalItemRow, { flexDirection: "column", alignItems: "stretch" }, isReady && styles.modalItemReady]}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+                            <Text style={styles.modalItemQty}>{i.qty}x</Text>
+                            <Text style={[styles.modalItemName, (i.status === "VOIDED" || String(i.note || "").toUpperCase().includes("VOID")) && styles.itemVoided]}>
+                              {itemName}
+                            </Text>
+                            <View style={{ backgroundColor: "#FFEDD5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                              <Text style={{ fontSize: 9, fontFamily: Fonts.black, color: "#C2410C" }}>COMBO</Text>
+                            </View>
+                          </View>
+                          {isReady && (
+                            <View style={[styles.readyBtn, styles.readyBtnActive]}>
+                              <Ionicons name="checkmark-circle" size={16} color="#FFF" />
+                              <Text style={styles.readyBtnText}>READY</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Child Dishes List in Modal */}
+                        <View style={{ marginTop: 8, marginLeft: 20, gap: 6 }}>
+                          {childDishes.map((child, idx) => {
+                            const isChildReady = child.status === "READY" || child.status === "SERVED";
+                            return (
+                              <View
+                                key={child.childId || `modal-child-${idx}`}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  backgroundColor: isChildReady ? "#F0FDF4" : "#F9FAFB",
+                                  paddingVertical: 6,
+                                  paddingHorizontal: 10,
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: isChildReady ? "#BBF7D0" : "#E5E7EB",
+                                }}
+                              >
+                                <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: isChildReady ? "#15803D" : Theme.textPrimary }}>
+                                  • {child.name} ({child.qty}x)
+                                </Text>
+                                <Pressable
+                                  style={[styles.readyBtn, isChildReady && styles.readyBtnActive, { paddingVertical: 4, paddingHorizontal: 8 }]}
+                                  onPress={() => {
+                                    const nextStatus = isChildReady ? "SENT" : "READY";
+                                    markChildDishStatus(selectedOrder.orderId, i.lineItemId, child.childId, nextStatus);
+                                  }}
+                                >
+                                  <Ionicons
+                                    name={isChildReady ? "checkmark-circle" : "restaurant-outline"}
+                                    size={14}
+                                    color="#FFF"
+                                  />
+                                  <Text style={[styles.readyBtnText, { fontSize: 11 }]}>
+                                    {isChildReady ? "READY" : "MARK READY"}
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    );
+                  }
+
                   return (
                     <View key={i.lineItemId} style={[styles.modalItemRow, isReady && styles.modalItemReady]}>
                       <View style={styles.modalItemInfo}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <Text style={styles.modalItemQty}>{i.qty}x</Text>
-                          <Text style={[styles.modalItemName, (i.status === "VOIDED" || String(i.note || "").toUpperCase().includes("VOID")) && styles.itemVoided]}>{i.name}</Text>
+                          <Text style={[styles.modalItemName, (i.status === "VOIDED" || String(i.note || "").toUpperCase().includes("VOID")) && styles.itemVoided]}>{itemName}</Text>
                           {(!!i.isTakeaway || !!i.IsTakeaway || !!i.isTakeAway || !!i.IsTakeAway) && (
                             <View style={styles.takeawayBadge}>
                               <Ionicons name="bag-handle" size={12} color="#FFF" />

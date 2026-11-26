@@ -298,13 +298,15 @@ export function useGlobalSocketSync() {
     };
 
     // --- 3. ITEM STATUS (READY/SERVED) ---
-    const handleItemStatus = (payload: { orderId: string; lineItemId: string; status: string; tableId?: string }) => {
+    const handleItemStatus = (payload: { orderId: string; lineItemId: string; childDishId?: string; status: string; tableId?: string }) => {
       const cleanLineItemId = String(payload.lineItemId || "").toLowerCase();
       if (__DEV__) {
-        console.log(`✨ [Socket-Global] Item ${payload.status}:`, cleanLineItemId);
+        console.log(`✨ [Socket-Global] Item ${payload.status}:`, cleanLineItemId, payload.childDishId || "");
       }
       
-      if (payload.status === "READY") {
+      if (payload.childDishId) {
+        useActiveOrdersStore.getState().markChildDishStatus(payload.orderId, cleanLineItemId, payload.childDishId, payload.status as any, true);
+      } else if (payload.status === "READY") {
         markItemReady(payload.orderId, cleanLineItemId, true);
       } else if (payload.status === "SERVED") {
         markItemServed(payload.orderId, cleanLineItemId, true);

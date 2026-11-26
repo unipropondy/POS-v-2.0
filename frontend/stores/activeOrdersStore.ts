@@ -60,8 +60,23 @@ const normalizeKitchenItem = (item: any) => {
     }
   }
 
+  const name =
+    (item?.name && item?.name !== "Dish" && String(item?.name).trim() !== "" ? item.name : undefined) ||
+    (item?.DishName && item.DishName !== "Dish" && String(item?.DishName).trim() !== "" ? item.DishName : undefined) ||
+    (item?.dishName && item.dishName !== "Dish" && String(item?.dishName).trim() !== "" ? item.dishName : undefined) ||
+    (item?.PromotionName && item.PromotionName !== "Dish" && String(item?.PromotionName).trim() !== "" ? item.PromotionName : undefined) ||
+    (item?.Name && item.Name !== "Dish" && String(item?.Name).trim() !== "" ? item.Name : undefined) ||
+    (item?.ProductName && item.ProductName !== "Dish" && String(item?.ProductName).trim() !== "" ? item.ProductName : undefined) ||
+    (item?.Description && item.Description !== "Dish" && !String(item?.Description).includes("•") && String(item?.Description).trim() !== "" ? item.Description : undefined) ||
+    item?.name ||
+    item?.DishName ||
+    item?.dishName ||
+    item?.Name ||
+    "Dish";
+
   return {
     ...item,
+    name,
     lineItemId: item.lineItemId ? String(item.lineItemId).toLowerCase() : undefined,
     note,
     isTakeaway,
@@ -71,6 +86,7 @@ const normalizeKitchenItem = (item: any) => {
     sugar: item?.sugar ?? item?.Sugar ?? "",
     modifiers,
     comboSelections,
+    childStatuses: item?.childStatuses || {},
   };
 };
 
@@ -94,6 +110,7 @@ type ActiveOrdersState = {
   voidOrderItem: (orderId: string, lineItemId: string) => void;
   markItemReady: (orderId: string, lineItemId: string, skipSync?: boolean) => void;
   markItemServed: (orderId: string, lineItemId: string, skipSync?: boolean) => void;
+  markChildDishStatus: (orderId: string, lineItemId: string, childDishId: string, status: "SENT" | "READY" | "SERVED", skipSync?: boolean) => void;
   fetchActiveKitchenOrders: () => Promise<void>;
   isFetching: boolean;
   updateOrderId: (oldId: string, newId: string) => void;
@@ -354,6 +371,92 @@ const storeCreator: StateCreator<
         });
       } catch (err) {
         console.error("❌ [Store] markItemServed sync failed:", err);
+      }
+    }
+  },
+
+  /* ================= MARK CHILD DISH STATUS ================= */
+  markChildDishStatus: async (orderId, lineItemId, childDishId, status, skipSync) => {
+    const { activeOrders } = get();
+    const cleanLineId = String(lineItemId || "").toLowerCase();
+    const cleanChildId = String(childDishId || "").toLowerCase();
+
+    const updatedOrders = activeOrders.map((order) => {
+      if (order.orderId !== orderId) return order;
+
+      return {
+        ...order,
+        items: order.items.map((item) => {
+          if (String(item.lineItemId || "").toLowerCase() !== cleanLineId) return item;
+
+          const updatedChildStatuses = { ...(item.childStatuses || {}) };
+          updatedChildStatuses[cleanChildId] = status;
+
+          let updatedComboSelections = item.comboSelections;
+          if (Array.isArray(item.comboSelections)) {
+            updatedComboSelections = item.comboSelections.map((grp: any) => {
+              const choices = grp.items || grp.dishes || grp.selections || [];
+              if (Array.isArray(choices)) {
+                return {
+                  ...grp,
+                  items: choices.map((opt: any) => {
+                    const optId = String(opt.dishId || opt.DishId || opt.mappingId || opt.name || "").toLowerCase();
+                    if (optId === cleanChildId || String(opt.name || "").toLowerCase() === cleanChildId) {
+                      return { ...opt, status };
+                    }
+                    return opt;
+                  }),
+                };
+              }
+              return grp;
+            });
+          }
+
+          // Check if all children are READY
+          let allReady = true;
+          let hasChildren = false;
+          if (Array.isArray(updatedComboSelections)) {
+            updatedComboSelections.forEach((grp: any) => {
+              const choices = grp.items || grp.dishes || grp.selections || [];
+              if (Array.isArray(choices) && choices.length > 0) {
+                hasChildren = true;
+                choices.forEach((opt: any) => {
+                  const optId = String(opt.dishId || opt.DishId || opt.mappingId || opt.name || "").toLowerCase();
+                  const cStatus = updatedChildStatuses[optId] || opt.status || "SENT";
+                  if (cStatus !== "READY" && cStatus !== "SERVED") {
+                    allReady = false;
+                  }
+                });
+              }
+            });
+          }
+
+          const overallStatus = hasChildren && allReady ? "READY" : (hasChildren ? "SENT" : (status === "READY" ? "READY" : "SENT"));
+
+          return {
+            ...item,
+            childStatuses: updatedChildStatuses,
+            comboSelections: updatedComboSelections,
+            status: overallStatus,
+            readyAt: overallStatus === "READY" ? (item.readyAt || Date.now()) : item.readyAt,
+          };
+        }),
+      };
+    });
+
+    set({ activeOrders: updatedOrders });
+
+    if (!skipSync) {
+      const order = activeOrders.find((o) => o.orderId === orderId);
+      const tableId = order?.context?.tableId || "";
+      try {
+        await fetch(`${API_URL}/api/orders/update-item-status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId, lineItemId, childDishId, status, tableId }),
+        });
+      } catch (err) {
+        console.error("❌ [Store] markChildDishStatus sync failed:", err);
       }
     }
   },

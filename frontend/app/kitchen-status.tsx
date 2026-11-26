@@ -28,10 +28,94 @@ const getTasteModifierText = (item: any) =>
     .filter(Boolean)
     .join(" • ");
 
+export type ComboChildDish = {
+  childId: string;
+  dishId: string;
+  name: string;
+  qty: number;
+  status: "SENT" | "READY" | "SERVED";
+  parentLineItemId: string;
+  parentOrderId: string;
+};
+
+export const getComboChildDishes = (item: any, parentOrderId: string): ComboChildDish[] => {
+  const parentQty = Number(item.qty || item.quantity || 1) || 1;
+  const parentLineItemId = String(item.lineItemId || item.OrderDetailId || "").toLowerCase();
+  let sels = item.comboSelections || item.combos || item.selectedCombos;
+  if (!sels || (Array.isArray(sels) && sels.length === 0)) {
+    const raw = item.ComboDetailsJSON || item.comboDetailsJSON;
+    if (raw) {
+      try {
+        const p = typeof raw === "string" ? JSON.parse(raw) : raw;
+        sels = Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+      } catch {
+        sels = [];
+      }
+    }
+  }
+  if (!Array.isArray(sels) && typeof sels === "object" && sels !== null) {
+    sels = sels.groups || sels.items || sels.selections || [];
+  }
+
+  const childStatuses = item.childStatuses || {};
+
+  // If sels is empty, fallback to Description split (e.g. "Burger • Fries • Pepsi")
+  if (!Array.isArray(sels) || sels.length === 0) {
+    const desc = item.Description || item.description || item.note || item.notes;
+    if (desc && typeof desc === "string" && !desc.toLowerCase().includes("combo promotion")) {
+      const parts = desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+      if (parts.length > 0) {
+        return parts.map((dishName: string, idx: number) => {
+          const childKey = `desc_${dishName.toLowerCase().replace(/\s+/g, '_')}`;
+          const currentStatus = (childStatuses[childKey] || (item.status === "READY" ? "READY" : "SENT")) as "SENT" | "READY" | "SERVED";
+          return {
+            childId: childKey,
+            dishId: `00000000-0000-0000-0000-${String(idx + 1).padStart(12, "0")}`,
+            name: dishName,
+            qty: parentQty,
+            status: currentStatus,
+            parentLineItemId,
+            parentOrderId,
+          };
+        });
+      }
+    }
+    return [];
+  }
+
+  const result: ComboChildDish[] = [];
+  sels.forEach((g: any, gIdx: number) => {
+    const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
+    if (Array.isArray(choices)) {
+      choices.forEach((opt: any, optIdx: number) => {
+        const dishName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+        if (!dishName) return;
+        const dishId = opt.dishId || opt.DishId || opt.mappingId || `opt_${gIdx}_${optIdx}`;
+        const cleanChildKey = String(dishId || dishName).toLowerCase();
+        const currentStatus = (childStatuses[cleanChildKey] || opt.status || (item.status === "READY" ? "READY" : "SENT")) as "SENT" | "READY" | "SERVED";
+        const singleQty = Number(opt.qty || opt.quantity || 1) || 1;
+        result.push({
+          childId: cleanChildKey,
+          dishId: String(dishId),
+          name: dishName,
+          qty: singleQty * parentQty,
+          status: currentStatus,
+          parentLineItemId,
+          parentOrderId,
+        });
+      });
+    }
+  });
+  return result;
+};
+
 export default function KitchenStatusScreen() {
   const router = useRouter();
   const activeOrders = useActiveOrdersStore((s) => s.activeOrders);
   const markItemServed = useActiveOrdersStore((s) => s.markItemServed);
+  const markItemReady = useActiveOrdersStore((s) => s.markItemReady);
+  const markChildDishStatus = useActiveOrdersStore((s) => s.markChildDishStatus);
+
   const handleServeAll = async (orderId: string, items: any[]) => {
     const readyItems = items.filter((i: any) => i.status === "READY");
     for (const item of readyItems) {
@@ -87,12 +171,132 @@ export default function KitchenStatusScreen() {
 
   const renderOrderItem = (orderId: string, item: any) => {
     const isReady = item.status === "READY";
+    const childDishes = getComboChildDishes(item, orderId);
+    const isCombo = childDishes.length > 0;
+    const itemName =
+      item.name ||
+      item.DishName ||
+      item.dishName ||
+      item.PromotionName ||
+      item.Name ||
+      item.ProductName ||
+      item.Description ||
+      "Dish";
+
+    if (isCombo) {
+      return (
+        <View key={item.lineItemId} style={[styles.itemRow, styles.comboRow, isReady && styles.itemReadyRow]}>
+          <View style={{ flex: 1 }}>
+            {/* Combo Parent Header */}
+            <View style={styles.comboHeaderRow}>
+              <View style={styles.itemTitle}>
+                <Text style={styles.itemQty}>{item.qty}x</Text>
+                <Text style={[styles.itemName, styles.comboParentName, item.status === "VOIDED" && styles.strikeThrough]}>
+                  {itemName}
+                </Text>
+                <View style={styles.comboTag}>
+                  <Text style={styles.comboTagText}>COMBO</Text>
+                </View>
+              </View>
+
+              {isReady && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.servedBtn,
+                    pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] },
+                  ]}
+                  onPress={() => markItemServed(orderId, item.lineItemId)}
+                >
+                  <Ionicons name="checkmark-done-circle" size={16} color="#FFF" />
+                  <Text style={styles.servedBtnText}>SERVED</Text>
+                </Pressable>
+              )}
+            </View>
+
+            {(!!item.isTakeaway || !!item.IsTakeaway || !!item.isTakeAway) && (
+              <View style={styles.takeawayBadge}>
+                <Ionicons name="bag-handle" size={12} color="#FFF" />
+                <Text style={styles.takeawayBadgeText}>PARCEL / TW</Text>
+              </View>
+            )}
+
+            {/* Included Dish List */}
+            <View style={styles.childDishesList}>
+              {childDishes.map((child, idx) => {
+                const isChildReady = child.status === "READY" || child.status === "SERVED";
+                return (
+                  <View
+                    key={child.childId || `child-${idx}`}
+                    style={[styles.childDishRow, isChildReady && styles.childDishReadyRow]}
+                  >
+                    <View style={styles.childDishInfo}>
+                      <Text style={styles.childBullet}>•</Text>
+                      <Text style={[styles.childDishName, isChildReady && styles.childDishNameReady]}>
+                        {child.name}
+                      </Text>
+                      <Text style={styles.childDishQty}>({child.qty}x)</Text>
+                    </View>
+
+                    <Pressable
+                      style={[
+                        styles.statusBadge,
+                        styles.childStatusBadge,
+                        isChildReady ? styles.statusBadgeReady : styles.statusBadgePrep,
+                      ]}
+                      onPress={() => {
+                        const nextStatus = isChildReady ? "SENT" : "READY";
+                        markChildDishStatus(orderId, item.lineItemId, child.childId, nextStatus);
+                      }}
+                    >
+                      <Ionicons
+                        name={isChildReady ? "notifications" : "restaurant"}
+                        size={12}
+                        color="#FFF"
+                      />
+                      <Text style={styles.statusBadgeText}>
+                        {isChildReady ? "READY" : "COOKING"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+
+            {item.modifiers
+              ?.filter((m: any) => {
+                const id = m.ModifierId || m.modifierId || m.ModifierID || m.modifierID;
+                const name = (m.ModifierName || m.modifierName || "").trim().toUpperCase();
+                const price = Number(m.Price || m.price || m.Amount || m.amount || 0);
+                if (price > 0) return true;
+                return id !== "00000000-0000-0000-0000-000000000001" && !name.startsWith("INSTR:");
+              })
+              .map((m: any, idx: number) => (
+                <Text key={idx} style={styles.modifierText}>
+                  • {m.ModifierName || m.modifierName}
+                </Text>
+              ))}
+            {getTasteModifierText(item) ? (
+              <Text style={styles.modifierText}>{getTasteModifierText(item)}</Text>
+            ) : null}
+            {item.note ? (
+              <View style={styles.noteContainer}>
+                <Ionicons name="chatbox-ellipses" size={12} color={Theme.danger} />
+                <Text style={styles.noteText}>{item.note}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View key={item.lineItemId} style={[styles.itemRow, isReady && styles.itemReadyRow]}>
         <View style={styles.itemMain}>
           <View style={styles.itemTitle}>
             <Text style={styles.itemQty}>{item.qty}x</Text>
-            <Text style={[styles.itemName, item.status === "VOIDED" && styles.strikeThrough]}>{item.name}</Text>
+            <Text style={[styles.itemName, item.status === "VOIDED" && styles.strikeThrough]}>
+              {itemName}
+            </Text>
           </View>
           {(!!item.isTakeaway || !!item.IsTakeaway || !!item.isTakeAway) && (
             <View style={styles.takeawayBadge}>
@@ -121,7 +325,14 @@ export default function KitchenStatusScreen() {
         </View>
 
         <View style={{ alignItems: 'flex-end', gap: 6 }}>
-          <View style={[styles.statusBadge, isReady ? styles.statusBadgeReady : styles.statusBadgePrep]}>
+          <Pressable
+            style={[styles.statusBadge, isReady ? styles.statusBadgeReady : styles.statusBadgePrep]}
+            onPress={() => {
+              if (!isReady) {
+                markItemReady(orderId, item.lineItemId);
+              }
+            }}
+          >
             <Ionicons 
               name={isReady ? "notifications" : "restaurant"} 
               size={12} 
@@ -130,7 +341,7 @@ export default function KitchenStatusScreen() {
             <Text style={styles.statusBadgeText}>
               {isReady ? "READY" : "COOKING"}
             </Text>
-          </View>
+          </Pressable>
 
           {isReady && (
             <Pressable 
@@ -150,8 +361,21 @@ export default function KitchenStatusScreen() {
   };
 
   const renderOrderCard = ({ item }: { item: any }) => {
-    const readyCount = item.items.filter((i: any) => i.status === "READY").length;
-    const totalCount = item.items.length;
+    let readyCount = 0;
+    let totalCount = 0;
+    item.items.forEach((i: any) => {
+      if (i.status === "VOIDED") return;
+      const childDishes = getComboChildDishes(i, item.orderId);
+      if (childDishes.length > 0) {
+        totalCount += childDishes.length;
+        readyCount += childDishes.filter((c) => c.status === "READY" || c.status === "SERVED").length;
+      } else {
+        totalCount += 1;
+        if (i.status === "READY" || i.status === "SERVED") {
+          readyCount += 1;
+        }
+      }
+    });
     const isDineIn = item.context.orderType === "DINE_IN";
 
     return (
@@ -357,6 +581,83 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0FDF4",
     marginHorizontal: -16,
     paddingHorizontal: 16,
+  },
+  comboRow: {
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
+  comboHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  comboParentName: {
+    fontSize: 16,
+    fontFamily: Fonts.black,
+    color: Theme.textPrimary,
+  },
+  comboTag: {
+    backgroundColor: "#FFEDD5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+  },
+  comboTagText: {
+    fontSize: 9,
+    fontFamily: Fonts.black,
+    color: "#C2410C",
+  },
+  childDishesList: {
+    marginTop: 8,
+    marginLeft: 26,
+    gap: 6,
+  },
+  childDishRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F9FAFB",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  childDishReadyRow: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
+  },
+  childDishInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    marginRight: 8,
+  },
+  childBullet: {
+    fontSize: 16,
+    color: Theme.primary,
+    fontWeight: "900",
+  },
+  childDishName: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: Theme.textPrimary,
+  },
+  childDishNameReady: {
+    color: "#15803D",
+  },
+  childDishQty: {
+    fontSize: 13,
+    fontFamily: Fonts.black,
+    color: Theme.primary,
+  },
+  childStatusBadge: {
+    minWidth: 80,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   itemMain: { flex: 1, marginRight: 12 },
   itemTitle: { flexDirection: "row", alignItems: "center", gap: 8 },

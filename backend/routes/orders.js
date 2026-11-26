@@ -2942,7 +2942,7 @@ router.post("/remove-item", async (req, res) => {
 
 router.post("/update-item-status", async (req, res) => {
   try {
-    const { lineItemId, status, tableId } = req.body;
+    const { lineItemId, status, tableId, childDishId } = req.body;
     const pool = await poolPromise;
     const statusMap = {
       NEW: 1,
@@ -2953,11 +2953,11 @@ router.post("/update-item-status", async (req, res) => {
       VOIDED: 0,
     };
 
-    // Fetch orderNumber and TableId so we can emit them correctly
+    // Fetch orderNumber, ComboDetailsJSON, and TableId so we can emit them correctly
     const orderRes = await pool
       .request()
       .input("id", sql.UniqueIdentifier, lineItemId).query(`
-        SELECT h.OrderNumber, tm.TableId 
+        SELECT d.OrderDetailId, d.ComboDetailsJSON, d.StatusCode, h.OrderNumber, tm.TableId 
         FROM RestaurantOrderDetailCur d 
         JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
         LEFT JOIN TableMaster tm ON RTRIM(LTRIM(h.Tableno)) = RTRIM(LTRIM(tm.TableNumber))
@@ -2967,13 +2967,58 @@ router.post("/update-item-status", async (req, res) => {
     const orderId = orderRes.recordset[0]?.OrderNumber;
     const resolvedTableId = orderRes.recordset[0]?.TableId || tableId;
 
+    let comboJsonStr = orderRes.recordset[0]?.ComboDetailsJSON || null;
+    let code = statusMap[status] !== undefined ? statusMap[status] : 2;
+
+    if (childDishId && comboJsonStr) {
+      try {
+        let comboObj = JSON.parse(comboJsonStr);
+        let groups = Array.isArray(comboObj) ? comboObj : (comboObj.groups || []);
+        let allChildReady = true;
+        let childFound = false;
+        const cleanChildId = String(childDishId).toLowerCase();
+
+        groups.forEach((grp) => {
+          const choices = grp.items || grp.dishes || grp.selections || [];
+          if (Array.isArray(choices)) {
+            choices.forEach((opt) => {
+              const optId = String(opt.dishId || opt.DishId || opt.mappingId || opt.name || "").toLowerCase();
+              if (optId === cleanChildId || String(opt.name || "").toLowerCase() === cleanChildId) {
+                opt.status = status;
+                childFound = true;
+              }
+              const optStatus = opt.status || "SENT";
+              if (optStatus !== "READY" && optStatus !== "SERVED") {
+                allChildReady = false;
+              }
+            });
+          }
+        });
+
+        comboObj.childStatuses = comboObj.childStatuses || {};
+        comboObj.childStatuses[cleanChildId] = status;
+
+        if (childFound) {
+          code = allChildReady ? 3 : 2;
+        }
+        comboJsonStr = JSON.stringify(comboObj);
+      } catch (e) {
+        console.warn("Child status parse error:", e);
+      }
+    }
+
     await pool
       .request()
       .input("id", sql.UniqueIdentifier, lineItemId)
-      .input("code", sql.Int, statusMap[status] !== undefined ? statusMap[status] : 2)
-      .query(
-        "UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id",
-      );
+      .input("code", sql.Int, code)
+      .input("comboJson", sql.NVarChar(sql.MAX), comboJsonStr)
+      .query(`
+        UPDATE RestaurantOrderDetailCur 
+        SET StatusCode = @code, 
+            ComboDetailsJSON = CASE WHEN @comboJson IS NOT NULL THEN @comboJson ELSE ComboDetailsJSON END,
+            ModifiedOn = GETDATE() 
+        WHERE OrderDetailId = @id
+      `);
 
     if (status === "VOIDED" && resolvedTableId) {
       await syncTableStatus(req, resolvedTableId).catch(() => { });
@@ -3091,6 +3136,7 @@ router.post("/update-item-status", async (req, res) => {
 
     req.app.get("io")?.emit("item_status_updated", {
       lineItemId,
+      childDishId: childDishId || undefined,
       status,
       tableId: String(resolvedTableId || "").toLowerCase(),
       orderId,
@@ -3128,6 +3174,41 @@ router.post("/update-item-status", async (req, res) => {
 router.get("/active-kitchen", async (req, res) => {
   try {
     const pool = await poolPromise;
+
+    // Pre-fetch combo mappings for any combo dishes
+    let comboMasterMap = {};
+    try {
+      const comboDishesRes = await pool.request().query(`
+        SELECT 
+          cgm.ParentComboDishId,
+          cgm.ComboGroupId,
+          cgm.GroupName,
+          m.DishId as ChildDishId,
+          d.Name as ChildDishName,
+          m.IsDefault,
+          m.SortOrder
+        FROM ComboGroupMaster cgm WITH (NOLOCK)
+        JOIN ComboGroupDishMapping m WITH (NOLOCK) ON cgm.ComboGroupId = m.ComboGroupId AND m.IsActive = 1
+        JOIN DishMaster d WITH (NOLOCK) ON m.DishId = d.DishId AND d.IsActive = 1
+        WHERE cgm.IsActive = 1
+        ORDER BY cgm.ComboGroupId, m.SortOrder ASC
+      `);
+
+      comboDishesRes.recordset.forEach((r) => {
+        const parentId = String(r.ParentComboDishId).toLowerCase();
+        if (!comboMasterMap[parentId]) comboMasterMap[parentId] = [];
+        comboMasterMap[parentId].push({
+          dishId: r.ChildDishId,
+          name: r.ChildDishName,
+          dishName: r.ChildDishName,
+          isDefault: r.IsDefault,
+          sortOrder: r.SortOrder
+        });
+      });
+    } catch (e) {
+      console.warn("Failed to pre-fetch combo master mappings in active-kitchen:", e.message);
+    }
+
     const result = await pool.request().query(`
       SELECT 
         d.OrderDetailId as lineItemId, d.DishId as id, d.Quantity as qty, d.StatusCode, 
@@ -3234,18 +3315,63 @@ router.get("/active-kitchen", async (req, res) => {
         4: "SERVED",
         5: "HOLD",
       };
+      let comboSels = [];
+      let childStatuses = {};
+      if (row.ComboDetailsJSON) {
+        try {
+          const p = JSON.parse(row.ComboDetailsJSON);
+          comboSels = Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+          childStatuses = p.childStatuses || {};
+        } catch {
+          comboSels = [];
+        }
+      }
+
+      // If comboSels is empty, check comboMasterMap
+      const cleanProdId = String(row.id || "").toLowerCase();
+      if ((!comboSels || comboSels.length === 0) && comboMasterMap[cleanProdId] && comboMasterMap[cleanProdId].length > 0) {
+        comboSels = [
+          {
+            groupId: `MASTER_${cleanProdId}`,
+            groupName: "Included Items",
+            items: comboMasterMap[cleanProdId]
+          }
+        ];
+      }
+
+      // If still empty, check Description / note for formatted dish names (e.g. "Burger • Fries • Pepsi")
+      if ((!comboSels || comboSels.length === 0) && (row.Description || row.note)) {
+        const desc = row.Description || row.note || "";
+        if (desc && !desc.toLowerCase().includes("combo promotion")) {
+          const parts = desc.split(/[\•\n]/).map(s => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+          if (parts.length > 0) {
+            comboSels = [
+              {
+                groupId: "DESC_INCLUDED",
+                groupName: "Included Items",
+                items: parts.map((name, idx) => ({
+                  dishId: `00000000-0000-0000-0000-${String(idx + 1).padStart(12, "0")}`,
+                  name: name,
+                  dishName: name
+                }))
+              }
+            ];
+          }
+        }
+      }
+
+      const resolvedName = (row.name && row.name !== "Dish" && row.name.trim() !== "" ? row.name : null) ||
+        (row.DishName && row.DishName !== "Dish" && row.DishName.trim() !== "" ? row.DishName : null) ||
+        (row.Description && row.Description !== "Dish" && !row.Description.includes("•") && row.Description.trim() !== "" ? row.Description : null) ||
+        row.name || row.DishName || "Weekend Combo";
+
       orders[row.orderId].items.push({
         ...row,
+        name: resolvedName,
         status: statusMap[row.StatusCode],
         modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : [],
-        comboSelections: row.ComboDetailsJSON ? (() => {
-          try {
-            const p = JSON.parse(row.ComboDetailsJSON);
-            return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
-          } catch {
-            return [];
-          }
-        })() : [],
+        comboSelections: comboSels,
+        childStatuses,
       });
     });
     res.json({ serverTime: Date.now(), orders: Object.values(orders) });
@@ -3359,18 +3485,63 @@ router.get("/active-sessions", async (req, res) => {
         4: "SERVED",
         5: "HOLD",
       };
+      let comboSels = [];
+      let childStatuses = {};
+      if (row.ComboDetailsJSON) {
+        try {
+          const p = JSON.parse(row.ComboDetailsJSON);
+          comboSels = Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+          childStatuses = p.childStatuses || {};
+        } catch {
+          comboSels = [];
+        }
+      }
+
+      // If comboSels is empty, check comboMasterMap
+      const cleanProdId = String(row.id || "").toLowerCase();
+      if ((!comboSels || comboSels.length === 0) && comboMasterMap[cleanProdId] && comboMasterMap[cleanProdId].length > 0) {
+        comboSels = [
+          {
+            groupId: `MASTER_${cleanProdId}`,
+            groupName: "Included Items",
+            items: comboMasterMap[cleanProdId]
+          }
+        ];
+      }
+
+      // If still empty, check Description / note for formatted dish names (e.g. "Burger • Fries • Pepsi")
+      if ((!comboSels || comboSels.length === 0) && (row.Description || row.note)) {
+        const desc = row.Description || row.note || "";
+        if (desc && !desc.toLowerCase().includes("combo promotion")) {
+          const parts = desc.split(/[\•\n]/).map(s => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean);
+          if (parts.length > 0) {
+            comboSels = [
+              {
+                groupId: "DESC_INCLUDED",
+                groupName: "Included Items",
+                items: parts.map((name, idx) => ({
+                  dishId: `00000000-0000-0000-0000-${String(idx + 1).padStart(12, "0")}`,
+                  name: name,
+                  dishName: name
+                }))
+              }
+            ];
+          }
+        }
+      }
+
+      const resolvedName = (row.name && row.name !== "Dish" && row.name.trim() !== "" ? row.name : null) ||
+        (row.DishName && row.DishName !== "Dish" && row.DishName.trim() !== "" ? row.DishName : null) ||
+        (row.Description && row.Description !== "Dish" && !row.Description.includes("•") && row.Description.trim() !== "" ? row.Description : null) ||
+        row.name || row.DishName || "Weekend Combo";
+
       orders[row.orderId].items.push({
         ...row,
+        name: resolvedName,
         status: statusMap[row.StatusCode],
         modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : [],
-        comboSelections: row.ComboDetailsJSON ? (() => {
-          try {
-            const p = JSON.parse(row.ComboDetailsJSON);
-            return Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
-          } catch {
-            return [];
-          }
-        })() : [],
+        comboSelections: comboSels,
+        childStatuses,
       });
     });
     res.json({ serverTime: Date.now(), orders: Object.values(orders) });
