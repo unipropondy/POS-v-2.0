@@ -3762,7 +3762,23 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
     const roundedBy = Number(order.RoundedBy || 0);
     const subTotal = Number(order.TotalAmountLessFreight || order.TotalLineItemAmount || (totalAmount - takeawayCharge - serviceCharge - totalTax)) || totalAmount;
     const receiptCount = items.reduce((sum, it) => sum + (Number(it.Quantity) || 1), 0);
-    const cashierId = order.CreatedBy || '8C026364-77E7-4002-803B-9BBE187C60BD';
+    let cashierId = order.CreatedBy;
+    const isNilCashier = !cashierId || String(cashierId).trim() === '' || String(cashierId).trim() === DEFAULT_GUID;
+    if (isNilCashier && String(order.entry_status || '').trim().toUpperCase() === 'K') {
+      const kioskUserRes = await transaction.request().query(`
+        SELECT TOP 1 um.UserId
+        FROM UserMaster um
+        LEFT JOIN UserGroupMaster g ON um.UserGroupid = g.UserGroupId
+        WHERE LOWER(LTRIM(RTRIM(ISNULL(um.UserName, '')))) = 'kiosk'
+           OR UPPER(LTRIM(RTRIM(ISNULL(g.UserGroupCode, '')))) = 'KIOSK'
+      `);
+      if (kioskUserRes.recordset.length > 0) {
+        cashierId = kioskUserRes.recordset[0].UserId;
+      }
+    }
+    if (!cashierId) {
+      cashierId = DEFAULT_GUID;
+    }
     let cleanTableNo = String(order.Tableno || 'TAKEAWAY').trim();
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTableNo.replace(/[{}]/g, ""))) {
       const tmLookup = await transaction.request()

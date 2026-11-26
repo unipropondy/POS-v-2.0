@@ -1,7 +1,15 @@
 import { API_URL } from "@/constants/Config";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
+import {
+  endOfMonth,
+  endOfWeek,
+  endOfYear,
+  format,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+} from "date-fns";
 import { BlurView } from "expo-blur";
 import * as FileSystemLegacy from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
@@ -24,8 +32,6 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
-  Alert,
-  Switch,
 } from "react-native";
 import { PieChart } from "react-native-gifted-charts";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -36,8 +42,12 @@ import TransactionCard from "../components/TransactionCard";
 import UniversalPrinter from "../components/UniversalPrinter";
 import { Fonts } from "../constants/Fonts";
 import { Theme } from "../constants/theme";
-import { getSingaporeDateString, parseDatabaseDate, formatToSingaporeDate } from "../utils/timezoneHelper";
 import { useAuthStore } from "../stores/authStore";
+import {
+  formatToSingaporeDate,
+  getSingaporeDateString,
+  parseDatabaseDate,
+} from "../utils/timezoneHelper";
 
 type FilterType = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "CUSTOM";
 type DetailReportType = "CATEGORY" | "DISH" | "SETTLEMENT" | "ARTIST_TARGET";
@@ -74,7 +84,7 @@ const getTodayDateStr = (): string => getSingaporeDateString(new Date());
 const calculatePeriodRange = (
   filter: FilterType,
   refDateStr: string,
-  maxAllowedDateStr?: string
+  maxAllowedDateStr?: string,
 ): { startDate: string; endDate: string } => {
   const maxDateStr = maxAllowedDateStr || getTodayDateStr();
   const ref = parseLocalDate(refDateStr);
@@ -182,7 +192,8 @@ function suggestEmailDomain(email: string): string | undefined {
   const local = email.slice(0, at);
   const domain = email.slice(at + 1);
   if (COMMON_EMAIL_DOMAINS.includes(domain)) return undefined;
-  if (KNOWN_DOMAIN_TYPOS[domain]) return `${local}@${KNOWN_DOMAIN_TYPOS[domain]}`;
+  if (KNOWN_DOMAIN_TYPOS[domain])
+    return `${local}@${KNOWN_DOMAIN_TYPOS[domain]}`;
   let bestDomain = "";
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const candidate of COMMON_EMAIL_DOMAINS) {
@@ -238,7 +249,8 @@ export default function SalesReport() {
   const { showToast } = useToast();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const isSalesReportUser = user?.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F";
+  const isSalesReportUser =
+    user?.userGroupId === "DFCF23EE-F6F4-4885-8D26-0056C657595F";
   const { width: SCREEN_W } = useWindowDimensions();
   const [breakdownRowWidth, setBreakdownRowWidth] = useState(0);
   const [sales, setSales] = useState<any[]>([]);
@@ -257,7 +269,9 @@ export default function SalesReport() {
   const [summary, setSummary] = useState<any>(null);
   const todayDate = getSingaporeDateString();
   const [selectedDate, setSelectedDate] = useState(todayDate);
-  const [activeBusinessDate, setActiveBusinessDate] = useState<string | null>(null);
+  const [activeBusinessDate, setActiveBusinessDate] = useState<string | null>(
+    null,
+  );
   const [selectedFilter, setSelectedFilter] = useState<FilterType>("DAILY");
   const [, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -299,7 +313,9 @@ export default function SalesReport() {
     if (operatorsList.length > 0) return operatorsList;
     const map = new Map();
     sales.forEach((s) => {
-      const key = String(s.CashierId || s.UserLogin || s.CashierName || "").trim();
+      const key = String(
+        s.CashierId || s.UserLogin || s.CashierName || "",
+      ).trim();
       if (key && !map.has(key)) {
         map.set(key, {
           CashierId: String(s.CashierId || key),
@@ -312,7 +328,6 @@ export default function SalesReport() {
     });
     return Array.from(map.values());
   }, [operatorsList, sales]);
-
 
   const [loadingReport, setLoadingReport] = useState(false);
   const [showPrintPrompt, setShowPrintPrompt] = useState(false);
@@ -355,7 +370,11 @@ export default function SalesReport() {
 
   useEffect(() => {
     const maxDateStr = activeBusinessDate || getTodayDateStr();
-    const { startDate, endDate } = calculatePeriodRange(selectedFilter, selectedDate, maxDateStr);
+    const { startDate, endDate } = calculatePeriodRange(
+      selectedFilter,
+      selectedDate,
+      maxDateStr,
+    );
     setRangeStart(startDate);
     setRangeEnd(endDate);
   }, [selectedFilter, selectedDate, activeBusinessDate]);
@@ -369,11 +388,13 @@ export default function SalesReport() {
   const [itemToVoid, setItemToVoid] = useState<any>(null);
   const [showCancelOrderConfirm, setShowCancelOrderConfirm] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
-  
+
   // Split payment mode in Change Payment Modal
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [selectedGridMode, setSelectedGridMode] = useState<string>("");
-  const [changePaymentSplits, setChangePaymentSplits] = useState<{ payMode: string; amount: string }[]>([]);
+  const [changePaymentSplits, setChangePaymentSplits] = useState<
+    { payMode: string; amount: string }[]
+  >([]);
 
   // Member selection states for payment change
   const [showMemberModal, setShowMemberModal] = useState(false);
@@ -381,10 +402,18 @@ export default function SalesReport() {
   const [memberQuery, setMemberQuery] = useState("");
   const [membersList, setMembersList] = useState<any[]>([]);
   const [searchingMembers, setSearchingMembers] = useState(false);
-  const [selectedMemberForPay, setSelectedMemberForPay] = useState<any | null>(null);
-  const [selectedCreditForPay, setSelectedCreditForPay] = useState<any | null>(null);
-  const [currentSelectionStep, setCurrentSelectionStep] = useState<"MEMBER" | "CREDIT" | null>(null);
-  const [activeModalSelection, setActiveModalSelection] = useState<any | null>(null);
+  const [selectedMemberForPay, setSelectedMemberForPay] = useState<any | null>(
+    null,
+  );
+  const [selectedCreditForPay, setSelectedCreditForPay] = useState<any | null>(
+    null,
+  );
+  const [currentSelectionStep, setCurrentSelectionStep] = useState<
+    "MEMBER" | "CREDIT" | null
+  >(null);
+  const [activeModalSelection, setActiveModalSelection] = useState<any | null>(
+    null,
+  );
   const [pendingPayMode, setPendingPayMode] = useState<string | null>(null);
   const [pendingSplits, setPendingSplits] = useState<any[] | null>(null);
 
@@ -431,7 +460,12 @@ export default function SalesReport() {
     role: string;
   } | null>(null);
 
-  const promptPassword = (title: string, description: string, role: string, onSuccess: () => void) => {
+  const promptPassword = (
+    title: string,
+    description: string,
+    role: string,
+    onSuccess: () => void,
+  ) => {
     setPasswordValue("");
     setPasswordError("");
     setPasswordAction({ onSuccess, title, description, role });
@@ -447,7 +481,10 @@ export default function SalesReport() {
     : 0;
 
   const allocatedSplitsSum = useMemo(() => {
-    return changePaymentSplits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+    return changePaymentSplits.reduce(
+      (sum, s) => sum + (parseFloat(s.amount) || 0),
+      0,
+    );
   }, [changePaymentSplits]);
 
   const remainingSplitsBalance = useMemo(() => {
@@ -458,10 +495,14 @@ export default function SalesReport() {
   const [showDownloadPanel, setShowDownloadPanel] = useState(false);
   const [downloadFilter, setDownloadFilter] = useState<FilterType>("DAILY");
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadRangeStart, setDownloadRangeStart] = useState<string | null>(null);
+  const [downloadRangeStart, setDownloadRangeStart] = useState<string | null>(
+    null,
+  );
   const [downloadRangeEnd, setDownloadRangeEnd] = useState<string | null>(null);
   const [showDownloadDatePicker, setShowDownloadDatePicker] = useState(false);
-  const [downloadPickerMode, setDownloadPickerMode] = useState<"START" | "END">("START");
+  const [downloadPickerMode, setDownloadPickerMode] = useState<"START" | "END">(
+    "START",
+  );
   const [emailAddress, setEmailAddress] = useState("");
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailFieldTouched, setEmailFieldTouched] = useState(false);
@@ -494,15 +535,22 @@ export default function SalesReport() {
       const savedModes = await AsyncStorage.getItem("sales_payment_modes");
       const savedTypes = await AsyncStorage.getItem("sales_order_types");
       const savedSort = await AsyncStorage.getItem("sales_sort_order");
-      const savedDownloadFilter = await AsyncStorage.getItem("sales_download_filter");
-      const savedBusinessDate = await AsyncStorage.getItem("selected_business_date");
+      const savedDownloadFilter = await AsyncStorage.getItem(
+        "sales_download_filter",
+      );
+      const savedBusinessDate = await AsyncStorage.getItem(
+        "selected_business_date",
+      );
 
       if (savedBusinessDate) {
         setSelectedDate(savedBusinessDate);
         setActiveBusinessDate(savedBusinessDate);
       }
 
-      if (savedFilter && ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(savedFilter)) {
+      if (
+        savedFilter &&
+        ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(savedFilter)
+      ) {
         setSelectedFilter(savedFilter as FilterType);
       }
       const savedDate = await AsyncStorage.getItem("sales_selected_date");
@@ -515,11 +563,20 @@ export default function SalesReport() {
       if (savedRangeEnd) setRangeEnd(savedRangeEnd);
 
       const savedCashier = await AsyncStorage.getItem("sales_cashier_id");
-      if (savedCashier) setSelectedCashierId(savedCashier);
+      if (
+        savedCashier &&
+        savedCashier !== "00000000-0000-0000-0000-000000000000"
+      ) {
+        setSelectedCashierId(savedCashier);
+      } else if (savedCashier === "00000000-0000-0000-0000-000000000000") {
+        setSelectedCashierId("ALL");
+      }
 
       if (
         savedDownloadFilter &&
-        ["DAILY", "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"].includes(savedDownloadFilter)
+        ["DAILY", "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"].includes(
+          savedDownloadFilter,
+        )
       ) {
         setDownloadFilter(savedDownloadFilter as FilterType);
       }
@@ -570,7 +627,6 @@ export default function SalesReport() {
     }
   }, [companyCode, loadState]);
 
-
   useEffect(() => {
     if (activeBusinessDate && !selectedDate) {
       setSelectedDate(activeBusinessDate);
@@ -595,24 +651,41 @@ export default function SalesReport() {
       try {
         await AsyncStorage.setItem("sales_selected_filter", selectedFilter);
         await AsyncStorage.setItem("sales_selected_date", selectedDate);
-        if (rangeStart) await AsyncStorage.setItem("sales_range_start", rangeStart);
+        if (rangeStart)
+          await AsyncStorage.setItem("sales_range_start", rangeStart);
         if (rangeEnd) await AsyncStorage.setItem("sales_range_end", rangeEnd);
         await AsyncStorage.setItem("sales_cashier_id", selectedCashierId);
         await AsyncStorage.setItem("sales_download_filter", downloadFilter);
-        await AsyncStorage.setItem("sales_payment_modes", JSON.stringify(activePaymentModes));
-        await AsyncStorage.setItem("sales_order_types", JSON.stringify(activeOrderTypes));
+        await AsyncStorage.setItem(
+          "sales_payment_modes",
+          JSON.stringify(activePaymentModes),
+        );
+        await AsyncStorage.setItem(
+          "sales_order_types",
+          JSON.stringify(activeOrderTypes),
+        );
         await AsyncStorage.setItem("sales_sort_order", sortOrder);
       } catch (e) {
         console.error("Save state error:", e);
       }
     };
     saveState();
-  }, [selectedFilter, selectedDate, rangeStart, rangeEnd, selectedCashierId, downloadFilter, activePaymentModes, activeOrderTypes, sortOrder]);
+  }, [
+    selectedFilter,
+    selectedDate,
+    rangeStart,
+    rangeEnd,
+    selectedCashierId,
+    downloadFilter,
+    activePaymentModes,
+    activeOrderTypes,
+    sortOrder,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [selectedDate, selectedFilter, rangeStart, rangeEnd, user?.companyCode])
+    }, [selectedDate, selectedFilter, rangeStart, rangeEnd, user?.companyCode]),
   );
 
   const fetchPaymentMethods = async () => {
@@ -624,7 +697,9 @@ export default function SalesReport() {
       if (Array.isArray(data)) {
         setDbPaymentModes(data);
         const stored = await AsyncStorage.getItem("sales_payment_modes");
-        const defaultModes = data.map((m: any) => m.payMode.toUpperCase().trim());
+        const defaultModes = data.map((m: any) =>
+          m.payMode.toUpperCase().trim(),
+        );
         if (!defaultModes.includes("VOID")) {
           defaultModes.push("VOID");
         }
@@ -633,13 +708,14 @@ export default function SalesReport() {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed) && parsed.length > 0) {
               const merged = [...parsed];
-              defaultModes.forEach(mode => {
+              defaultModes.forEach((mode) => {
                 if (!merged.includes(mode)) {
                   merged.push(mode);
                 }
               });
               setActivePaymentModes((prev) => {
-                if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+                if (JSON.stringify(prev) === JSON.stringify(merged))
+                  return prev;
                 return merged;
               });
               return;
@@ -647,7 +723,8 @@ export default function SalesReport() {
           } catch (e) {}
         }
         setActivePaymentModes((prev) => {
-          if (JSON.stringify(prev) === JSON.stringify(defaultModes)) return prev;
+          if (JSON.stringify(prev) === JSON.stringify(defaultModes))
+            return prev;
           return defaultModes;
         });
       }
@@ -656,15 +733,19 @@ export default function SalesReport() {
     }
   };
 
-  const fetchOperators = async (overrideRange?: { startDate: string; endDate: string }) => {
+  const fetchOperators = async (overrideRange?: {
+    startDate: string;
+    endDate: string;
+  }) => {
     try {
-      const { startDate: startStr, endDate: endStr } = overrideRange || effectiveDateRange;
+      const { startDate: startStr, endDate: endStr } =
+        overrideRange || effectiveDateRange;
       const dateParam = overrideRange?.startDate || selectedDate;
       const res = await fetch(
         `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${dateParam}&startDate=${startStr}&endDate=${endStr}`,
         {
           headers: getTenantHeaders(),
-        }
+        },
       );
       if (res.ok) {
         const data = await res.json();
@@ -681,7 +762,8 @@ export default function SalesReport() {
     try {
       if (sales.length === 0) setLoading(true);
 
-      let rangeOverride: { startDate: string; endDate: string } | undefined = undefined;
+      let rangeOverride: { startDate: string; endDate: string } | undefined =
+        undefined;
       try {
         const res = await fetch(`${API_URL}/api/settlement/active-day`, {
           headers: getTenantHeaders(),
@@ -691,7 +773,10 @@ export default function SalesReport() {
           setActiveBusinessDate(data.startDate);
           if (selectedDate === todayDate && selectedDate !== data.startDate) {
             setSelectedDate(data.startDate);
-            rangeOverride = { startDate: data.startDate, endDate: data.startDate };
+            rangeOverride = {
+              startDate: data.startDate,
+              endDate: data.startDate,
+            };
           }
         }
       } catch (err) {
@@ -699,11 +784,13 @@ export default function SalesReport() {
       }
 
       await Promise.all([
-        fetchSales(rangeOverride), 
-        fetchSummary(rangeOverride), 
+        fetchSales(rangeOverride),
+        fetchSummary(rangeOverride),
         fetchPaymentMethods(),
         fetchOperators(rangeOverride),
-        detailReportType ? fetchDetailReport(detailReportType, selectedFilter) : Promise.resolve()
+        detailReportType
+          ? fetchDetailReport(detailReportType, selectedFilter)
+          : Promise.resolve(),
       ]);
     } catch (error) {
       console.error("Error:", error);
@@ -712,7 +799,6 @@ export default function SalesReport() {
       setRefreshing(false);
     }
   };
-
 
   const fetchDetailReport = useCallback(
     async (reportType: DetailReportType, filterType = selectedFilter) => {
@@ -744,7 +830,7 @@ export default function SalesReport() {
           `${API_URL}/api/reports/${endpoint}?${params.toString()}`,
           {
             headers: getTenantHeaders(),
-          }
+          },
         );
 
         if (!response.ok) {
@@ -759,18 +845,18 @@ export default function SalesReport() {
           data,
         });
 
-         if (reportType === "CATEGORY") {
+        if (reportType === "CATEGORY") {
           setCategoryReport(
             Array.isArray(data)
               ? data.map((row: any) => ({
-                CategoryName:
-                  row.categoryName || row.CategoryName || "Unmapped",
-                Sold: row.totalQty ?? row.totalQuantitySold ?? 0,
-                Voided: row.voidQty ?? 0,
-                DiscountAmount: row.discountAmount ?? 0,
-                TakeawayCharge: row.takeawayCharge ?? 0,
-                SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
-              }))
+                  CategoryName:
+                    row.categoryName || row.CategoryName || "Unmapped",
+                  Sold: row.totalQty ?? row.totalQuantitySold ?? 0,
+                  Voided: row.voidQty ?? 0,
+                  DiscountAmount: row.discountAmount ?? 0,
+                  TakeawayCharge: row.takeawayCharge ?? 0,
+                  SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
+                }))
               : [],
           );
           setDishReport([]);
@@ -780,17 +866,17 @@ export default function SalesReport() {
           setDishReport(
             Array.isArray(data)
               ? data.map((row: any) => ({
-                DishName: row.dishName || row.DishName || "Unknown Dish",
-                CategoryName:
-                  row.categoryName || row.CategoryName || "Unmapped",
-                SubCategoryName:
-                  row.subCategoryName || row.SubCategoryName || "Unmapped",
-                Sold: row.totalQty ?? row.quantitySold ?? 0,
-                Voided: row.voidQty ?? 0,
-                DiscountAmount: row.discountAmount ?? 0,
-                TakeawayCharge: row.takeawayCharge ?? 0,
-                SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
-              }))
+                  DishName: row.dishName || row.DishName || "Unknown Dish",
+                  CategoryName:
+                    row.categoryName || row.CategoryName || "Unmapped",
+                  SubCategoryName:
+                    row.subCategoryName || row.SubCategoryName || "Unmapped",
+                  Sold: row.totalQty ?? row.quantitySold ?? 0,
+                  Voided: row.voidQty ?? 0,
+                  DiscountAmount: row.discountAmount ?? 0,
+                  TakeawayCharge: row.takeawayCharge ?? 0,
+                  SalesAmount: row.totalAmount ?? row.totalSalesAmount ?? 0,
+                }))
               : [],
           );
           setCategoryReport([]);
@@ -800,15 +886,15 @@ export default function SalesReport() {
           setArtistTargetReport(
             Array.isArray(data)
               ? data.map((row: any) => ({
-                CustomerName: row.CustomerName || "Unknown Artist",
-                Amount: row.Amount ?? 0,
-                FromDate: row.FromDate,
-                ToDate: row.ToDate,
-                TargetAmount: row.TargetAmount ?? 0,
-                Achieved: row.Achieved ?? 0,
-                Left: row.Left ?? 0,
-                Status: row.Status || "Not Achieved",
-              }))
+                  CustomerName: row.CustomerName || "Unknown Artist",
+                  Amount: row.Amount ?? 0,
+                  FromDate: row.FromDate,
+                  ToDate: row.ToDate,
+                  TargetAmount: row.TargetAmount ?? 0,
+                  Achieved: row.Achieved ?? 0,
+                  Left: row.Left ?? 0,
+                  Status: row.Status || "Not Achieved",
+                }))
               : [],
           );
           setCategoryReport([]);
@@ -818,12 +904,12 @@ export default function SalesReport() {
           setSettlementReport(
             Array.isArray(data)
               ? data.map((row: any) => ({
-                Paymode: row.Paymode || "Unknown",
-                SysAmount: row.SysAmount ?? 0,
-                ManualAmount: row.ManualAmount ?? 0,
-                SortageOrExces: row.SortageOrExces ?? 0,
-                ReceiptCount: row.ReceiptCount ?? 0,
-              }))
+                  Paymode: row.Paymode || "Unknown",
+                  SysAmount: row.SysAmount ?? 0,
+                  ManualAmount: row.ManualAmount ?? 0,
+                  SortageOrExces: row.SortageOrExces ?? 0,
+                  ReceiptCount: row.ReceiptCount ?? 0,
+                }))
               : [],
           );
           setCategoryReport([]);
@@ -860,12 +946,19 @@ export default function SalesReport() {
     }
   }, [selectedFilter, selectedDate, detailReportType, fetchDetailReport]);
 
-  const fetchSales = async (overrideRange?: { startDate: string; endDate: string }) => {
+  const fetchSales = async (overrideRange?: {
+    startDate: string;
+    endDate: string;
+  }) => {
     try {
-      const { startDate: startStr, endDate: endStr } = overrideRange || effectiveDateRange;
-      const response = await fetch(`${API_URL}/api/sales/all?startDate=${startStr}&endDate=${endStr}`, {
-        headers: getTenantHeaders(),
-      });
+      const { startDate: startStr, endDate: endStr } =
+        overrideRange || effectiveDateRange;
+      const response = await fetch(
+        `${API_URL}/api/sales/all?startDate=${startStr}&endDate=${endStr}`,
+        {
+          headers: getTenantHeaders(),
+        },
+      );
       if (!response.ok) throw new Error("Failed to fetch sales");
       const data = await response.json();
       if (Array.isArray(data)) {
@@ -879,9 +972,13 @@ export default function SalesReport() {
     }
   };
 
-  const fetchSummary = async (overrideRange?: { startDate: string; endDate: string }) => {
+  const fetchSummary = async (overrideRange?: {
+    startDate: string;
+    endDate: string;
+  }) => {
     try {
-      const { startDate: startStr, endDate: endStr } = overrideRange || effectiveDateRange;
+      const { startDate: startStr, endDate: endStr } =
+        overrideRange || effectiveDateRange;
       const url = `${API_URL}/api/sales/range?startDate=${startStr}&endDate=${endStr}`;
       const response = await fetch(url, {
         headers: getTenantHeaders(),
@@ -893,7 +990,6 @@ export default function SalesReport() {
       setSummary(null);
     }
   };
-
 
   const fetchReportData = async () => {
     const endObj = new Date();
@@ -910,7 +1006,11 @@ export default function SalesReport() {
     } else if (downloadFilter === "MONTHLY") {
       startObj.setDate(1);
       const today = new Date();
-      const endOfMonth = new Date(endObj.getFullYear(), endObj.getMonth() + 1, 0);
+      const endOfMonth = new Date(
+        endObj.getFullYear(),
+        endObj.getMonth() + 1,
+        0,
+      );
       if (endOfMonth > today) {
         endObj.setTime(today.getTime());
       } else {
@@ -918,7 +1018,11 @@ export default function SalesReport() {
       }
     } else if (downloadFilter === "YEARLY") {
       startObj.setFullYear(startObj.getFullYear() - 1);
-    } else if (downloadFilter === "CUSTOM" && downloadRangeStart && downloadRangeEnd) {
+    } else if (
+      downloadFilter === "CUSTOM" &&
+      downloadRangeStart &&
+      downloadRangeEnd
+    ) {
       startObj.setTime(new Date(downloadRangeStart).getTime());
       endObj.setTime(new Date(downloadRangeEnd).getTime());
     }
@@ -926,7 +1030,7 @@ export default function SalesReport() {
     const startStr = getSingaporeDateString(startObj);
     const endStr = getSingaporeDateString(endObj);
 
-    const userName = await AsyncStorage.getItem("userName") || "SR";
+    const userName = (await AsyncStorage.getItem("userName")) || "SR";
     const authHeaders = getTenantHeaders();
 
     const summaryUrl = `${API_URL}/api/sales/day-end-summary?startDate=${startStr}&endDate=${endStr}`;
@@ -934,15 +1038,22 @@ export default function SalesReport() {
     const summaryData = await summaryRes.json();
 
     if (!summaryData.success) {
-      console.warn("[fetchReportData] day-end-summary returned non-success:", summaryData?.error || summaryRes.status);
+      console.warn(
+        "[fetchReportData] day-end-summary returned non-success:",
+        summaryData?.error || summaryRes.status,
+      );
       // Don't throw — fall through with empty summaryData so the backend PDF generator still runs
     }
 
     // We fetch dish report for item-wise data
     let items: any[] = [];
     try {
-      const dishFilter = downloadFilter === "CUSTOM" ? "daily" : downloadFilter.toLowerCase();
-      const dRes = await fetch(`${API_URL}/api/reports/dish?filter=${dishFilter}&date=${startStr}`, { headers: authHeaders });
+      const dishFilter =
+        downloadFilter === "CUSTOM" ? "daily" : downloadFilter.toLowerCase();
+      const dRes = await fetch(
+        `${API_URL}/api/reports/dish?filter=${dishFilter}&date=${startStr}`,
+        { headers: authHeaders },
+      );
       const dData = await dRes.json();
       if (Array.isArray(dData)) {
         items = dData.map((d: any) => ({
@@ -967,30 +1078,30 @@ export default function SalesReport() {
     // when the same credit bill is also paid within the report period.
     let creditSalesTotal = 0;
     summaryData.paymodeDetail?.forEach((p: any) => {
-      const paymodeName = String(p.Paymode || 'CASH').toUpperCase();
-      if (paymodeName.startsWith('MEMBER PAYMENT')) {
+      const paymodeName = String(p.Paymode || "CASH").toUpperCase();
+      if (paymodeName.startsWith("MEMBER PAYMENT")) {
         memberPaymentsCollected += p.Amount || 0;
         paymentBreakdown.push({
           name: p.Paymode,
           qty: p.ReceiptCount || 0,
-          amount: p.Amount || 0
+          amount: p.Amount || 0,
         });
-      } else if (paymodeName.startsWith('CREDIT PAYMENT')) {
+      } else if (paymodeName.startsWith("CREDIT PAYMENT")) {
         creditPaymentsCollected += p.Amount || 0;
         paymentBreakdown.push({
           name: p.Paymode,
           qty: p.ReceiptCount || 0,
-          amount: p.Amount || 0
+          amount: p.Amount || 0,
         });
       } else {
         // Capture credit sales (paymode = 'CREDIT') separately
-        if (paymodeName === 'CREDIT') {
+        if (paymodeName === "CREDIT") {
           creditSalesTotal += p.Amount || 0;
         }
         paymentBreakdown.push({
           name: p.Paymode,
           qty: p.ReceiptCount || 0,
-          amount: p.Amount || 0
+          amount: p.Amount || 0,
         });
       }
     });
@@ -998,19 +1109,25 @@ export default function SalesReport() {
     const sa = summaryData.salesAnalysis || {};
     const vd = summaryData.voidDetail || {};
 
-    const selectedUserObj = availableOperators.find(op => String(op.CashierId) === String(selectedCashierId));
-    const formattedCashierName = selectedCashierId === "ALL"
-      ? "Whole Sales (All Users)"
-      : (selectedUserObj
-          ? `${selectedUserObj.CashierName || ''} ${selectedUserObj.UserLogin && selectedUserObj.UserLogin !== '-' ? `(@${selectedUserObj.UserLogin})` : ''}`.trim()
-          : String(selectedCashierId));
+    const selectedUserObj = availableOperators.find(
+      (op) => String(op.CashierId) === String(selectedCashierId),
+    );
+    const formattedCashierName =
+      selectedCashierId === "ALL"
+        ? "Whole Sales (All Users)"
+        : selectedUserObj
+          ? `${selectedUserObj.CashierName || ""} ${selectedUserObj.UserLogin && selectedUserObj.UserLogin !== "-" ? `(@${selectedUserObj.UserLogin})` : ""}`.trim()
+          : String(selectedCashierId);
 
     return {
       filterType: downloadFilter,
-      period: downloadFilter === "DAILY" ? startStr : `${startStr} to ${endStr}`,
-      companyName: summaryData.orgInfo?.Name || 'AL-HAZIMA RESTAURANT PTE LTD',
-      companyAddress: summaryData.orgInfo?.Address1_Line1 || 'No 4, Cheong Chin Nam Road, SINGAPORE 599729',
-      companyPhone: summaryData.orgInfo?.Address1_Telephone1 || '65130000',
+      period:
+        downloadFilter === "DAILY" ? startStr : `${startStr} to ${endStr}`,
+      companyName: summaryData.orgInfo?.Name || "AL-HAZIMA RESTAURANT PTE LTD",
+      companyAddress:
+        summaryData.orgInfo?.Address1_Line1 ||
+        "No 4, Cheong Chin Nam Road, SINGAPORE 599729",
+      companyPhone: summaryData.orgInfo?.Address1_Telephone1 || "65130000",
       selectedCashierId,
       cashierName: formattedCashierName,
       printedBy: userName,
@@ -1029,7 +1146,12 @@ export default function SalesReport() {
       // Total Collections = actual cash/card received.
       // Credit *sales* are deferred revenue (not collected at point of sale),
       // so subtract them before adding credit payment collections.
-      totalCollections: (Number(sa.totalSales || 0) - creditSalesTotal - Number(sa.focSales || 0)) + Number(memberPaymentsCollected) + Number(creditPaymentsCollected),
+      totalCollections:
+        Number(sa.totalSales || 0) -
+        creditSalesTotal -
+        Number(sa.focSales || 0) +
+        Number(memberPaymentsCollected) +
+        Number(creditPaymentsCollected),
 
       totalOrders: sa.billCount || 0,
       totalItems: items.reduce((acc, curr) => acc + curr.quantity, 0),
@@ -1042,14 +1164,17 @@ export default function SalesReport() {
 
       paymentBreakdown,
       cancelledOrders: summaryData.cancelledOrders || [],
-      items: items.length > 0 ? items.map(i => ({
-        name: i.name,
-        qty: i.quantity,
-        amount: i.revenue,
-        category: i.category,
-        subcategory: i.subcategory,
-        voidQty: i.voidQty,
-      })) : undefined
+      items:
+        items.length > 0
+          ? items.map((i) => ({
+              name: i.name,
+              qty: i.quantity,
+              amount: i.revenue,
+              category: i.category,
+              subcategory: i.subcategory,
+              voidQty: i.voidQty,
+            }))
+          : undefined,
     };
   };
 
@@ -1078,9 +1203,13 @@ export default function SalesReport() {
         URL.revokeObjectURL(url);
       } else {
         const uri = `${FileSystemLegacy.documentDirectory}${filename}`;
-        await FileSystemLegacy.writeAsStringAsync(uri, arrayBufferToBase64(arrayBuffer), {
-          encoding: FileSystemLegacy.EncodingType.Base64,
-        });
+        await FileSystemLegacy.writeAsStringAsync(
+          uri,
+          arrayBufferToBase64(arrayBuffer),
+          {
+            encoding: FileSystemLegacy.EncodingType.Base64,
+          },
+        );
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri);
         } else {
@@ -1157,15 +1286,14 @@ export default function SalesReport() {
         }
         showToast({
           type: "error",
-          message:
-            mailNotConfigured
-              ? "Email not configured on server"
-              : invalidRecipient
-                ? "Recipient email address does not exist."
-                : data.error || `Request failed (${response.status})`,
+          message: mailNotConfigured
+            ? "Email not configured on server"
+            : invalidRecipient
+              ? "Recipient email address does not exist."
+              : data.error || `Request failed (${response.status})`,
           subtitle: mailNotConfigured
             ? data.details ||
-            "Add EMAIL_USER + EMAIL_PASS (or SMTP_*) in Railway Variables, then redeploy."
+              "Add EMAIL_USER + EMAIL_PASS (or SMTP_*) in Railway Variables, then redeploy."
             : invalidRecipient
               ? data.details || data.suggestion
               : data.details,
@@ -1240,14 +1368,18 @@ export default function SalesReport() {
 
     if (direction > 0) {
       if (selectedFilter === "DAILY" && selectedDate >= maxDateStr) return;
-      const curRange = calculatePeriodRange(selectedFilter, selectedDate, maxDateStr);
+      const curRange = calculatePeriodRange(
+        selectedFilter,
+        selectedDate,
+        maxDateStr,
+      );
       if (curRange.endDate >= maxDateStr) return;
     }
 
     if (selectedFilter === "DAILY") {
       newRef.setDate(newRef.getDate() + direction);
     } else if (selectedFilter === "WEEKLY") {
-      newRef.setDate(newRef.getDate() + (direction * 7));
+      newRef.setDate(newRef.getDate() + direction * 7);
     } else if (selectedFilter === "MONTHLY") {
       newRef.setMonth(newRef.getMonth() + direction);
     } else if (selectedFilter === "YEARLY") {
@@ -1259,12 +1391,15 @@ export default function SalesReport() {
       newDateStr = maxDateStr;
     }
 
-    const { startDate, endDate } = calculatePeriodRange(selectedFilter, newDateStr, maxDateStr);
+    const { startDate, endDate } = calculatePeriodRange(
+      selectedFilter,
+      newDateStr,
+      maxDateStr,
+    );
     setSelectedDate(newDateStr);
     setRangeStart(startDate);
     setRangeEnd(endDate);
   };
-
 
   const dateScopedSales = useMemo(() => {
     let result = sales;
@@ -1314,7 +1449,9 @@ export default function SalesReport() {
         const totalManualAmount = group.reduce((sum, r) => {
           return sum + (r.ManualAmount || 0);
         }, 0);
-        const payModes = group.map((r) => String(r.PayMode || "CASH").trim()).filter(Boolean);
+        const payModes = group
+          .map((r) => String(r.PayMode || "CASH").trim())
+          .filter(Boolean);
         const uniquePayModes = Array.from(new Set(payModes));
 
         row.PayMode = uniquePayModes.join(" + ");
@@ -1326,7 +1463,7 @@ export default function SalesReport() {
         const splitMatch = row.BillNo && row.BillNo.match(/-S(\d+)$/i);
         if (splitMatch) {
           row.isSplit = true;
-          row.splitNo = 'S' + splitMatch[1];
+          row.splitNo = "S" + splitMatch[1];
         } else {
           row.isSplit = false;
           row.splitNo = "";
@@ -1338,7 +1475,8 @@ export default function SalesReport() {
   }, [dateScopedSales]);
 
   const baseFilteredSales = useMemo(() => {
-    const norm = (str: string) => (str || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const norm = (str: string) =>
+      (str || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
     return groupedSales.filter((s) => {
       const modeUpper = s.PayMode?.toUpperCase().trim() || "";
@@ -1346,46 +1484,62 @@ export default function SalesReport() {
       const typeUpper = s.OrderType?.toUpperCase().trim() || "";
 
       // Support checking components of combined payment modes (e.g. "CASH + NETS")
-      const splitModes = modeUpper.includes("+") ? modeUpper.split("+").map((m: string) => m.trim()) : [modeUpper];
+      const splitModes = modeUpper.includes("+")
+        ? modeUpper.split("+").map((m: string) => m.trim())
+        : [modeUpper];
 
       const isModeSelected = (mode: string) => {
         if (activePaymentModes.length === 0) return true;
         const cleanM = norm(mode);
         if (!cleanM) return true;
-        return activePaymentModes.some(ap => {
+        return activePaymentModes.some((ap) => {
           const cleanAp = norm(ap);
-          return cleanAp === cleanM || cleanM.includes(cleanAp) || cleanAp.includes(cleanM);
+          return (
+            cleanAp === cleanM ||
+            cleanM.includes(cleanAp) ||
+            cleanAp.includes(cleanM)
+          );
         });
       };
 
       const modeMatch =
         splitModes.some(isModeSelected) ||
-        (activePaymentModes.some(ap => norm(ap) === "UPI") && isUpiMode) ||
+        (activePaymentModes.some((ap) => norm(ap) === "UPI") && isUpiMode) ||
         (showCancelledOrders && s.IsCancelled) ||
-        (typeUpper === 'LEDGER');
+        typeUpper === "LEDGER";
 
       const typeMatch =
         !s.OrderType ||
-        typeUpper === 'LEDGER' ||
+        typeUpper === "LEDGER" ||
         activeOrderTypes.length === 0 ||
         activeOrderTypes.length === 2 ||
-        activeOrderTypes.some(at => norm(at) === norm(typeUpper));
+        activeOrderTypes.some((at) => norm(at) === norm(typeUpper));
 
       return modeMatch && typeMatch;
     });
-  }, [
-    groupedSales,
-    activePaymentModes,
-    activeOrderTypes,
-    showCancelledOrders,
-  ]);
+  }, [groupedSales, activePaymentModes, activeOrderTypes, showCancelledOrders]);
 
   const filteredSales = useMemo(() => {
     const filtered = baseFilteredSales.filter((s) => {
-      const cashierMatch = selectedCashierId === "ALL" || 
-        String(s.CashierId || "").trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase() ||
-        (s.UserLogin && s.UserLogin !== '-' && String(s.UserLogin).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase()) ||
-        (s.CashierName && String(s.CashierName).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase());
+      const cashierMatch =
+        selectedCashierId === "ALL" ||
+        String(s.CashierId || "")
+          .trim()
+          .toLowerCase() ===
+          String(selectedCashierId || "")
+            .trim()
+            .toLowerCase() ||
+        (s.UserLogin &&
+          s.UserLogin !== "-" &&
+          String(s.UserLogin).trim().toLowerCase() ===
+            String(selectedCashierId || "")
+              .trim()
+              .toLowerCase()) ||
+        (s.CashierName &&
+          String(s.CashierName).trim().toLowerCase() ===
+            String(selectedCashierId || "")
+              .trim()
+              .toLowerCase());
       return (showCancelledOrders || !s.IsCancelled) && cashierMatch;
     });
 
@@ -1402,17 +1556,36 @@ export default function SalesReport() {
 
   const filteredMetrics = useMemo(() => {
     const processedBills = new Set<string>();
-    const scoped = selectedCashierId === "ALL" 
-      ? dateScopedSales 
-      : dateScopedSales.filter(s => 
-          String(s.CashierId || "").trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase() ||
-          (s.UserLogin && s.UserLogin !== '-' && String(s.UserLogin).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase()) ||
-          (s.CashierName && String(s.CashierName).trim().toLowerCase() === String(selectedCashierId || "").trim().toLowerCase())
-        );
+    const scoped =
+      selectedCashierId === "ALL"
+        ? dateScopedSales
+        : dateScopedSales.filter(
+            (s) =>
+              String(s.CashierId || "")
+                .trim()
+                .toLowerCase() ===
+                String(selectedCashierId || "")
+                  .trim()
+                  .toLowerCase() ||
+              (s.UserLogin &&
+                s.UserLogin !== "-" &&
+                String(s.UserLogin).trim().toLowerCase() ===
+                  String(selectedCashierId || "")
+                    .trim()
+                    .toLowerCase()) ||
+              (s.CashierName &&
+                String(s.CashierName).trim().toLowerCase() ===
+                  String(selectedCashierId || "")
+                    .trim()
+                    .toLowerCase()),
+          );
     return scoped.reduce(
-
       (acc, s) => {
-        const isSubsequentSplit = s.SettlementID && s.SettlementID.includes("-") && s.SettlementID.split("-").length > 5 && s.SettlementID.split("-").pop().match(/^\d+$/);
+        const isSubsequentSplit =
+          s.SettlementID &&
+          s.SettlementID.includes("-") &&
+          s.SettlementID.split("-").length > 5 &&
+          s.SettlementID.split("-").pop().match(/^\d+$/);
 
         if (s.IsCancelled) {
           if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
@@ -1423,10 +1596,14 @@ export default function SalesReport() {
           return acc;
         }
 
-        const roundedSysAmount = Math.round(((s.SysAmount || 0) + Number.EPSILON) * 100) / 100;
+        const roundedSysAmount =
+          Math.round(((s.SysAmount || 0) + Number.EPSILON) * 100) / 100;
 
-        if (s.OrderType === 'LEDGER') {
-          if (s.OrderId === 'Credit Payment Collected' || s.CustomerType === 'CREDIT') {
+        if (s.OrderType === "LEDGER") {
+          if (
+            s.OrderId === "Credit Payment Collected" ||
+            s.CustomerType === "CREDIT"
+          ) {
             acc.CreditPaymentsCollected += roundedSysAmount;
           } else {
             acc.MemberPaymentsCollected += roundedSysAmount;
@@ -1449,8 +1626,16 @@ export default function SalesReport() {
           acc.Member += roundedSysAmount;
         } else if (mode === "CREDIT") {
           acc.Credit += roundedSysAmount;
-          acc.CreditOutstanding += Math.round(((Number(s.OutstandingAmount) || 0) + Number.EPSILON) * 100) / 100;
-        } else if (mode === "FOC" || mode === "4" || mode.includes("FOC") || mode.includes("FREE")) {
+          acc.CreditOutstanding +=
+            Math.round(
+              ((Number(s.OutstandingAmount) || 0) + Number.EPSILON) * 100,
+            ) / 100;
+        } else if (
+          mode === "FOC" ||
+          mode === "4" ||
+          mode.includes("FOC") ||
+          mode.includes("FREE")
+        ) {
           acc.FocSales += roundedSysAmount;
         }
 
@@ -1460,13 +1645,25 @@ export default function SalesReport() {
           if (s.entryStatus === "q" || s.entry_status === "q" || s.isQROrder) {
             acc.QROrderCount += 1;
           }
-          acc.TotalItems += (s.ReceiptCount || 0);
+          acc.TotalItems += s.ReceiptCount || 0;
           acc.TotalVoids += s.VoidQty || 0;
-          acc.TotalVoidAmount += Math.round(((s.VoidAmount || 0) + Number.EPSILON) * 100) / 100;
-          acc.ServiceCharge += Math.round(((Number(s.ServiceCharge) || 0) + Number.EPSILON) * 100) / 100;
-          acc.TotalTax += Math.round(((Number(s.TotalTax) || 0) + Number.EPSILON) * 100) / 100;
-          acc.TotalDiscount += Math.round(((Number(s.DiscountAmount) || 0) + Number.EPSILON) * 100) / 100;
-          acc.TakeawayCharge += Math.round(((Number(s.TakeawayCharge) || 0) + Number.EPSILON) * 100) / 100;
+          acc.TotalVoidAmount +=
+            Math.round(((s.VoidAmount || 0) + Number.EPSILON) * 100) / 100;
+          acc.ServiceCharge +=
+            Math.round(
+              ((Number(s.ServiceCharge) || 0) + Number.EPSILON) * 100,
+            ) / 100;
+          acc.TotalTax +=
+            Math.round(((Number(s.TotalTax) || 0) + Number.EPSILON) * 100) /
+            100;
+          acc.TotalDiscount +=
+            Math.round(
+              ((Number(s.DiscountAmount) || 0) + Number.EPSILON) * 100,
+            ) / 100;
+          acc.TakeawayCharge +=
+            Math.round(
+              ((Number(s.TakeawayCharge) || 0) + Number.EPSILON) * 100,
+            ) / 100;
         }
 
         return acc;
@@ -1533,20 +1730,28 @@ export default function SalesReport() {
   // Distinct Ionicons per payment mode
   const getPayModeIoniconName = (mode: string): any => {
     const m = mode.toUpperCase().trim();
-    if (m === 'CASH' || m === 'CAS') return 'cash-outline';
-    if (m === 'CARD' || m === 'YEAHPAYCARD') return 'card-outline';
-    if (m === 'NETS') return 'layers-outline';
-    if (m.includes('PAYNOW') || m.includes('PAY NOW') || m === 'UPI' || m === 'GPAY') return 'qr-code-outline';
-    if (m === 'GRAB') return 'car-outline';
-    if (m.includes('PANDA') || m.includes('FOODPANDA')) return 'bicycle-outline';
-    if (m === 'MEMBER') return 'person-circle-outline';
-    if (m === 'CREDIT') return 'pricetag-outline';
-    if (m === 'ONLINE' || m.includes('ONLINE')) return 'globe-outline';
-    if (m === 'CATERING' || m.includes('CATERING')) return 'restaurant-outline';
-    if (m === 'FOC') return 'gift-outline';
-    if (m.includes('BILLING') || m.includes('OLD')) return 'document-text-outline';
-    if (m.includes('YEAH')) return 'scan-outline';
-    return 'wallet-outline';
+    if (m === "CASH" || m === "CAS") return "cash-outline";
+    if (m === "CARD" || m === "YEAHPAYCARD") return "card-outline";
+    if (m === "NETS") return "layers-outline";
+    if (
+      m.includes("PAYNOW") ||
+      m.includes("PAY NOW") ||
+      m === "UPI" ||
+      m === "GPAY"
+    )
+      return "qr-code-outline";
+    if (m === "GRAB") return "car-outline";
+    if (m.includes("PANDA") || m.includes("FOODPANDA"))
+      return "bicycle-outline";
+    if (m === "MEMBER") return "person-circle-outline";
+    if (m === "CREDIT") return "pricetag-outline";
+    if (m === "ONLINE" || m.includes("ONLINE")) return "globe-outline";
+    if (m === "CATERING" || m.includes("CATERING")) return "restaurant-outline";
+    if (m === "FOC") return "gift-outline";
+    if (m.includes("BILLING") || m.includes("OLD"))
+      return "document-text-outline";
+    if (m.includes("YEAH")) return "scan-outline";
+    return "wallet-outline";
   };
 
   const paymentBreakdownMetrics = useMemo<Record<string, number>>(() => {
@@ -1555,7 +1760,7 @@ export default function SalesReport() {
       const typeMatch =
         activeOrderTypes.length === 2 ||
         (s.OrderType
-          ? activeOrderTypes.includes(typeUpper) || typeUpper === 'LEDGER'
+          ? activeOrderTypes.includes(typeUpper) || typeUpper === "LEDGER"
           : activeOrderTypes.includes("DINE-IN"));
       return typeMatch;
     });
@@ -1566,71 +1771,110 @@ export default function SalesReport() {
     });
     initialAcc["CREDIT_OUTSTANDING"] = 0;
 
-    return filteredByTypes.reduce(
-      (acc, s) => {
-        if (s.IsCancelled) {
-          return acc;
-        }
-
-        if (s.OrderType === 'LEDGER') {
-          return acc;
-        }
-
-        const salePayMode = s.PayMode?.trim().toUpperCase() || "";
-
-        // First pass: try exact match
-        let matchedMode = dbPaymentModes.find((m) => {
-          const dbName = String(m.payMode || "").toUpperCase().trim();
-          const dbDesc = String(m.description || "").toUpperCase().trim();
-          const dbPos = String(m.position || m.Position || "").trim();
-          return salePayMode === dbName || salePayMode === dbDesc || salePayMode === dbPos;
-        });
-
-        // Second pass: if no exact match, try greedy/wildcard match
-        if (!matchedMode) {
-          matchedMode = dbPaymentModes.find((m) => {
-            const dbName = String(m.payMode || "").toUpperCase().trim();
-            const dbDesc = String(m.description || "").toUpperCase().trim();
-            if ((dbName === "FOC" || dbDesc === "FOC" || dbName.includes("FREE") || dbDesc.includes("FREE")) &&
-                (salePayMode.includes("FOC") || salePayMode === "4" || salePayMode.includes("FREE"))) {
-              return true;
-            }
-            if ((dbName === "PAYNOW" || dbName === "PAY NOW" || dbName === "UPI" || dbName === "GPAY") &&
-                (salePayMode.includes("PAYNOW") || salePayMode.includes("PAY NOW") || salePayMode.includes("UPI") || salePayMode.includes("GPAY"))) {
-              return true;
-            }
-            if ((dbName === "CASH" || dbName === "CAS") && (salePayMode === "CASH" || salePayMode === "CAS")) {
-              return true;
-            }
-            return false;
-          });
-        }
-
-        if (matchedMode) {
-          const key = matchedMode.payMode.toUpperCase().trim();
-          acc[key] = (acc[key] || 0) + s.SysAmount;
-          if (key === "CREDIT") {
-            acc["CREDIT_OUTSTANDING"] = (acc["CREDIT_OUTSTANDING"] || 0) + (Number(s.OutstandingAmount) || 0);
-          }
-        } else {
-          const key = salePayMode || "CASH";
-          acc[key] = (acc[key] || 0) + s.SysAmount;
-        }
-
+    return filteredByTypes.reduce((acc, s) => {
+      if (s.IsCancelled) {
         return acc;
-      },
-      initialAcc
-    );
+      }
+
+      if (s.OrderType === "LEDGER") {
+        return acc;
+      }
+
+      const salePayMode = s.PayMode?.trim().toUpperCase() || "";
+
+      // First pass: try exact match
+      let matchedMode = dbPaymentModes.find((m) => {
+        const dbName = String(m.payMode || "")
+          .toUpperCase()
+          .trim();
+        const dbDesc = String(m.description || "")
+          .toUpperCase()
+          .trim();
+        const dbPos = String(m.position || m.Position || "").trim();
+        return (
+          salePayMode === dbName ||
+          salePayMode === dbDesc ||
+          salePayMode === dbPos
+        );
+      });
+
+      // Second pass: if no exact match, try greedy/wildcard match
+      if (!matchedMode) {
+        matchedMode = dbPaymentModes.find((m) => {
+          const dbName = String(m.payMode || "")
+            .toUpperCase()
+            .trim();
+          const dbDesc = String(m.description || "")
+            .toUpperCase()
+            .trim();
+          if (
+            (dbName === "FOC" ||
+              dbDesc === "FOC" ||
+              dbName.includes("FREE") ||
+              dbDesc.includes("FREE")) &&
+            (salePayMode.includes("FOC") ||
+              salePayMode === "4" ||
+              salePayMode.includes("FREE"))
+          ) {
+            return true;
+          }
+          if (
+            (dbName === "PAYNOW" ||
+              dbName === "PAY NOW" ||
+              dbName === "UPI" ||
+              dbName === "GPAY") &&
+            (salePayMode.includes("PAYNOW") ||
+              salePayMode.includes("PAY NOW") ||
+              salePayMode.includes("UPI") ||
+              salePayMode.includes("GPAY"))
+          ) {
+            return true;
+          }
+          if (
+            (dbName === "CASH" || dbName === "CAS") &&
+            (salePayMode === "CASH" || salePayMode === "CAS")
+          ) {
+            return true;
+          }
+          return false;
+        });
+      }
+
+      if (matchedMode) {
+        const key = matchedMode.payMode.toUpperCase().trim();
+        acc[key] = (acc[key] || 0) + s.SysAmount;
+        if (key === "CREDIT") {
+          acc["CREDIT_OUTSTANDING"] =
+            (acc["CREDIT_OUTSTANDING"] || 0) +
+            (Number(s.OutstandingAmount) || 0);
+        }
+      } else {
+        const key = salePayMode || "CASH";
+        acc[key] = (acc[key] || 0) + s.SysAmount;
+      }
+
+      return acc;
+    }, initialAcc);
   }, [dateScopedSales, activeOrderTypes, dbPaymentModes]);
 
   const displayedBreakdownModes = useMemo(() => {
-    const modes = dbPaymentModes.filter(m => m.active === 1 || m.Active === 1 || m.active === true || m.Active === true);
+    const modes = dbPaymentModes.filter(
+      (m) =>
+        m.active === 1 ||
+        m.Active === 1 ||
+        m.active === true ||
+        m.Active === true,
+    );
     Object.entries(paymentBreakdownMetrics).forEach(([key, val]) => {
       if (key === "CREDIT_OUTSTANDING") return;
       if (val > 0) {
-        const alreadyExists = modes.some(m => m.payMode.toUpperCase().trim() === key);
+        const alreadyExists = modes.some(
+          (m) => m.payMode.toUpperCase().trim() === key,
+        );
         if (!alreadyExists) {
-          const matchedDbMode = dbPaymentModes.find(m => m.payMode.toUpperCase().trim() === key);
+          const matchedDbMode = dbPaymentModes.find(
+            (m) => m.payMode.toUpperCase().trim() === key,
+          );
           if (matchedDbMode) {
             modes.push(matchedDbMode);
           } else {
@@ -1693,9 +1937,13 @@ export default function SalesReport() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     const modeKey = payMode.toUpperCase().trim();
-    const isOnlyActive = activePaymentModes.length === 1 && activePaymentModes[0] === modeKey;
+    const isOnlyActive =
+      activePaymentModes.length === 1 && activePaymentModes[0] === modeKey;
     if (isOnlyActive) {
-      setActivePaymentModes([...displayedBreakdownModes.map(m => m.payMode.toUpperCase().trim()), "VOID"]);
+      setActivePaymentModes([
+        ...displayedBreakdownModes.map((m) => m.payMode.toUpperCase().trim()),
+        "VOID",
+      ]);
     } else {
       setActivePaymentModes([modeKey]);
     }
@@ -1714,17 +1962,26 @@ export default function SalesReport() {
     if (!orderPayments || orderPayments.length === 0) return [];
 
     // Calculate total of payments
-    const totalPayments = orderPayments.reduce((sum, p) => sum + Number(p.Amount || 0), 0);
+    const totalPayments = orderPayments.reduce(
+      (sum, p) => sum + Number(p.Amount || 0),
+      0,
+    );
     const targetTotal = Number(selectedOrder?.SysAmount || 0);
 
     // If there is a discrepancy within 0.10, adjust the last row to prevent rounding discrepancies in display
     const diff = targetTotal - totalPayments;
-    if (Math.abs(diff) > 0 && Math.abs(diff) < 0.10 && orderPayments.length > 0) {
+    if (
+      Math.abs(diff) > 0 &&
+      Math.abs(diff) < 0.1 &&
+      orderPayments.length > 0
+    ) {
       const adjusted = [...orderPayments];
       const lastIndex = adjusted.length - 1;
       adjusted[lastIndex] = {
         ...adjusted[lastIndex],
-        Amount: Number((Number(adjusted[lastIndex].Amount || 0) + diff).toFixed(2))
+        Amount: Number(
+          (Number(adjusted[lastIndex].Amount || 0) + diff).toFixed(2),
+        ),
       };
       return adjusted;
     }
@@ -1735,7 +1992,9 @@ export default function SalesReport() {
   const payModeText = useMemo(() => {
     if (selectedOrder?.IsCancelled) return "CANCELLED";
     if (displayedPayments && displayedPayments.length > 0) {
-      const names = displayedPayments.map(p => (p.PayModeName || 'CASH').trim().toUpperCase());
+      const names = displayedPayments.map((p) =>
+        (p.PayModeName || "CASH").trim().toUpperCase(),
+      );
       const uniqueNames = Array.from(new Set(names));
       return uniqueNames.join(" + ");
     }
@@ -1748,9 +2007,15 @@ export default function SalesReport() {
       setOrderPayments([]);
       setOrderRewards(null);
       const [itemsRes, paymentsRes, rewardsRes] = await Promise.all([
-        fetch(`${API_URL}/api/sales/detail/${settlementId}`, { headers: getTenantHeaders() }),
-        fetch(`${API_URL}/api/sales/detail/${settlementId}/payments`, { headers: getTenantHeaders() }),
-        fetch(`${API_URL}/api/sales/detail/${settlementId}/rewards`, { headers: getTenantHeaders() }),
+        fetch(`${API_URL}/api/sales/detail/${settlementId}`, {
+          headers: getTenantHeaders(),
+        }),
+        fetch(`${API_URL}/api/sales/detail/${settlementId}/payments`, {
+          headers: getTenantHeaders(),
+        }),
+        fetch(`${API_URL}/api/sales/detail/${settlementId}/rewards`, {
+          headers: getTenantHeaders(),
+        }),
       ]);
 
       if (itemsRes.ok) {
@@ -1761,8 +2026,13 @@ export default function SalesReport() {
             const comboJson = item.ComboDetailsJSON || item.comboDetailsJSON;
             if (comboJson) {
               try {
-                const parsed = typeof comboJson === "string" ? JSON.parse(comboJson) : comboJson;
-                comboSelections = Array.isArray(parsed) ? parsed : parsed?.groups;
+                const parsed =
+                  typeof comboJson === "string"
+                    ? JSON.parse(comboJson)
+                    : comboJson;
+                comboSelections = Array.isArray(parsed)
+                  ? parsed
+                  : parsed?.groups;
               } catch (e) {
                 console.error("Error parsing ComboDetailsJSON:", e);
               }
@@ -1779,9 +2049,14 @@ export default function SalesReport() {
             {
               DishName: currentOrder?.IsCancelled
                 ? "Items not captured (Legacy Cancelled Order)"
-                : (currentOrder?.OrderType === 'LEDGER' ? (currentOrder?.OrderId || "Member Outstanding Payment") : "Item info not available"),
-              Qty: currentOrder?.OrderType === 'LEDGER' ? 1 : 0,
-              Price: currentOrder?.OrderType === 'LEDGER' ? currentOrder?.SysAmount : 0
+                : currentOrder?.OrderType === "LEDGER"
+                  ? currentOrder?.OrderId || "Member Outstanding Payment"
+                  : "Item info not available",
+              Qty: currentOrder?.OrderType === "LEDGER" ? 1 : 0,
+              Price:
+                currentOrder?.OrderType === "LEDGER"
+                  ? currentOrder?.SysAmount
+                  : 0,
             },
           ]);
         }
@@ -1820,9 +2095,12 @@ export default function SalesReport() {
 
   const refreshOrder = async (settlementId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/sales/settlement/${settlementId}`, {
-        headers: getTenantHeaders(),
-      });
+      const res = await fetch(
+        `${API_URL}/api/sales/settlement/${settlementId}`,
+        {
+          headers: getTenantHeaders(),
+        },
+      );
       if (res.ok) {
         const data = await res.json();
         if (data.header) {
@@ -1835,7 +2113,12 @@ export default function SalesReport() {
     }
   };
 
-  const handleConfirmChangePayment = async (newPayMode: string, splits?: any[], memberId?: string, creditCustomerId?: string) => {
+  const handleConfirmChangePayment = async (
+    newPayMode: string,
+    splits?: any[],
+    memberId?: string,
+    creditCustomerId?: string,
+  ) => {
     if (!selectedOrder) return;
     promptPassword(
       "Admin Password Required",
@@ -1846,40 +2129,59 @@ export default function SalesReport() {
           setShowChangePaymentModal(false);
           setShowMemberModal(false);
           setLoadingDetails(true);
-          const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`, {
-            method: "POST",
-            headers: getTenantHeaders(),
-            body: JSON.stringify({ payMode: newPayMode, splits, memberId, creditCustomerId }),
-          });
+          const res = await fetch(
+            `${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/change-payment`,
+            {
+              method: "POST",
+              headers: getTenantHeaders(),
+              body: JSON.stringify({
+                payMode: newPayMode,
+                splits,
+                memberId,
+                creditCustomerId,
+              }),
+            },
+          );
           const data = await res.json();
           if (res.ok && data.success) {
-            showToast({ type: "success", message: "Payment mode updated successfully" });
+            showToast({
+              type: "success",
+              message: "Payment mode updated successfully",
+            });
             await refreshOrder(selectedOrder.SettlementID);
             fetchSales();
           } else {
-            showToast({ type: "error", message: data.error || "Failed to update payment mode" });
+            showToast({
+              type: "error",
+              message: data.error || "Failed to update payment mode",
+            });
           }
         } catch (err: any) {
           console.error(err);
-          showToast({ type: "error", message: err.message || "An error occurred" });
+          showToast({
+            type: "error",
+            message: err.message || "An error occurred",
+          });
         } finally {
           setLoadingDetails(false);
         }
-      }
+      },
     );
   };
 
   const toggleVoidItemSelection = (id: string) => {
     setSelectedVoidItemIds((prev) =>
-      prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]
+      prev.includes(id)
+        ? prev.filter((itemId) => itemId !== id)
+        : [...prev, id],
     );
   };
 
   const runVoidItems = async (itemIds: string[]) => {
     if (!selectedOrder || itemIds.length === 0) return;
     const names = orderDetails
-      .filter(item => itemIds.includes(item.OrderDetailId || item.DishId))
-      .map(item => item.DishName)
+      .filter((item) => itemIds.includes(item.OrderDetailId || item.DishId))
+      .map((item) => item.DishName)
       .join(", ");
 
     promptPassword(
@@ -1890,27 +2192,39 @@ export default function SalesReport() {
         try {
           setShowVoidItemModal(false);
           setLoadingDetails(true);
-          const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`, {
-            method: "POST",
-            headers: getTenantHeaders(),
-            body: JSON.stringify({ orderDetailIds: itemIds }),
-          });
+          const res = await fetch(
+            `${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/void-item`,
+            {
+              method: "POST",
+              headers: getTenantHeaders(),
+              body: JSON.stringify({ orderDetailIds: itemIds }),
+            },
+          );
           const data = await res.json();
           if (res.ok && data.success) {
-            showToast({ type: "success", message: "Items voided successfully" });
+            showToast({
+              type: "success",
+              message: "Items voided successfully",
+            });
             await refreshOrder(selectedOrder.SettlementID);
             fetchSales();
           } else {
-            showToast({ type: "error", message: data.error || "Failed to void items" });
+            showToast({
+              type: "error",
+              message: data.error || "Failed to void items",
+            });
           }
         } catch (err: any) {
           console.error(err);
-          showToast({ type: "error", message: err.message || "An error occurred" });
+          showToast({
+            type: "error",
+            message: err.message || "An error occurred",
+          });
         } finally {
           setLoadingDetails(false);
           setSelectedVoidItemIds([]);
         }
-      }
+      },
     );
   };
 
@@ -1924,27 +2238,39 @@ export default function SalesReport() {
         try {
           setShowCancelOrderConfirm(false);
           setLoadingDetails(true);
-          const res = await fetch(`${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/cancel`, {
-            method: "POST",
-            headers: getTenantHeaders(),
-            body: JSON.stringify({ reason: cancellationReason }),
-          });
+          const res = await fetch(
+            `${API_URL}/api/sales/settlement/${selectedOrder.SettlementID}/cancel`,
+            {
+              method: "POST",
+              headers: getTenantHeaders(),
+              body: JSON.stringify({ reason: cancellationReason }),
+            },
+          );
           const data = await res.json();
           if (res.ok && data.success) {
-            showToast({ type: "success", message: "Order cancelled successfully" });
+            showToast({
+              type: "success",
+              message: "Order cancelled successfully",
+            });
             setCancellationReason("");
             await refreshOrder(selectedOrder.SettlementID);
             fetchSales();
           } else {
-            showToast({ type: "error", message: data.error || "Failed to cancel order" });
+            showToast({
+              type: "error",
+              message: data.error || "Failed to cancel order",
+            });
           }
         } catch (err: any) {
           console.error(err);
-          showToast({ type: "error", message: err.message || "An error occurred" });
+          showToast({
+            type: "error",
+            message: err.message || "An error occurred",
+          });
         } finally {
           setLoadingDetails(false);
         }
-      }
+      },
     );
   };
 
@@ -1984,11 +2310,14 @@ export default function SalesReport() {
       };
 
       // ✅ Reprint Fix: Resolve paymentMethod from displayedPayments for multi-split orders
-      const reprintPayMode = displayedPayments.length > 0
-        ? (displayedPayments.length === 1
-            ? (displayedPayments[0].PayModeName || selectedOrder.PayMode || "CASH")
-            : "SPLIT")
-        : (selectedOrder.PayMode || "CASH");
+      const reprintPayMode =
+        displayedPayments.length > 0
+          ? displayedPayments.length === 1
+            ? displayedPayments[0].PayModeName ||
+              selectedOrder.PayMode ||
+              "CASH"
+            : "SPLIT"
+          : selectedOrder.PayMode || "CASH";
 
       const saleData = {
         invoiceNumber: formatOrderId(selectedOrder),
@@ -2005,25 +2334,30 @@ export default function SalesReport() {
         // "...Z" (falsely UTC), so we must re-attach +08:00 before handing it to parseDatabaseDate,
         // otherwise the old dist-bundle code adds +8 hours a second time → wrong time on receipt.
         ...(() => {
-          const raw = selectedOrder.SettlementDate || selectedOrder.LastSettlementDate;
+          const raw =
+            selectedOrder.SettlementDate || selectedOrder.LastSettlementDate;
           if (!raw) return { date: new Date(), originalDate: null };
           // If it already carries an explicit timezone offset leave it alone; otherwise treat as SGT.
           let dateStr: string;
-          if (typeof raw === 'string') {
+          if (typeof raw === "string") {
             dateStr = /[+-]\d{2}:\d{2}$/.test(raw)
               ? raw
-              : raw.replace(/Z$/i, '') + '+08:00';
+              : raw.replace(/Z$/i, "") + "+08:00";
           } else if (raw instanceof Date) {
             // Tedious Date: UTC wall-clock IS the SGT local value → replace Z with +08:00
-            dateStr = raw.toISOString().replace(/Z$/, '+08:00');
+            dateStr = raw.toISOString().replace(/Z$/, "+08:00");
           } else {
-            dateStr = String(raw).replace(/Z$/i, '') + '+08:00';
+            dateStr = String(raw).replace(/Z$/i, "") + "+08:00";
           }
           return { date: dateStr, originalDate: dateStr };
         })(),
         isReprint: true,
         // ✅ Reprint Fix: waiterName was missing — add it for receipt display
-        waiterName: selectedOrder.WaiterName || selectedOrder.ServerName || selectedOrder.CashierName || "",
+        waiterName:
+          selectedOrder.WaiterName ||
+          selectedOrder.ServerName ||
+          selectedOrder.CashierName ||
+          "",
         // Sunmi template details
         discountAmount: Number(selectedOrder.DiscountAmount ?? 0),
         discountType: selectedOrder.DiscountType || null,
@@ -2031,17 +2365,24 @@ export default function SalesReport() {
         subTotal: Number(selectedOrder.SubTotal ?? 0),
         serviceCharge: Number(selectedOrder.ServiceCharge ?? 0),
         takeawayCharge: Number(selectedOrder.TakeawayCharge ?? 0),
-        payments: displayedPayments.map(p => ({
+        payments: displayedPayments.map((p) => ({
           payMode: p.PayModeName,
           payModeName: p.PayModeName,
           amount: p.Amount,
-          referenceNo: p.ReferenceNo
+          referenceNo: p.ReferenceNo,
         })),
         rewardPointsEarned: String(orderRewards?.PointsEarned || 0),
         memberRewardBalance: String(orderRewards?.RewardCredit || 0),
       };
 
-      await UniversalPrinter.smartPrint(saleData, userId, {}, discountInfo, undefined, true);
+      await UniversalPrinter.smartPrint(
+        saleData,
+        userId,
+        {},
+        discountInfo,
+        undefined,
+        true,
+      );
     } catch (error) {
       console.error("Reprint error:", error);
     } finally {
@@ -2053,20 +2394,30 @@ export default function SalesReport() {
   const handlePrintSettlementReport = async () => {
     try {
       const company = await (async () => {
-        const { useCompanySettingsStore } = await import("../stores/companySettingsStore");
+        const { useCompanySettingsStore } =
+          await import("../stores/companySettingsStore");
         return useCompanySettingsStore.getState().settings;
       })();
-      const period = rangeStart && rangeEnd
-        ? `${rangeStart} – ${rangeEnd}`
-        : selectedDate
-          ? `Date: ${selectedDate}`
-          : "Current Period";
+      const period =
+        rangeStart && rangeEnd
+          ? `${rangeStart} – ${rangeEnd}`
+          : selectedDate
+            ? `Date: ${selectedDate}`
+            : "Current Period";
 
       // ✅ Z-Report Fix: Try silent Z-report printing via bridge first
-      const printedDirect = await UniversalPrinter.printSettlementReportDirect(settlementReport, company, period);
+      const printedDirect = await UniversalPrinter.printSettlementReportDirect(
+        settlementReport,
+        company,
+        period,
+      );
       if (printedDirect) return;
 
-      const html = UniversalPrinter.generateSettlementReportHTML(settlementReport, company, period);
+      const html = UniversalPrinter.generateSettlementReportHTML(
+        settlementReport,
+        company,
+        period,
+      );
 
       if (Platform.OS === "web") {
         const iframe = document.createElement("iframe");
@@ -2074,7 +2425,9 @@ export default function SalesReport() {
         document.body.appendChild(iframe);
         const doc = iframe.contentDocument || iframe.contentWindow?.document;
         if (doc) {
-          doc.open(); doc.write(html); doc.close();
+          doc.open();
+          doc.write(html);
+          doc.close();
           setTimeout(() => {
             iframe.contentWindow?.focus();
             iframe.contentWindow?.print();
@@ -2124,11 +2477,7 @@ export default function SalesReport() {
             paddingHorizontal: tilePaddingH,
             paddingVertical: tilePaddingV,
             gap: tileGap,
-            width: fullWidth
-              ? "100%"
-              : SCREEN_W >= 600
-              ? "31.5%"
-              : undefined,
+            width: fullWidth ? "100%" : SCREEN_W >= 600 ? "31.5%" : undefined,
             flex: fullWidth ? undefined : SCREEN_W >= 600 ? undefined : 1,
             cursor: onPress ? "pointer" : undefined,
           },
@@ -2185,8 +2534,6 @@ export default function SalesReport() {
       return null;
     }
 
-
-
     const isSettlement = detailReportType === "SETTLEMENT";
     const isArtistTarget = detailReportType === "ARTIST_TARGET";
     const rows = isSettlement
@@ -2235,9 +2582,16 @@ export default function SalesReport() {
             {isSettlement && rows.length > 0 && (
               <TouchableOpacity
                 onPress={handlePrintSettlementReport}
-                style={[styles.reportCloseBtn, { marginRight: 4, backgroundColor: Theme.primary + "15" }]}
+                style={[
+                  styles.reportCloseBtn,
+                  { marginRight: 4, backgroundColor: Theme.primary + "15" },
+                ]}
               >
-                <Ionicons name="print-outline" size={17} color={Theme.primary} />
+                <Ionicons
+                  name="print-outline"
+                  size={17}
+                  color={Theme.primary}
+                />
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -2278,7 +2632,13 @@ export default function SalesReport() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ minWidth: "100%" }}
           >
-            <View style={[styles.reportTable, isArtistTarget && { minWidth: 700 }, isDishReport ? { minWidth: 690 } : { minWidth: 500 }]}>
+            <View
+              style={[
+                styles.reportTable,
+                isArtistTarget && { minWidth: 700 },
+                isDishReport ? { minWidth: 690 } : { minWidth: 500 },
+              ]}
+            >
               <View style={styles.reportTableHeader}>
                 <Text style={[styles.reportCell, styles.snoCell]}>S/N</Text>
                 {isSettlement ? (
@@ -2299,25 +2659,67 @@ export default function SalesReport() {
                   </>
                 ) : isArtistTarget ? (
                   <>
-                    <Text style={[styles.reportCell, styles.dishNameCell, { textAlign: "left" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.dishNameCell,
+                        { textAlign: "left" },
+                      ]}
+                    >
                       Artist Name
                     </Text>
-                    <Text style={[styles.reportCell, styles.paymodeCell, { textAlign: "center" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.paymodeCell,
+                        { textAlign: "center" },
+                      ]}
+                    >
                       From Date
                     </Text>
-                    <Text style={[styles.reportCell, styles.paymodeCell, { textAlign: "center" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.paymodeCell,
+                        { textAlign: "center" },
+                      ]}
+                    >
                       To Date
                     </Text>
-                    <Text style={[styles.reportCell, styles.sysAmtCell, { textAlign: "right" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.sysAmtCell,
+                        { textAlign: "right" },
+                      ]}
+                    >
                       Target
                     </Text>
-                    <Text style={[styles.reportCell, styles.sysAmtCell, { textAlign: "right" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.sysAmtCell,
+                        { textAlign: "right" },
+                      ]}
+                    >
                       Achieved
                     </Text>
-                    <Text style={[styles.reportCell, styles.sysAmtCell, { textAlign: "right" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.sysAmtCell,
+                        { textAlign: "right" },
+                      ]}
+                    >
                       Left
                     </Text>
-                    <Text style={[styles.reportCell, styles.paymodeCell, { textAlign: "center" }]}>
+                    <Text
+                      style={[
+                        styles.reportCell,
+                        styles.paymodeCell,
+                        { textAlign: "center" },
+                      ]}
+                    >
                       Status
                     </Text>
                   </>
@@ -2336,10 +2738,7 @@ export default function SalesReport() {
 
                     {isDishReport && (
                       <Text
-                        style={[
-                          styles.reportCell,
-                          styles.categoryNameCell,
-                        ]}
+                        style={[styles.reportCell, styles.categoryNameCell]}
                       >
                         Category
                       </Text>
@@ -2403,7 +2802,7 @@ export default function SalesReport() {
                           styles.reportCell,
                           styles.reportCellText,
                           styles.dishNameCell,
-                          { textAlign: "left" }
+                          { textAlign: "left" },
                         ]}
                       >
                         {row.CustomerName}
@@ -2413,27 +2812,43 @@ export default function SalesReport() {
                           styles.reportCell,
                           styles.reportCellText,
                           styles.paymodeCell,
-                          { textAlign: "center" }
+                          { textAlign: "center" },
                         ]}
                       >
-                        {row.FromDate ? formatToSingaporeDate(row.FromDate, { day: "numeric", month: "numeric", year: "numeric" }) : "N/A"}
+                        {row.FromDate
+                          ? formatToSingaporeDate(row.FromDate, {
+                              day: "numeric",
+                              month: "numeric",
+                              year: "numeric",
+                            })
+                          : "N/A"}
                       </Text>
                       <Text
                         style={[
                           styles.reportCell,
                           styles.reportCellText,
                           styles.paymodeCell,
-                          { textAlign: "center" }
+                          { textAlign: "center" },
                         ]}
                       >
-                        {row.ToDate ? formatToSingaporeDate(row.ToDate, { day: "numeric", month: "numeric", year: "numeric" }) : "N/A"}
+                        {row.ToDate
+                          ? formatToSingaporeDate(row.ToDate, {
+                              day: "numeric",
+                              month: "numeric",
+                              year: "numeric",
+                            })
+                          : "N/A"}
                       </Text>
                       <Text
                         style={[
                           styles.reportCell,
                           styles.reportCellText,
                           styles.sysAmtCell,
-                          { color: Theme.success, fontWeight: "bold", textAlign: "right" }
+                          {
+                            color: Theme.success,
+                            fontWeight: "bold",
+                            textAlign: "right",
+                          },
                         ]}
                       >
                         {formatCurrency(Number(row.Amount || 0))}
@@ -2443,7 +2858,11 @@ export default function SalesReport() {
                           styles.reportCell,
                           styles.reportCellText,
                           styles.sysAmtCell,
-                          { color: Theme.primary, fontWeight: "600", textAlign: "right" }
+                          {
+                            color: Theme.primary,
+                            fontWeight: "600",
+                            textAlign: "right",
+                          },
                         ]}
                       >
                         {formatCurrency(Number(row.Achieved || 0))}
@@ -2453,7 +2872,14 @@ export default function SalesReport() {
                           styles.reportCell,
                           styles.reportCellText,
                           styles.sysAmtCell,
-                          { color: Number(row.Left || 0) > 0 ? "#dc2626" : Theme.success, fontWeight: "600", textAlign: "right" }
+                          {
+                            color:
+                              Number(row.Left || 0) > 0
+                                ? "#dc2626"
+                                : Theme.success,
+                            fontWeight: "600",
+                            textAlign: "right",
+                          },
                         ]}
                       >
                         {formatCurrency(Number(row.Left || 0))}
@@ -2463,17 +2889,20 @@ export default function SalesReport() {
                           styles.reportCell,
                           styles.reportCellText,
                           styles.paymodeCell,
-                          { 
-                            color: row.Status === "Achieved" ? Theme.success : "#dc2626", 
-                            fontWeight: "bold", 
-                            textAlign: "center" 
-                          }
+                          {
+                            color:
+                              row.Status === "Achieved"
+                                ? Theme.success
+                                : "#dc2626",
+                            fontWeight: "bold",
+                            textAlign: "center",
+                          },
                         ]}
                       >
                         {row.Status || "Not Achieved"}
                       </Text>
                     </View>
-                   ));
+                  ));
                 }
 
                 if (isSettlement || !isDishReport) {
@@ -2511,7 +2940,9 @@ export default function SalesReport() {
                           styles.qtyCell,
                         ]}
                       >
-                        {Number(row.Sold || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        {Number(row.Sold || 0).toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
                       </Text>
                       <Text
                         style={[
@@ -2521,7 +2952,9 @@ export default function SalesReport() {
                           { color: "#dc2626" },
                         ]}
                       >
-                        {Number(row.Voided || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        {Number(row.Voided || 0).toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
                       </Text>
                       <Text
                         style={[
@@ -2559,20 +2992,38 @@ export default function SalesReport() {
 
                 // Sort category names alphabetically
                 const sortedCategories = Object.keys(groups).sort((a, b) =>
-                  a.localeCompare(b, undefined, { sensitivity: "base" })
+                  a.localeCompare(b, undefined, { sensitivity: "base" }),
                 );
 
                 let globalIdx = 0;
                 return sortedCategories.map((category) => {
                   const groupRows = groups[category]!;
-                  const catQty = groupRows.reduce((sum, r) => sum + Number(r.Sold || 0), 0);
-                  const catVoid = groupRows.reduce((sum, r) => sum + Number(r.Voided || 0), 0);
-                  const catDiscount = groupRows.reduce((sum, r) => sum + Number(r.DiscountAmount || 0), 0);
-                  const catTakeaway = groupRows.reduce((sum, r) => sum + Number(r.TakeawayCharge || 0), 0);
-                  const catSales = groupRows.reduce((sum, r) => sum + Number(r.SalesAmount || 0), 0);
+                  const catQty = groupRows.reduce(
+                    (sum, r) => sum + Number(r.Sold || 0),
+                    0,
+                  );
+                  const catVoid = groupRows.reduce(
+                    (sum, r) => sum + Number(r.Voided || 0),
+                    0,
+                  );
+                  const catDiscount = groupRows.reduce(
+                    (sum, r) => sum + Number(r.DiscountAmount || 0),
+                    0,
+                  );
+                  const catTakeaway = groupRows.reduce(
+                    (sum, r) => sum + Number(r.TakeawayCharge || 0),
+                    0,
+                  );
+                  const catSales = groupRows.reduce(
+                    (sum, r) => sum + Number(r.SalesAmount || 0),
+                    0,
+                  );
 
                   return (
-                    <View key={`cat-group-${category}`} style={{ width: "100%" }}>
+                    <View
+                      key={`cat-group-${category}`}
+                      style={{ width: "100%" }}
+                    >
                       {/* Sticky-like Category Header Row */}
                       <View
                         style={{
@@ -2607,7 +3058,11 @@ export default function SalesReport() {
                             styles.reportCell,
                             styles.reportCellText,
                             styles.categoryNameCell,
-                            { fontFamily: Fonts.black, fontSize: 13, color: Theme.textMuted },
+                            {
+                              fontFamily: Fonts.black,
+                              fontSize: 13,
+                              color: Theme.textMuted,
+                            },
                           ]}
                         >
                           -
@@ -2618,27 +3073,43 @@ export default function SalesReport() {
                             styles.reportCell,
                             styles.reportCellText,
                             styles.qtyCell,
-                            { fontFamily: Fonts.black, fontSize: 13, color: Theme.textPrimary },
+                            {
+                              fontFamily: Fonts.black,
+                              fontSize: 13,
+                              color: Theme.textPrimary,
+                            },
                           ]}
                         >
-                          {Number(catQty || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          {Number(catQty || 0).toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
                         </Text>
                         <Text
                           style={[
                             styles.reportCell,
                             styles.reportCellText,
                             styles.qtyCell,
-                            { fontFamily: Fonts.black, fontSize: 13, color: "#dc2626" },
+                            {
+                              fontFamily: Fonts.black,
+                              fontSize: 13,
+                              color: "#dc2626",
+                            },
                           ]}
                         >
-                          {Number(catVoid || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          {Number(catVoid || 0).toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
                         </Text>
                         <Text
                           style={[
                             styles.reportCell,
                             styles.reportCellText,
                             styles.discountCell,
-                            { fontFamily: Fonts.black, fontSize: 13, color: "#f59e0b" },
+                            {
+                              fontFamily: Fonts.black,
+                              fontSize: 13,
+                              color: "#f59e0b",
+                            },
                           ]}
                         >
                           {formatCurrency(catDiscount)}
@@ -2648,7 +3119,11 @@ export default function SalesReport() {
                             styles.reportCell,
                             styles.reportCellText,
                             styles.amountCell,
-                            { fontFamily: Fonts.black, fontSize: 13, color: Theme.success },
+                            {
+                              fontFamily: Fonts.black,
+                              fontSize: 13,
+                              color: Theme.success,
+                            },
                           ]}
                         >
                           {formatCurrency(catSales)}
@@ -2703,7 +3178,9 @@ export default function SalesReport() {
                                 styles.qtyCell,
                               ]}
                             >
-                              {Number(row.Sold || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              {Number(row.Sold || 0).toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })}
                             </Text>
                             <Text
                               style={[
@@ -2713,7 +3190,10 @@ export default function SalesReport() {
                                 { color: "#dc2626" },
                               ]}
                             >
-                              {Number(row.Voided || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              {Number(row.Voided || 0).toLocaleString(
+                                undefined,
+                                { maximumFractionDigits: 2 },
+                              )}
                             </Text>
                             <Text
                               style={[
@@ -2758,14 +3238,14 @@ export default function SalesReport() {
             <Ionicons name="log-out" size={20} color={Theme.danger} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               if (router.canGoBack()) {
                 router.back();
               } else {
                 router.replace("/(tabs)/category" as any);
               }
-            }} 
+            }}
             style={styles.backBtn}
           >
             <Ionicons name="arrow-back" size={20} color={Theme.textPrimary} />
@@ -2794,40 +3274,40 @@ export default function SalesReport() {
         </View>
       </View>
 
-
-
       {/* Filter Toggles */}
       <View style={styles.filterBar}>
-        {(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as FilterType[]).map(
-          (f) => (
-            <Pressable
-              key={f}
-              onPress={() => {
-                const nextFilter = f as FilterType;
-                setSelectedFilter(nextFilter);
-                setPickerMode('SINGLE');
-                const maxDateStr = activeBusinessDate || getTodayDateStr();
-                const { startDate, endDate } = calculatePeriodRange(nextFilter, selectedDate, maxDateStr);
-                setRangeStart(startDate);
-                setRangeEnd(endDate);
-              }}
-              style={({ pressed }) => [
-                styles.filterBtn,
-                selectedFilter === f && styles.activeFilterBtn,
-                pressed && { opacity: 0.6 },
+        {(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as FilterType[]).map((f) => (
+          <Pressable
+            key={f}
+            onPress={() => {
+              const nextFilter = f as FilterType;
+              setSelectedFilter(nextFilter);
+              setPickerMode("SINGLE");
+              const maxDateStr = activeBusinessDate || getTodayDateStr();
+              const { startDate, endDate } = calculatePeriodRange(
+                nextFilter,
+                selectedDate,
+                maxDateStr,
+              );
+              setRangeStart(startDate);
+              setRangeEnd(endDate);
+            }}
+            style={({ pressed }) => [
+              styles.filterBtn,
+              selectedFilter === f && styles.activeFilterBtn,
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                selectedFilter === f && styles.activeFilterText,
               ]}
             >
-              <Text
-                style={[
-                  styles.filterText,
-                  selectedFilter === f && styles.activeFilterText,
-                ]}
-              >
-                {f}
-              </Text>
-            </Pressable>
-          ),
-        )}
+              {f}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
       {/* Date Navigation */}
@@ -2861,14 +3341,32 @@ export default function SalesReport() {
               }}
               style={[
                 styles.dateDisplay,
-                { flexDirection: "column", justifyContent: "center", paddingVertical: 2 },
-                pickerMode === "START" && showDatePicker && { borderColor: Theme.primary },
+                {
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  paddingVertical: 2,
+                },
+                pickerMode === "START" &&
+                  showDatePicker && { borderColor: Theme.primary },
               ]}
             >
               <Text style={styles.rangeLabel}>FROM DATE</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
-                <Text style={[styles.dateText, { fontSize: 14 }]}>{formatDateDMY(effectiveDateRange.startDate)}</Text>
-                <Ionicons name="calendar-outline" size={14} color={Theme.primary} />
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 1,
+                }}
+              >
+                <Text style={[styles.dateText, { fontSize: 14 }]}>
+                  {formatDateDMY(effectiveDateRange.startDate)}
+                </Text>
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={Theme.primary}
+                />
               </View>
             </TouchableOpacity>
 
@@ -2879,14 +3377,32 @@ export default function SalesReport() {
               }}
               style={[
                 styles.dateDisplay,
-                { flexDirection: "column", justifyContent: "center", paddingVertical: 2 },
-                pickerMode === "END" && showDatePicker && { borderColor: Theme.primary },
+                {
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  paddingVertical: 2,
+                },
+                pickerMode === "END" &&
+                  showDatePicker && { borderColor: Theme.primary },
               ]}
             >
               <Text style={styles.rangeLabel}>TO DATE</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
-                <Text style={[styles.dateText, { fontSize: 14 }]}>{formatDateDMY(effectiveDateRange.endDate)}</Text>
-                <Ionicons name="calendar-outline" size={14} color={Theme.primary} />
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 1,
+                }}
+              >
+                <Text style={[styles.dateText, { fontSize: 14 }]}>
+                  {formatDateDMY(effectiveDateRange.endDate)}
+                </Text>
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={Theme.primary}
+                />
               </View>
             </TouchableOpacity>
           </View>
@@ -2905,25 +3421,29 @@ export default function SalesReport() {
         </TouchableOpacity>
       </View>
 
-
-
-
-
       {/* ── USER / CASHIER SHIFT FILTER BAR (DROPDOWN - LIKE SETTLEMENT SCREEN) ── */}
-      <View style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Theme.bgCard,
-        padding: 10,
-        borderRadius: 12,
-        borderWidth: 1.5,
-        borderColor: Theme.border,
-        marginBottom: 15,
-        gap: 12,
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: Theme.bgCard,
+          padding: 10,
+          borderRadius: 12,
+          borderWidth: 1.5,
+          borderColor: Theme.border,
+          marginBottom: 15,
+          gap: 12,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Ionicons name="people-outline" size={18} color={Theme.primary} />
-          <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
+          <Text
+            style={{
+              fontFamily: Fonts.bold,
+              fontSize: 13,
+              color: Theme.textPrimary,
+            }}
+          >
             SALES REPORT VIEW:
           </Text>
         </View>
@@ -2932,9 +3452,9 @@ export default function SalesReport() {
         <TouchableOpacity
           onPress={() => setShowUserDropdown(true)}
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
             backgroundColor: Theme.bgInput,
             paddingHorizontal: 16,
             paddingVertical: 10,
@@ -2942,26 +3462,58 @@ export default function SalesReport() {
             borderWidth: 1.5,
             borderColor: Theme.primary,
             minWidth: 260,
-            maxWidth: '100%',
-            gap: 10
+            maxWidth: "100%",
+            gap: 10,
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              flex: 1,
+            }}
+          >
             {selectedCashierId === "ALL" ? (
               <>
-                <Ionicons name="globe-outline" size={16} color={Theme.primary} />
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }}>
+                <Ionicons
+                  name="globe-outline"
+                  size={16}
+                  color={Theme.primary}
+                />
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 13,
+                    color: Theme.textPrimary,
+                  }}
+                >
                   Whole Sales (All Users)
                 </Text>
               </>
             ) : (
               (() => {
-                const sel = availableOperators.find(op => String(op.CashierId) === String(selectedCashierId));
+                const sel = availableOperators.find(
+                  (op) => String(op.CashierId) === String(selectedCashierId),
+                );
                 return (
                   <>
-                    <Ionicons name="person-circle-outline" size={18} color={Theme.primary} />
-                    <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: Theme.textPrimary }} numberOfLines={1}>
-                      {sel ? `${sel.CashierName} ${sel.UserLogin && sel.UserLogin !== '-' ? `(@${sel.UserLogin})` : ''}` : `User ID: ${selectedCashierId}`}
+                    <Ionicons
+                      name="person-circle-outline"
+                      size={18}
+                      color={Theme.primary}
+                    />
+                    <Text
+                      style={{
+                        fontFamily: Fonts.bold,
+                        fontSize: 13,
+                        color: Theme.textPrimary,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {sel
+                        ? `${sel.CashierName} ${sel.UserLogin && sel.UserLogin !== "-" ? `(@${sel.UserLogin})` : ""}`
+                        : `User ID: ${selectedCashierId}`}
                     </Text>
                   </>
                 );
@@ -2984,31 +3536,53 @@ export default function SalesReport() {
           onPress={() => setShowUserDropdown(false)}
           style={{
             flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.4)',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 20
+            backgroundColor: "rgba(0,0,0,0.4)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 20,
           }}
         >
           <TouchableOpacity
             activeOpacity={1}
             style={{
-              width: SCREEN_W >= 600 ? 420 : '95%',
-              maxHeight: '70%',
+              width: SCREEN_W >= 600 ? 420 : "95%",
+              maxHeight: "70%",
               backgroundColor: Theme.bgCard,
               borderRadius: 16,
               padding: 16,
               borderWidth: 1.5,
               borderColor: Theme.border,
-              ...Platform.select({
-                web: { boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }
-              }) as any
+              ...(Platform.select({
+                web: { boxShadow: "0 10px 25px rgba(0,0,0,0.2)" },
+              }) as any),
             }}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: Theme.border }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="filter-outline" size={20} color={Theme.primary} />
-                <Text style={{ fontFamily: Fonts.bold, fontSize: 15, color: Theme.textPrimary }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 14,
+                paddingBottom: 10,
+                borderBottomWidth: 1,
+                borderBottomColor: Theme.border,
+              }}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <Ionicons
+                  name="filter-outline"
+                  size={20}
+                  color={Theme.primary}
+                />
+                <Text
+                  style={{
+                    fontFamily: Fonts.bold,
+                    fontSize: 15,
+                    color: Theme.textPrimary,
+                  }}
+                >
                   Select User Sales View
                 </Text>
               </View>
@@ -3025,79 +3599,170 @@ export default function SalesReport() {
                   setShowUserDropdown(false);
                 }}
                 style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                   padding: 12,
                   borderRadius: 10,
-                  backgroundColor: selectedCashierId === "ALL" ? (Theme.primary + '15') : 'transparent',
+                  backgroundColor:
+                    selectedCashierId === "ALL"
+                      ? Theme.primary + "15"
+                      : "transparent",
                   marginBottom: 6,
                   borderWidth: 1,
-                  borderColor: selectedCashierId === "ALL" ? Theme.primary : 'transparent'
+                  borderColor:
+                    selectedCashierId === "ALL" ? Theme.primary : "transparent",
                 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Ionicons name="globe-outline" size={18} color={selectedCashierId === "ALL" ? Theme.primary : Theme.textSecondary} />
-                  <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: selectedCashierId === "ALL" ? Theme.primary : Theme.textPrimary }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <Ionicons
+                    name="globe-outline"
+                    size={18}
+                    color={
+                      selectedCashierId === "ALL"
+                        ? Theme.primary
+                        : Theme.textSecondary
+                    }
+                  />
+                  <Text
+                    style={{
+                      fontFamily: Fonts.bold,
+                      fontSize: 13,
+                      color:
+                        selectedCashierId === "ALL"
+                          ? Theme.primary
+                          : Theme.textPrimary,
+                    }}
+                  >
                     Whole Sales (All Users)
                   </Text>
                 </View>
                 {selectedCashierId === "ALL" && (
-                  <Ionicons name="checkmark-circle" size={18} color={Theme.primary} />
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={18}
+                    color={Theme.primary}
+                  />
                 )}
               </TouchableOpacity>
 
               {/* Individual Users Options */}
               {availableOperators
                 .filter((op) => {
-                  const role = String(op.RoleName || op.RoleCode || op.UserGroupName || '').toUpperCase();
-                  const login = String(op.UserLogin || op.UserName || '').toUpperCase();
-                  const name = String(op.CashierName || op.FullName || '').toUpperCase();
+                  const role = String(
+                    op.RoleName || op.RoleCode || op.UserGroupName || "",
+                  ).toUpperCase();
+                  const login = String(
+                    op.UserLogin || op.UserName || "",
+                  ).toUpperCase();
+                  const name = String(
+                    op.CashierName || op.FullName || "",
+                  ).toUpperCase();
                   // Exclude waiter, void, kds user groups / usernames
-                  if (role.includes('WAITER') || role.includes('KDS') || role.includes('VOID') || role.includes('KITCHEN')) return false;
-                  if (login.startsWith('WAITER') || login.startsWith('KDS') || login.startsWith('VOID') || login.startsWith('LOKI')) return false;
-                  if (name.includes('WAITER') || name.includes('KDS') || name.includes('VOID')) return false;
+                  if (
+                    role.includes("WAITER") ||
+                    role.includes("KDS") ||
+                    role.includes("VOID") ||
+                    role.includes("KITCHEN")
+                  )
+                    return false;
+                  if (
+                    login.startsWith("WAITER") ||
+                    login.startsWith("KDS") ||
+                    login.startsWith("VOID") ||
+                    login.startsWith("LOKI")
+                  )
+                    return false;
+                  if (
+                    name.includes("WAITER") ||
+                    name.includes("KDS") ||
+                    name.includes("VOID")
+                  )
+                    return false;
                   return true;
                 })
                 .map((op) => {
-                const isSel = String(selectedCashierId) === String(op.CashierId);
-                const userNetSales = Number(op.TotalSales ?? op.TotalNetSales ?? op.TotalSubTotal ?? 0);
-                return (
-                  <TouchableOpacity
-                    key={`sales-dropdown-op-${op.CashierId}`}
-                    onPress={() => {
-                      setSelectedCashierId(String(op.CashierId));
-                      setShowUserDropdown(false);
-                    }}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: 12,
-                      borderRadius: 10,
-                      backgroundColor: isSel ? (Theme.primary + '15') : 'transparent',
-                      marginBottom: 6,
-                      borderWidth: 1,
-                      borderColor: isSel ? Theme.primary : 'transparent'
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Ionicons name="person-circle-outline" size={20} color={isSel ? Theme.primary : Theme.textSecondary} />
-                      <View>
-                        <Text style={{ fontFamily: Fonts.bold, fontSize: 13, color: isSel ? Theme.primary : Theme.textPrimary }}>
-                          {op.CashierName} {op.UserLogin && op.UserLogin !== '-' ? `(@${op.UserLogin})` : ''}
-                        </Text>
-                        <Text style={{ fontFamily: Fonts.regular, fontSize: 11, color: Theme.textMuted }}>
-                          Role: {op.RoleName || op.RoleCode || 'Cashier'} {userNetSales > 0 ? `• Sales: ₹${userNetSales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : ''}
-                        </Text>
+                  const isSel =
+                    String(selectedCashierId) === String(op.CashierId);
+                  const userNetSales = Number(
+                    op.TotalSales ?? op.TotalNetSales ?? op.TotalSubTotal ?? 0,
+                  );
+                  return (
+                    <TouchableOpacity
+                      key={`sales-dropdown-op-${op.CashierId}`}
+                      onPress={() => {
+                        setSelectedCashierId(String(op.CashierId));
+                        setShowUserDropdown(false);
+                      }}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: 12,
+                        borderRadius: 10,
+                        backgroundColor: isSel
+                          ? Theme.primary + "15"
+                          : "transparent",
+                        marginBottom: 6,
+                        borderWidth: 1,
+                        borderColor: isSel ? Theme.primary : "transparent",
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <Ionicons
+                          name="person-circle-outline"
+                          size={20}
+                          color={isSel ? Theme.primary : Theme.textSecondary}
+                        />
+                        <View>
+                          <Text
+                            style={{
+                              fontFamily: Fonts.bold,
+                              fontSize: 13,
+                              color: isSel ? Theme.primary : Theme.textPrimary,
+                            }}
+                          >
+                            {op.CashierName}{" "}
+                            {op.UserLogin && op.UserLogin !== "-"
+                              ? `(@${op.UserLogin})`
+                              : ""}
+                          </Text>
+                          <Text
+                            style={{
+                              fontFamily: Fonts.regular,
+                              fontSize: 11,
+                              color: Theme.textMuted,
+                            }}
+                          >
+                            Role: {op.RoleName || op.RoleCode || "Cashier"}{" "}
+                            {userNetSales > 0
+                              ? `• Sales: ₹${userNetSales.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+                              : ""}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    {isSel && (
-                      <Ionicons name="checkmark-circle" size={18} color={Theme.primary} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+                      {isSel && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={18}
+                          color={Theme.primary}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
             </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -3109,30 +3774,62 @@ export default function SalesReport() {
           <>
             {/* Row 1 */}
             <View style={styles.metricsRow}>
-              {renderMetricTile("Total Sales", formatCurrency(filteredMetrics.TotalSales), "card-outline", Theme.success)}
+              {renderMetricTile(
+                "Total Sales",
+                formatCurrency(filteredMetrics.TotalSales),
+                "card-outline",
+                Theme.success,
+              )}
               {renderMetricTile(
                 "Total Collections",
                 formatCurrency(
-                  (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
-                  filteredMetrics.MemberPaymentsCollected +
-                  filteredMetrics.CreditPaymentsCollected
+                  filteredMetrics.TotalSales -
+                    filteredMetrics.Credit -
+                    filteredMetrics.FocSales +
+                    filteredMetrics.MemberPaymentsCollected +
+                    filteredMetrics.CreditPaymentsCollected,
                 ),
                 "wallet-outline",
                 "#22c55e",
               )}
-              {renderMetricTile("FOC Sales", formatCurrency(filteredMetrics.FocSales), "gift-outline", "#2563eb")}
+              {renderMetricTile(
+                "FOC Sales",
+                formatCurrency(filteredMetrics.FocSales),
+                "gift-outline",
+                "#2563eb",
+              )}
             </View>
 
             {/* Row 2 */}
             <View style={styles.metricsRow}>
-              {renderMetricTile("Service Charge", formatCurrency(filteredMetrics.ServiceCharge), "calculator-outline", Theme.primary)}
-              {renderMetricTile("GST", formatCurrency(filteredMetrics.TotalTax), "receipt-outline", Theme.warning)}
-              {renderMetricTile("Takeaway Charge", formatCurrency(filteredMetrics.TakeawayCharge), "basket-outline", "#ec4899")}
+              {renderMetricTile(
+                "Service Charge",
+                formatCurrency(filteredMetrics.ServiceCharge),
+                "calculator-outline",
+                Theme.primary,
+              )}
+              {renderMetricTile(
+                "GST",
+                formatCurrency(filteredMetrics.TotalTax),
+                "receipt-outline",
+                Theme.warning,
+              )}
+              {renderMetricTile(
+                "Takeaway Charge",
+                formatCurrency(filteredMetrics.TakeawayCharge),
+                "basket-outline",
+                "#ec4899",
+              )}
             </View>
 
             {/* Row 3 */}
             <View style={styles.metricsRow}>
-              {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
+              {renderMetricTile(
+                "Discount Sales",
+                formatCurrency(filteredMetrics.TotalDiscount),
+                "pricetag-outline",
+                "#f97316",
+              )}
               {renderMetricTile(
                 "Credit Collections",
                 formatCurrency(filteredMetrics.CreditPaymentsCollected),
@@ -3140,34 +3837,79 @@ export default function SalesReport() {
                 Theme.warning,
                 false,
                 undefined,
-                () => router.push({ pathname: "/receivables", params: { from: "sales-report" } } as any)
+                () =>
+                  router.push({
+                    pathname: "/receivables",
+                    params: { from: "sales-report" },
+                  } as any),
               )}
-              {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
+              {renderMetricTile(
+                "Member Collections",
+                formatCurrency(
+                  filteredMetrics.Member +
+                    filteredMetrics.MemberPaymentsCollected,
+                ),
+                "cash-outline",
+                Theme.primary,
+              )}
             </View>
 
             {/* Row 4 */}
             <View style={styles.metricsRow}>
-              {renderMetricTile("Total Orders", filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount, "receipt-outline", Theme.warning)}
-              {renderMetricTile("QR Orders Count", filteredMetrics.QROrderCount, "qr-code-outline", "#8b5cf6")}
-              {renderMetricTile("Items Sold", filteredMetrics.TotalItems, "fast-food-outline", "#ec4899")}
+              {renderMetricTile(
+                "Total Orders",
+                filteredMetrics.TotalTransactions +
+                  filteredMetrics.CancelledCount,
+                "receipt-outline",
+                Theme.warning,
+              )}
+              {renderMetricTile(
+                "QR Orders Count",
+                filteredMetrics.QROrderCount,
+                "qr-code-outline",
+                "#8b5cf6",
+              )}
+              {renderMetricTile(
+                "Items Sold",
+                filteredMetrics.TotalItems,
+                "fast-food-outline",
+                "#ec4899",
+              )}
             </View>
 
             {/* Row 5 (Centered 2 cards) */}
             <View style={[styles.metricsRow, styles.metricsRowCentered]}>
-              {renderMetricTile("Total Voids", `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`, "trash-outline", "#ef4444")}
-              {renderMetricTile("Cancelled Orders", `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`, "close-circle-outline", Theme.danger)}
+              {renderMetricTile(
+                "Total Voids",
+                `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`,
+                "trash-outline",
+                "#ef4444",
+              )}
+              {renderMetricTile(
+                "Cancelled Orders",
+                `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`,
+                "close-circle-outline",
+                Theme.danger,
+              )}
             </View>
           </>
         ) : (
           <>
             <View style={styles.metricsRow}>
-              {renderMetricTile("Total Sales", formatCurrency(filteredMetrics.TotalSales), "card-outline", Theme.success)}
+              {renderMetricTile(
+                "Total Sales",
+                formatCurrency(filteredMetrics.TotalSales),
+                "card-outline",
+                Theme.success,
+              )}
               {renderMetricTile(
                 "Total Collections",
                 formatCurrency(
-                  (filteredMetrics.TotalSales - filteredMetrics.Credit - filteredMetrics.FocSales) +
-                  filteredMetrics.MemberPaymentsCollected +
-                  filteredMetrics.CreditPaymentsCollected
+                  filteredMetrics.TotalSales -
+                    filteredMetrics.Credit -
+                    filteredMetrics.FocSales +
+                    filteredMetrics.MemberPaymentsCollected +
+                    filteredMetrics.CreditPaymentsCollected,
                 ),
                 "wallet-outline",
                 "#22c55e",
@@ -3175,17 +3917,42 @@ export default function SalesReport() {
             </View>
 
             <View style={styles.metricsRow}>
-              {renderMetricTile("FOC Sales", formatCurrency(filteredMetrics.FocSales), "gift-outline", "#2563eb")}
-              {renderMetricTile("Service Charge", formatCurrency(filteredMetrics.ServiceCharge), "calculator-outline", Theme.primary)}
+              {renderMetricTile(
+                "FOC Sales",
+                formatCurrency(filteredMetrics.FocSales),
+                "gift-outline",
+                "#2563eb",
+              )}
+              {renderMetricTile(
+                "Service Charge",
+                formatCurrency(filteredMetrics.ServiceCharge),
+                "calculator-outline",
+                Theme.primary,
+              )}
             </View>
 
             <View style={styles.metricsRow}>
-              {renderMetricTile("GST", formatCurrency(filteredMetrics.TotalTax), "receipt-outline", Theme.warning)}
-              {renderMetricTile("Takeaway Charge", formatCurrency(filteredMetrics.TakeawayCharge), "basket-outline", "#ec4899")}
+              {renderMetricTile(
+                "GST",
+                formatCurrency(filteredMetrics.TotalTax),
+                "receipt-outline",
+                Theme.warning,
+              )}
+              {renderMetricTile(
+                "Takeaway Charge",
+                formatCurrency(filteredMetrics.TakeawayCharge),
+                "basket-outline",
+                "#ec4899",
+              )}
             </View>
 
             <View style={styles.metricsRow}>
-              {renderMetricTile("Discount Sales", formatCurrency(filteredMetrics.TotalDiscount), "pricetag-outline", "#f97316")}
+              {renderMetricTile(
+                "Discount Sales",
+                formatCurrency(filteredMetrics.TotalDiscount),
+                "pricetag-outline",
+                "#f97316",
+              )}
               {renderMetricTile(
                 "Credit Collections",
                 formatCurrency(filteredMetrics.CreditPaymentsCollected),
@@ -3193,23 +3960,61 @@ export default function SalesReport() {
                 Theme.warning,
                 false,
                 undefined,
-                () => router.push({ pathname: "/receivables", params: { from: "sales-report" } } as any)
+                () =>
+                  router.push({
+                    pathname: "/receivables",
+                    params: { from: "sales-report" },
+                  } as any),
               )}
             </View>
 
             <View style={styles.metricsRow}>
-              {renderMetricTile("Member Collections", formatCurrency(filteredMetrics.Member + filteredMetrics.MemberPaymentsCollected), "cash-outline", Theme.primary)}
-              {renderMetricTile("Total Orders", filteredMetrics.TotalTransactions + filteredMetrics.CancelledCount, "receipt-outline", Theme.warning)}
+              {renderMetricTile(
+                "Member Collections",
+                formatCurrency(
+                  filteredMetrics.Member +
+                    filteredMetrics.MemberPaymentsCollected,
+                ),
+                "cash-outline",
+                Theme.primary,
+              )}
+              {renderMetricTile(
+                "Total Orders",
+                filteredMetrics.TotalTransactions +
+                  filteredMetrics.CancelledCount,
+                "receipt-outline",
+                Theme.warning,
+              )}
             </View>
 
             <View style={styles.metricsRow}>
-              {renderMetricTile("QR Orders Count", filteredMetrics.QROrderCount, "qr-code-outline", "#8b5cf6")}
-              {renderMetricTile("Items Sold", filteredMetrics.TotalItems, "fast-food-outline", "#ec4899")}
+              {renderMetricTile(
+                "QR Orders Count",
+                filteredMetrics.QROrderCount,
+                "qr-code-outline",
+                "#8b5cf6",
+              )}
+              {renderMetricTile(
+                "Items Sold",
+                filteredMetrics.TotalItems,
+                "fast-food-outline",
+                "#ec4899",
+              )}
             </View>
 
             <View style={styles.metricsRow}>
-              {renderMetricTile("Total Voids", `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`, "trash-outline", "#ef4444")}
-              {renderMetricTile("Cancelled Orders", `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`, "close-circle-outline", Theme.danger)}
+              {renderMetricTile(
+                "Total Voids",
+                `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`,
+                "trash-outline",
+                "#ef4444",
+              )}
+              {renderMetricTile(
+                "Cancelled Orders",
+                `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`,
+                "close-circle-outline",
+                Theme.danger,
+              )}
             </View>
           </>
         )}
@@ -3258,7 +4063,6 @@ export default function SalesReport() {
             Item Sales Report
           </Text>
         </TouchableOpacity>
-
       </View>
 
       {renderDetailReport()}
@@ -3287,14 +4091,16 @@ export default function SalesReport() {
               {paymentBreakdownTotal > 0 ? (
                 <View style={styles.pieChartWrapper}>
                   <PieChart
-                    data={displayedBreakdownModes.map((m) => {
-                      const key = m.payMode.toUpperCase().trim();
-                      return {
-                        value: paymentBreakdownMetrics[key] || 0,
-                        color: getPayModeColor(key),
-                        label: key,
-                      };
-                    }).filter((d) => d.value > 0)}
+                    data={displayedBreakdownModes
+                      .map((m) => {
+                        const key = m.payMode.toUpperCase().trim();
+                        return {
+                          value: paymentBreakdownMetrics[key] || 0,
+                          color: getPayModeColor(key),
+                          label: key,
+                        };
+                      })
+                      .filter((d) => d.value > 0)}
                     donut
                     radius={70}
                     innerRadius={50}
@@ -3302,11 +4108,31 @@ export default function SalesReport() {
                     strokeColor={Theme.bgCard}
                     strokeWidth={2}
                     centerLabelComponent={() => (
-                      <View style={{ alignItems: "center", justifyContent: "center" }}>
-                        <Text style={{ fontSize: 9, fontFamily: Fonts.bold, color: Theme.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      <View
+                        style={{
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 9,
+                            fontFamily: Fonts.bold,
+                            color: Theme.textMuted,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
                           Total
                         </Text>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary, marginTop: 2 }}>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: Fonts.black,
+                            color: Theme.textPrimary,
+                            marginTop: 2,
+                          }}
+                        >
                           {formatCurrency(paymentBreakdownTotal)}
                         </Text>
                       </View>
@@ -3314,14 +4140,16 @@ export default function SalesReport() {
                   />
 
                   {/* Legend below the chart */}
-                  <View style={{
-                    flexDirection: "row",
-                    flexWrap: "wrap",
-                    justifyContent: "center",
-                    gap: 6,
-                    marginTop: 16,
-                    paddingHorizontal: 4
-                  }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      justifyContent: "center",
+                      gap: 6,
+                      marginTop: 16,
+                      paddingHorizontal: 4,
+                    }}
+                  >
                     {paymentMixCenterRows.map((row) => (
                       <View
                         key={row.key}
@@ -3334,14 +4162,33 @@ export default function SalesReport() {
                           borderRadius: 6,
                           borderWidth: 1,
                           borderColor: Theme.border,
-                          gap: 4
+                          gap: 4,
                         }}
                       >
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: row.color }} />
-                        <Text style={{ fontSize: 9, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                        <View
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: row.color,
+                          }}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 9,
+                            fontFamily: Fonts.bold,
+                            color: Theme.textPrimary,
+                          }}
+                        >
                           {row.key}
                         </Text>
-                        <Text style={{ fontSize: 9, fontFamily: Fonts.medium, color: row.color }}>
+                        <Text
+                          style={{
+                            fontSize: 9,
+                            fontFamily: Fonts.medium,
+                            color: row.color,
+                          }}
+                        >
                           {row.pct.toFixed(0)}%
                         </Text>
                       </View>
@@ -3377,16 +4224,21 @@ export default function SalesReport() {
               {(() => {
                 // Use dateScopedSales (date-only filtered) so payment mode filters
                 // don't distort the order type split counts
-                const activeSales = dateScopedSales.filter(s => !s.IsCancelled);
+                const activeSales = dateScopedSales.filter(
+                  (s) => !s.IsCancelled,
+                );
                 const isTakeaway = (s: any) =>
                   s.OrderType === "TAKEAWAY" ||
                   s.Section === "TAKEAWAY" ||
-                  (!s.OrderType && s.TableNo && String(s.TableNo).startsWith("TW-"));
-                const isQR = (s: any) => s.entryStatus === "q" || s.entry_status === "q" || s.isQROrder;
+                  (!s.OrderType &&
+                    s.TableNo &&
+                    String(s.TableNo).startsWith("TW-"));
+                const isQR = (s: any) =>
+                  s.entryStatus === "q" ||
+                  s.entry_status === "q" ||
+                  s.isQROrder;
                 const takeaway = activeSales.filter(isTakeaway).length;
-                const dineIn = activeSales.filter(
-                  (s) => !isTakeaway(s),
-                ).length;
+                const dineIn = activeSales.filter((s) => !isTakeaway(s)).length;
                 const totalOrderTypes = dineIn + takeaway;
                 return (
                   <>
@@ -3398,7 +4250,10 @@ export default function SalesReport() {
                       <Text
                         style={[styles.statValue, { color: Theme.primary }]}
                       >
-                        {totalOrderTypes > 0 ? ((dineIn / totalOrderTypes) * 100).toFixed(0) : 0}% ({dineIn})
+                        {totalOrderTypes > 0
+                          ? ((dineIn / totalOrderTypes) * 100).toFixed(0)
+                          : 0}
+                        % ({dineIn})
                       </Text>
                     </View>
                     <View style={styles.statRow}>
@@ -3409,7 +4264,10 @@ export default function SalesReport() {
                       <Text
                         style={[styles.statValue, { color: Theme.warning }]}
                       >
-                        {totalOrderTypes > 0 ? ((takeaway / totalOrderTypes) * 100).toFixed(0) : 0}% ({takeaway})
+                        {totalOrderTypes > 0
+                          ? ((takeaway / totalOrderTypes) * 100).toFixed(0)
+                          : 0}
+                        % ({takeaway})
                       </Text>
                     </View>
                   </>
@@ -3459,9 +4317,9 @@ export default function SalesReport() {
                 <Text style={styles.metricValueSmall}>
                   {filteredMetrics.TotalTransactions > 0
                     ? (
-                      filteredMetrics.TotalItems /
-                      filteredMetrics.TotalTransactions
-                    ).toFixed(1)
+                        filteredMetrics.TotalItems /
+                        filteredMetrics.TotalTransactions
+                      ).toFixed(1)
                     : 0}
                 </Text>
               </View>
@@ -3481,19 +4339,29 @@ export default function SalesReport() {
       </ScrollView>
 
       {/* Breakdown */}
-      <View style={[styles.breakdownCard, SCREEN_W < 480 && { padding: 12, borderRadius: 16 }]}>
+      <View
+        style={[
+          styles.breakdownCard,
+          SCREEN_W < 480 && { padding: 12, borderRadius: 16 },
+        ]}
+      >
         <View style={styles.chartCardHeader}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Text style={styles.cardTitle}>PAYMENT BREAKDOWN</Text>
             <Ionicons name="wallet-outline" size={14} color={Theme.primary} />
           </View>
-          {activePaymentModes.length < (displayedBreakdownModes.length + 1) && (
+          {activePaymentModes.length < displayedBreakdownModes.length + 1 && (
             <TouchableOpacity
               onPress={() => {
                 if (Platform.OS !== "web") {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }
-                setActivePaymentModes([...displayedBreakdownModes.map(m => m.payMode.toUpperCase().trim()), "VOID"]);
+                setActivePaymentModes([
+                  ...displayedBreakdownModes.map((m) =>
+                    m.payMode.toUpperCase().trim(),
+                  ),
+                  "VOID",
+                ]);
               }}
               style={{
                 backgroundColor: Theme.primary + "15",
@@ -3504,7 +4372,14 @@ export default function SalesReport() {
                 borderColor: Theme.primary + "30",
               }}
             >
-              <Text style={{ color: Theme.primary, fontFamily: Fonts.black, fontSize: 10, letterSpacing: 0.5 }}>
+              <Text
+                style={{
+                  color: Theme.primary,
+                  fontFamily: Fonts.black,
+                  fontSize: 10,
+                  letterSpacing: 0.5,
+                }}
+              >
                 SHOW ALL
               </Text>
             </TouchableOpacity>
@@ -3519,7 +4394,7 @@ export default function SalesReport() {
               width: "100%",
               rowGap: SCREEN_W < 480 ? 10 : 12,
               columnGap: SCREEN_W < 480 ? 10 : 12,
-            }
+            },
           ]}
           onLayout={(e) => setBreakdownRowWidth(e.nativeEvent.layout.width)}
         >
@@ -3527,17 +4402,26 @@ export default function SalesReport() {
             const key = item.payMode.toUpperCase().trim();
             const label = item.description || item.payMode;
             const val = paymentBreakdownMetrics[key] || 0;
-            const outstanding = key === "CREDIT" ? paymentBreakdownMetrics["CREDIT_OUTSTANDING"] : undefined;
+            const outstanding =
+              key === "CREDIT"
+                ? paymentBreakdownMetrics["CREDIT_OUTSTANDING"]
+                : undefined;
             const color = getPayModeColor(key);
             const iconName = getPayModeIoniconName(key);
 
             // Responsive column grid: 2 cols on mobile (<480), 4 on tablet (480-900), 7 on laptop/desktop (>=900)
             const numCols = SCREEN_W >= 900 ? 7 : SCREEN_W >= 480 ? 4 : 2;
             const gap = SCREEN_W < 480 ? 10 : 12;
-            const containerW = breakdownRowWidth > 0 ? breakdownRowWidth : Math.max(SCREEN_W - 56, 280);
-            const itemW = Math.floor((containerW - (numCols - 1) * gap) / numCols);
+            const containerW =
+              breakdownRowWidth > 0
+                ? breakdownRowWidth
+                : Math.max(SCREEN_W - 56, 280);
+            const itemW = Math.floor(
+              (containerW - (numCols - 1) * gap) / numCols,
+            );
 
-            const isSomeFilterApplied = activePaymentModes.length < (displayedBreakdownModes.length + 1);
+            const isSomeFilterApplied =
+              activePaymentModes.length < displayedBreakdownModes.length + 1;
             const isThisActive = activePaymentModes.includes(key);
             const isActive = isSomeFilterApplied && isThisActive;
             const isInactive = isSomeFilterApplied && !isThisActive;
@@ -3568,23 +4452,32 @@ export default function SalesReport() {
                   isInactive && {
                     opacity: 0.35,
                     borderColor: Theme.border,
-                  }
+                  },
                 ]}
               >
                 {/* Icon circle */}
-                <View style={[
-                  styles.breakdownIconCircle,
-                  {
-                    backgroundColor: hexToRgba(color, 0.12),
-                    width: SCREEN_W < 480 ? 36 : 40,
-                    height: SCREEN_W < 480 ? 36 : 40,
-                    borderRadius: SCREEN_W < 480 ? 18 : 20,
-                  }
-                ]}>
-                  <Ionicons name={iconName} size={SCREEN_W < 480 ? 18 : 20} color={color} />
+                <View
+                  style={[
+                    styles.breakdownIconCircle,
+                    {
+                      backgroundColor: hexToRgba(color, 0.12),
+                      width: SCREEN_W < 480 ? 36 : 40,
+                      height: SCREEN_W < 480 ? 36 : 40,
+                      borderRadius: SCREEN_W < 480 ? 18 : 20,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={iconName}
+                    size={SCREEN_W < 480 ? 18 : 20}
+                    color={color}
+                  />
                 </View>
                 <Text
-                  style={[styles.breakdownLabel, { fontSize: SCREEN_W < 480 ? 10 : 11 }]}
+                  style={[
+                    styles.breakdownLabel,
+                    { fontSize: SCREEN_W < 480 ? 10 : 11 },
+                  ]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.75}
@@ -3592,7 +4485,10 @@ export default function SalesReport() {
                   {label}
                 </Text>
                 <Text
-                  style={[styles.breakdownValue, { color, fontSize: SCREEN_W < 480 ? 14 : 16 }]}
+                  style={[
+                    styles.breakdownValue,
+                    { color, fontSize: SCREEN_W < 480 ? 14 : 16 },
+                  ]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.6}
@@ -3601,7 +4497,12 @@ export default function SalesReport() {
                 </Text>
                 {outstanding !== undefined && (
                   <Text
-                    style={{ fontSize: SCREEN_W < 480 ? 9 : 10, fontFamily: Fonts.bold, color: Theme.textMuted, marginTop: 1 }}
+                    style={{
+                      fontSize: SCREEN_W < 480 ? 9 : 10,
+                      fontFamily: Fonts.bold,
+                      color: Theme.textMuted,
+                      marginTop: 1,
+                    }}
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.75}
@@ -3613,25 +4514,62 @@ export default function SalesReport() {
             );
           })}
         </View>
-        <View style={{ height: 1, backgroundColor: Theme.border, marginVertical: 16, opacity: 0.5 }} />
+        <View
+          style={{
+            height: 1,
+            backgroundColor: Theme.border,
+            marginVertical: 16,
+            opacity: 0.5,
+          }}
+        />
 
-        <View style={{
-          backgroundColor: Theme.bgCard,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: Theme.border,
-          padding: SCREEN_W < 480 ? 12 : 16,
-          gap: SCREEN_W < 480 ? 10 : 12,
-          ...Theme.shadowSm
-        }}>
-          <Text style={{ fontFamily: Fonts.black, fontSize: SCREEN_W < 480 ? 10 : 11, color: Theme.textSecondary, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 2 }}>
+        <View
+          style={{
+            backgroundColor: Theme.bgCard,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: Theme.border,
+            padding: SCREEN_W < 480 ? 12 : 16,
+            gap: SCREEN_W < 480 ? 10 : 12,
+            ...Theme.shadowSm,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: Fonts.black,
+              fontSize: SCREEN_W < 480 ? 10 : 11,
+              color: Theme.textSecondary,
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
+              marginBottom: 2,
+            }}
+          >
             Reconciliation Summary
           </Text>
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text style={{ fontFamily: Fonts.extraBold, fontSize: SCREEN_W < 480 ? 12 : 13, color: Theme.textPrimary }}>Total Sales Volume</Text>
-            <Text 
-              style={{ fontFamily: Fonts.black, fontSize: SCREEN_W < 480 ? 13 : 14, color: Theme.textPrimary, textAlign: "right" }}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: Fonts.extraBold,
+                fontSize: SCREEN_W < 480 ? 12 : 13,
+                color: Theme.textPrimary,
+              }}
+            >
+              Total Sales Volume
+            </Text>
+            <Text
+              style={{
+                fontFamily: Fonts.black,
+                fontSize: SCREEN_W < 480 ? 13 : 14,
+                color: Theme.textPrimary,
+                textAlign: "right",
+              }}
               numberOfLines={1}
               adjustsFontSizeToFit
             >
@@ -3639,15 +4577,36 @@ export default function SalesReport() {
             </Text>
           </View>
 
-          <View style={{ height: 1, backgroundColor: Theme.border, opacity: 0.3 }} />
+          <View
+            style={{ height: 1, backgroundColor: Theme.border, opacity: 0.3 }}
+          />
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={{ fontFamily: Fonts.bold, fontSize: SCREEN_W < 480 ? 12 : 13, color: "#ec4899" }}>Member Accounts</Text>
+              <Text
+                style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: SCREEN_W < 480 ? 12 : 13,
+                  color: "#ec4899",
+                }}
+              >
+                Member Accounts
+              </Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
-              <Text 
-                style={{ fontFamily: Fonts.bold, fontSize: SCREEN_W < 480 ? 11 : 12, color: Theme.success, textAlign: "right" }}
+              <Text
+                style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: SCREEN_W < 480 ? 11 : 12,
+                  color: Theme.success,
+                  textAlign: "right",
+                }}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
@@ -3656,23 +4615,60 @@ export default function SalesReport() {
             </View>
           </View>
 
-          <View style={{ height: 1, backgroundColor: Theme.border, opacity: 0.3 }} />
+          <View
+            style={{ height: 1, backgroundColor: Theme.border, opacity: 0.3 }}
+          />
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={{ fontFamily: Fonts.bold, fontSize: SCREEN_W < 480 ? 12 : 13, color: "#e11d48" }}>Credit Customers</Text>
-              <Text style={{ fontFamily: Fonts.medium, fontSize: SCREEN_W < 480 ? 8 : 9, color: Theme.textMuted, marginTop: 1 }}>Collections vs New Outstanding</Text>
+              <Text
+                style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: SCREEN_W < 480 ? 12 : 13,
+                  color: "#e11d48",
+                }}
+              >
+                Credit Customers
+              </Text>
+              <Text
+                style={{
+                  fontFamily: Fonts.medium,
+                  fontSize: SCREEN_W < 480 ? 8 : 9,
+                  color: Theme.textMuted,
+                  marginTop: 1,
+                }}
+              >
+                Collections vs New Outstanding
+              </Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
-              <Text 
-                style={{ fontFamily: Fonts.bold, fontSize: SCREEN_W < 480 ? 11 : 12, color: Theme.success, textAlign: "right" }}
+              <Text
+                style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: SCREEN_W < 480 ? 11 : 12,
+                  color: Theme.success,
+                  textAlign: "right",
+                }}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
-                Collected: {formatCurrency(filteredMetrics.CreditPaymentsCollected)}
+                Collected:{" "}
+                {formatCurrency(filteredMetrics.CreditPaymentsCollected)}
               </Text>
-              <Text 
-                style={{ fontFamily: Fonts.bold, fontSize: SCREEN_W < 480 ? 11 : 12, color: "#e11d48", marginTop: 1, textAlign: "right" }}
+              <Text
+                style={{
+                  fontFamily: Fonts.bold,
+                  fontSize: SCREEN_W < 480 ? 11 : 12,
+                  color: "#e11d48",
+                  marginTop: 1,
+                  textAlign: "right",
+                }}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
@@ -3681,20 +4677,55 @@ export default function SalesReport() {
             </View>
           </View>
 
-          <View style={{ backgroundColor: Theme.success + "10", borderRadius: 12, padding: SCREEN_W < 480 ? 10 : 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4, borderWidth: 1, borderColor: Theme.success + "20" }}>
+          <View
+            style={{
+              backgroundColor: Theme.success + "10",
+              borderRadius: 12,
+              padding: SCREEN_W < 480 ? 10 : 12,
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 4,
+              borderWidth: 1,
+              borderColor: Theme.success + "20",
+            }}
+          >
             <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={{ fontFamily: Fonts.black, fontSize: SCREEN_W < 480 ? 11.5 : 13, color: Theme.success }}>Total Collections Volume</Text>
-              <Text style={{ fontFamily: Fonts.medium, fontSize: SCREEN_W < 480 ? 8 : 9, color: Theme.textMuted, marginTop: 1 }}>Cash Received (excl. Credit Sales) + Payments Collected</Text>
+              <Text
+                style={{
+                  fontFamily: Fonts.black,
+                  fontSize: SCREEN_W < 480 ? 11.5 : 13,
+                  color: Theme.success,
+                }}
+              >
+                Total Collections Volume
+              </Text>
+              <Text
+                style={{
+                  fontFamily: Fonts.medium,
+                  fontSize: SCREEN_W < 480 ? 8 : 9,
+                  color: Theme.textMuted,
+                  marginTop: 1,
+                }}
+              >
+                Cash Received (excl. Credit Sales) + Payments Collected
+              </Text>
             </View>
-            <Text 
-              style={{ fontFamily: Fonts.black, fontSize: SCREEN_W < 480 ? 15 : 18, color: Theme.success, textAlign: "right" }}
+            <Text
+              style={{
+                fontFamily: Fonts.black,
+                fontSize: SCREEN_W < 480 ? 15 : 18,
+                color: Theme.success,
+                textAlign: "right",
+              }}
               numberOfLines={1}
               adjustsFontSizeToFit
             >
               {formatCurrency(
-                (paymentBreakdownTotal - (paymentBreakdownMetrics.CREDIT || 0)) +
-                filteredMetrics.MemberPaymentsCollected +
-                filteredMetrics.CreditPaymentsCollected
+                paymentBreakdownTotal -
+                  (paymentBreakdownMetrics.CREDIT || 0) +
+                  filteredMetrics.MemberPaymentsCollected +
+                  filteredMetrics.CreditPaymentsCollected,
               )}
             </Text>
           </View>
@@ -3716,7 +4747,6 @@ export default function SalesReport() {
       <StatusBar barStyle="dark-content" />
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.overlay}>
-
           <FlatList
             data={filteredSales}
             renderItem={({ item }: { item: any }) => (
@@ -3780,8 +4810,12 @@ export default function SalesReport() {
                         style={[
                           styles.paidBadgeSmall,
                           {
-                            backgroundColor: selectedOrder?.IsCancelled ? Theme.danger + "15" : Theme.primary + "15",
-                            borderColor: selectedOrder?.IsCancelled ? Theme.danger + "30" : Theme.primary + "30",
+                            backgroundColor: selectedOrder?.IsCancelled
+                              ? Theme.danger + "15"
+                              : Theme.primary + "15",
+                            borderColor: selectedOrder?.IsCancelled
+                              ? Theme.danger + "30"
+                              : Theme.primary + "30",
                             paddingHorizontal: 6,
                             paddingVertical: 2,
                             borderRadius: 6,
@@ -3790,7 +4824,9 @@ export default function SalesReport() {
                       >
                         <Text
                           style={{
-                            color: selectedOrder?.IsCancelled ? Theme.danger : Theme.primary,
+                            color: selectedOrder?.IsCancelled
+                              ? Theme.danger
+                              : Theme.primary,
                             fontFamily: Fonts.black,
                             fontSize: 9,
                           }}
@@ -3810,20 +4846,24 @@ export default function SalesReport() {
                     >
                       <Text style={[styles.modalSub, { fontSize: 10 }]}>
                         {(() => {
-                          const dateObj = parseDatabaseDate(selectedOrder?.SettlementDate || selectedOrder?.LastSettlementDate);
-                          if (!dateObj || isNaN(dateObj.getTime())) return "N/A";
-                          const datePart = new Intl.DateTimeFormat('en-GB', {
-                            timeZone: 'Asia/Singapore',
-                            day: 'numeric',
-                            month: 'numeric',
-                            year: 'numeric'
+                          const dateObj = parseDatabaseDate(
+                            selectedOrder?.SettlementDate ||
+                              selectedOrder?.LastSettlementDate,
+                          );
+                          if (!dateObj || isNaN(dateObj.getTime()))
+                            return "N/A";
+                          const datePart = new Intl.DateTimeFormat("en-GB", {
+                            timeZone: "Asia/Singapore",
+                            day: "numeric",
+                            month: "numeric",
+                            year: "numeric",
                           }).format(dateObj);
-                          const timePart = new Intl.DateTimeFormat('en-US', {
-                            timeZone: 'Asia/Singapore',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: true
+                          const timePart = new Intl.DateTimeFormat("en-US", {
+                            timeZone: "Asia/Singapore",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: true,
                           }).format(dateObj);
                           return `${datePart}, ${timePart}`;
                         })()}
@@ -3898,17 +4938,49 @@ export default function SalesReport() {
                           }}
                         >
                           {selectedOrder?.GuestName && (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                              <Ionicons name="person-outline" size={11} color={Theme.textSecondary} />
-                              <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 4,
+                              }}
+                            >
+                              <Ionicons
+                                name="person-outline"
+                                size={11}
+                                color={Theme.textSecondary}
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 10,
+                                  fontFamily: Fonts.bold,
+                                  color: Theme.textPrimary,
+                                }}
+                              >
                                 Guest: {selectedOrder.GuestName}
                               </Text>
                             </View>
                           )}
                           {selectedOrder?.Pax && (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                              <Ionicons name="people-outline" size={11} color={Theme.textSecondary} />
-                              <Text style={{ fontSize: 10, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 4,
+                              }}
+                            >
+                              <Ionicons
+                                name="people-outline"
+                                size={11}
+                                color={Theme.textSecondary}
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 10,
+                                  fontFamily: Fonts.bold,
+                                  color: Theme.textPrimary,
+                                }}
+                              >
                                 {selectedOrder.Pax} Pax
                               </Text>
                             </View>
@@ -3921,11 +4993,7 @@ export default function SalesReport() {
                     onPress={() => setSelectedOrder(null)}
                     style={{ marginLeft: 10 }}
                   >
-                    <Ionicons
-                      name="close"
-                      size={24}
-                      color={Theme.textMuted}
-                    />
+                    <Ionicons name="close" size={24} color={Theme.textMuted} />
                   </TouchableOpacity>
                 </View>
 
@@ -3933,30 +5001,43 @@ export default function SalesReport() {
                 {selectedOrder?.IsCancelled ? (
                   <View style={styles.cancelledOrderBadge}>
                     <View style={styles.cancelledBadgeMain}>
-                      <Ionicons name="alert-circle" size={16} color={Theme.danger} />
-                      <Text style={styles.cancelledBadgeText}>ORDER CANCELLED</Text>
+                      <Ionicons
+                        name="alert-circle"
+                        size={16}
+                        color={Theme.danger}
+                      />
+                      <Text style={styles.cancelledBadgeText}>
+                        ORDER CANCELLED
+                      </Text>
                       <View style={styles.cancelledReasonBadge}>
-                        <Text style={styles.cancelledReasonText}>{selectedOrder.CancellationReason || "No reason"}</Text>
+                        <Text style={styles.cancelledReasonText}>
+                          {selectedOrder.CancellationReason || "No reason"}
+                        </Text>
                       </View>
                     </View>
                     <View style={styles.cancelledDetailRow}>
-                      <Text style={styles.cancelledDetailText}>By: {selectedOrder.CancelledByUserName || "SYSTEM"}</Text>
                       <Text style={styles.cancelledDetailText}>
-                        Date: {(() => {
+                        By: {selectedOrder.CancelledByUserName || "SYSTEM"}
+                      </Text>
+                      <Text style={styles.cancelledDetailText}>
+                        Date:{" "}
+                        {(() => {
                           if (!selectedOrder.CancelledDate) return "N/A";
-                          const dateObj = parseDatabaseDate(selectedOrder.CancelledDate);
-                          const datePart = new Intl.DateTimeFormat('en-GB', {
-                            timeZone: 'Asia/Singapore',
-                            day: 'numeric',
-                            month: 'numeric',
-                            year: 'numeric'
+                          const dateObj = parseDatabaseDate(
+                            selectedOrder.CancelledDate,
+                          );
+                          const datePart = new Intl.DateTimeFormat("en-GB", {
+                            timeZone: "Asia/Singapore",
+                            day: "numeric",
+                            month: "numeric",
+                            year: "numeric",
                           }).format(dateObj);
-                          const timePart = new Intl.DateTimeFormat('en-US', {
-                            timeZone: 'Asia/Singapore',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: true
+                          const timePart = new Intl.DateTimeFormat("en-US", {
+                            timeZone: "Asia/Singapore",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: true,
                           }).format(dateObj);
                           return `${datePart}, ${timePart}`;
                         })()}
@@ -3971,21 +5052,39 @@ export default function SalesReport() {
                 >
                   {selectedOrder?.isMerged && (
                     <View style={styles.detailMergeContainer}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <Ionicons name="git-merge-outline" size={14} color="#ea580c" />
-                        <Text style={styles.detailMergeTitle}>Merged Tables & Bills</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <Ionicons
+                          name="git-merge-outline"
+                          size={14}
+                          color="#ea580c"
+                        />
+                        <Text style={styles.detailMergeTitle}>
+                          Merged Tables & Bills
+                        </Text>
                       </View>
                       <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={{ gap: 6, paddingBottom: 2 }}
-                        style={{ width: '100%' }}
+                        style={{ width: "100%" }}
                       >
-                        {selectedOrder.mergedDetails?.split(', ').filter(Boolean).map((detail: string, index: number) => (
-                          <View key={index} style={styles.childBillBadge}>
-                            <Text style={styles.childBillBadgeText}>{detail}</Text>
-                          </View>
-                        ))}
+                        {selectedOrder.mergedDetails
+                          ?.split(", ")
+                          .filter(Boolean)
+                          .map((detail: string, index: number) => (
+                            <View key={index} style={styles.childBillBadge}>
+                              <Text style={styles.childBillBadgeText}>
+                                {detail}
+                              </Text>
+                            </View>
+                          ))}
                       </ScrollView>
                     </View>
                   )}
@@ -3993,7 +5092,10 @@ export default function SalesReport() {
                     <View style={styles.detailSplitContainer}>
                       <Ionicons name="cut-outline" size={14} color="#2563eb" />
                       <Text style={styles.detailSplitText}>
-                        Split Bill Payment: <Text style={{ fontFamily: Fonts.black }}>{selectedOrder.splitNo}</Text>
+                        Split Bill Payment:{" "}
+                        <Text style={{ fontFamily: Fonts.black }}>
+                          {selectedOrder.splitNo}
+                        </Text>
                       </Text>
                     </View>
                   )}
@@ -4068,7 +5170,8 @@ export default function SalesReport() {
                                   textDecorationLine: "none",
                                 }}
                               >
-                                {" "}[VOID]
+                                {" "}
+                                [VOID]
                               </Text>
                             )}
                           </Text>
@@ -4086,92 +5189,227 @@ export default function SalesReport() {
                           {item.modifiers &&
                             Array.isArray(item.modifiers) &&
                             item.modifiers.filter((m: any) => {
-                              const name = (m.ModifierName || m.modifierName || m.name || "").trim();
+                              const name = (
+                                m.ModifierName ||
+                                m.modifierName ||
+                                m.name ||
+                                ""
+                              ).trim();
                               return name.length > 0;
                             }).length > 0 && (
                               <View style={styles.modifierPillsContainer}>
                                 {item.modifiers
                                   .filter((m: any) => {
-                                    const name = (m.ModifierName || m.modifierName || m.name || "").trim();
+                                    const name = (
+                                      m.ModifierName ||
+                                      m.modifierName ||
+                                      m.name ||
+                                      ""
+                                    ).trim();
                                     return name.length > 0;
                                   })
                                   .map((m: any, mIdx: number) => {
-                                    const amt = Number(m.Amount || m.amount || 0);
-                                    const displayName = (m.ModifierName || m.name || "").replace(/^INSTR:\s*/i, "").trim();
+                                    const amt = Number(
+                                      m.Amount || m.amount || 0,
+                                    );
+                                    const displayName = (
+                                      m.ModifierName ||
+                                      m.name ||
+                                      ""
+                                    )
+                                      .replace(/^INSTR:\s*/i, "")
+                                      .trim();
                                     return (
-                                      <View key={mIdx} style={styles.modifierPill}>
+                                      <View
+                                        key={mIdx}
+                                        style={styles.modifierPill}
+                                      >
                                         <Text style={styles.modifierPillText}>
                                           + {displayName}
-                                          {amt > 0 ? ` ($${amt.toFixed(2)})` : ""}
+                                          {amt > 0
+                                            ? ` ($${amt.toFixed(2)})`
+                                            : ""}
                                         </Text>
                                       </View>
                                     );
                                   })}
                               </View>
                             )}
-                          {item.isCombo && item.comboSelections && Array.isArray(item.comboSelections) && (
-                            <View style={{ marginTop: 6, gap: 4, paddingLeft: 4 }}>
-                              {item.comboSelections
-                                .filter((group: any) => group.items && group.items.length > 0)
-                                .map((group: any, gIdx: number) => (
-                                  <View key={`g-${gIdx}`} style={{ marginTop: 2 }}>
-                                    <Text style={{ fontSize: 11, fontFamily: Fonts.bold, color: Theme.primary }}>
-                                      {group.groupName}:
-                                    </Text>
-                                    {(group.items || []).map((opt: any, oIdx: number) => {
-                                      const effectiveAdd = (parseFloat(opt.surcharge || 0) + parseFloat(opt.dishPrice || 0));
-                                      return (
-                                        <Text key={`o-${oIdx}`} style={{ fontSize: 11, color: Theme.textSecondary || "#666", paddingLeft: 8, marginTop: 1 }}>
-                                          ↳ {opt.name}{effectiveAdd > 0 ? ` (+$${effectiveAdd.toFixed(2)})` : ""}
-                                        </Text>
-                                      );
-                                    })}
-                                  </View>
-                                ))}
-                            </View>
-                          )}
+                          {item.isCombo &&
+                            item.comboSelections &&
+                            Array.isArray(item.comboSelections) && (
+                              <View
+                                style={{ marginTop: 6, gap: 4, paddingLeft: 4 }}
+                              >
+                                {item.comboSelections
+                                  .filter(
+                                    (group: any) =>
+                                      group.items && group.items.length > 0,
+                                  )
+                                  .map((group: any, gIdx: number) => (
+                                    <View
+                                      key={`g-${gIdx}`}
+                                      style={{ marginTop: 2 }}
+                                    >
+                                      <Text
+                                        style={{
+                                          fontSize: 11,
+                                          fontFamily: Fonts.bold,
+                                          color: Theme.primary,
+                                        }}
+                                      >
+                                        {group.groupName}:
+                                      </Text>
+                                      {(group.items || []).map(
+                                        (opt: any, oIdx: number) => {
+                                          const effectiveAdd =
+                                            parseFloat(opt.surcharge || 0) +
+                                            parseFloat(opt.dishPrice || 0);
+                                          return (
+                                            <Text
+                                              key={`o-${oIdx}`}
+                                              style={{
+                                                fontSize: 11,
+                                                color:
+                                                  Theme.textSecondary || "#666",
+                                                paddingLeft: 8,
+                                                marginTop: 1,
+                                              }}
+                                            >
+                                              ↳ {opt.name}
+                                              {effectiveAdd > 0
+                                                ? ` (+$${effectiveAdd.toFixed(2)})`
+                                                : ""}
+                                            </Text>
+                                          );
+                                        },
+                                      )}
+                                    </View>
+                                  ))}
+                              </View>
+                            )}
                           {/* Unit price row — strikethrough if item has discount */}
                           {item.DiscountType === "FOC" ? (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: Theme.textMuted,
+                                  fontSize: 10,
+                                  fontFamily: Fonts.bold,
+                                  textDecorationLine: "line-through",
+                                }}
+                              >
                                 UNIT: ${(item.Price || 0).toFixed(2)}
                               </Text>
-                              <Text style={{ color: "#3b82f6", fontSize: 10, fontFamily: Fonts.black }}>
+                              <Text
+                                style={{
+                                  color: "#3b82f6",
+                                  fontSize: 10,
+                                  fontFamily: Fonts.black,
+                                }}
+                              >
                                 $0.00
                               </Text>
-                              <View style={{ backgroundColor: "#3b82f615", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
-                                <Text style={{ color: "#3b82f6", fontSize: 9, fontFamily: Fonts.black }}>FOC</Text>
+                              <View
+                                style={{
+                                  backgroundColor: "#3b82f615",
+                                  borderRadius: 4,
+                                  paddingHorizontal: 4,
+                                  paddingVertical: 1,
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    color: "#3b82f6",
+                                    fontSize: 9,
+                                    fontFamily: Fonts.black,
+                                  }}
+                                >
+                                  FOC
+                                </Text>
                               </View>
                             </View>
                           ) : item.DiscountAmount > 0 ? (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: Theme.textMuted,
+                                  fontSize: 10,
+                                  fontFamily: Fonts.bold,
+                                  textDecorationLine: "line-through",
+                                }}
+                              >
                                 UNIT: ${(item.Price || 0).toFixed(2)}
                               </Text>
                               {/* Discounted unit price */}
                               {(() => {
                                 const discountedUnit =
                                   item.DiscountType === "percentage"
-                                    ? item.Price * (1 - item.DiscountAmount / 100)
-                                    : Math.max(0, item.Price - item.DiscountAmount);
+                                    ? item.Price *
+                                      (1 - item.DiscountAmount / 100)
+                                    : Math.max(
+                                        0,
+                                        item.Price - item.DiscountAmount,
+                                      );
                                 const badge =
                                   item.DiscountType === "percentage"
                                     ? `-${item.DiscountAmount}%`
                                     : `-$${item.DiscountAmount.toFixed(2)}`;
                                 return (
                                   <>
-                                    <Text style={{ color: Theme.success, fontSize: 10, fontFamily: Fonts.black }}>
+                                    <Text
+                                      style={{
+                                        color: Theme.success,
+                                        fontSize: 10,
+                                        fontFamily: Fonts.black,
+                                      }}
+                                    >
                                       ${discountedUnit.toFixed(2)}
                                     </Text>
-                                    <View style={{ backgroundColor: Theme.success + "15", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
-                                      <Text style={{ color: Theme.success, fontSize: 9, fontFamily: Fonts.black }}>{badge}</Text>
+                                    <View
+                                      style={{
+                                        backgroundColor: Theme.success + "15",
+                                        borderRadius: 4,
+                                        paddingHorizontal: 4,
+                                        paddingVertical: 1,
+                                      }}
+                                    >
+                                      <Text
+                                        style={{
+                                          color: Theme.success,
+                                          fontSize: 9,
+                                          fontFamily: Fonts.black,
+                                        }}
+                                      >
+                                        {badge}
+                                      </Text>
                                     </View>
                                   </>
                                 );
                               })()}
                             </View>
                           ) : (
-                            <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold }}>
+                            <Text
+                              style={{
+                                color: Theme.textMuted,
+                                fontSize: 10,
+                                fontFamily: Fonts.bold,
+                              }}
+                            >
                               UNIT: ${(item.Price || 0).toFixed(2)}
                             </Text>
                           )}
@@ -4179,19 +5417,43 @@ export default function SalesReport() {
                         {/* Line total */}
                         {item.DiscountType === "FOC" ? (
                           <View style={{ alignItems: "flex-end" }}>
-                            <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
+                            <Text
+                              style={{
+                                color: Theme.textMuted,
+                                fontSize: 10,
+                                fontFamily: Fonts.bold,
+                                textDecorationLine: "line-through",
+                              }}
+                            >
                               ${(item.Price * item.Qty).toFixed(2)}
                             </Text>
-                            <Text style={[styles.orderItemPrice, { color: "#3b82f6" }]}>
+                            <Text
+                              style={[
+                                styles.orderItemPrice,
+                                { color: "#3b82f6" },
+                              ]}
+                            >
                               $0.00
                             </Text>
                           </View>
                         ) : item.DiscountAmount > 0 ? (
                           <View style={{ alignItems: "flex-end" }}>
-                            <Text style={{ color: Theme.textMuted, fontSize: 10, fontFamily: Fonts.bold, textDecorationLine: "line-through" }}>
+                            <Text
+                              style={{
+                                color: Theme.textMuted,
+                                fontSize: 10,
+                                fontFamily: Fonts.bold,
+                                textDecorationLine: "line-through",
+                              }}
+                            >
                               ${(item.Price * item.Qty).toFixed(2)}
                             </Text>
-                            <Text style={[styles.orderItemPrice, { color: Theme.success }]}>
+                            <Text
+                              style={[
+                                styles.orderItemPrice,
+                                { color: Theme.success },
+                              ]}
+                            >
                               {item.DiscountType === "percentage"
                                 ? `$${(item.Price * (1 - item.DiscountAmount / 100) * item.Qty).toFixed(2)}`
                                 : `$${(Math.max(0, item.Price - item.DiscountAmount) * item.Qty).toFixed(2)}`}
@@ -4218,25 +5480,71 @@ export default function SalesReport() {
                 {/* Member / Credit Customer Info */}
                 {selectedOrder?.CustomerName && (
                   <View style={{ marginBottom: 12, paddingHorizontal: 4 }}>
-                    <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary }}>
-                      {String(selectedOrder.PayMode || '').toUpperCase().includes("MEMBER") ? "Member" : "Credit Customer"}: {selectedOrder.CustomerName}
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontFamily: Fonts.black,
+                        color: Theme.textPrimary,
+                      }}
+                    >
+                      {String(selectedOrder.PayMode || "")
+                        .toUpperCase()
+                        .includes("MEMBER")
+                        ? "Member"
+                        : "Credit Customer"}
+                      : {selectedOrder.CustomerName}
                     </Text>
                   </View>
                 )}
 
                 {/* Payment Details Breakdown */}
                 {displayedPayments.length > 0 && (
-                  <View style={{ marginTop: 12, marginBottom: 4, paddingHorizontal: 4 }}>
-                    <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  <View
+                    style={{
+                      marginTop: 12,
+                      marginBottom: 4,
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: Fonts.bold,
+                        color: Theme.textSecondary,
+                        marginBottom: 6,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
                       Payment Details
                     </Text>
                     {displayedPayments.map((pm, idx) => (
-                      <View key={idx} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 }}>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.semiBold, color: Theme.textPrimary }}>
-                          {pm.PayModeName || 'CASH'}
-                          {pm.ReferenceNo ? ` (${pm.ReferenceNo})` : ''}
+                      <View
+                        key={idx}
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          paddingVertical: 4,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: Fonts.semiBold,
+                            color: Theme.textPrimary,
+                          }}
+                        >
+                          {pm.PayModeName || "CASH"}
+                          {pm.ReferenceNo ? ` (${pm.ReferenceNo})` : ""}
                         </Text>
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: Fonts.bold,
+                            color: Theme.textPrimary,
+                          }}
+                        >
                           {formatCurrency(pm.Amount)}
                         </Text>
                       </View>
@@ -4246,29 +5554,95 @@ export default function SalesReport() {
 
                 <View style={styles.modalDivider} />
                 {/* Bill-level breakdown: Subtotal → Discount → Total */}
-                <View style={{ backgroundColor: Theme.primary + "05", padding: 12, borderRadius: 12, marginBottom: 16, gap: 6 }}>
+                <View
+                  style={{
+                    backgroundColor: Theme.primary + "05",
+                    padding: 12,
+                    borderRadius: 12,
+                    marginBottom: 16,
+                    gap: 6,
+                  }}
+                >
                   {/* Show subtotal + discount rows only when a bill discount was applied */}
                   {/* Show subtotal row when discount, service charge, or tax is applied */}
-                  {(selectedOrder?.DiscountAmount > 0 || Number(selectedOrder?.ServiceCharge) > 0 || Number(selectedOrder?.TotalTax) > 0 || Number(selectedOrder?.TakeawayCharge) > 0) && (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.textSecondary }}>Subtotal</Text>
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                  {(selectedOrder?.DiscountAmount > 0 ||
+                    Number(selectedOrder?.ServiceCharge) > 0 ||
+                    Number(selectedOrder?.TotalTax) > 0 ||
+                    Number(selectedOrder?.TakeawayCharge) > 0) && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: Fonts.semiBold,
+                          color: Theme.textSecondary,
+                        }}
+                      >
+                        Subtotal
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontFamily: Fonts.bold,
+                          color: Theme.textPrimary,
+                        }}
+                      >
                         {formatCurrency(selectedOrder?.SubTotal)}
                       </Text>
                     </View>
                   )}
                   {(() => {
-                    const regularDiscountAmt = Number(selectedOrder?.DiscountAmount || 0);
+                    const regularDiscountAmt = Number(
+                      selectedOrder?.DiscountAmount || 0,
+                    );
 
                     return (
                       <>
                         {regularDiscountAmt > 0 && (
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                              <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.success }}>Discount</Text>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontFamily: Fonts.semiBold,
+                                  color: Theme.success,
+                                }}
+                              >
+                                Discount
+                              </Text>
                               {selectedOrder?.DiscountType && (
-                                <View style={{ backgroundColor: Theme.success + "15", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                                  <Text style={{ fontSize: 9, fontFamily: Fonts.black, color: Theme.success }}>
+                                <View
+                                  style={{
+                                    backgroundColor: Theme.success + "15",
+                                    borderRadius: 4,
+                                    paddingHorizontal: 5,
+                                    paddingVertical: 1,
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      fontSize: 9,
+                                      fontFamily: Fonts.black,
+                                      color: Theme.success,
+                                    }}
+                                  >
                                     {selectedOrder.DiscountType === "percentage"
                                       ? `${selectedOrder.DiscountPercentage}%`
                                       : "FIXED"}
@@ -4276,7 +5650,13 @@ export default function SalesReport() {
                                 </View>
                               )}
                             </View>
-                            <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.success }}>
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontFamily: Fonts.bold,
+                                color: Theme.success,
+                              }}
+                            >
                               -{formatCurrency(regularDiscountAmt)}
                             </Text>
                           </View>
@@ -4285,36 +5665,136 @@ export default function SalesReport() {
                     );
                   })()}
                   {Number(selectedOrder?.ServiceCharge) > 0 && (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.textSecondary }}>{String(selectedOrder?.OrderType || selectedOrder?.orderType || "").toUpperCase().includes("TAKEAWAY") || String(selectedOrder?.TableNo || selectedOrder?.tableNo || "").toUpperCase().startsWith("TW") ? "TW Service Charge" : "Item Service Charge"}</Text>
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: Fonts.semiBold,
+                          color: Theme.textSecondary,
+                        }}
+                      >
+                        {String(
+                          selectedOrder?.OrderType ||
+                            selectedOrder?.orderType ||
+                            "",
+                        )
+                          .toUpperCase()
+                          .includes("TAKEAWAY") ||
+                        String(
+                          selectedOrder?.TableNo ||
+                            selectedOrder?.tableNo ||
+                            "",
+                        )
+                          .toUpperCase()
+                          .startsWith("TW")
+                          ? "TW Service Charge"
+                          : "Item Service Charge"}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontFamily: Fonts.bold,
+                          color: Theme.textPrimary,
+                        }}
+                      >
                         {formatCurrency(selectedOrder?.ServiceCharge)}
                       </Text>
                     </View>
                   )}
                   {Number(selectedOrder?.TakeawayCharge) > 0 && (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.textSecondary }}>Takeaway Charge</Text>
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: Fonts.semiBold,
+                          color: Theme.textSecondary,
+                        }}
+                      >
+                        Takeaway Charge
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontFamily: Fonts.bold,
+                          color: Theme.textPrimary,
+                        }}
+                      >
                         {formatCurrency(selectedOrder?.TakeawayCharge)}
                       </Text>
                     </View>
                   )}
                   {Number(selectedOrder?.TotalTax) > 0 && (
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <Text style={{ fontSize: 12, fontFamily: Fonts.semiBold, color: Theme.textSecondary }}>GST</Text>
-                      <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: Fonts.semiBold,
+                          color: Theme.textSecondary,
+                        }}
+                      >
+                        GST
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontFamily: Fonts.bold,
+                          color: Theme.textPrimary,
+                        }}
+                      >
                         {formatCurrency(selectedOrder?.TotalTax)}
                       </Text>
                     </View>
                   )}
-                  {(selectedOrder?.DiscountAmount > 0 || Number(selectedOrder?.ServiceCharge) > 0 || Number(selectedOrder?.TotalTax) > 0 || Number(selectedOrder?.TakeawayCharge) > 0) && (
-                    <View style={{ height: 1, backgroundColor: Theme.border + "50", marginVertical: 2 }} />
+                  {(selectedOrder?.DiscountAmount > 0 ||
+                    Number(selectedOrder?.ServiceCharge) > 0 ||
+                    Number(selectedOrder?.TotalTax) > 0 ||
+                    Number(selectedOrder?.TakeawayCharge) > 0) && (
+                    <View
+                      style={{
+                        height: 1,
+                        backgroundColor: Theme.border + "50",
+                        marginVertical: 2,
+                      }}
+                    />
                   )}
                   {/* Final total + paid badge */}
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
                     <View>
-                      <Text style={[styles.totalLabel, { fontSize: 10, color: Theme.textSecondary, textTransform: "uppercase", letterSpacing: 1 }]}>
+                      <Text
+                        style={[
+                          styles.totalLabel,
+                          {
+                            fontSize: 10,
+                            color: Theme.textSecondary,
+                            textTransform: "uppercase",
+                            letterSpacing: 1,
+                          },
+                        ]}
+                      >
                         Total Amount
                       </Text>
                       <Text style={[styles.totalValue, { fontSize: 22 }]}>
@@ -4322,41 +5802,61 @@ export default function SalesReport() {
                       </Text>
                     </View>
                     {(() => {
-                      const isMemberOrder = String(selectedOrder?.PayMode || "").toUpperCase().trim() === "MEMBER";
+                      const isMemberOrder =
+                        String(selectedOrder?.PayMode || "")
+                          .toUpperCase()
+                          .trim() === "MEMBER";
                       return (
-                        <View style={[
-                          styles.paidBadgeSmall,
-                          {
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            backgroundColor: selectedOrder?.IsCancelled
-                              ? Theme.danger + "20"
-                              : isMemberOrder
-                                ? Theme.success + "20"
-                                : selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0
-                                  ? Number(selectedOrder.OutstandingAmount) === Number(finalBillAmount)
-                                    ? "#ef444420"
-                                    : "#f59e0b20"
-                                  : Theme.success + "20",
-                            borderColor: selectedOrder?.IsCancelled
-                              ? Theme.danger + "40"
-                              : isMemberOrder
-                                ? Theme.success + "40"
-                                : selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0
-                                  ? Number(selectedOrder.OutstandingAmount) === Number(finalBillAmount)
-                                    ? "#ef444440"
-                                    : "#f59e0b40"
-                                  : Theme.success + "40"
-                          }
-                        ]}>
+                        <View
+                          style={[
+                            styles.paidBadgeSmall,
+                            {
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              backgroundColor: selectedOrder?.IsCancelled
+                                ? Theme.danger + "20"
+                                : isMemberOrder
+                                  ? Theme.success + "20"
+                                  : selectedOrder?.OutstandingAmount !==
+                                        undefined &&
+                                      Number(selectedOrder.OutstandingAmount) >
+                                        0
+                                    ? Number(
+                                        selectedOrder.OutstandingAmount,
+                                      ) === Number(finalBillAmount)
+                                      ? "#ef444420"
+                                      : "#f59e0b20"
+                                    : Theme.success + "20",
+                              borderColor: selectedOrder?.IsCancelled
+                                ? Theme.danger + "40"
+                                : isMemberOrder
+                                  ? Theme.success + "40"
+                                  : selectedOrder?.OutstandingAmount !==
+                                        undefined &&
+                                      Number(selectedOrder.OutstandingAmount) >
+                                        0
+                                    ? Number(
+                                        selectedOrder.OutstandingAmount,
+                                      ) === Number(finalBillAmount)
+                                      ? "#ef444440"
+                                      : "#f59e0b40"
+                                    : Theme.success + "40",
+                            },
+                          ]}
+                        >
                           <Ionicons
                             name={
                               selectedOrder?.IsCancelled
                                 ? "close-circle"
                                 : isMemberOrder
                                   ? "checkmark-circle"
-                                  : selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0
-                                    ? Number(selectedOrder.OutstandingAmount) === Number(finalBillAmount)
+                                  : selectedOrder?.OutstandingAmount !==
+                                        undefined &&
+                                      Number(selectedOrder.OutstandingAmount) >
+                                        0
+                                    ? Number(
+                                        selectedOrder.OutstandingAmount,
+                                      ) === Number(finalBillAmount)
                                       ? "alert-circle"
                                       : "time"
                                     : "checkmark-circle"
@@ -4367,33 +5867,48 @@ export default function SalesReport() {
                                 ? Theme.danger
                                 : isMemberOrder
                                   ? Theme.success
-                                  : selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0
-                                    ? Number(selectedOrder.OutstandingAmount) === Number(finalBillAmount)
+                                  : selectedOrder?.OutstandingAmount !==
+                                        undefined &&
+                                      Number(selectedOrder.OutstandingAmount) >
+                                        0
+                                    ? Number(
+                                        selectedOrder.OutstandingAmount,
+                                      ) === Number(finalBillAmount)
                                       ? "#ef4444"
                                       : "#f59e0b"
                                     : Theme.success
                             }
                           />
-                          <Text style={{
-                            color: selectedOrder?.IsCancelled
-                              ? Theme.danger
-                              : isMemberOrder
-                                ? Theme.success
-                                : selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0
-                                  ? Number(selectedOrder.OutstandingAmount) === Number(finalBillAmount)
-                                    ? "#ef4444"
-                                    : "#f59e0b"
-                                  : Theme.success,
-                            fontFamily: Fonts.black,
-                            fontSize: 10,
-                            marginLeft: 4
-                          }}>
+                          <Text
+                            style={{
+                              color: selectedOrder?.IsCancelled
+                                ? Theme.danger
+                                : isMemberOrder
+                                  ? Theme.success
+                                  : selectedOrder?.OutstandingAmount !==
+                                        undefined &&
+                                      Number(selectedOrder.OutstandingAmount) >
+                                        0
+                                    ? Number(
+                                        selectedOrder.OutstandingAmount,
+                                      ) === Number(finalBillAmount)
+                                      ? "#ef4444"
+                                      : "#f59e0b"
+                                    : Theme.success,
+                              fontFamily: Fonts.black,
+                              fontSize: 10,
+                              marginLeft: 4,
+                            }}
+                          >
                             {selectedOrder?.IsCancelled
                               ? "CANCELLED"
                               : isMemberOrder
                                 ? "PAID"
-                                : selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0
-                                  ? Number(selectedOrder.OutstandingAmount) === Number(finalBillAmount)
+                                : selectedOrder?.OutstandingAmount !==
+                                      undefined &&
+                                    Number(selectedOrder.OutstandingAmount) > 0
+                                  ? Number(selectedOrder.OutstandingAmount) ===
+                                    Number(finalBillAmount)
                                     ? "UNPAID"
                                     : "PARTIAL"
                                   : "PAID"}
@@ -4404,15 +5919,65 @@ export default function SalesReport() {
                   </View>
                   {/* Paid / Pending details inside the modal */}
                   {(() => {
-                    const isMemberOrder = String(selectedOrder?.PayMode || "").toUpperCase().trim() === "MEMBER";
-                    if (selectedOrder?.OutstandingAmount !== undefined && Number(selectedOrder.OutstandingAmount) > 0 && !selectedOrder?.IsCancelled && !isMemberOrder) {
+                    const isMemberOrder =
+                      String(selectedOrder?.PayMode || "")
+                        .toUpperCase()
+                        .trim() === "MEMBER";
+                    if (
+                      selectedOrder?.OutstandingAmount !== undefined &&
+                      Number(selectedOrder.OutstandingAmount) > 0 &&
+                      !selectedOrder?.IsCancelled &&
+                      !isMemberOrder
+                    ) {
                       return (
-                        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Theme.border + "40", flexDirection: "row", justifyContent: "space-between" }}>
-                          <Text style={{ fontSize: 11, fontFamily: Fonts.bold, color: Theme.textSecondary }}>
-                            Paid: <Text style={{ color: Theme.success, fontFamily: Fonts.black }}>{formatCurrency(Number(finalBillAmount) - Number(selectedOrder.OutstandingAmount))}</Text>
+                        <View
+                          style={{
+                            marginTop: 8,
+                            paddingTop: 8,
+                            borderTopWidth: 1,
+                            borderTopColor: Theme.border + "40",
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: Fonts.bold,
+                              color: Theme.textSecondary,
+                            }}
+                          >
+                            Paid:{" "}
+                            <Text
+                              style={{
+                                color: Theme.success,
+                                fontFamily: Fonts.black,
+                              }}
+                            >
+                              {formatCurrency(
+                                Number(finalBillAmount) -
+                                  Number(selectedOrder.OutstandingAmount),
+                              )}
+                            </Text>
                           </Text>
-                          <Text style={{ fontSize: 11, fontFamily: Fonts.bold, color: Theme.textSecondary }}>
-                            Pending: <Text style={{ color: "#ef4444", fontFamily: Fonts.black }}>{formatCurrency(Number(selectedOrder.OutstandingAmount))}</Text>
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: Fonts.bold,
+                              color: Theme.textSecondary,
+                            }}
+                          >
+                            Pending:{" "}
+                            <Text
+                              style={{
+                                color: "#ef4444",
+                                fontFamily: Fonts.black,
+                              }}
+                            >
+                              {formatCurrency(
+                                Number(selectedOrder.OutstandingAmount),
+                              )}
+                            </Text>
                           </Text>
                         </View>
                       );
@@ -4427,10 +5992,19 @@ export default function SalesReport() {
                       onPress={() => setShowSettingsMenu(true)}
                       style={[
                         styles.premiumSecondaryBtn,
-                        { width: 48, paddingVertical: 12, justifyContent: "center", alignItems: "center" },
+                        {
+                          width: 48,
+                          paddingVertical: 12,
+                          justifyContent: "center",
+                          alignItems: "center",
+                        },
                       ]}
                     >
-                      <Ionicons name="settings-outline" size={20} color={Theme.primary} />
+                      <Ionicons
+                        name="settings-outline"
+                        size={20}
+                        color={Theme.primary}
+                      />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity
@@ -4457,12 +6031,17 @@ export default function SalesReport() {
                       style={[
                         styles.premiumSecondaryBtn,
                         { flex: 1.2, paddingVertical: 12 },
-                        (loadingDetails || orderDetails.length === 0) && { opacity: 0.5 }
+                        (loadingDetails || orderDetails.length === 0) && {
+                          opacity: 0.5,
+                        },
                       ]}
                     >
                       <Ionicons name="print" size={16} color={Theme.primary} />
                       <Text
-                        style={[styles.premiumSecondaryBtnText, { fontSize: 14 }]}
+                        style={[
+                          styles.premiumSecondaryBtnText,
+                          { fontSize: 14 },
+                        ]}
                       >
                         {loadingDetails ? "LOADING..." : "REPRINT"}
                       </Text>
@@ -4496,7 +6075,15 @@ export default function SalesReport() {
                   <View style={styles.sidebarSection}>
                     <Text style={styles.sectionLabel}>PAYMENT MODES</Text>
                     <View style={styles.chipRow}>
-                      {["CASH", "CARD", "NETS", "PAYNOW", "VOID", "MEMBER", "CREDIT"].map((m) => (
+                      {[
+                        "CASH",
+                        "CARD",
+                        "NETS",
+                        "PAYNOW",
+                        "VOID",
+                        "MEMBER",
+                        "CREDIT",
+                      ].map((m) => (
                         <TouchableOpacity
                           key={m}
                           onPress={() => togglePaymentMode(m)}
@@ -4509,7 +6096,7 @@ export default function SalesReport() {
                             style={[
                               styles.chipText,
                               activePaymentModes.includes(m) &&
-                              styles.activeChipText,
+                                styles.activeChipText,
                             ]}
                           >
                             {m}
@@ -4534,7 +6121,7 @@ export default function SalesReport() {
                             style={[
                               styles.chipText,
                               activeOrderTypes.includes(t) &&
-                              styles.activeChipText,
+                                styles.activeChipText,
                             ]}
                           >
                             {t}
@@ -4586,16 +6173,24 @@ export default function SalesReport() {
                   <View style={styles.sidebarSection}>
                     <Text style={styles.sectionLabel}>VISIBILITY</Text>
                     <TouchableOpacity
-                      onPress={() => setShowCancelledOrders(!showCancelledOrders)}
+                      onPress={() =>
+                        setShowCancelledOrders(!showCancelledOrders)
+                      }
                       style={[
                         styles.sortBtn,
                         showCancelledOrders && styles.activeSortBtn,
                       ]}
                     >
                       <Ionicons
-                        name={showCancelledOrders ? "eye-outline" : "eye-off-outline"}
+                        name={
+                          showCancelledOrders
+                            ? "eye-outline"
+                            : "eye-off-outline"
+                        }
                         size={18}
-                        color={showCancelledOrders ? Theme.primary : Theme.textMuted}
+                        color={
+                          showCancelledOrders ? Theme.primary : Theme.textMuted
+                        }
                       />
                       <Text
                         style={[
@@ -4603,7 +6198,9 @@ export default function SalesReport() {
                           showCancelledOrders && styles.activeSortText,
                         ]}
                       >
-                        {showCancelledOrders ? "Showing Cancelled Orders" : "Hidden Cancelled Orders"}
+                        {showCancelledOrders
+                          ? "Showing Cancelled Orders"
+                          : "Hidden Cancelled Orders"}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -4611,7 +6208,15 @@ export default function SalesReport() {
                 <View style={styles.sidebarFooter}>
                   <TouchableOpacity
                     onPress={() => {
-                      setActivePaymentModes(["CASH", "CARD", "NETS", "PAYNOW", "VOID", "MEMBER", "CREDIT"]);
+                      setActivePaymentModes([
+                        "CASH",
+                        "CARD",
+                        "NETS",
+                        "PAYNOW",
+                        "VOID",
+                        "MEMBER",
+                        "CREDIT",
+                      ]);
                       setActiveOrderTypes(["DINE-IN", "TAKEAWAY"]);
                       setSortOrder("NEWEST");
                       setShowCancelledOrders(true);
@@ -4651,37 +6256,94 @@ export default function SalesReport() {
           {/* Settings Options Modal */}
           <Modal visible={showSettingsMenu} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Order Settings</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontFamily: Fonts.black,
+                      color: Theme.textPrimary,
+                    }}
+                  >
+                    Order Settings
+                  </Text>
                   <TouchableOpacity onPress={() => setShowSettingsMenu(false)}>
-                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={Theme.textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
-                
+
                 <TouchableOpacity
                   onPress={() => {
                     setShowSettingsMenu(false);
-                    const currentMode = (selectedOrder?.PayMode || '').toUpperCase().trim();
+                    const currentMode = (selectedOrder?.PayMode || "")
+                      .toUpperCase()
+                      .trim();
                     setSelectedGridMode(currentMode);
                     const isSplit = currentMode === "SPLIT";
                     setIsSplitMode(isSplit);
                     if (isSplit) {
-                      const splitsMapped = orderPayments.map(p => ({
-                        payMode: (p.Paymode || p.PayMode || 'CASH').toUpperCase().trim(),
-                        amount: Number(p.Amount || 0).toFixed(2)
+                      const splitsMapped = orderPayments.map((p) => ({
+                        payMode: (p.Paymode || p.PayMode || "CASH")
+                          .toUpperCase()
+                          .trim(),
+                        amount: Number(p.Amount || 0).toFixed(2),
                       }));
-                      setChangePaymentSplits(splitsMapped.length > 0 ? splitsMapped : [{ payMode: "CASH", amount: finalBillAmount.toFixed(2) }]);
+                      setChangePaymentSplits(
+                        splitsMapped.length > 0
+                          ? splitsMapped
+                          : [
+                              {
+                                payMode: "CASH",
+                                amount: finalBillAmount.toFixed(2),
+                              },
+                            ],
+                      );
                     } else {
-                      setChangePaymentSplits([{ payMode: "CASH", amount: finalBillAmount.toFixed(2) }]);
+                      setChangePaymentSplits([
+                        { payMode: "CASH", amount: finalBillAmount.toFixed(2) },
+                      ]);
                     }
                     setShowChangePaymentModal(true);
                   }}
-                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.border + "40", gap: 12 }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingVertical: 14,
+                    borderBottomWidth: 1,
+                    borderBottomColor: Theme.border + "40",
+                    gap: 12,
+                  }}
                 >
-                  <Ionicons name="card-outline" size={20} color={Theme.primary} />
-                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: Theme.textPrimary }}>Change Payment Mode</Text>
+                  <Ionicons
+                    name="card-outline"
+                    size={20}
+                    color={Theme.primary}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: Fonts.bold,
+                      color: Theme.textPrimary,
+                    }}
+                  >
+                    Change Payment Mode
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -4689,10 +6351,25 @@ export default function SalesReport() {
                     setShowSettingsMenu(false);
                     setShowVoidItemModal(true);
                   }}
-                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.border + "40", gap: 12 }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingVertical: 14,
+                    borderBottomWidth: 1,
+                    borderBottomColor: Theme.border + "40",
+                    gap: 12,
+                  }}
                 >
                   <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: Theme.textPrimary }}>Void Item</Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: Fonts.bold,
+                      color: Theme.textPrimary,
+                    }}
+                  >
+                    Void Item
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -4700,53 +6377,107 @@ export default function SalesReport() {
                     setShowSettingsMenu(false);
                     setShowCancelOrderConfirm(true);
                   }}
-                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, gap: 12 }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingVertical: 14,
+                    gap: 12,
+                  }}
                 >
-                  <Ionicons name="close-circle-outline" size={20} color="#ef4444" />
-                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: "#ef4444" }}>Cancel Order</Text>
+                  <Ionicons
+                    name="close-circle-outline"
+                    size={20}
+                    color="#ef4444"
+                  />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: Fonts.bold,
+                      color: "#ef4444",
+                    }}
+                  >
+                    Cancel Order
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
           </Modal>
 
           {/* Change Payment Mode Modal */}
-          <Modal visible={showChangePaymentModal} transparent animationType="fade">
+          <Modal
+            visible={showChangePaymentModal}
+            transparent
+            animationType="fade"
+          >
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-              <View style={{
-                backgroundColor: "#ffffff",
-                borderRadius: 16,
-                padding: 20,
-                width: 360,
-                maxHeight: "85%",
-                borderWidth: 1,
-                borderColor: Theme.border + "40",
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.1,
-                shadowRadius: 10,
-                elevation: 10,
-              }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
+              <View
+                style={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: 16,
+                  padding: 20,
+                  width: 360,
+                  maxHeight: "85%",
+                  borderWidth: 1,
+                  borderColor: Theme.border + "40",
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 10,
+                  elevation: 10,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontFamily: Fonts.black,
+                      color: Theme.textPrimary,
+                    }}
+                  >
                     Change Payment Mode
                   </Text>
-                  <TouchableOpacity onPress={() => setShowChangePaymentModal(false)}>
-                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                  <TouchableOpacity
+                    onPress={() => setShowChangePaymentModal(false)}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={Theme.textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
 
                 {/* Enable Split Payment Row */}
-                <View style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  backgroundColor: Theme.border + "15",
-                  borderRadius: 12,
-                  padding: 16,
-                  marginBottom: 16,
-                }}>
-                  <Text style={{ fontSize: 14, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    backgroundColor: Theme.border + "15",
+                    borderRadius: 12,
+                    padding: 16,
+                    marginBottom: 16,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: Fonts.bold,
+                      color: Theme.textPrimary,
+                    }}
+                  >
                     Enable Split Payment
                   </Text>
                   <TouchableOpacity
@@ -4755,7 +6486,10 @@ export default function SalesReport() {
                       setIsSplitMode(nextVal);
                       if (nextVal && changePaymentSplits.length === 0) {
                         setChangePaymentSplits([
-                          { payMode: "CASH", amount: finalBillAmount.toFixed(2) }
+                          {
+                            payMode: "CASH",
+                            amount: finalBillAmount.toFixed(2),
+                          },
                         ]);
                       }
                     }}
@@ -4765,51 +6499,71 @@ export default function SalesReport() {
                       borderRadius: 13,
                       backgroundColor: isSplitMode ? Theme.primary : "#e5e7eb",
                       padding: 2,
-                      justifyContent: "center"
+                      justifyContent: "center",
                     }}
                   >
-                    <View style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 11,
-                      backgroundColor: "#ffffff",
-                      alignSelf: isSplitMode ? "flex-end" : "flex-start",
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 1 },
-                      shadowOpacity: 0.2,
-                      shadowRadius: 1.5,
-                      elevation: 2
-                    }} />
+                    <View
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        backgroundColor: "#ffffff",
+                        alignSelf: isSplitMode ? "flex-end" : "flex-start",
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 1.5,
+                        elevation: 2,
+                      }}
+                    />
                   </TouchableOpacity>
                 </View>
-                
+
                 {!isSplitMode ? (
                   <>
-                    <Text style={{
-                      fontSize: 11,
-                      fontFamily: Fonts.black,
-                      color: Theme.textSecondary,
-                      letterSpacing: 1.2,
-                      textTransform: "uppercase",
-                      marginBottom: 12,
-                      marginTop: 8
-                    }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: Fonts.black,
+                        color: Theme.textSecondary,
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                        marginBottom: 12,
+                        marginTop: 8,
+                      }}
+                    >
                       SELECT PAYMENT METHOD
                     </Text>
 
                     <ScrollView style={{ maxHeight: 280, marginBottom: 15 }}>
-                      <View style={{
-                        flexDirection: "row",
-                        flexWrap: "wrap",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        paddingBottom: 5
-                      }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          flexWrap: "wrap",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          paddingBottom: 5,
+                        }}
+                      >
                         {(() => {
                           const activeModes = dbPaymentModes
-                            .map((m: any) => (m.payMode || m.PayMode || '').toUpperCase().trim())
+                            .map((m: any) =>
+                              (m.payMode || m.PayMode || "")
+                                .toUpperCase()
+                                .trim(),
+                            )
                             .filter((mode: string) => mode.length > 0);
-                          const displayModes = activeModes.length > 0 ? activeModes : ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
+                          const displayModes =
+                            activeModes.length > 0
+                              ? activeModes
+                              : [
+                                  "CASH",
+                                  "CARD",
+                                  "NETS",
+                                  "PAYNOW",
+                                  "MEMBER",
+                                  "CREDIT",
+                                ];
                           const uniqueModes = Array.from(new Set(displayModes));
 
                           return uniqueModes.map((mode) => {
@@ -4823,17 +6577,25 @@ export default function SalesReport() {
                                   height: 52,
                                   borderRadius: 10,
                                   borderWidth: 1.5,
-                                  borderColor: isSelected ? Theme.primary : Theme.border + "60",
-                                  backgroundColor: isSelected ? Theme.primary + "15" : "transparent",
+                                  borderColor: isSelected
+                                    ? Theme.primary
+                                    : Theme.border + "60",
+                                  backgroundColor: isSelected
+                                    ? Theme.primary + "15"
+                                    : "transparent",
                                   justifyContent: "center",
-                                  alignItems: "center"
+                                  alignItems: "center",
                                 }}
                               >
-                                <Text style={{
-                                  fontSize: 14,
-                                  fontFamily: Fonts.black,
-                                  color: isSelected ? Theme.primary : Theme.textPrimary
-                                }}>
+                                <Text
+                                  style={{
+                                    fontSize: 14,
+                                    fontFamily: Fonts.black,
+                                    color: isSelected
+                                      ? Theme.primary
+                                      : Theme.textPrimary,
+                                  }}
+                                >
                                   {mode}
                                 </Text>
                               </TouchableOpacity>
@@ -4846,9 +6608,14 @@ export default function SalesReport() {
                     <TouchableOpacity
                       onPress={() => {
                         if (!selectedGridMode) return;
-                        if (selectedGridMode === "MEMBER" || selectedGridMode === "CREDIT") {
+                        if (
+                          selectedGridMode === "MEMBER" ||
+                          selectedGridMode === "CREDIT"
+                        ) {
                           setIsMemberSearch(selectedGridMode === "MEMBER");
-                          setCurrentSelectionStep(selectedGridMode === "MEMBER" ? "MEMBER" : "CREDIT");
+                          setCurrentSelectionStep(
+                            selectedGridMode === "MEMBER" ? "MEMBER" : "CREDIT",
+                          );
                           setPendingPayMode(selectedGridMode);
                           setPendingSplits(null);
                           setMemberQuery("");
@@ -4862,32 +6629,62 @@ export default function SalesReport() {
                         }
                       }}
                       style={{
-                        backgroundColor: selectedGridMode ? Theme.primary : Theme.textMuted,
+                        backgroundColor: selectedGridMode
+                          ? Theme.primary
+                          : Theme.textMuted,
                         borderRadius: 12,
                         paddingVertical: 14,
                         alignItems: "center",
-                        opacity: selectedGridMode ? 1 : 0.6
+                        opacity: selectedGridMode ? 1 : 0.6,
                       }}
                       disabled={!selectedGridMode}
                     >
-                      <Text style={{ color: "#ffffff", fontSize: 14, fontFamily: Fonts.black }}>
+                      <Text
+                        style={{
+                          color: "#ffffff",
+                          fontSize: 14,
+                          fontFamily: Fonts.black,
+                        }}
+                      >
                         SAVE PAYMENT MODE
                       </Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   <View style={{ flexShrink: 1 }}>
-                    <ScrollView style={{ maxHeight: 250, marginBottom: 15 }} keyboardShouldPersistTaps="handled">
+                    <ScrollView
+                      style={{ maxHeight: 250, marginBottom: 15 }}
+                      keyboardShouldPersistTaps="handled"
+                    >
                       {changePaymentSplits.map((split, idx) => {
                         const nextMode = () => {
                           const activeModes = dbPaymentModes
-                            .map((m: any) => (m.payMode || m.PayMode || '').toUpperCase().trim())
+                            .map((m: any) =>
+                              (m.payMode || m.PayMode || "")
+                                .toUpperCase()
+                                .trim(),
+                            )
                             .filter((mode: string) => mode.length > 0);
-                          const displayModes = activeModes.length > 0 ? activeModes : ["CASH", "CARD", "NETS", "PAYNOW", "MEMBER", "CREDIT"];
+                          const displayModes =
+                            activeModes.length > 0
+                              ? activeModes
+                              : [
+                                  "CASH",
+                                  "CARD",
+                                  "NETS",
+                                  "PAYNOW",
+                                  "MEMBER",
+                                  "CREDIT",
+                                ];
                           const modes = Array.from(new Set(displayModes));
 
                           const currentIdx = modes.indexOf(split.payMode);
-                          const next = modes[currentIdx !== -1 ? (currentIdx + 1) % modes.length : 0]!;
+                          const next =
+                            modes[
+                              currentIdx !== -1
+                                ? (currentIdx + 1) % modes.length
+                                : 0
+                            ]!;
                           const newSplits = [...changePaymentSplits];
                           newSplits[idx] = { ...split, payMode: next };
                           setChangePaymentSplits(newSplits);
@@ -4900,11 +6697,21 @@ export default function SalesReport() {
                         };
 
                         const handleDeleteRow = () => {
-                          setChangePaymentSplits(changePaymentSplits.filter((_, i) => i !== idx));
+                          setChangePaymentSplits(
+                            changePaymentSplits.filter((_, i) => i !== idx),
+                          );
                         };
 
                         return (
-                          <View key={idx} style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                          <View
+                            key={idx}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 10,
+                              marginBottom: 10,
+                            }}
+                          >
                             <TouchableOpacity
                               onPress={nextMode}
                               style={{
@@ -4915,10 +6722,16 @@ export default function SalesReport() {
                                 borderRadius: 8,
                                 justifyContent: "center",
                                 alignItems: "center",
-                                backgroundColor: Theme.border + "10"
+                                backgroundColor: Theme.border + "10",
                               }}
                             >
-                              <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.primary }}>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  fontFamily: Fonts.black,
+                                  color: Theme.primary,
+                                }}
+                              >
                                 {split.payMode}
                               </Text>
                             </TouchableOpacity>
@@ -4939,13 +6752,20 @@ export default function SalesReport() {
                                 fontSize: 14,
                                 color: Theme.textPrimary,
                                 fontFamily: Fonts.bold,
-                                backgroundColor: "#ffffff"
+                                backgroundColor: "#ffffff",
                               }}
                             />
 
                             {changePaymentSplits.length > 1 && (
-                              <TouchableOpacity onPress={handleDeleteRow} style={{ padding: 4 }}>
-                                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                              <TouchableOpacity
+                                onPress={handleDeleteRow}
+                                style={{ padding: 4 }}
+                              >
+                                <Ionicons
+                                  name="trash-outline"
+                                  size={20}
+                                  color="#ef4444"
+                                />
                               </TouchableOpacity>
                             )}
                           </View>
@@ -4953,7 +6773,12 @@ export default function SalesReport() {
                       })}
 
                       <TouchableOpacity
-                        onPress={() => setChangePaymentSplits([...changePaymentSplits, { payMode: "NETS", amount: "" }])}
+                        onPress={() =>
+                          setChangePaymentSplits([
+                            ...changePaymentSplits,
+                            { payMode: "NETS", amount: "" },
+                          ])
+                        }
                         style={{
                           flexDirection: "row",
                           alignItems: "center",
@@ -4964,28 +6789,109 @@ export default function SalesReport() {
                           borderColor: Theme.primary + "50",
                           borderRadius: 8,
                           borderStyle: "dashed",
-                          marginTop: 5
+                          marginTop: 5,
                         }}
                       >
                         <Ionicons name="add" size={18} color={Theme.primary} />
-                        <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.primary }}>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: Fonts.black,
+                            color: Theme.primary,
+                          }}
+                        >
                           ADD PAYMENT METHOD
                         </Text>
                       </TouchableOpacity>
                     </ScrollView>
 
-                    <View style={{ backgroundColor: Theme.border + "15", padding: 12, borderRadius: 10, marginBottom: 15, gap: 4 }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Bill Total:</Text>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: Theme.textPrimary }}>${finalBillAmount.toFixed(2)}</Text>
+                    <View
+                      style={{
+                        backgroundColor: Theme.border + "15",
+                        padding: 12,
+                        borderRadius: 10,
+                        marginBottom: 15,
+                        gap: 4,
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontFamily: Fonts.bold,
+                            color: Theme.textSecondary,
+                          }}
+                        >
+                          Bill Total:
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontFamily: Fonts.black,
+                            color: Theme.textPrimary,
+                          }}
+                        >
+                          ${finalBillAmount.toFixed(2)}
+                        </Text>
                       </View>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Allocated:</Text>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: Theme.textPrimary }}>${allocatedSplitsSum.toFixed(2)}</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontFamily: Fonts.bold,
+                            color: Theme.textSecondary,
+                          }}
+                        >
+                          Allocated:
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontFamily: Fonts.black,
+                            color: Theme.textPrimary,
+                          }}
+                        >
+                          ${allocatedSplitsSum.toFixed(2)}
+                        </Text>
                       </View>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: Theme.border + "30", paddingTop: 4 }}>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: Theme.textSecondary }}>Remaining:</Text>
-                        <Text style={{ fontSize: 12, fontFamily: Fonts.black, color: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.success : "#ef4444" }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          borderTopWidth: 1,
+                          borderTopColor: Theme.border + "30",
+                          paddingTop: 4,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontFamily: Fonts.bold,
+                            color: Theme.textSecondary,
+                          }}
+                        >
+                          Remaining:
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontFamily: Fonts.black,
+                            color:
+                              Math.abs(remainingSplitsBalance) < 0.02
+                                ? Theme.success
+                                : "#ef4444",
+                          }}
+                        >
                           ${remainingSplitsBalance.toFixed(2)}
                         </Text>
                       </View>
@@ -4994,8 +6900,12 @@ export default function SalesReport() {
                     <TouchableOpacity
                       disabled={Math.abs(remainingSplitsBalance) >= 0.02}
                       onPress={() => {
-                        const hasMemberSplit = changePaymentSplits.some(s => s.payMode === "MEMBER");
-                        const hasCreditSplit = changePaymentSplits.some(s => s.payMode === "CREDIT");
+                        const hasMemberSplit = changePaymentSplits.some(
+                          (s) => s.payMode === "MEMBER",
+                        );
+                        const hasCreditSplit = changePaymentSplits.some(
+                          (s) => s.payMode === "CREDIT",
+                        );
 
                         setPendingPayMode("SPLIT");
                         setPendingSplits(changePaymentSplits);
@@ -5014,18 +6924,31 @@ export default function SalesReport() {
                           setIsMemberSearch(false);
                           setShowMemberModal(true);
                         } else {
-                          handleConfirmChangePayment("SPLIT", changePaymentSplits);
+                          handleConfirmChangePayment(
+                            "SPLIT",
+                            changePaymentSplits,
+                          );
                         }
                       }}
                       style={{
-                        backgroundColor: Math.abs(remainingSplitsBalance) < 0.02 ? Theme.primary : Theme.textMuted,
+                        backgroundColor:
+                          Math.abs(remainingSplitsBalance) < 0.02
+                            ? Theme.primary
+                            : Theme.textMuted,
                         borderRadius: 12,
                         paddingVertical: 14,
                         alignItems: "center",
-                        opacity: Math.abs(remainingSplitsBalance) < 0.02 ? 1 : 0.6
+                        opacity:
+                          Math.abs(remainingSplitsBalance) < 0.02 ? 1 : 0.6,
                       }}
                     >
-                      <Text style={{ color: "#ffffff", fontSize: 14, fontFamily: Fonts.black }}>
+                      <Text
+                        style={{
+                          color: "#ffffff",
+                          fontSize: 14,
+                          fontFamily: Fonts.black,
+                        }}
+                      >
                         SAVE PAYMENT MODE
                       </Text>
                     </TouchableOpacity>
@@ -5038,19 +6961,50 @@ export default function SalesReport() {
           {/* Member Selection Modal */}
           <Modal visible={showMemberModal} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <View style={[styles.modalContent, { width: 360, padding: 20 }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
-                    {isMemberSearch ? "Select Member" : "Select Credit Customer"}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 15,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontFamily: Fonts.black,
+                      color: Theme.textPrimary,
+                    }}
+                  >
+                    {isMemberSearch
+                      ? "Select Member"
+                      : "Select Credit Customer"}
                   </Text>
                   <TouchableOpacity onPress={() => setShowMemberModal(false)}>
-                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={Theme.textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
 
                 {/* Search Type Selector (Member vs Credit Customer) */}
-                <View style={{ flexDirection: "row", backgroundColor: Theme.border + "15", borderRadius: 8, padding: 4, marginBottom: 12 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    backgroundColor: Theme.border + "15",
+                    borderRadius: 8,
+                    padding: 4,
+                    marginBottom: 12,
+                  }}
+                >
                   <TouchableOpacity
                     onPress={() => {
                       setIsMemberSearch(true);
@@ -5066,7 +7020,17 @@ export default function SalesReport() {
                       borderRadius: 6,
                     }}
                   >
-                    <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: isMemberSearch ? Theme.primary : Theme.textSecondary }}>Member</Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: Fonts.bold,
+                        color: isMemberSearch
+                          ? Theme.primary
+                          : Theme.textSecondary,
+                      }}
+                    >
+                      Member
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
@@ -5083,12 +7047,26 @@ export default function SalesReport() {
                       borderRadius: 6,
                     }}
                   >
-                    <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: !isMemberSearch ? Theme.primary : Theme.textSecondary }}>Credit Customer</Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: Fonts.bold,
+                        color: !isMemberSearch
+                          ? Theme.primary
+                          : Theme.textSecondary,
+                      }}
+                    >
+                      Credit Customer
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
                 <TextInput
-                  placeholder={isMemberSearch ? "Search Member (Name or Phone)" : "Search Credit Customer (Name)"}
+                  placeholder={
+                    isMemberSearch
+                      ? "Search Member (Name or Phone)"
+                      : "Search Credit Customer (Name)"
+                  }
                   placeholderTextColor={Theme.textSecondary + "70"}
                   value={memberQuery}
                   onChangeText={setMemberQuery}
@@ -5102,26 +7080,43 @@ export default function SalesReport() {
                     color: Theme.textPrimary,
                     fontFamily: Fonts.medium,
                     backgroundColor: "#FAF7F2",
-                    marginBottom: 12
+                    marginBottom: 12,
                   }}
                 />
 
                 {searchingMembers ? (
-                  <View style={{ height: 180, justifyContent: "center", alignItems: "center" }}>
+                  <View
+                    style={{
+                      height: 180,
+                      justifyContent: "center",
+                      alignItems: "center",
+                    }}
+                  >
                     <ActivityIndicator size="small" color={Theme.primary} />
                   </View>
                 ) : (
                   <ScrollView style={{ maxHeight: 180, marginBottom: 15 }}>
                     {membersList.length === 0 ? (
-                      <Text style={{ textAlign: "center", color: Theme.textSecondary, fontFamily: Fonts.medium, fontSize: 12, paddingVertical: 20 }}>
+                      <Text
+                        style={{
+                          textAlign: "center",
+                          color: Theme.textSecondary,
+                          fontFamily: Fonts.medium,
+                          fontSize: 12,
+                          paddingVertical: 20,
+                        }}
+                      >
                         No matches found.
                       </Text>
                     ) : (
                       membersList.map((m: any) => {
-                        const isSelected = !!activeModalSelection && (
-                          (m.MemberId && activeModalSelection.MemberId === m.MemberId) ||
-                          (m.CustomerId && activeModalSelection.CustomerId === m.CustomerId)
-                        );
+                        const isSelected =
+                          !!activeModalSelection &&
+                          ((m.MemberId &&
+                            activeModalSelection.MemberId === m.MemberId) ||
+                            (m.CustomerId &&
+                              activeModalSelection.CustomerId ===
+                                m.CustomerId));
                         return (
                           <TouchableOpacity
                             key={m.MemberId || m.CustomerId}
@@ -5130,25 +7125,47 @@ export default function SalesReport() {
                               paddingVertical: 10,
                               paddingHorizontal: 12,
                               borderRadius: 8,
-                              backgroundColor: isSelected ? Theme.primary + "10" : "transparent",
+                              backgroundColor: isSelected
+                                ? Theme.primary + "10"
+                                : "transparent",
                               borderWidth: 1,
-                              borderColor: isSelected ? Theme.primary : "transparent",
+                              borderColor: isSelected
+                                ? Theme.primary
+                                : "transparent",
                               marginBottom: 4,
                               flexDirection: "row",
                               justifyContent: "space-between",
-                              alignItems: "center"
+                              alignItems: "center",
                             }}
                           >
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: isSelected ? Theme.primary : Theme.textPrimary }}>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  fontFamily: Fonts.bold,
+                                  color: isSelected
+                                    ? Theme.primary
+                                    : Theme.textPrimary,
+                                }}
+                              >
                                 {m.Name}
                               </Text>
-                              <Text style={{ fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  color: Theme.textSecondary,
+                                  marginTop: 2,
+                                }}
+                              >
                                 {m.Phone || m.MobileNo || "No phone"}
                               </Text>
                             </View>
                             {isSelected && (
-                              <Ionicons name="checkmark" size={16} color={Theme.primary} />
+                              <Ionicons
+                                name="checkmark"
+                                size={16}
+                                color={Theme.primary}
+                              />
                             )}
                           </TouchableOpacity>
                         );
@@ -5160,7 +7177,10 @@ export default function SalesReport() {
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => setShowMemberModal(false)}
-                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                    style={[
+                      styles.premiumSecondaryBtn,
+                      { flex: 1, paddingVertical: 10 },
+                    ]}
                   >
                     <Text style={styles.premiumSecondaryBtnText}>CANCEL</Text>
                   </TouchableOpacity>
@@ -5170,9 +7190,11 @@ export default function SalesReport() {
                       if (currentSelectionStep === "MEMBER") {
                         const chosenMember = activeModalSelection;
                         setSelectedMemberForPay(chosenMember);
-                        
+
                         // Check if we also need to select a Credit Customer
-                        const hasCredit = pendingPayMode === "SPLIT" && pendingSplits?.some(s => s.payMode === "CREDIT");
+                        const hasCredit =
+                          pendingPayMode === "SPLIT" &&
+                          pendingSplits?.some((s) => s.payMode === "CREDIT");
                         if (hasCredit) {
                           setCurrentSelectionStep("CREDIT");
                           setIsMemberSearch(false);
@@ -5181,36 +7203,65 @@ export default function SalesReport() {
                           setMembersList([]);
                         } else {
                           setShowMemberModal(false);
-                          handleConfirmChangePayment(pendingPayMode || "", pendingSplits || undefined, chosenMember.MemberId);
+                          handleConfirmChangePayment(
+                            pendingPayMode || "",
+                            pendingSplits || undefined,
+                            chosenMember.MemberId,
+                          );
                         }
                       } else if (currentSelectionStep === "CREDIT") {
                         const chosenCredit = activeModalSelection;
                         setSelectedCreditForPay(chosenCredit);
                         setShowMemberModal(false);
-                        
+
                         // Pass both IDs if it's a split with member and credit
-                        const hasMember = pendingPayMode === "SPLIT" && pendingSplits?.some(s => s.payMode === "MEMBER");
-                        const mId = hasMember ? selectedMemberForPay?.MemberId : null;
-                        
-                        handleConfirmChangePayment(pendingPayMode || "", pendingSplits || undefined, mId || undefined, chosenCredit.CustomerId);
+                        const hasMember =
+                          pendingPayMode === "SPLIT" &&
+                          pendingSplits?.some((s) => s.payMode === "MEMBER");
+                        const mId = hasMember
+                          ? selectedMemberForPay?.MemberId
+                          : null;
+
+                        handleConfirmChangePayment(
+                          pendingPayMode || "",
+                          pendingSplits || undefined,
+                          mId || undefined,
+                          chosenCredit.CustomerId,
+                        );
                       } else {
                         // Fallback for single modes
                         setShowMemberModal(false);
-                        const id = activeModalSelection.MemberId || activeModalSelection.CustomerId;
-                        handleConfirmChangePayment(pendingPayMode || "", undefined, id);
+                        const id =
+                          activeModalSelection.MemberId ||
+                          activeModalSelection.CustomerId;
+                        handleConfirmChangePayment(
+                          pendingPayMode || "",
+                          undefined,
+                          id,
+                        );
                       }
                     }}
                     style={{
                       flex: 1.5,
-                      backgroundColor: activeModalSelection ? Theme.primary : Theme.textMuted,
+                      backgroundColor: activeModalSelection
+                        ? Theme.primary
+                        : Theme.textMuted,
                       borderRadius: 10,
                       justifyContent: "center",
                       alignItems: "center",
                       paddingVertical: 10,
-                      opacity: activeModalSelection ? 1 : 0.6
+                      opacity: activeModalSelection ? 1 : 0.6,
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>CONFIRM</Text>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 13,
+                        fontFamily: Fonts.black,
+                      }}
+                    >
+                      CONFIRM
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -5220,12 +7271,35 @@ export default function SalesReport() {
           {/* Void Item Modal */}
           <Modal visible={showVoidItemModal} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <View style={[styles.modalContent, { width: 360, padding: 20 }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>Select Items to Void</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontFamily: Fonts.black,
+                      color: Theme.textPrimary,
+                    }}
+                  >
+                    Select Items to Void
+                  </Text>
                   <TouchableOpacity onPress={() => setShowVoidItemModal(false)}>
-                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={Theme.textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
 
@@ -5244,38 +7318,77 @@ export default function SalesReport() {
                             paddingHorizontal: 10,
                             borderRadius: 8,
                             borderWidth: 1,
-                            borderColor: isSelected ? Theme.primary : Theme.border + "30",
-                            backgroundColor: isSelected ? Theme.primary + "08" : "transparent",
+                            borderColor: isSelected
+                              ? Theme.primary
+                              : Theme.border + "30",
+                            backgroundColor: isSelected
+                              ? Theme.primary + "08"
+                              : "transparent",
                             marginBottom: 8,
                             flexDirection: "row",
                             justifyContent: "space-between",
-                            alignItems: "center"
+                            alignItems: "center",
                           }}
                         >
-                          <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              flex: 1,
+                              marginRight: 10,
+                            }}
+                          >
                             <Ionicons
                               name={isSelected ? "checkbox" : "square-outline"}
                               size={20}
-                              color={isSelected ? Theme.primary : Theme.textSecondary}
+                              color={
+                                isSelected ? Theme.primary : Theme.textSecondary
+                              }
                               style={{ marginRight: 8 }}
                             />
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textPrimary }}>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  fontFamily: Fonts.bold,
+                                  color: Theme.textPrimary,
+                                }}
+                              >
                                 {item.DishName}
                               </Text>
-                              <Text style={{ fontSize: 11, color: Theme.textSecondary, marginTop: 2 }}>
-                                Qty: {item.Qty} • Unit: ${(item.Price || 0).toFixed(2)}
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  color: Theme.textSecondary,
+                                  marginTop: 2,
+                                }}
+                              >
+                                Qty: {item.Qty} • Unit: $
+                                {(item.Price || 0).toFixed(2)}
                               </Text>
                             </View>
                           </View>
-                          <Text style={{ fontSize: 13, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontFamily: Fonts.black,
+                              color: Theme.textPrimary,
+                            }}
+                          >
                             ${((item.Price || 0) * (item.Qty || 1)).toFixed(2)}
                           </Text>
                         </TouchableOpacity>
                       );
                     })}
-                  {orderDetails.filter((item) => item.Status !== "VOIDED").length === 0 && (
-                    <Text style={{ textAlign: "center", color: Theme.textSecondary, marginVertical: 20 }}>
+                  {orderDetails.filter((item) => item.Status !== "VOIDED")
+                    .length === 0 && (
+                    <Text
+                      style={{
+                        textAlign: "center",
+                        color: Theme.textSecondary,
+                        marginVertical: 20,
+                      }}
+                    >
                       No active items to void
                     </Text>
                   )}
@@ -5291,10 +7404,16 @@ export default function SalesReport() {
                       borderRadius: 10,
                       paddingVertical: 12,
                       alignItems: "center",
-                      marginTop: 15
+                      marginTop: 15,
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 14, fontFamily: Fonts.black }}>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 14,
+                        fontFamily: Fonts.black,
+                      }}
+                    >
                       VOID SELECTED ({selectedVoidItemIds.length})
                     </Text>
                   </TouchableOpacity>
@@ -5306,13 +7425,32 @@ export default function SalesReport() {
           {/* Void Item Confirm Modal */}
           <Modal visible={showVoidItemConfirm} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
-                <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: "#ef4444", marginBottom: 10 }}>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontFamily: Fonts.black,
+                    color: "#ef4444",
+                    marginBottom: 10,
+                  }}
+                >
                   Void Selected Items?
                 </Text>
-                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 20 }}>
-                  Are you sure you want to void the {selectedVoidItemIds.length} selected item(s)? This action requires supervisor credentials.
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: Fonts.bold,
+                    color: Theme.textSecondary,
+                    marginBottom: 20,
+                  }}
+                >
+                  Are you sure you want to void the {selectedVoidItemIds.length}{" "}
+                  selected item(s)? This action requires supervisor credentials.
                 </Text>
 
                 <View style={{ flexDirection: "row", gap: 10 }}>
@@ -5320,7 +7458,10 @@ export default function SalesReport() {
                     onPress={() => {
                       setShowVoidItemConfirm(false);
                     }}
-                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                    style={[
+                      styles.premiumSecondaryBtn,
+                      { flex: 1, paddingVertical: 10 },
+                    ]}
                   >
                     <Text style={styles.premiumSecondaryBtnText}>CANCEL</Text>
                   </TouchableOpacity>
@@ -5335,10 +7476,18 @@ export default function SalesReport() {
                       borderRadius: 10,
                       justifyContent: "center",
                       alignItems: "center",
-                      paddingVertical: 10
+                      paddingVertical: 10,
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>YES, VOID</Text>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 13,
+                        fontFamily: Fonts.black,
+                      }}
+                    >
+                      YES, VOID
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -5346,15 +7495,39 @@ export default function SalesReport() {
           </Modal>
 
           {/* Cancel Order Confirm Modal */}
-          <Modal visible={showCancelOrderConfirm} transparent animationType="fade">
+          <Modal
+            visible={showCancelOrderConfirm}
+            transparent
+            animationType="fade"
+          >
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
-                <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: "#ef4444", marginBottom: 10 }}>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontFamily: Fonts.black,
+                    color: "#ef4444",
+                    marginBottom: 10,
+                  }}
+                >
                   Cancel Order?
                 </Text>
-                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 15 }}>
-                  Are you sure you want to cancel Order #{selectedOrder ? formatOrderId(selectedOrder) : ""}? This action cannot be undone.
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: Fonts.bold,
+                    color: Theme.textSecondary,
+                    marginBottom: 15,
+                  }}
+                >
+                  Are you sure you want to cancel Order #
+                  {selectedOrder ? formatOrderId(selectedOrder) : ""}? This
+                  action cannot be undone.
                 </Text>
 
                 <TextInput
@@ -5372,7 +7545,7 @@ export default function SalesReport() {
                     fontFamily: Fonts.bold,
                     backgroundColor: Theme.border + "10",
                     marginBottom: 20,
-                    minHeight: 40
+                    minHeight: 40,
                   }}
                 />
 
@@ -5382,7 +7555,10 @@ export default function SalesReport() {
                       setShowCancelOrderConfirm(false);
                       setCancellationReason("");
                     }}
-                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                    style={[
+                      styles.premiumSecondaryBtn,
+                      { flex: 1, paddingVertical: 10 },
+                    ]}
                   >
                     <Text style={styles.premiumSecondaryBtnText}>NO, KEEP</Text>
                   </TouchableOpacity>
@@ -5394,10 +7570,18 @@ export default function SalesReport() {
                       borderRadius: 10,
                       justifyContent: "center",
                       alignItems: "center",
-                      paddingVertical: 10
+                      paddingVertical: 10,
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>YES, CANCEL</Text>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 13,
+                        fontFamily: Fonts.black,
+                      }}
+                    >
+                      YES, CANCEL
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -5410,22 +7594,53 @@ export default function SalesReport() {
             transparent
             animationType="fade"
             onRequestClose={() => setShowPasswordModal(false)}
-            onShow={() => setTimeout(() => passwordInputRef.current?.focus(), 80)}
+            onShow={() =>
+              setTimeout(() => passwordInputRef.current?.focus(), 80)
+            }
           >
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <View style={[styles.modalContent, { width: 340, padding: 20 }]}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-                  <Text style={{ fontSize: 16, fontFamily: Fonts.black, color: Theme.textPrimary }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 15,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontFamily: Fonts.black,
+                      color: Theme.textPrimary,
+                    }}
+                  >
                     {passwordAction?.title || "Verification Required"}
                   </Text>
                   <TouchableOpacity onPress={() => setShowPasswordModal(false)}>
-                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={Theme.textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
 
-                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: Theme.textSecondary, marginBottom: 15 }}>
-                  {passwordAction?.description || "Please enter the supervisor/admin password:"}
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: Fonts.bold,
+                    color: Theme.textSecondary,
+                    marginBottom: 15,
+                  }}
+                >
+                  {passwordAction?.description ||
+                    "Please enter the supervisor/admin password:"}
                 </Text>
 
                 <TextInput
@@ -5441,7 +7656,9 @@ export default function SalesReport() {
                   }}
                   style={{
                     borderWidth: 1,
-                    borderColor: passwordError ? "#EF4444" : Theme.border + "50",
+                    borderColor: passwordError
+                      ? "#EF4444"
+                      : Theme.border + "50",
                     borderRadius: 8,
                     padding: 10,
                     fontSize: 14,
@@ -5450,12 +7667,20 @@ export default function SalesReport() {
                     backgroundColor: Theme.border + "10",
                     marginBottom: passwordError ? 6 : 20,
                     textAlign: "center",
-                    minHeight: 40
+                    minHeight: 40,
                   }}
                 />
 
                 {!!passwordError && (
-                  <Text style={{ color: "#EF4444", fontSize: 12, fontFamily: Fonts.bold, textAlign: "center", marginBottom: 15 }}>
+                  <Text
+                    style={{
+                      color: "#EF4444",
+                      fontSize: 12,
+                      fontFamily: Fonts.bold,
+                      textAlign: "center",
+                      marginBottom: 15,
+                    }}
+                  >
                     {passwordError}
                   </Text>
                 )}
@@ -5463,7 +7688,10 @@ export default function SalesReport() {
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => setShowPasswordModal(false)}
-                    style={[styles.premiumSecondaryBtn, { flex: 1, paddingVertical: 10 }]}
+                    style={[
+                      styles.premiumSecondaryBtn,
+                      { flex: 1, paddingVertical: 10 },
+                    ]}
                   >
                     <Text style={styles.premiumSecondaryBtnText}>Cancel</Text>
                   </TouchableOpacity>
@@ -5474,20 +7702,31 @@ export default function SalesReport() {
                       borderRadius: 10,
                       justifyContent: "center",
                       alignItems: "center",
-                      paddingVertical: 10
+                      paddingVertical: 10,
                     }}
                     onPress={async () => {
                       try {
                         setPasswordError("");
-                        const verifyRes = await fetch(`${API_URL}/api/auth/verify`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ password: passwordValue, role: passwordAction?.role || "ADMIN" }),
-                        });
+                        const verifyRes = await fetch(
+                          `${API_URL}/api/auth/verify`,
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              password: passwordValue,
+                              role: passwordAction?.role || "ADMIN",
+                            }),
+                          },
+                        );
                         const verifyData = await verifyRes.json();
                         if (!verifyData.success) {
-                          setPasswordError("Incorrect password. Please try again.");
-                          showToast({ type: "error", message: "The password you entered is incorrect." });
+                          setPasswordError(
+                            "Incorrect password. Please try again.",
+                          );
+                          showToast({
+                            type: "error",
+                            message: "The password you entered is incorrect.",
+                          });
                           return;
                         }
                         setShowPasswordModal(false);
@@ -5497,11 +7736,22 @@ export default function SalesReport() {
                       } catch (err) {
                         console.error("Password verification error:", err);
                         setPasswordError("Failed to verify password.");
-                        showToast({ type: "error", message: "Failed to verify password" });
+                        showToast({
+                          type: "error",
+                          message: "Failed to verify password",
+                        });
                       }
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 13, fontFamily: Fonts.black }}>Confirm</Text>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 13,
+                        fontFamily: Fonts.black,
+                      }}
+                    >
+                      Confirm
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -5510,38 +7760,71 @@ export default function SalesReport() {
 
           <Modal visible={showDownloadPanel} transparent animationType="fade">
             <View style={styles.modalOverlay}>
-              <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+              <BlurView
+                intensity={20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
               <TouchableOpacity
                 activeOpacity={1}
                 style={styles.modalDismiss}
                 onPress={() => !isDownloading && setShowDownloadPanel(false)}
               />
-              <View style={[styles.downloadModalContent, { width: SCREEN_W > 600 ? 380 : "92%" }]}>
+              <View
+                style={[
+                  styles.downloadModalContent,
+                  { width: SCREEN_W > 600 ? 380 : "92%" },
+                ]}
+              >
                 <View style={styles.modalHeader}>
                   <View>
                     <Text style={styles.modalTitle}>Sales Report</Text>
-                    <Text style={styles.modalSub}>Select period and download format</Text>
+                    <Text style={styles.modalSub}>
+                      Select period and download format
+                    </Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => !isDownloading && setShowDownloadPanel(false)}
+                    onPress={() =>
+                      !isDownloading && setShowDownloadPanel(false)
+                    }
                     style={styles.modalCloseBtn}
                   >
-                    <Ionicons name="close" size={20} color={Theme.textPrimary} />
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={Theme.textPrimary}
+                    />
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: 10 }}
+                >
                   {/* Period Selection Card */}
                   <View style={styles.downloadSectionCard}>
-                    <Text style={styles.downloadSectionLabel}>SELECT TIME PERIOD</Text>
+                    <Text style={styles.downloadSectionLabel}>
+                      SELECT TIME PERIOD
+                    </Text>
                     <View style={styles.periodGrid}>
-                      {(["DAILY", "WEEKLY", "MONTHLY", "YEARLY", "CUSTOM"] as FilterType[]).map((f) => (
+                      {(
+                        [
+                          "DAILY",
+                          "WEEKLY",
+                          "MONTHLY",
+                          "YEARLY",
+                          "CUSTOM",
+                        ] as FilterType[]
+                      ).map((f) => (
                         <TouchableOpacity
                           key={f}
                           onPress={() => {
                             setDownloadFilter(f);
                             setDownloadPickerMode("START");
-                            if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            if (Platform.OS !== "web")
+                              Haptics.impactAsync(
+                                Haptics.ImpactFeedbackStyle.Light,
+                              );
                           }}
                           style={[
                             styles.periodBtn,
@@ -5550,15 +7833,29 @@ export default function SalesReport() {
                         >
                           <MaterialCommunityIcons
                             name={
-                              f === "DAILY" ? "calendar-today" :
-                                f === "WEEKLY" ? "calendar-week" :
-                                  f === "MONTHLY" ? "calendar-month" :
-                                    f === "YEARLY" ? "calendar-star" : "calendar-range"
+                              f === "DAILY"
+                                ? "calendar-today"
+                                : f === "WEEKLY"
+                                  ? "calendar-week"
+                                  : f === "MONTHLY"
+                                    ? "calendar-month"
+                                    : f === "YEARLY"
+                                      ? "calendar-star"
+                                      : "calendar-range"
                             }
                             size={18}
-                            color={downloadFilter === f ? "#fff" : Theme.textSecondary}
+                            color={
+                              downloadFilter === f
+                                ? "#fff"
+                                : Theme.textSecondary
+                            }
                           />
-                          <Text style={[styles.periodText, downloadFilter === f && styles.activePeriodText]}>
+                          <Text
+                            style={[
+                              styles.periodText,
+                              downloadFilter === f && styles.activePeriodText,
+                            ]}
+                          >
                             {f.charAt(0) + f.slice(1).toLowerCase()}
                           </Text>
                         </TouchableOpacity>
@@ -5572,24 +7869,46 @@ export default function SalesReport() {
                             setDownloadPickerMode("START");
                             setShowDownloadDatePicker(true);
                           }}
-                          style={[styles.dateInput, downloadPickerMode === "START" && styles.activeDateInput]}
+                          style={[
+                            styles.dateInput,
+                            downloadPickerMode === "START" &&
+                              styles.activeDateInput,
+                          ]}
                         >
                           <Text style={styles.dateInputLabel}>FROM</Text>
                           <Text style={styles.dateInputValue}>
-                            {downloadRangeStart ? format(new Date(downloadRangeStart), "dd MMM yyyy") : "Select"}
+                            {downloadRangeStart
+                              ? format(
+                                  new Date(downloadRangeStart),
+                                  "dd MMM yyyy",
+                                )
+                              : "Select"}
                           </Text>
                         </TouchableOpacity>
-                        <Ionicons name="arrow-forward" size={16} color={Theme.textMuted} />
+                        <Ionicons
+                          name="arrow-forward"
+                          size={16}
+                          color={Theme.textMuted}
+                        />
                         <TouchableOpacity
                           onPress={() => {
                             setDownloadPickerMode("END");
                             setShowDownloadDatePicker(true);
                           }}
-                          style={[styles.dateInput, downloadPickerMode === "END" && styles.activeDateInput]}
+                          style={[
+                            styles.dateInput,
+                            downloadPickerMode === "END" &&
+                              styles.activeDateInput,
+                          ]}
                         >
                           <Text style={styles.dateInputLabel}>TO</Text>
                           <Text style={styles.dateInputValue}>
-                            {downloadRangeEnd ? format(new Date(downloadRangeEnd), "dd MMM yyyy") : "Select"}
+                            {downloadRangeEnd
+                              ? format(
+                                  new Date(downloadRangeEnd),
+                                  "dd MMM yyyy",
+                                )
+                              : "Select"}
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -5600,17 +7919,31 @@ export default function SalesReport() {
                   <View style={styles.downloadOptionCard}>
                     <View style={styles.optionHeader}>
                       <View style={styles.optionIconBox}>
-                        <Ionicons name="document-text" size={20} color={Theme.primary} />
+                        <Ionicons
+                          name="document-text"
+                          size={20}
+                          color={Theme.primary}
+                        />
                       </View>
                       <View>
                         <Text style={styles.optionTitle}>Direct Download</Text>
-                        <Text style={styles.optionDesc}>Generate PDF and save to device</Text>
+                        <Text style={styles.optionDesc}>
+                          Generate PDF and save to device
+                        </Text>
                       </View>
                     </View>
 
                     <TouchableOpacity
                       onPress={handleDownloadPdf}
-                      disabled={isDownloading || isSendingEmail || (downloadFilter === "CUSTOM" && (!downloadRangeStart || !downloadRangeEnd || new Date(downloadRangeEnd) < new Date(downloadRangeStart)))}
+                      disabled={
+                        isDownloading ||
+                        isSendingEmail ||
+                        (downloadFilter === "CUSTOM" &&
+                          (!downloadRangeStart ||
+                            !downloadRangeEnd ||
+                            new Date(downloadRangeEnd) <
+                              new Date(downloadRangeStart)))
+                      }
                       activeOpacity={0.8}
                     >
                       <LinearGradient
@@ -5619,15 +7952,30 @@ export default function SalesReport() {
                         end={{ x: 1, y: 0 }}
                         style={[
                           styles.premiumActionBtn,
-                          (isDownloading || isSendingEmail || (downloadFilter === "CUSTOM" && (!downloadRangeStart || !downloadRangeEnd || new Date(downloadRangeEnd) < new Date(downloadRangeStart)))) && { opacity: 0.5 }
+                          (isDownloading ||
+                            isSendingEmail ||
+                            (downloadFilter === "CUSTOM" &&
+                              (!downloadRangeStart ||
+                                !downloadRangeEnd ||
+                                new Date(downloadRangeEnd) <
+                                  new Date(downloadRangeStart)))) && {
+                            opacity: 0.5,
+                          },
                         ]}
                       >
                         {isDownloading ? (
                           <ActivityIndicator color="#fff" size="small" />
                         ) : (
                           <>
-                            <Ionicons name="cloud-download" size={20} color="#fff" style={{ marginRight: 8 }} />
-                            <Text style={styles.premiumActionBtnText}>Download PDF</Text>
+                            <Ionicons
+                              name="cloud-download"
+                              size={20}
+                              color="#fff"
+                              style={{ marginRight: 8 }}
+                            />
+                            <Text style={styles.premiumActionBtnText}>
+                              Download PDF
+                            </Text>
                           </>
                         )}
                       </LinearGradient>
@@ -5637,21 +7985,35 @@ export default function SalesReport() {
                   {/* Option B: Send to Email */}
                   <View style={styles.downloadOptionCard}>
                     <View style={styles.optionHeader}>
-                      <View style={[styles.optionIconBox, { backgroundColor: '#e0f2fe' }]}>
+                      <View
+                        style={[
+                          styles.optionIconBox,
+                          { backgroundColor: "#e0f2fe" },
+                        ]}
+                      >
                         <Ionicons name="mail" size={20} color="#0284c7" />
                       </View>
                       <View>
                         <Text style={styles.optionTitle}>Send via Email</Text>
-                        <Text style={styles.optionDesc}>Receive report in your inbox</Text>
+                        <Text style={styles.optionDesc}>
+                          Receive report in your inbox
+                        </Text>
                       </View>
                     </View>
 
                     <View style={styles.emailInputWrapper}>
-                      <Ionicons name="at" size={18} color={Theme.textMuted} style={styles.inputIcon} />
+                      <Ionicons
+                        name="at"
+                        size={18}
+                        color={Theme.textMuted}
+                        style={styles.inputIcon}
+                      />
                       <TextInput
                         style={[
                           styles.modernEmailInput,
-                          showEmailValidationError && { borderColor: '#ef4444' },
+                          showEmailValidationError && {
+                            borderColor: "#ef4444",
+                          },
                         ]}
                         placeholder="recipient@example.com"
                         placeholderTextColor={Theme.textMuted}
@@ -5665,7 +8027,8 @@ export default function SalesReport() {
                         onBlur={() => {
                           setEmailFieldTouched(true);
                           const normalized = emailAddress.trim().toLowerCase();
-                          if (normalized !== emailAddress) setEmailAddress(normalized);
+                          if (normalized !== emailAddress)
+                            setEmailAddress(normalized);
                           const next = validateRecipientEmail(normalized);
                           setEmailSuggestion(next.suggestion || null);
                         }}
@@ -5675,7 +8038,9 @@ export default function SalesReport() {
                     </View>
 
                     {showEmailValidationError && (
-                      <Text style={styles.errorHint}>{emailValidation.error}</Text>
+                      <Text style={styles.errorHint}>
+                        {emailValidation.error}
+                      </Text>
                     )}
 
                     {!!emailSuggestion && !emailValidation.isValid && (
@@ -5687,13 +8052,33 @@ export default function SalesReport() {
                         }}
                         style={styles.suggestionBox}
                       >
-                        <Text style={styles.suggestionText}>Did you mean <Text style={{ color: Theme.primary, textDecorationLine: 'underline' }}>{emailSuggestion}</Text>?</Text>
+                        <Text style={styles.suggestionText}>
+                          Did you mean{" "}
+                          <Text
+                            style={{
+                              color: Theme.primary,
+                              textDecorationLine: "underline",
+                            }}
+                          >
+                            {emailSuggestion}
+                          </Text>
+                          ?
+                        </Text>
                       </TouchableOpacity>
                     )}
 
                     <TouchableOpacity
                       onPress={handleEmailPdf}
-                      disabled={isDownloading || isSendingEmail || !emailValidation.isValid || (downloadFilter === "CUSTOM" && (!downloadRangeStart || !downloadRangeEnd || new Date(downloadRangeEnd) < new Date(downloadRangeStart)))}
+                      disabled={
+                        isDownloading ||
+                        isSendingEmail ||
+                        !emailValidation.isValid ||
+                        (downloadFilter === "CUSTOM" &&
+                          (!downloadRangeStart ||
+                            !downloadRangeEnd ||
+                            new Date(downloadRangeEnd) <
+                              new Date(downloadRangeStart)))
+                      }
                       activeOpacity={0.8}
                     >
                       <LinearGradient
@@ -5702,15 +8087,31 @@ export default function SalesReport() {
                         end={{ x: 1, y: 0 }}
                         style={[
                           styles.premiumActionBtn,
-                          (isDownloading || isSendingEmail || !emailValidation.isValid || (downloadFilter === "CUSTOM" && (!downloadRangeStart || !downloadRangeEnd || new Date(downloadRangeEnd) < new Date(downloadRangeStart)))) && { opacity: 0.5 }
+                          (isDownloading ||
+                            isSendingEmail ||
+                            !emailValidation.isValid ||
+                            (downloadFilter === "CUSTOM" &&
+                              (!downloadRangeStart ||
+                                !downloadRangeEnd ||
+                                new Date(downloadRangeEnd) <
+                                  new Date(downloadRangeStart)))) && {
+                            opacity: 0.5,
+                          },
                         ]}
                       >
                         {isSendingEmail ? (
                           <ActivityIndicator color="#fff" size="small" />
                         ) : (
                           <>
-                            <Ionicons name="send" size={18} color="#fff" style={{ marginRight: 8 }} />
-                            <Text style={styles.premiumActionBtnText}>Send to Email</Text>
+                            <Ionicons
+                              name="send"
+                              size={18}
+                              color="#fff"
+                              style={{ marginRight: 8 }}
+                            />
+                            <Text style={styles.premiumActionBtnText}>
+                              Send to Email
+                            </Text>
                           </>
                         )}
                       </LinearGradient>
@@ -5722,7 +8123,11 @@ export default function SalesReport() {
           </Modal>
 
           {showDownloadDatePicker && (
-            <Modal transparent visible={showDownloadDatePicker} animationType="fade">
+            <Modal
+              transparent
+              visible={showDownloadDatePicker}
+              animationType="fade"
+            >
               <View style={styles.modalOverlay}>
                 <TouchableOpacity
                   style={styles.modalDismiss}
@@ -5736,9 +8141,13 @@ export default function SalesReport() {
                 >
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>
-                      {downloadPickerMode === "START" ? "Select From Date" : "Select To Date"}
+                      {downloadPickerMode === "START"
+                        ? "Select From Date"
+                        : "Select To Date"}
                     </Text>
-                    <TouchableOpacity onPress={() => setShowDownloadDatePicker(false)}>
+                    <TouchableOpacity
+                      onPress={() => setShowDownloadDatePicker(false)}
+                    >
                       <Ionicons name="close" size={24} color={Theme.danger} />
                     </TouchableOpacity>
                   </View>
@@ -5772,9 +8181,22 @@ export default function SalesReport() {
                       }
                       setShowDownloadDatePicker(false);
                     }}
-                    style={{ alignSelf: "center", marginTop: 15, paddingBottom: 5 }}
+                    style={{
+                      alignSelf: "center",
+                      marginTop: 15,
+                      paddingBottom: 5,
+                    }}
                   >
-                    <Text style={{ color: Theme.primary, fontFamily: Fonts.black, fontSize: 13, textDecorationLine: "underline" }}>GO TO TODAY</Text>
+                    <Text
+                      style={{
+                        color: Theme.primary,
+                        fontFamily: Fonts.black,
+                        fontSize: 13,
+                        textDecorationLine: "underline",
+                      }}
+                    >
+                      GO TO TODAY
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -5818,16 +8240,29 @@ export default function SalesReport() {
                           ? rangeEnd
                           : selectedDate
                     }
-                    rangeStart={selectedFilter === "DAILY" ? null : effectiveDateRange.startDate}
-                    rangeEnd={selectedFilter === "DAILY" ? null : effectiveDateRange.endDate}
+                    rangeStart={
+                      selectedFilter === "DAILY"
+                        ? null
+                        : effectiveDateRange.startDate
+                    }
+                    rangeEnd={
+                      selectedFilter === "DAILY"
+                        ? null
+                        : effectiveDateRange.endDate
+                    }
                     isRangeMode={false}
                     disableFutureDates={true}
                     maxDate={activeBusinessDate || undefined}
                     onDateChange={(date) => {
-                      const maxDateStr = activeBusinessDate || getTodayDateStr();
+                      const maxDateStr =
+                        activeBusinessDate || getTodayDateStr();
                       const clampedDate = date > maxDateStr ? maxDateStr : date;
                       setSelectedDate(clampedDate);
-                      const { startDate, endDate } = calculatePeriodRange(selectedFilter, clampedDate, maxDateStr);
+                      const { startDate, endDate } = calculatePeriodRange(
+                        selectedFilter,
+                        clampedDate,
+                        maxDateStr,
+                      );
                       setRangeStart(startDate);
                       setRangeEnd(endDate);
                       setShowDatePicker(false);
@@ -5835,16 +8270,34 @@ export default function SalesReport() {
                   />
                   <TouchableOpacity
                     onPress={() => {
-                      const maxDateStr = activeBusinessDate || getTodayDateStr();
+                      const maxDateStr =
+                        activeBusinessDate || getTodayDateStr();
                       setSelectedDate(maxDateStr);
-                      const { startDate, endDate } = calculatePeriodRange(selectedFilter, maxDateStr, maxDateStr);
+                      const { startDate, endDate } = calculatePeriodRange(
+                        selectedFilter,
+                        maxDateStr,
+                        maxDateStr,
+                      );
                       setRangeStart(startDate);
                       setRangeEnd(endDate);
                       setShowDatePicker(false);
                     }}
-                    style={{ alignSelf: "center", marginTop: 15, paddingBottom: 5 }}
+                    style={{
+                      alignSelf: "center",
+                      marginTop: 15,
+                      paddingBottom: 5,
+                    }}
                   >
-                    <Text style={{ color: Theme.primary, fontFamily: Fonts.black, fontSize: 13, textDecorationLine: "underline" }}>GO TO TODAY</Text>
+                    <Text
+                      style={{
+                        color: Theme.primary,
+                        fontFamily: Fonts.black,
+                        fontSize: 13,
+                        textDecorationLine: "underline",
+                      }}
+                    >
+                      GO TO TODAY
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -6448,7 +8901,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     textAlign: "center",
   },
-  breakdownValue: { fontFamily: Fonts.black, fontSize: 13, textAlign: "center" },
+  breakdownValue: {
+    fontFamily: Fonts.black,
+    fontSize: 13,
+    textAlign: "center",
+  },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -6542,7 +8999,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.4)",
   },
-  modalDismiss: { ...StyleSheet.absoluteFillObject },
+  modalDismiss: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
   modalContent: {
     width: "92%",
     maxWidth: 400,
@@ -6931,8 +9388,8 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   cancelledBadgeMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
     marginBottom: 10,
   },
@@ -6954,8 +9411,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   cancelledDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     borderTopWidth: 1,
     borderTopColor: Theme.danger + "15",
     paddingTop: 8,
@@ -6978,8 +9435,8 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
     backgroundColor: Theme.bgNav,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: Theme.border,
   },
@@ -6999,19 +9456,19 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   periodGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 4,
   },
   periodBtn: {
     flex: 1,
-    minWidth: '18%',
+    minWidth: "18%",
     paddingVertical: 6,
     paddingHorizontal: 2,
     borderRadius: 8,
     backgroundColor: Theme.bgCard,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: 2,
     borderWidth: 1,
     borderColor: Theme.border,
@@ -7027,12 +9484,12 @@ const styles = StyleSheet.create({
     color: Theme.textSecondary,
   },
   activePeriodText: {
-    color: '#fff',
+    color: "#fff",
     fontFamily: Fonts.black,
   },
   customDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     marginTop: 8,
     paddingTop: 8,
@@ -7071,8 +9528,8 @@ const styles = StyleSheet.create({
     ...Theme.shadowSm,
   },
   optionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     marginBottom: 8,
   },
@@ -7080,9 +9537,9 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 6,
-    backgroundColor: Theme.primary + '10',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: Theme.primary + "10",
+    justifyContent: "center",
+    alignItems: "center",
   },
   optionTitle: {
     fontSize: 11,
@@ -7097,19 +9554,19 @@ const styles = StyleSheet.create({
   premiumActionBtn: {
     height: 34,
     borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     ...Theme.shadowMd,
   },
   premiumActionBtnText: {
-    color: '#fff',
+    color: "#fff",
     fontFamily: Fonts.black,
     fontSize: 12,
   },
   emailInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: Theme.bgNav,
     borderRadius: 8,
     borderWidth: 1,
@@ -7128,14 +9585,14 @@ const styles = StyleSheet.create({
     color: Theme.textPrimary,
   },
   errorHint: {
-    color: '#ef4444',
+    color: "#ef4444",
     fontSize: 9,
     fontFamily: Fonts.medium,
     marginLeft: 4,
     marginBottom: 6,
   },
   suggestionBox: {
-    backgroundColor: Theme.primary + '08',
+    backgroundColor: Theme.primary + "08",
     padding: 6,
     borderRadius: 6,
     marginBottom: 6,
@@ -7148,38 +9605,38 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.medium,
   },
   detailMergeContainer: {
-    backgroundColor: '#fff7ed',
-    borderColor: '#ffedd5',
+    backgroundColor: "#fff7ed",
+    borderColor: "#ffedd5",
     borderWidth: 1,
     borderRadius: 12,
     padding: 10,
     marginBottom: 12,
   },
   detailMergeTitle: {
-    color: '#ea580c',
+    color: "#ea580c",
     fontSize: 11,
     fontFamily: Fonts.black,
   },
   childBillBadge: {
-    backgroundColor: '#ffedd5',
-    borderColor: '#fed7aa',
+    backgroundColor: "#ffedd5",
+    borderColor: "#fed7aa",
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   childBillBadgeText: {
-    color: '#c2410c',
+    color: "#c2410c",
     fontSize: 10,
     fontFamily: Fonts.bold,
   },
   detailSplitContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
-    borderColor: '#dbeafe',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#dbeafe",
     borderWidth: 1,
     borderRadius: 12,
     padding: 10,
@@ -7187,20 +9644,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailSplitText: {
-    color: '#2563eb',
+    color: "#2563eb",
     fontSize: 11,
     fontFamily: Fonts.bold,
   },
   modifierPillsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
     marginTop: 4,
     marginLeft: 8,
   },
   modifierPill: {
-    backgroundColor: '#fafafa',
-    borderColor: '#e4e4e7',
+    backgroundColor: "#fafafa",
+    borderColor: "#e4e4e7",
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 8,
@@ -7208,11 +9665,11 @@ const styles = StyleSheet.create({
   },
   modifierPillText: {
     fontSize: 10,
-    color: '#52525b',
+    color: "#52525b",
     fontFamily: Fonts.semiBold,
   },
   mainFilterBar: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingVertical: 4,
     paddingHorizontal: 4,
     gap: 8,
@@ -7236,7 +9693,7 @@ const styles = StyleSheet.create({
     color: Theme.textSecondary,
   },
   activeMainFilterText: {
-    color: '#fff',
+    color: "#fff",
     fontFamily: Fonts.black,
   },
 });
