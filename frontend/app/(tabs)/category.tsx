@@ -5,7 +5,7 @@ import { API_URL } from "@/constants/Config";
 import { Fonts } from "@/constants/Fonts";
 import { socket } from "@/constants/socket";
 import { Theme } from "@/constants/theme";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -1014,14 +1014,22 @@ const TableItemComponent = React.memo(
             </View>
           )}
 
-          {/* 🚀 QR ORDER INDICATOR (QR badge) */}
-          {((tableData?.entryStatus !== undefined && tableData?.entryStatus !== null)
-            ? tableData.entryStatus
-            : item.entryStatus) === "q" &&
+          {/* 🚀 QR / KIOSK ORDER INDICATOR */}
+          {String(rawEntryStatus || "").trim().toLowerCase() === "q" &&
             status !== 0 && (
               <View style={styles.qrBadge}>
                 <Ionicons
                   name="qr-code"
+                  size={Math.max(14, itemSize * 0.18)}
+                  color={ui.color}
+                />
+              </View>
+            )}
+          {String(rawEntryStatus || "").trim().toUpperCase() === "K" &&
+            status !== 0 && (
+              <View style={styles.qrBadge}>
+                <MaterialIcons
+                  name="touch-app"
                   size={Math.max(14, itemSize * 0.18)}
                   color={ui.color}
                 />

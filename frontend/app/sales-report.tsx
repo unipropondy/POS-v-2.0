@@ -1,5 +1,5 @@
 import { API_URL } from "@/constants/Config";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   endOfMonth,
@@ -299,6 +299,24 @@ export default function SalesReport() {
     "TAKEAWAY",
   ]);
   const [sortOrder, setSortOrder] = useState<"NEWEST" | "HIGHEST">("NEWEST");
+  const [orderChannelFilter, setOrderChannelFilter] = useState<"ALL" | "QR" | "KIOSK">("ALL");
+
+  const isKioskOrderItem = (s: any) => {
+    const entry = String(s.entryStatus || s.entry_status || "").trim().toUpperCase();
+    if (entry === "Q") return false;
+    return (
+      entry === "K" ||
+      !!s.isKioskOrder ||
+      String(s.UserLogin || "").trim().toLowerCase() === "kiosk" ||
+      String(s.RoleName || "").trim().toUpperCase() === "KIOSK"
+    );
+  };
+
+  const isQROrderItem = (s: any) => {
+    if (isKioskOrderItem(s)) return false;
+    const entry = String(s.entryStatus || s.entry_status || "").trim().toUpperCase();
+    return entry === "Q" || !!s.isQROrder;
+  };
   const [detailReportType, setDetailReportType] =
     useState<DetailReportType | null>(null);
   const [categoryReport, setCategoryReport] = useState<any[]>([]);
@@ -742,9 +760,10 @@ export default function SalesReport() {
         overrideRange || effectiveDateRange;
       const dateParam = overrideRange?.startDate || selectedDate;
       const res = await fetch(
-        `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${dateParam}&startDate=${startStr}&endDate=${endStr}`,
+        `${API_URL}/api/reports/login-wise-sales?filter=${selectedFilter.toLowerCase()}&date=${dateParam}&startDate=${startStr}&endDate=${endStr}&_t=${Date.now()}`,
         {
           headers: getTenantHeaders(),
+          cache: "no-store",
         },
       );
       if (res.ok) {
@@ -954,9 +973,10 @@ export default function SalesReport() {
       const { startDate: startStr, endDate: endStr } =
         overrideRange || effectiveDateRange;
       const response = await fetch(
-        `${API_URL}/api/sales/all?startDate=${startStr}&endDate=${endStr}`,
+        `${API_URL}/api/sales/all?startDate=${startStr}&endDate=${endStr}&_t=${Date.now()}`,
         {
           headers: getTenantHeaders(),
+          cache: "no-store",
         },
       );
       if (!response.ok) throw new Error("Failed to fetch sales");
@@ -979,9 +999,10 @@ export default function SalesReport() {
     try {
       const { startDate: startStr, endDate: endStr } =
         overrideRange || effectiveDateRange;
-      const url = `${API_URL}/api/sales/range?startDate=${startStr}&endDate=${endStr}`;
+      const url = `${API_URL}/api/sales/range?startDate=${startStr}&endDate=${endStr}&_t=${Date.now()}`;
       const response = await fetch(url, {
         headers: getTenantHeaders(),
+        cache: "no-store",
       });
       const data = await response.json();
       setSummary(Array.isArray(data) ? data[0] : data);
@@ -1540,7 +1561,11 @@ export default function SalesReport() {
             String(selectedCashierId || "")
               .trim()
               .toLowerCase());
-      return (showCancelledOrders || !s.IsCancelled) && cashierMatch;
+      const channelMatch =
+        orderChannelFilter === "ALL" ||
+        (orderChannelFilter === "QR" && isQROrderItem(s)) ||
+        (orderChannelFilter === "KIOSK" && isKioskOrderItem(s));
+      return (showCancelledOrders || !s.IsCancelled) && cashierMatch && channelMatch;
     });
 
     if (sortOrder === "NEWEST") {
@@ -1552,7 +1577,7 @@ export default function SalesReport() {
     } else {
       return [...filtered].sort((a, b) => b.SysAmount - a.SysAmount);
     }
-  }, [baseFilteredSales, showCancelledOrders, sortOrder, selectedCashierId]);
+  }, [baseFilteredSales, showCancelledOrders, sortOrder, selectedCashierId, orderChannelFilter]);
 
   const filteredMetrics = useMemo(() => {
     const processedBills = new Set<string>();
@@ -1642,7 +1667,9 @@ export default function SalesReport() {
         if (!isSubsequentSplit && !processedBills.has(s.SettlementID)) {
           processedBills.add(s.SettlementID);
           acc.TotalTransactions += 1;
-          if (s.entryStatus === "q" || s.entry_status === "q" || s.isQROrder) {
+          if (isKioskOrderItem(s)) {
+            acc.KioskOrderCount += 1;
+          } else if (isQROrderItem(s)) {
             acc.QROrderCount += 1;
           }
           acc.TotalItems += s.ReceiptCount || 0;
@@ -1672,6 +1699,7 @@ export default function SalesReport() {
         TotalSales: 0,
         TotalTransactions: 0,
         QROrderCount: 0,
+        KioskOrderCount: 0,
         TotalItems: 0,
         Cash: 0,
         Card: 0,
@@ -2451,6 +2479,7 @@ export default function SalesReport() {
     fullWidth?: boolean,
     subtitle?: string,
     onPress?: () => void,
+    isActive?: boolean,
   ) => {
     const isMobile = SCREEN_W < 600;
     const isTablet = SCREEN_W >= 600 && SCREEN_W < 1024;
@@ -2480,6 +2509,13 @@ export default function SalesReport() {
             width: fullWidth ? "100%" : SCREEN_W >= 600 ? "31.5%" : undefined,
             flex: fullWidth ? undefined : SCREEN_W >= 600 ? undefined : 1,
             cursor: onPress ? "pointer" : undefined,
+            ...(isActive
+              ? {
+                  borderColor: color,
+                  borderWidth: 1.5,
+                  backgroundColor: color + "10",
+                }
+              : {}),
           },
         ]}
       >
@@ -2494,7 +2530,11 @@ export default function SalesReport() {
             },
           ]}
         >
-          <Ionicons name={icon} size={iconSize} color={color} />
+          {icon === "touch-app" ? (
+            <MaterialIcons name="touch-app" size={iconSize} color={color} />
+          ) : (
+            <Ionicons name={icon} size={iconSize} color={color} />
+          )}
         </View>
 
         <View style={styles.tileContent}>
@@ -3868,6 +3908,10 @@ export default function SalesReport() {
                 filteredMetrics.QROrderCount,
                 "qr-code-outline",
                 "#8b5cf6",
+                false,
+                orderChannelFilter === "QR" ? "Showing QR Orders (tap to clear)" : undefined,
+                () => setOrderChannelFilter((prev) => (prev === "QR" ? "ALL" : "QR")),
+                orderChannelFilter === "QR",
               )}
               {renderMetricTile(
                 "Items Sold",
@@ -3877,8 +3921,18 @@ export default function SalesReport() {
               )}
             </View>
 
-            {/* Row 5 (Centered 2 cards) */}
-            <View style={[styles.metricsRow, styles.metricsRowCentered]}>
+            {/* Row 5 */}
+            <View style={styles.metricsRow}>
+              {renderMetricTile(
+                "Kiosk Orders Count",
+                filteredMetrics.KioskOrderCount,
+                "touch-app",
+                "#0ea5e9",
+                false,
+                orderChannelFilter === "KIOSK" ? "Showing Kiosk Orders (tap to clear)" : undefined,
+                () => setOrderChannelFilter((prev) => (prev === "KIOSK" ? "ALL" : "KIOSK")),
+                orderChannelFilter === "KIOSK",
+              )}
               {renderMetricTile(
                 "Total Voids",
                 `${filteredMetrics.TotalVoids} (${formatCurrency(filteredMetrics.TotalVoidAmount)})`,
@@ -3993,6 +4047,10 @@ export default function SalesReport() {
                 filteredMetrics.QROrderCount,
                 "qr-code-outline",
                 "#8b5cf6",
+                false,
+                orderChannelFilter === "QR" ? "Showing QR Orders" : undefined,
+                () => setOrderChannelFilter((prev) => (prev === "QR" ? "ALL" : "QR")),
+                orderChannelFilter === "QR",
               )}
               {renderMetricTile(
                 "Items Sold",
@@ -4014,6 +4072,28 @@ export default function SalesReport() {
                 `${filteredMetrics.CancelledCount} (${formatCurrency(filteredMetrics.CancelledAmount)})`,
                 "close-circle-outline",
                 Theme.danger,
+              )}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile(
+                "Kiosk Orders Count",
+                filteredMetrics.KioskOrderCount,
+                "touch-app",
+                "#0ea5e9",
+                true,
+                orderChannelFilter === "KIOSK" ? "Showing Kiosk Orders (tap to clear)" : undefined,
+                () => setOrderChannelFilter((prev) => (prev === "KIOSK" ? "ALL" : "KIOSK")),
+                orderChannelFilter === "KIOSK",
+              )}
+            </View>
+
+            <View style={styles.metricsRow}>
+              {renderMetricTile(
+                "Kiosk Orders Count",
+                filteredMetrics.KioskOrderCount,
+                "touch-app",
+                "#0ea5e9",
               )}
             </View>
           </>
@@ -4310,6 +4390,12 @@ export default function SalesReport() {
                 <Text style={styles.metricLabel}>QR Orders</Text>
                 <Text style={styles.metricValueSmall}>
                   {filteredMetrics.QROrderCount}
+                </Text>
+              </View>
+              <View style={styles.metricRow}>
+                <Text style={styles.metricLabel}>Kiosk Orders</Text>
+                <Text style={styles.metricValueSmall}>
+                  {filteredMetrics.KioskOrderCount}
                 </Text>
               </View>
               <View style={styles.metricRow}>
@@ -4734,9 +4820,47 @@ export default function SalesReport() {
 
       {/* Recent Transactions Header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionHeaderText}>RECENT TRANSACTIONS</Text>
-        <TouchableOpacity onPress={() => fetchData()}>
-          <Text style={styles.seeAllText}>REFRESH</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Text style={styles.sectionHeaderText}>RECENT TRANSACTIONS</Text>
+          {orderChannelFilter !== "ALL" && (
+            <TouchableOpacity
+              onPress={() => setOrderChannelFilter("ALL")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                backgroundColor: orderChannelFilter === "QR" ? "#8b5cf615" : "#0ea5e915",
+                borderColor: orderChannelFilter === "QR" ? "#8b5cf6" : "#0ea5e9",
+                borderWidth: 1,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: 999,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontFamily: Fonts.bold,
+                  color: orderChannelFilter === "QR" ? "#8b5cf6" : "#0ea5e9",
+                }}
+              >
+                {orderChannelFilter === "QR" ? "QR ORDERS ONLY" : "KIOSK ORDERS ONLY"}
+              </Text>
+              <Ionicons
+                name="close-circle"
+                size={13}
+                color={orderChannelFilter === "QR" ? "#8b5cf6" : "#0ea5e9"}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity
+          onPress={onRefresh}
+          disabled={refreshing}
+          style={{ flexDirection: "row", alignItems: "center", gap: 6, opacity: refreshing ? 0.6 : 1 }}
+        >
+          {refreshing && <ActivityIndicator size="small" color={Theme.primary} />}
+          <Text style={styles.seeAllText}>{refreshing ? "REFRESHING..." : "REFRESH"}</Text>
         </TouchableOpacity>
       </View>
     </>
