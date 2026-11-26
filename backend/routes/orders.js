@@ -1453,8 +1453,8 @@ router.post("/save-cart", async (req, res) => {
           userId,
           formattedStartDate,
           resolvedEntryStatus,
-          0,
-          null,
+          req.body.discountAmount || 0,
+          req.body.discountRemarks || null,
           mobileNo,
           customerName,
           null,
@@ -4150,8 +4150,8 @@ router.post("/complete-online-payment", async (req, res) => {
               "00000000-0000-0000-0000-000000000000",
               formattedStartDate,
               resolvedEntryStatus,
-              0,
-              null,
+              req.body.discountAmount || req.body.discount || 0,
+              req.body.discountRemarks || null,
               null,
               null,
               resolvedEntryStatus
@@ -4169,19 +4169,25 @@ router.post("/complete-online-payment", async (req, res) => {
       }
     }
 
-    // 🛡️ Ensure Kiosk orders have entry_status = 'K' in RestaurantOrderCur
-    if (orderNo && isKioskOrder) {
+    // 🛡️ Ensure Kiosk orders have entry_status = 'K' and promo discounts in RestaurantOrderCur
+    if (orderNo && (isKioskOrder || req.body.discountAmount || req.body.discount)) {
       try {
+        const discToSet = Number(req.body.discountAmount || req.body.discount || 0);
+        const discRemToSet = req.body.discountRemarks || null;
         await pool.request()
           .input("orderNo", sql.NVarChar(50), orderNo)
+          .input("isKiosk", sql.Bit, isKioskOrder ? 1 : 0)
+          .input("discAmt", sql.Decimal(18, 2), discToSet)
+          .input("discRemarks", sql.NVarChar(250), discRemToSet)
           .query(`
             UPDATE RestaurantOrderCur 
-            SET entry_status = 'K' 
+            SET entry_status = CASE WHEN @isKiosk = 1 THEN 'K' ELSE entry_status END,
+                DiscountAmount = CASE WHEN @discAmt > 0 THEN @discAmt ELSE DiscountAmount END,
+                DiscountRemarks = CASE WHEN @discRemarks IS NOT NULL THEN @discRemarks ELSE DiscountRemarks END
             WHERE (OrderNumber = @orderNo OR (TRY_CAST(@orderNo AS UNIQUEIDENTIFIER) IS NOT NULL AND OrderId = TRY_CAST(@orderNo AS UNIQUEIDENTIFIER)))
-              AND (entry_status IS NULL OR entry_status = '' OR entry_status <> 'K')
           `);
       } catch (kErr) {
-        console.warn("⚠️ [complete-online-payment] Failed to ensure entry_status='K':", kErr.message);
+        console.warn("⚠️ [complete-online-payment] Failed to ensure entry_status or discount:", kErr.message);
       }
     }
 

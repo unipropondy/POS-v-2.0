@@ -300,6 +300,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
     setCart([]);
+    setAppliedPromotion(null);
+    setSelectedPromotion(null);
+    setShowPromotionModal(false);
     setShowCartPage(false);
     setShowModifier(false);
     setShowComboCustomizer(false);
@@ -1138,33 +1141,59 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // 5.5 Promotion Discount (from selected promotion in PromotionMaster)
   const promotionDiscount = useMemo(() => {
     if (!appliedPromotion) return 0;
-    const pType = (appliedPromotion.PromotionType || "").toUpperCase();
+    const pType = String(appliedPromotion.PromotionType || "")
+      .trim()
+      .toUpperCase();
     const discVal = Number(appliedPromotion.DiscountValue || 0);
     const minPurchase = Number(appliedPromotion.MinPurchaseAmount || 0);
 
+    // Calculate subtotal of non-promotional base items
+    const nonPromoSubtotal = cart
+      .filter((i) => !i.isPromotionalItem && !i.isPromotion)
+      .reduce(
+        (sum, item) =>
+          sum +
+          Number(item.Price || item.finalPrice || item.price || 0) *
+            Number(item.qty || 1),
+        0,
+      );
+
     // If minimum purchase requirement is configured and subtotal does not reach it, discount does not apply
-    if (minPurchase > 0 && subTotal < minPurchase) {
+    if (minPurchase > 0 && nonPromoSubtotal < minPurchase) {
       return 0;
     }
 
     let calculatedDisc = 0;
     if (pType.includes("PERCENT") || pType.includes("%")) {
-      calculatedDisc = (subTotal * discVal) / 100;
-    } else if (
-      pType.includes("AMOUNT") ||
-      pType.includes("FIXED") ||
-      pType.includes("FLAT")
-    ) {
-      calculatedDisc =
-        discVal > 0 ? discVal : Number(appliedPromotion.PromotionAmount || 0);
+      // Percentage: Calculate discount based on DiscountValue
+      calculatedDisc = (nonPromoSubtotal * discVal) / 100;
+    } else if (pType === "FLAT") {
+      // Flat: Deduct configured DiscountValue
+      calculatedDisc = discVal;
+    } else if (pType === "BOGO") {
+      // If BOGO was not added as a separate $0 item, discount 1 unit of the base item
+      const hasBogoItem = cart.some((i) => i.isBogoFree);
+      if (!hasBogoItem && cart.length > 0) {
+        calculatedDisc = Number(
+          cart[0].Price || cart[0].finalPrice || cart[0].price || 0,
+        );
+      } else {
+        calculatedDisc = 0;
+      }
+    } else if (pType === "COMBO") {
+      // Combo price is set directly on the item added to the cart
+      calculatedDisc = 0;
     } else if (discVal > 0 && discVal <= 100) {
-      calculatedDisc = (subTotal * discVal) / 100;
+      calculatedDisc = (nonPromoSubtotal * discVal) / 100;
     } else if (discVal > 0) {
       calculatedDisc = discVal;
     }
 
-    return Math.min(subTotal, Math.max(0, Number(calculatedDisc.toFixed(2))));
-  }, [appliedPromotion, subTotal]);
+    return Math.min(
+      nonPromoSubtotal,
+      Math.max(0, Number(calculatedDisc.toFixed(2))),
+    );
+  }, [appliedPromotion, cart]);
 
   // 6. Final Total (deducting promotionDiscount without duplicate application)
   let totalBeforeRound = subTotal + serviceCharge + takeawayCharge;
@@ -1867,6 +1896,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
   const confirmDeleteItem = () => {
     if (itemToDeleteIndex !== null) {
+      const deletedItem = cart[itemToDeleteIndex];
+      if (deletedItem?.isPromotionalItem || deletedItem?.isPromotion) {
+        setAppliedPromotion(null);
+        setSelectedPromotion(null);
+      }
       setCart((prev) => prev.filter((_, i) => i !== itemToDeleteIndex));
       setItemToDeleteIndex(null);
     }
@@ -1927,6 +1961,121 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
 
     // If no valid promotion records exist, skip promotion popup and proceed directly to Checkout Option
+    proceedToCheckoutOption();
+  };
+
+  // Apply selected promotion to cart & continue
+  const handleApplyPromotionAndContinue = () => {
+    if (!selectedPromotion) {
+      setAppliedPromotion(null);
+      setShowPromotionModal(false);
+      proceedToCheckoutOption();
+      return;
+    }
+
+    // 1. MinPurchaseAmount Validation
+    const minPurchase = Number(selectedPromotion.MinPurchaseAmount || 0);
+    const nonPromoSubtotal = cart
+      .filter((i) => !i.isPromotionalItem && !i.isPromotion)
+      .reduce(
+        (sum, item) =>
+          sum +
+          Number(item.Price || item.finalPrice || item.price || 0) *
+            Number(item.qty || 1),
+        0,
+      );
+
+    if (minPurchase > 0 && nonPromoSubtotal < minPurchase) {
+      Alert.alert(
+        "Minimum Purchase Required",
+        `The offer "${selectedPromotion.PromotionName}" requires a minimum purchase of ${currencySymbol}${minPurchase.toFixed(2)}. Your current subtotal is ${currencySymbol}${nonPromoSubtotal.toFixed(2)}.`,
+      );
+      return;
+    }
+
+    // 2. Remove previously added promotional items to prevent duplication
+    const cleanCart = cart.filter(
+      (item) => !item.isPromotionalItem && !item.isPromotion,
+    );
+
+    const pType = String(selectedPromotion.PromotionType || "")
+      .trim()
+      .toUpperCase();
+
+    // 3. Add separate promotional item or discount entry according to PromotionType
+    const promoGuid = `00000000-0000-0000-0000-${String(selectedPromotion.PromotionId).padStart(12, "0")}`;
+    if (pType === "COMBO") {
+      const comboPrice = Number(selectedPromotion.PromotionAmount || 0);
+      const comboItem = {
+        isPromotionalItem: true,
+        isPromotion: true,
+        PromotionId: selectedPromotion.PromotionId,
+        DishId: promoGuid,
+        id: promoGuid,
+        Name: selectedPromotion.PromotionName,
+        KitchenTypeName: "Combo Offer",
+        Description:
+          selectedPromotion.Description ||
+          selectedPromotion.PromotionDescription ||
+          "Special Combo Promotion",
+        Price: comboPrice,
+        finalPrice: comboPrice,
+        price: comboPrice,
+        qty: 1,
+        PromotionType: "Combo",
+        isTakeaway: false,
+        isServiceCharge: true,
+      };
+      setCart([...cleanCart, comboItem]);
+    } else if (pType === "BOGO") {
+      if (cleanCart.length > 0) {
+        const baseItem = cleanCart[0];
+        const bogoGuid = `00000000-0000-0000-b090-${String(selectedPromotion.PromotionId).padStart(12, "0")}`;
+        const bogoFreeItem = {
+          isPromotionalItem: true,
+          isPromotion: true,
+          isBogoFree: true,
+          PromotionId: selectedPromotion.PromotionId,
+          DishId: bogoGuid,
+          id: bogoGuid,
+          Name: `${baseItem.Name || "Item"} (BOGO Free)`,
+          KitchenTypeName: "BOGO Offer",
+          Description:
+            selectedPromotion.Description ||
+            selectedPromotion.PromotionDescription ||
+            "Buy 1 Get 1 Free Offer",
+          Price: 0,
+          finalPrice: 0,
+          price: 0,
+          qty: 1,
+          PromotionType: "BOGO",
+          isTakeaway: baseItem.isTakeaway || false,
+          isServiceCharge: false,
+        };
+        setCart([...cleanCart, bogoFreeItem]);
+      } else {
+        setCart(cleanCart);
+      }
+    } else {
+      setCart(cleanCart);
+    }
+
+    // 4. Save selected promotion state
+    setAppliedPromotion(selectedPromotion);
+    setShowPromotionModal(false);
+
+    // 5. Proceed to existing Checkout Option popup
+    proceedToCheckoutOption();
+  };
+
+  const handleNoThanks = () => {
+    // Clear any promotional items from cart
+    setCart((prev) =>
+      prev.filter((item) => !item.isPromotionalItem && !item.isPromotion),
+    );
+    setSelectedPromotion(null);
+    setAppliedPromotion(null);
+    setShowPromotionModal(false);
     proceedToCheckoutOption();
   };
 
@@ -2096,6 +2245,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             isSelfCollect: isSelfCollect,
             isTentNumber: isTentNumber,
             tentNumber: isTentNumber ? tableNo : undefined,
+            discountAmount: promotionDiscount || 0,
+            discountRemarks: appliedPromotion ? appliedPromotion.PromotionName : null,
+            promotionId: appliedPromotion?.PromotionId || undefined,
+            promotionName: appliedPromotion?.PromotionName || undefined,
           }),
         });
         const saveJson = await saveRes.json();
@@ -2327,6 +2480,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           cart: cart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
           isKiosk: true,
           entryStatus: "K",
+          discount: promotionDiscount || 0,
+          discountAmount: promotionDiscount || 0,
+          discountRemarks: appliedPromotion ? appliedPromotion.PromotionName : null,
+          promotionId: appliedPromotion?.PromotionId || undefined,
+          promotionName: appliedPromotion?.PromotionName || undefined,
         }),
       });
 
@@ -2367,6 +2525,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       setIsCartLoading(false);
       setShowCartPage(false);
       setCart([]);
+      setAppliedPromotion(null);
+      setSelectedPromotion(null);
 
       // Clear session
       await AsyncStorage.multiRemove([
@@ -3702,7 +3862,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                     activeOpacity={isConfigurable ? 0.75 : 1}
                     disabled={!isConfigurable}
                   >
-                    {imageFilename ? (
+                    {item.isPromotionalItem ? (
+                      <View style={styles.cartItemPromoThumb}>
+                        <Ionicons name="sparkles" size={26} color="#ea580c" />
+                      </View>
+                    ) : imageFilename ? (
                       <ExpoImage
                         source={{ uri: `${API}/image/${imageFilename}` }}
                         style={styles.cartItemThumb}
@@ -3728,9 +3892,24 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                       disabled={!isConfigurable}
                       style={{ width: "100%" }}
                     >
-                      <Text style={styles.cartItemName}>
-                        {item.Name || item.name}
-                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <Text style={styles.cartItemName}>
+                          {item.Name || item.name}
+                        </Text>
+                        {item.isPromotionalItem && (
+                          <View style={styles.cartItemPromoBadge}>
+                            <Ionicons name="sparkles" size={11} color="#ea580c" />
+                            <Text style={styles.cartItemPromoBadgeText}>
+                              {item.PromotionType || "OFFER"}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      {item.Description ? (
+                        <Text style={styles.cartItemPromoDescText}>
+                          {item.Description}
+                        </Text>
+                      ) : null}
                     </TouchableOpacity>
 
                     {/* Customizations Section (Modifiers & Combo Selections) - Clean, borderless & clickable */}
@@ -3848,6 +4027,45 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 </View>
               );
             })}
+
+            {/* Applied Promotion Discount Entry in Cart */}
+            {appliedPromotion && promotionDiscount > 0 && (
+              <View style={styles.appliedPromoEntryCard}>
+                <View style={styles.appliedPromoEntryIconWrap}>
+                  <Ionicons name="gift" size={24} color="#ea580c" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <Text style={styles.appliedPromoEntryTitle}>
+                      {appliedPromotion.PromotionName}
+                    </Text>
+                    <View style={styles.appliedPromoEntryTypePill}>
+                      <Text style={styles.appliedPromoEntryTypePillText}>
+                        {appliedPromotion.PromotionType || "DISCOUNT"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.appliedPromoEntryDesc}>
+                    {appliedPromotion.Description || appliedPromotion.PromotionDescription || "Promotional Discount Applied"}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={styles.appliedPromoEntryDiscountVal}>
+                    -{currencySymbol}{promotionDiscount.toFixed(2)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setAppliedPromotion(null);
+                      setSelectedPromotion(null);
+                    }}
+                    hitSlop={8}
+                    style={{ marginTop: 4 }}
+                  >
+                    <Text style={styles.appliedPromoEntryRemoveBtn}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           {/* Fixed Down Summary & Actions Card */}
@@ -4405,10 +4623,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         visible={showPromotionModal && activePromotions.length > 0}
         transparent
         animationType="fade"
-        onRequestClose={() => {
-          setShowPromotionModal(false);
-          proceedToCheckoutOption();
-        }}
+        onRequestClose={handleNoThanks}
       >
         <View style={styles.promotionModalOverlay}>
           <View style={styles.promotionModalContainer}>
@@ -4420,10 +4635,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </View>
               <TouchableOpacity
                 style={styles.promotionCloseBtn}
-                onPress={() => {
-                  setShowPromotionModal(false);
-                  proceedToCheckoutOption();
-                }}
+                onPress={handleNoThanks}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <Ionicons name="close" size={24} color="#64748B" />
@@ -4588,12 +4800,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <View style={styles.promotionFooter}>
               <TouchableOpacity
                 style={styles.promotionSkipBtn}
-                onPress={() => {
-                  setSelectedPromotion(null);
-                  setAppliedPromotion(null);
-                  setShowPromotionModal(false);
-                  proceedToCheckoutOption();
-                }}
+                onPress={handleNoThanks}
                 activeOpacity={0.85}
               >
                 <Text style={styles.promotionSkipBtnText}>No Thanks</Text>
@@ -4601,11 +4808,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
               <TouchableOpacity
                 style={styles.promotionContinueBtn}
-                onPress={() => {
-                  setAppliedPromotion(selectedPromotion);
-                  setShowPromotionModal(false);
-                  proceedToCheckoutOption();
-                }}
+                onPress={handleApplyPromotionAndContinue}
                 activeOpacity={0.85}
               >
                 <Text style={styles.promotionContinueBtnText}>Continue</Text>
@@ -6393,6 +6596,96 @@ const styles = StyleSheet.create({
     height: 68,
     borderRadius: 16,
     backgroundColor: "#fff7ed",
+  },
+  cartItemPromoThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 16,
+    backgroundColor: "#FFF7ED",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFEDD5",
+  },
+  cartItemPromoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+  },
+  cartItemPromoBadgeText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#EA580C",
+    letterSpacing: 0.5,
+  },
+  cartItemPromoDescText: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  appliedPromoEntryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#FFFBF7",
+    borderWidth: 1.8,
+    borderColor: "#FDBA74",
+    borderRadius: 20,
+    padding: 16,
+    marginTop: 10,
+    marginBottom: 10,
+    shadowColor: "#EA580C",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  appliedPromoEntryIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFEDD5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  appliedPromoEntryTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  appliedPromoEntryTypePill: {
+    backgroundColor: "#EA580C",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  appliedPromoEntryTypePillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
+  },
+  appliedPromoEntryDesc: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  appliedPromoEntryDiscountVal: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#059669",
+  },
+  appliedPromoEntryRemoveBtn: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#EF4444",
   },
   cartItemThumbPlaceholder: {
     width: 68,
