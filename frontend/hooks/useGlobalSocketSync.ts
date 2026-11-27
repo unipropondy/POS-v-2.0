@@ -37,7 +37,7 @@ function isKioskInterface(): boolean {
     const role = String(user.role || "").toUpperCase();
     const roleName = String(user.roleName || "").toUpperCase();
     const userName = String(user.userName || "").toLowerCase();
-    const groupCode = String(user.userGroupCode || "").toUpperCase();
+    const groupCode = String((user as any).userGroupCode || "").toUpperCase();
     if (role === "KIOSK" || roleName === "KIOSK" || userName === "kiosk" || groupCode === "KIOSK") {
       return true;
     }

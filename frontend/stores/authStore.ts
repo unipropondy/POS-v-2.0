@@ -15,6 +15,7 @@ export type AuthUser = {
   role: UserRole;
   roleName: string;
   userGroupId?: string;
+  userGroupCode?: string;
   licenseFromDate?: string;
   licenseToDate?: string;
   companyCode?: string;
