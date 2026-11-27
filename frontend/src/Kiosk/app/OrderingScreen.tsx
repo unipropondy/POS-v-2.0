@@ -7547,8 +7547,8 @@ const styles = StyleSheet.create({
   promotionFooter: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 20,
+    justifyContent: "flex-end",
+    gap: 16,
     paddingHorizontal: 24,
     paddingVertical: 16,
     borderTopWidth: 1,
@@ -7556,7 +7556,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   promotionSkipBtn: {
-    minWidth: 180,
+    minWidth: 140,
+    paddingHorizontal: 24,
     height: 52,
     borderRadius: 12,
     backgroundColor: "#FFFFFF",
@@ -7571,8 +7572,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   promotionAddToCartBtn: {
-    flex: 1,
-    maxWidth: 280,
+    minWidth: 180,
+    paddingHorizontal: 28,
     height: 52,
     borderRadius: 12,
     backgroundColor: "#DC2626",
