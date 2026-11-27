@@ -30,7 +30,11 @@
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
         "ACCESS_FINE_LOCATION",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "web": {
@@ -75,9 +79,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "00adc2a7-c43c-4b34-9ed9-913ec73f0f75"
+        "projectId": "5bb6afb3-f13c-4d31-8888-bacd54796371"
       }
     },
-    "owner": "lokesh9976"
+    "owner": "javi06"
   }
 }

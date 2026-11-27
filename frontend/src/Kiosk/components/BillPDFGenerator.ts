@@ -269,11 +269,48 @@ export class BillPDFGenerator {
                 .join("")
             : "";
 
+        const comboHTML = (() => {
+          let sels = item.comboSelections || item.combos || item.selectedCombos;
+          if (!sels || (Array.isArray(sels) && sels.length === 0)) {
+            const raw = item.ComboDetailsJSON || item.comboDetailsJSON;
+            if (raw) {
+              try {
+                const p = typeof raw === "string" ? JSON.parse(raw) : raw;
+                sels = Array.isArray(p) ? p : (p.groups || p.items || p.selections || []);
+              } catch {
+                sels = [];
+              }
+            }
+          }
+          if (!Array.isArray(sels) && typeof sels === "object" && sels !== null) {
+            sels = sels.groups || sels.items || sels.selections || [];
+          }
+          const names: string[] = [];
+          if (Array.isArray(sels) && sels.length > 0) {
+            sels.forEach((g: any) => {
+              const choices = g.items || g.dishes || g.selections || g.selectedDishes || (Array.isArray(g) ? g : (g.name || g.DishName || g.itemName || g.dishName ? [g] : []));
+              if (Array.isArray(choices)) {
+                choices.forEach((opt: any) => {
+                  const optName = opt.name || opt.DishName || opt.itemName || opt.dishName || "";
+                  if (optName) names.push(optName);
+                });
+              }
+            });
+          } else {
+            const desc = item.Description || item.description || item.note || item.notes;
+            if (desc && typeof desc === "string" && !desc.toLowerCase().includes("combo promotion")) {
+              desc.split(/[\•\n]/).map((s: string) => s.trim().replace(/^[\-\*\•]\s*/, "")).filter(Boolean).forEach((p: string) => names.push(p));
+            }
+          }
+          return names.map((n) => `<div class="item-modifiers">- ${n}</div>`).join("");
+        })();
+
         return `
           <tr>
             <td class="item-name">
               ${item.name || item.Name || item.DishName || "Item"}
               ${modifiersHTML}
+              ${comboHTML}
             </td>
             <td class="item-qty">${qtyNum}</td>
             <td class="item-price">${currencySymbol}${itemPrice.toFixed(2)}</td>

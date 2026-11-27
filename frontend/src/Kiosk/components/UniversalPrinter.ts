@@ -709,7 +709,13 @@ function generateReceiptHTML(saleData: any, company: any, discountInfo?: any) {
               )
               .join("")
             : ""
-          }`
+          }
+    ${(() => {
+            const comboDishes = getIncludedComboDishes(item);
+            return comboDishes.length > 0
+              ? comboDishes.map((dName: string) => `<div class="modifier">- ${dName}</div>`).join("")
+              : "";
+          })()}`
       )
       .join("")}
 
