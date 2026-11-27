@@ -164,6 +164,14 @@ router.get("/", async (req, res) => {
       BEGIN
         ALTER TABLE AppSettings ADD MenuNavigationMode NVARCHAR(20) DEFAULT 'scroll' WITH VALUES;
       END
+
+      IF NOT EXISTS (
+        SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'AppSettings' AND COLUMN_NAME = 'KioskFavouriteTitle'
+      )
+      BEGIN
+        ALTER TABLE AppSettings ADD KioskFavouriteTitle NVARCHAR(100) DEFAULT 'Favourite' WITH VALUES;
+      END
     `).catch(err => console.warn("Failed self-healing AppSettings column:", err.message));
 
     invalidateCache();
@@ -186,6 +194,7 @@ router.get("/", async (req, res) => {
       EnableQRTWPayAtCashier: settings?.EnableQRTWPayAtCashier !== undefined ? (settings.EnableQRTWPayAtCashier ? 1 : 0) : 1,
       EnableKiosk: settings?.EnableKiosk !== undefined ? (settings.EnableKiosk ? 1 : 0) : 0,
       MenuNavigationMode: settings?.MenuNavigationMode || "scroll",
+      KioskFavouriteTitle: settings?.KioskFavouriteTitle?.trim() || "Favourite",
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -239,6 +248,7 @@ router.post("/update", async (req, res) => {
       .input("EnableNotificationSound", sql.Bit, enableNotificationSound !== undefined ? enableNotificationSound : 1)
       .input("EnableQRTWPayAtCashier", sql.Bit, enableQRTWPayAtCashier !== undefined ? enableQRTWPayAtCashier : 1)
       .input("MenuNavigationMode", sql.NVarChar(20), (req.body.menuNavigationMode || req.body.MenuNavigationMode) === "prev_next" ? "prev_next" : "scroll")
+      .input("KioskFavouriteTitle", sql.NVarChar(100), String(req.body.kioskFavouriteTitle ?? req.body.KioskFavouriteTitle ?? "Favourite").trim().slice(0, 100) || "Favourite")
       .query(`
         IF EXISTS (SELECT 1 FROM AppSettings)
         BEGIN
@@ -274,12 +284,13 @@ router.post("/update", async (req, res) => {
             EnableNotificationSound = @EnableNotificationSound,
             EnableQRTWPayAtCashier = @EnableQRTWPayAtCashier,
             MenuNavigationMode = @MenuNavigationMode,
+            KioskFavouriteTitle = @KioskFavouriteTitle,
             UpdatedOn = GETDATE()
         END
         ELSE
         BEGIN
-          INSERT INTO AppSettings (UPI_ID, ShopName, PayNow_QR_Url, EnableKOT, EnableKDS, EnableCheckoutBill, EnableCheckoutFlow, EnableDirectProcessToPay, CustomerSideDisplay, EnableGuestDetailsPopup, EnableCashDrawer, EnableKDSPrint, SVCIdentification, EnableCombo, EnableQuickServe, ShowLoyalty, ShowRewardPoints, ShowPromoCode, EnableOnlinePayment, EnableQROrderAutoPrint, EnableComboPrint, EnableRequestService, EnableCookingInstructions, EnableDirectPaymentToProcess, EnableSkipSummaryScreen, EnableReceiptPrint, EnableVoiceSuccess, EnableNotificationSound, EnableQRTWPayAtCashier, UpdatedOn)
-          VALUES (@UPI, @Shop, @QR, @EnableKOT, @EnableKDS, @EnableCheckoutBill, @EnableCheckoutFlow, @EnableDirectProcessToPay, @CustomerSideDisplay, @EnableGuestDetailsPopup, @EnableCashDrawer, @EnableKDSPrint, @SVCIdentification, @EnableCombo, @EnableQuickServe, @ShowLoyalty, @ShowRewardPoints, @ShowPromoCode, @EnableOnlinePayment, @EnableQROrderAutoPrint, @EnableComboPrint, @EnableRequestService, @EnableCookingInstructions, @EnableDirectPaymentToProcess, @EnableSkipSummaryScreen, @EnableReceiptPrint, @EnableVoiceSuccess, @EnableNotificationSound, @EnableQRTWPayAtCashier, GETDATE())
+          INSERT INTO AppSettings (UPI_ID, ShopName, PayNow_QR_Url, EnableKOT, EnableKDS, EnableCheckoutBill, EnableCheckoutFlow, EnableDirectProcessToPay, CustomerSideDisplay, EnableGuestDetailsPopup, EnableCashDrawer, EnableKDSPrint, SVCIdentification, EnableCombo, EnableQuickServe, ShowLoyalty, ShowRewardPoints, ShowPromoCode, EnableOnlinePayment, EnableQROrderAutoPrint, EnableComboPrint, EnableRequestService, EnableCookingInstructions, EnableDirectPaymentToProcess, EnableSkipSummaryScreen, EnableReceiptPrint, EnableVoiceSuccess, EnableNotificationSound, EnableQRTWPayAtCashier, MenuNavigationMode, KioskFavouriteTitle, UpdatedOn)
+          VALUES (@UPI, @Shop, @QR, @EnableKOT, @EnableKDS, @EnableCheckoutBill, @EnableCheckoutFlow, @EnableDirectProcessToPay, @CustomerSideDisplay, @EnableGuestDetailsPopup, @EnableCashDrawer, @EnableKDSPrint, @SVCIdentification, @EnableCombo, @EnableQuickServe, @ShowLoyalty, @ShowRewardPoints, @ShowPromoCode, @EnableOnlinePayment, @EnableQROrderAutoPrint, @EnableComboPrint, @EnableRequestService, @EnableCookingInstructions, @EnableDirectPaymentToProcess, @EnableSkipSummaryScreen, @EnableReceiptPrint, @EnableVoiceSuccess, @EnableNotificationSound, @EnableQRTWPayAtCashier, @MenuNavigationMode, @KioskFavouriteTitle, GETDATE())
         END
       `);
 
@@ -322,7 +333,8 @@ router.post("/update", async (req, res) => {
       EnableVoiceSuccess: enableVoiceSuccess !== undefined ? (enableVoiceSuccess ? 1 : 0) : (oldAppSettings.EnableVoiceSuccess ? 1 : 0),
       EnableNotificationSound: enableNotificationSound !== undefined ? (enableNotificationSound ? 1 : 0) : (oldAppSettings.EnableNotificationSound ? 1 : 0),
       EnableQRTWPayAtCashier: enableQRTWPayAtCashier !== undefined ? (enableQRTWPayAtCashier ? 1 : 0) : (oldAppSettings.EnableQRTWPayAtCashier ? 1 : 0),
-      MenuNavigationMode: (req.body.menuNavigationMode || req.body.MenuNavigationMode) === "prev_next" ? "prev_next" : "scroll"
+      MenuNavigationMode: (req.body.menuNavigationMode || req.body.MenuNavigationMode) === "prev_next" ? "prev_next" : "scroll",
+      KioskFavouriteTitle: String(req.body.kioskFavouriteTitle ?? req.body.KioskFavouriteTitle ?? oldAppSettings.KioskFavouriteTitle ?? "Favourite").trim().slice(0, 100) || "Favourite"
     };
 
     try {

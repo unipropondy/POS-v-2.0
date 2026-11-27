@@ -518,7 +518,13 @@ class SunmiPrinterService {
             : null);
 
       let orderDiscount = finalDiscountInfo?.amount || parseFloat(String(saleData.discountAmount || 0)) || 0;
-      if (orderDiscount === 0 && finalDiscountInfo && finalDiscountInfo.applied !== false && finalDiscountInfo.value > 0) {
+      if (totalItemDiscount > 0 && Math.abs(orderDiscount - totalItemDiscount) < 0.01) {
+        orderDiscount = 0;
+      } else if (totalItemDiscount > 0 && orderDiscount > totalItemDiscount) {
+        orderDiscount = orderDiscount - totalItemDiscount;
+      }
+
+      if (orderDiscount === 0 && finalDiscountInfo && finalDiscountInfo.applied !== false && finalDiscountInfo.value > 0 && totalItemDiscount === 0) {
         const subtotalPostItemDisc = Math.max(0, grossTotal - totalItemDiscount);
         if (finalDiscountInfo.type === "percentage") {
           orderDiscount = (subtotalPostItemDisc * finalDiscountInfo.value) / 100;

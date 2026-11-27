@@ -186,6 +186,9 @@ export default function GeneralSettingsScreen() {
       ? settings.enableQRTWPayAtCashier
       : true,
   );
+  const [kioskFavouriteTitle, setKioskFavouriteTitle] = useState(
+    settings.kioskFavouriteTitle?.trim() || "Favourite",
+  );
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
@@ -334,6 +337,9 @@ export default function GeneralSettingsScreen() {
     setMenuNavigationMode(
       settings.menuNavigationMode === "prev_next" ? "prev_next" : "scroll",
     );
+    setKioskFavouriteTitle(
+      settings.kioskFavouriteTitle?.trim() || "Favourite",
+    );
   }, [settings]);
 
   const [passwordAction, setPasswordAction] = useState<
@@ -414,6 +420,7 @@ export default function GeneralSettingsScreen() {
         enableVoiceSuccess,
         enableNotificationSound,
         enableQRTWPayAtCashier,
+        kioskFavouriteTitle: kioskFavouriteTitle.trim() || "Favourite",
       },
       {
         userName: user?.userName || user?.fullName || "",
@@ -796,6 +803,54 @@ export default function GeneralSettingsScreen() {
             </View>
           </View>
         ))}
+
+        {/* Kiosk Display Settings */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="tablet-portrait-outline" size={20} color={Theme.primary} />
+            <Text style={styles.sectionTitleText}>Kiosk Display</Text>
+          </View>
+          <View style={styles.gridContainer}>
+            <View
+              style={[
+                styles.settingCard,
+                styles.settingCardActive,
+                isTablet ? styles.cardTablet : styles.cardMobile,
+                { flexDirection: "column", alignItems: "stretch", gap: 10 },
+              ]}
+            >
+              <View style={styles.cardHeaderRow}>
+                <View style={[styles.iconWrapper, styles.iconWrapperActive]}>
+                  <Ionicons name="star-outline" size={18} color={Theme.primary} />
+                </View>
+                <Text style={styles.settingTitle} numberOfLines={1}>
+                  Kiosk Favourites Header Name
+                </Text>
+              </View>
+              <Text style={styles.settingDesc}>
+                Custom category title shown in Kiosk for dishes marked as Favourite (e.g. Favourite, Weekend Special, Best Combos).
+              </Text>
+              <TextInput
+                value={kioskFavouriteTitle}
+                onChangeText={setKioskFavouriteTitle}
+                placeholder="Favourite"
+                placeholderTextColor="#9CA3AF"
+                maxLength={100}
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  fontSize: 14,
+                  fontFamily: Fonts.semiBold,
+                  color: Theme.textPrimary,
+                  backgroundColor: "#FFFFFF",
+                }}
+              />
+            </View>
+          </View>
+        </View>
       </ScrollView>
 
       {/* Footer */}

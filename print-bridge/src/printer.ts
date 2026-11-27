@@ -93,47 +93,34 @@ const CASH_DRAWER_PAYLOADS = new Set([
   'EBQBAAU=',   // DLE DC4 1 0 5 — real-time drawer open (no paper feed)
 ]);
 
-export async function sendToPrinter(ip: string, port: number, content: string, jobId: string | number): Promise<void> {
-  const targetPort = port || 9100;
+// ── IP-BASED SEQUENTIAL PRINT QUEUE ─────────────────────────────────────────
+// Thermal printers (port 9100) only support 1 single active TCP connection.
+// Simultaneous or rapid back-to-back sockets to the same IP cause ECONNREFUSED
+// or timeouts. We serialize prints by IP and enforce a 400ms cool-down.
+const printerMutexes = new Map<string, Promise<void>>();
 
+function serializeByIp(targetKey: string, fn: () => Promise<void>): Promise<void> {
+  const currentLock = printerMutexes.get(targetKey) || Promise.resolve();
+  const nextLock = currentLock
+    .catch(() => {}) // never fail the queue if a previous job errored
+    .then(async () => {
+      await fn();
+      // Ensure the printer network card has time to cleanly close the socket
+      await new Promise(r => setTimeout(r, 400));
+    });
+
+  printerMutexes.set(targetKey, nextLock);
+  return nextLock;
+}
+
+function sendRawSocket(ip: string, targetPort: number, payload: Buffer, isCashDrawerCommand: boolean): Promise<void> {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
     const client = new net.Socket();
     const timeoutVal = 30000;
-    const connectTimeoutMs = 3000; // 3 seconds connection timeout limit
+    const connectTimeoutMs = 4000; // 4 seconds connection timeout limit
 
     client.setTimeout(timeoutVal);
-
-    let payload: Buffer;
-    
-    // Quick heuristic to check if content is base64 encoded binary
-    const trimmed = content.trim();
-    const isBase64 = /^[A-Za-z0-9+/]+={0,2}$/.test(trimmed) && (trimmed.length % 4 === 0);
-    const isCashDrawerCommand = CASH_DRAWER_PAYLOADS.has(trimmed);
-
-    if (isCashDrawerCommand) {
-      // Decode the drawer command to pure binary — no extra bytes, no init
-      payload = Buffer.from(trimmed, 'base64');
-      console.log(`\n[CashDrawer] Opening drawer (raw binary only, no paper feed)\n`);
-    } else if (isBase64) {
-      payload = Buffer.from(trimmed, 'base64');
-    } else {
-      payload = parseFormatting(content);
-    }
-
-    if (!isCashDrawerCommand) {
-      console.log(`\n[Print]\nStarted...\n`);
-    }
-
-    const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ip.trim());
-
-    if (!isIp && ip.trim().length > 0) {
-      logger.info(`[Print Bridge] USB/Named printer detected: '${ip.trim()}'. Sending via Win32 RawPrinter.`);
-      sendToWindowsPrinter(ip.trim(), payload)
-        .then(() => resolve())
-        .catch((err) => reject(err));
-      return;
-    }
 
     let resolved = false;
     const connectTimer = setTimeout(() => {
@@ -181,6 +168,60 @@ export async function sendToPrinter(ip: string, port: number, content: string, j
         reject(new Error(`Connection to printer timed out`));
       }
     });
+  });
+}
+
+export async function sendToPrinter(ip: string, port: number, content: string, jobId: string | number): Promise<void> {
+  const targetPort = port || 9100;
+  const cleanIp = ip.trim();
+
+  // Quick heuristic to check if content is base64 encoded binary
+  const trimmed = content.trim();
+  const isBase64 = /^[A-Za-z0-9+/]+={0,2}$/.test(trimmed) && (trimmed.length % 4 === 0);
+  const isCashDrawerCommand = CASH_DRAWER_PAYLOADS.has(trimmed);
+
+  let payload: Buffer;
+  if (isCashDrawerCommand) {
+    // Decode the drawer command to pure binary — no extra bytes, no init
+    payload = Buffer.from(trimmed, 'base64');
+    console.log(`\n[CashDrawer] Opening drawer (raw binary only, no paper feed)\n`);
+  } else if (isBase64) {
+    payload = Buffer.from(trimmed, 'base64');
+  } else {
+    payload = parseFormatting(content);
+  }
+
+  if (!isCashDrawerCommand) {
+    console.log(`\n[Print]\nStarted...\n`);
+  }
+
+  const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(cleanIp);
+
+  if (!isIp && cleanIp.length > 0) {
+    logger.info(`[Print Bridge] USB/Named printer detected: '${cleanIp}'. Sending via Win32 RawPrinter.`);
+    return sendToWindowsPrinter(cleanIp, payload);
+  }
+
+  // Serialize by IP + Port so concurrent jobs to the same printer do not collide
+  const targetKey = `${cleanIp}:${targetPort}`;
+  return serializeByIp(targetKey, async () => {
+    let lastError: any = null;
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await sendRawSocket(cleanIp, targetPort, payload, isCashDrawerCommand);
+        return;
+      } catch (err: any) {
+        lastError = err;
+        logger.warn(`[Print Bridge] Attempt ${attempt}/${maxAttempts} failed for ${targetKey}: ${err.message}`);
+        if (attempt < maxAttempts) {
+          // Wait 600ms before retrying to let printer finish any internal write/cut
+          await new Promise(r => setTimeout(r, 600));
+        }
+      }
+    }
+    throw lastError;
   });
 }
 

@@ -33,6 +33,7 @@ export interface GeneralSettings {
   enableQRTWPayAtCashier: boolean;
   enableKiosk?: boolean;
   menuNavigationMode?: "scroll" | "prev_next";
+  kioskFavouriteTitle?: string;
 }
 
 interface GeneralSettingsState {
@@ -74,6 +75,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
         enableQRTWPayAtCashier: true,
         enableKiosk: false,
         menuNavigationMode: "scroll",
+        kioskFavouriteTitle: "Favourite",
       },
       loading: false,
 
@@ -115,6 +117,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
                 enableQRTWPayAtCashier: data.EnableQRTWPayAtCashier !== undefined ? Boolean(data.EnableQRTWPayAtCashier) : true,
                 enableKiosk: data.EnableKiosk !== undefined ? Boolean(data.EnableKiosk) : false,
                 menuNavigationMode: data.MenuNavigationMode === "prev_next" ? "prev_next" : "scroll",
+                kioskFavouriteTitle: typeof data.KioskFavouriteTitle === "string" && data.KioskFavouriteTitle.trim() ? data.KioskFavouriteTitle.trim() : "Favourite",
               },
             }));
           }
@@ -168,6 +171,7 @@ export const useGeneralSettingsStore = create<GeneralSettingsState>()(
             enableNotificationSound: updatedSettings.enableNotificationSound,
             enableQRTWPayAtCashier: updatedSettings.enableQRTWPayAtCashier,
             menuNavigationMode: updatedSettings.menuNavigationMode || "scroll",
+            kioskFavouriteTitle: (updatedSettings.kioskFavouriteTitle || "Favourite").trim() || "Favourite",
             userName: userInfo?.userName || useAuthStore.getState().user?.userName || useAuthStore.getState().user?.fullName || "",
             userId: userInfo?.userId || useAuthStore.getState().user?.userId || "",
             userRole: userInfo?.userRole || useAuthStore.getState().user?.roleName || useAuthStore.getState().user?.role || ""

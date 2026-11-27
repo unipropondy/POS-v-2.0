@@ -282,23 +282,25 @@ async function getOrGenerateOrderId(req, tableId) {
       existingId.length > 5 &&
       paymentStatus !== 1
     ) {
-      // Check if this existing ID is already closed or settled in the database
+      // Check if this existing ID is already closed or settled in the database, OR has NO active items
       const closedCheck = await pool.request()
         .input("oid", sql.NVarChar(50), existingId)
         .query(`
           SELECT TOP 1 roc.isOrderClosed,
-            (SELECT COUNT(1) FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber) AS IsSettled
+            (SELECT COUNT(1) FROM SettlementHeader sh WHERE sh.BillNo = roc.OrderNumber) AS IsSettled,
+            (SELECT COUNT(1) FROM RestaurantOrderDetailCur d WHERE d.OrderId = roc.OrderId AND d.StatusCode <> 0) AS ActiveItemCount
           FROM RestaurantOrderCur roc 
           WHERE roc.OrderNumber = @oid OR (TRY_CAST(@oid AS UNIQUEIDENTIFIER) IS NOT NULL AND roc.OrderId = TRY_CAST(@oid AS UNIQUEIDENTIFIER))
         `);
 
       const isClosed = closedCheck.recordset[0]?.isOrderClosed === true;
       const isSettled = (closedCheck.recordset[0]?.IsSettled || 0) > 0;
-      if (!isClosed && !isSettled) {
+      const activeCount = closedCheck.recordset[0]?.ActiveItemCount || 0;
+      if (!isClosed && !isSettled && activeCount > 0) {
         console.log(`✅ [Cart] Reusing existing active OrderID: ${existingId}`);
         return existingId;
       }
-      console.log(`⚠️ [Cart] Stale/settled OrderID detected: ${existingId} (closed=${isClosed}, settled=${isSettled}). Checking RestaurantOrderCur for active order...`);
+      console.log(`⚠️ [Cart] Stale/settled/empty OrderID detected: ${existingId} (closed=${isClosed}, settled=${isSettled}, activeItems=${activeCount}). Checking RestaurantOrderCur for active order...`);
     }
 
     // 🚀 CRITICAL FIX: Before generating a brand new sequence number, check if there is
@@ -720,10 +722,8 @@ async function syncToProfessionalTables(
         .trim();
       const finalProdId = toGuidOrNull(cleanProdId) || DEFAULT_GUID;
       const rawLineItemId = item.lineItemId || item.OrderDetailId || item.line_item_id;
-      const cleanLineItemId = rawLineItemId ? String(rawLineItemId).replace(/^\{|\}$/g, "").trim().toLowerCase() : "";
-      const isPlaceholderGuid = !cleanLineItemId || cleanLineItemId === DEFAULT_GUID || cleanLineItemId.startsWith("00000000-0000-0000-0000-");
       const lineItemId =
-        (!isPlaceholderGuid ? toGuidOrNull(cleanLineItemId) : null) ||
+        toGuidOrNull(rawLineItemId) ||
         require("crypto").randomUUID();
       item.lineItemId = lineItemId;
       item.OrderDetailId = lineItemId;
@@ -739,7 +739,7 @@ async function syncToProfessionalTables(
         }
       }
       console.log(`[syncToProfessionalTables] Item: ${item.name || item.DishName || item.PromotionName || 'Dish'} | isKiosk: ${isKioskOrder} | Incoming Status: ${itemStatus} | Computed StatusCode: ${currentStatusCode}`);
-      const rawDishName = String(
+      const dishName = (
         item.PromotionName ||
         item.DishName ||
         item.dishName ||
@@ -747,10 +747,8 @@ async function syncToProfessionalTables(
         item.name ||
         item.ProductName ||
         item.productName ||
-        (item.Description && !String(item.Description).includes("•") ? item.Description : "") ||
-        ""
-      ).trim();
-      const dishName = (rawDishName && rawDishName !== "Dish" ? rawDishName : (item.Description ? String(item.Description).trim() : "Dish")).substring(0, 150);
+        "Dish"
+      ).substring(0, 150);
       const songName = (item.songName || item.SongName || "").substring(0, 200);
       const unitPrice = item.price || item.Cost || 0;
       const basePrice = item.basePrice !== undefined ? item.basePrice : unitPrice;
@@ -1176,13 +1174,23 @@ async function syncTableStatus(req, tableId) {
 
     DECLARE @ActualOrderId UNIQUEIDENTIFIER, @ActualOrderNo NVARCHAR(50), @count INT, @total DECIMAL(18,2);
 
-    -- 🚀 ROBUST LOOKUP: Prioritize the CurrentOrderId stored in TableMaster to avoid ghost orders
+    -- 🚀 ROBUST LOOKUP: Find active unclosed order for this table with active items
     SELECT TOP 1 @ActualOrderId = OrderId, @ActualOrderNo = OrderNumber
     FROM RestaurantOrderCur 
     WHERE ((OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur h2 WHERE h2.OrderNumber = @CurrentOrderId AND (h2.isOrderClosed = 0 OR h2.isOrderClosed IS NULL)))
        OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@TableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL)))
        AND EXISTS (SELECT 1 FROM RestaurantOrderDetailCur d WHERE d.OrderId = RestaurantOrderCur.OrderId AND d.StatusCode <> 0)
     ORDER BY CASE WHEN OrderNumber = @CurrentOrderId THEN 0 ELSE 1 END, CreatedOn DESC;
+
+    -- If no unclosed order with active items was found, look up any unclosed order for this table to close it
+    IF @ActualOrderId IS NULL
+    BEGIN
+      SELECT TOP 1 @ActualOrderId = OrderId, @ActualOrderNo = OrderNumber
+      FROM RestaurantOrderCur
+      WHERE ((OrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur h2 WHERE h2.OrderNumber = @CurrentOrderId AND (h2.isOrderClosed = 0 OR h2.isOrderClosed IS NULL)))
+         OR ((RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@TableNo)) OR RTRIM(LTRIM(Tableno)) = RTRIM(LTRIM(@tid))) AND (isOrderClosed = 0 OR isOrderClosed IS NULL)))
+      ORDER BY CASE WHEN OrderNumber = @CurrentOrderId THEN 0 ELSE 1 END, CreatedOn DESC;
+    END
 
     DECLARE @TakeawayOverride INT = 0;
     DECLARE @SCOverride INT = 0;
@@ -2924,6 +2932,18 @@ router.post("/remove-item", async (req, res) => {
             SET StatusCode = 0, ModifiedBy = @userId, ModifiedOn = GETDATE(), 
                 Remarks = ISNULL(Remarks, '') + ' (VOID: ' + @reason + ')'
             WHERE OrderDetailId = @itemId;
+
+            -- Auto-close order header if this void left NO active items
+            DECLARE @ParentOrderId UNIQUEIDENTIFIER;
+            SELECT @ParentOrderId = OrderId FROM RestaurantOrderDetailCur WHERE OrderDetailId = @itemId;
+            IF @ParentOrderId IS NOT NULL AND NOT EXISTS (
+              SELECT 1 FROM RestaurantOrderDetailCur WHERE OrderId = @ParentOrderId AND StatusCode <> 0
+            )
+            BEGIN
+              UPDATE RestaurantOrderCur 
+              SET isOrderClosed = 1, ModifiedOn = GETDATE()
+              WHERE OrderId = @ParentOrderId;
+            END
           END
         `);
       await transaction.commit();
@@ -3021,7 +3041,22 @@ router.post("/update-item-status", async (req, res) => {
         SET StatusCode = @code, 
             ComboDetailsJSON = CASE WHEN @comboJson IS NOT NULL THEN @comboJson ELSE ComboDetailsJSON END,
             ModifiedOn = GETDATE() 
-        WHERE OrderDetailId = @id
+        WHERE OrderDetailId = @id;
+
+        -- Auto-close order header if voided and no active items remain
+        IF @code = 0
+        BEGIN
+          DECLARE @ItemParentOrderId UNIQUEIDENTIFIER;
+          SELECT @ItemParentOrderId = OrderId FROM RestaurantOrderDetailCur WHERE OrderDetailId = @id;
+          IF @ItemParentOrderId IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM RestaurantOrderDetailCur WHERE OrderId = @ItemParentOrderId AND StatusCode <> 0
+          )
+          BEGIN
+            UPDATE RestaurantOrderCur 
+            SET isOrderClosed = 1, ModifiedOn = GETDATE()
+            WHERE OrderId = @ItemParentOrderId;
+          END
+        END
       `);
 
     if (status === "VOIDED" && resolvedTableId) {
@@ -3219,10 +3254,10 @@ router.get("/active-kitchen", async (req, res) => {
         d.PricePerUnit as price,
         h.OrderNumber as orderId, 
         CASE 
-          WHEN NULLIF(RTRIM(LTRIM(d.DishName)), '') IS NOT NULL AND RTRIM(LTRIM(d.DishName)) <> 'Dish' THEN RTRIM(LTRIM(d.DishName))
-          WHEN NULLIF(RTRIM(LTRIM(dish.Name)), '') IS NOT NULL AND RTRIM(LTRIM(dish.Name)) <> 'Dish' THEN RTRIM(LTRIM(dish.Name))
-          WHEN NULLIF(RTRIM(LTRIM(d.Description)), '') IS NOT NULL AND RTRIM(LTRIM(d.Description)) <> 'Dish' THEN RTRIM(LTRIM(d.Description))
-          ELSE ISNULL(NULLIF(RTRIM(LTRIM(dish.Name)), ''), 'Dish')
+          WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
+          WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
+          WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
+          ELSE ISNULL(dish.Name, 'Dish')
         END as name, 
         ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
@@ -3364,13 +3399,10 @@ router.get("/active-kitchen", async (req, res) => {
         }
       }
 
-      const cleanRowName = String(row.name || "").trim();
-      const cleanDishName = String(row.DishName || "").trim();
-      const cleanDesc = String(row.Description || "").trim();
-      const resolvedName = (cleanRowName && cleanRowName !== "Dish" ? cleanRowName : null) ||
-        (cleanDishName && cleanDishName !== "Dish" ? cleanDishName : null) ||
-        (cleanDesc && cleanDesc !== "Dish" && !cleanDesc.includes("•") && !cleanDesc.includes("+") ? cleanDesc : null) ||
-        (cleanRowName || cleanDishName || (comboSels.length > 0 ? "Combo Meal" : "Item"));
+      const resolvedName = (row.name && row.name !== "Dish" && row.name.trim() !== "" ? row.name : null) ||
+        (row.DishName && row.DishName !== "Dish" && row.DishName.trim() !== "" ? row.DishName : null) ||
+        (row.Description && row.Description !== "Dish" && !row.Description.includes("•") && row.Description.trim() !== "" ? row.Description : null) ||
+        row.name || row.DishName || "Weekend Combo";
 
       orders[row.orderId].items.push({
         ...row,
@@ -3396,10 +3428,10 @@ router.get("/active-sessions", async (req, res) => {
         d.PricePerUnit as price,
         h.OrderNumber as orderId, 
         CASE 
-          WHEN NULLIF(RTRIM(LTRIM(d.DishName)), '') IS NOT NULL AND RTRIM(LTRIM(d.DishName)) <> 'Dish' THEN RTRIM(LTRIM(d.DishName))
-          WHEN NULLIF(RTRIM(LTRIM(dish.Name)), '') IS NOT NULL AND RTRIM(LTRIM(dish.Name)) <> 'Dish' THEN RTRIM(LTRIM(dish.Name))
-          WHEN NULLIF(RTRIM(LTRIM(d.Description)), '') IS NOT NULL AND RTRIM(LTRIM(d.Description)) <> 'Dish' THEN RTRIM(LTRIM(d.Description))
-          ELSE ISNULL(NULLIF(RTRIM(LTRIM(dish.Name)), ''), 'Dish')
+          WHEN d.DishName IS NOT NULL AND d.DishName <> '' AND d.DishName <> 'Dish' THEN d.DishName
+          WHEN dish.Name IS NOT NULL AND dish.Name <> '' AND dish.Name <> 'Dish' THEN dish.Name
+          WHEN d.Description IS NOT NULL AND d.Description <> '' AND d.Description <> 'Dish' THEN d.Description
+          ELSE ISNULL(dish.Name, 'Dish')
         END as name, 
         ISNULL(NULLIF(RTRIM(LTRIM(tm.TableNumber)), ''), RTRIM(LTRIM(h.Tableno))) as tableNo, 
         d.Remarks as note, d.ModifiersJSON, d.ComboDetailsJSON, d.isTakeAway, 
@@ -3537,13 +3569,10 @@ router.get("/active-sessions", async (req, res) => {
         }
       }
 
-      const cleanRowName = String(row.name || "").trim();
-      const cleanDishName = String(row.DishName || "").trim();
-      const cleanDesc = String(row.Description || "").trim();
-      const resolvedName = (cleanRowName && cleanRowName !== "Dish" ? cleanRowName : null) ||
-        (cleanDishName && cleanDishName !== "Dish" ? cleanDishName : null) ||
-        (cleanDesc && cleanDesc !== "Dish" && !cleanDesc.includes("•") && !cleanDesc.includes("+") ? cleanDesc : null) ||
-        (cleanRowName || cleanDishName || (comboSels.length > 0 ? "Combo Meal" : "Item"));
+      const resolvedName = (row.name && row.name !== "Dish" && row.name.trim() !== "" ? row.name : null) ||
+        (row.DishName && row.DishName !== "Dish" && row.DishName.trim() !== "" ? row.DishName : null) ||
+        (row.Description && row.Description !== "Dish" && !row.Description.includes("•") && row.Description.trim() !== "" ? row.Description : null) ||
+        row.name || row.DishName || "Weekend Combo";
 
       orders[row.orderId].items.push({
         ...row,
@@ -4191,48 +4220,7 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
       `);
 
     // 9. Insert SettlementItemDetail
-    let defaultComboInfo = { catId: null, catName: 'Food', groupName: 'Set Meal' };
-    try {
-      const defComboRes = await transaction.request().query(`
-        SELECT TOP 1 dg_c.DishGroupId, dg_c.CategoryId, dg_c.DishGroupName, cm_c.CategoryName
-        FROM DishGroupMaster dg_c
-        JOIN CategoryMaster cm_c ON dg_c.CategoryId = cm_c.CategoryId
-        WHERE dg_c.DishGroupName LIKE '%Combo%' 
-           OR dg_c.DishGroupName = 'Set Meal'
-           OR dg_c.DishGroupName LIKE '%Set Meal%' 
-           OR cm_c.CategoryName = 'Food'
-        ORDER BY 
-          CASE 
-            WHEN dg_c.DishGroupName LIKE '%Combo%' THEN 1 
-            WHEN cm_c.CategoryName LIKE '%Combo%' THEN 2 
-            WHEN dg_c.DishGroupName = 'Set Meal' THEN 3 
-            WHEN dg_c.DishGroupName LIKE '%Set Meal%' THEN 4 
-            WHEN cm_c.CategoryName = 'Food' THEN 5 
-            ELSE 6 
-          END ASC
-      `);
-      if (defComboRes.recordset.length > 0) {
-        defaultComboInfo = {
-          catId: defComboRes.recordset[0].CategoryId,
-          catName: defComboRes.recordset[0].CategoryName,
-          groupName: defComboRes.recordset[0].DishGroupName,
-        };
-      }
-    } catch (_) {}
-
     for (const item of items) {
-      const isComboItem =
-        Boolean(item.isCombo || item.comboSelections || item.ComboDetailsJSON) ||
-        (item.DishName || item.Description || '').toLowerCase().includes('combo');
-
-      const resolvedCatId = item.CategoryId || (isComboItem ? defaultComboInfo.catId : null);
-      const resolvedCatName = (item.CategoryName && item.CategoryName !== 'MAIN' && item.CategoryName !== 'Unmapped')
-        ? item.CategoryName
-        : (isComboItem ? defaultComboInfo.catName : (item.CategoryName || 'MAIN'));
-      const resolvedGroupName = (item.DishGroupName && item.DishGroupName !== 'GENERAL' && item.DishGroupName !== 'Unmapped')
-        ? item.DishGroupName
-        : (isComboItem ? defaultComboInfo.groupName : (item.DishGroupName || 'GENERAL'));
-
       await transaction.request()
         .input('sid', sql.UniqueIdentifier, settlementId)
         .input('dishId', sql.UniqueIdentifier, item.DishId)
@@ -4240,9 +4228,9 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
         .input('songName', sql.NVarChar(255), item.SongName || '')
         .input('qty', sql.Int, item.Quantity)
         .input('price', sql.Decimal(18, 2), item.PricePerUnit)
-        .input('catId', sql.UniqueIdentifier, resolvedCatId)
-        .input('catName', sql.NVarChar(255), resolvedCatName)
-        .input('groupName', sql.NVarChar(255), resolvedGroupName)
+        .input('catId', sql.UniqueIdentifier, item.CategoryId || null)
+        .input('catName', sql.NVarChar(255), item.CategoryName || 'MAIN')
+        .input('groupName', sql.NVarChar(255), item.DishGroupName || 'GENERAL')
         .input('startDate', sql.Date, formattedStartDate)
         .query(`
           INSERT INTO SettlementItemDetail (

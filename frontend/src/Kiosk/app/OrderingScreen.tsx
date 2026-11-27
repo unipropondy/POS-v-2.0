@@ -141,6 +141,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [isCartLoading, setIsCartLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [enableCombo, setEnableCombo] = useState<number>(0);
+  const [kioskFavouriteTitle, setKioskFavouriteTitle] = useState<string>("Favourite");
 
   // Kiosk Session Info
   const [tableNo, setTableNo] = useState("");
@@ -755,12 +756,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
-  const loadFavouriteCategory = async () => {
+  const loadFavouriteCategory = async (favTitleOverride?: string) => {
     try {
+      const displayFavTitle = (favTitleOverride || kioskFavouriteTitle || "Favourite").trim() || "Favourite";
       setGroups([
         {
           DishGroupId: "FAVOURITE_GROUP",
-          DishGroupName: "Favourites",
+          DishGroupName: displayFavTitle,
           SortCode: 0,
         },
       ]);
@@ -977,8 +979,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         setTableNo(storedTableNo || "");
         setTableId(storedTableId || "");
 
-        // Fetch settings, paymodes, kitchens, brand and orderType
-        const [settingsRes, paymodesRes, kitchensRes, brandRes, storedOrderType] =
+        // Fetch settings, general settings, paymodes, kitchens, brand and orderType
+        const [settingsRes, appSettingsRes, paymodesRes, kitchensRes, brandRes, storedOrderType] =
           await Promise.all([
             fetch(`${API}/company-settings/1`)
               .then((r) => r.json())
@@ -987,6 +989,9 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                   .then((r) => r.json())
                   .catch(() => ({})),
               ),
+            fetch(`${API}/settings`)
+              .then((r) => r.json())
+              .catch(() => ({})),
             fetch(`${API}/paymodes/list`)
               .then((r) => r.json())
               .catch(() => []),
@@ -1004,6 +1009,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 AsyncStorage.getItem("orderType").then((ot) => ot || "DINE_IN"),
             ),
           ]);
+
+        const resolvedFavTitle =
+          typeof appSettingsRes?.KioskFavouriteTitle === "string" &&
+          appSettingsRes.KioskFavouriteTitle.trim()
+            ? appSettingsRes.KioskFavouriteTitle.trim()
+            : "Favourite";
+        setKioskFavouriteTitle(resolvedFavTitle);
 
         const rawSettings = settingsRes?.settings || settingsRes || {};
         setCompanySettings(rawSettings);
@@ -1097,7 +1109,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         if (hasFavourites) {
           allCategories.push({
             CategoryId: "FAVOURITE_CATEGORY",
-            KitchenTypeName: "Favourite",
+            KitchenTypeName: resolvedFavTitle,
             KitchenTypeCode: "FAVOURITE",
             SortCode: -999,
             IsPublished: 0,
@@ -1116,7 +1128,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             setGroups([
               {
                 DishGroupId: "FAVOURITE_GROUP",
-                DishGroupName: "Favourites",
+                DishGroupName: resolvedFavTitle,
                 SortCode: 0,
               },
             ]);

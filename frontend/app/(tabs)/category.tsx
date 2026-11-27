@@ -566,7 +566,7 @@ const POSBrand: React.FC<POSBrandProps> = ({
 
 // Backwards compatibility alias for QSButton
 const QSButton: React.FC<{
-  onPress: () => void;
+  onPress?: () => void;
   size?: number;
   disabled?: boolean;
 }> = ({ onPress, size = 36 }) => (
@@ -1242,6 +1242,7 @@ type TableItem = {
   isOvertime?: number;
   isHoldOvertime?: number;
   entryStatus?: string;
+  entry_status?: string;
   paymentStatus?: number;
   customerName?: string;
   pax?: number;
@@ -3314,22 +3315,24 @@ export default function Category() {
               gap: 8,
             }}
           >
-            {settings?.enableQuickServe !== false && (
-              <QSButton
-                size={32}
-                onPress={() => {
-                  if (user?.role === "WAITER") {
-                    showToast({
-                      type: "warning",
-                      message: "Access Restricted",
-                      subtitle: "Quick Serve is not allowed for Waiters.",
-                    });
-                    return;
-                  }
-                  router.push("/quick-serve" as any);
-                }}
-              />
-            )}
+            <QSButton
+              size={32}
+              onPress={
+                settings?.enableQuickServe === false
+                  ? undefined
+                  : () => {
+                      if (user?.role === "WAITER") {
+                        showToast({
+                          type: "warning",
+                          message: "Access Restricted",
+                          subtitle: "Quick Serve is not allowed for Waiters.",
+                        });
+                        return;
+                      }
+                      router.push("/quick-serve" as any);
+                    }
+              }
+            />
             <ScrollView
               ref={sectionScrollRef}
               horizontal
@@ -3583,17 +3586,21 @@ export default function Category() {
           >
             {/* Left: POS Logo + Wordmark */}
             <POSBrand
-              onPress={() => {
-                if (user?.role === "WAITER") {
-                  showToast({
-                    type: "warning",
-                    message: "Access Restricted",
-                    subtitle: "Quick Serve is not allowed for Waiters.",
-                  });
-                  return;
-                }
-                router.push("/quick-serve" as any);
-              }}
+              onPress={
+                settings?.enableQuickServe === false
+                  ? undefined
+                  : () => {
+                      if (user?.role === "WAITER") {
+                        showToast({
+                          type: "warning",
+                          message: "Access Restricted",
+                          subtitle: "Quick Serve is not allowed for Waiters.",
+                        });
+                        return;
+                      }
+                      router.push("/quick-serve" as any);
+                    }
+              }
             />
 
             {/* Right: Date & Day Start Unified Button (Design 1 - Modern Green) */}
@@ -3856,23 +3863,25 @@ export default function Category() {
             isLandscape && { height: 42, paddingVertical: 2, gap: 8 },
           ]}
         >
-          {/* LEFT CORNER — Quick Serve Button */}
-          {settings?.enableQuickServe !== false && (
-            <QSButton
-              size={36}
-              onPress={() => {
-                if (user?.role === "WAITER") {
-                  showToast({
-                    type: "warning",
-                    message: "Access Restricted",
-                    subtitle: "Quick Serve is not allowed for Waiters.",
-                  });
-                  return;
-                }
-                router.push("/quick-serve" as any);
-              }}
-            />
-          )}
+          {/* LEFT CORNER — Quick Serve / POS Logo Header */}
+          <QSButton
+            size={36}
+            onPress={
+              settings?.enableQuickServe === false
+                ? undefined
+                : () => {
+                    if (user?.role === "WAITER") {
+                      showToast({
+                        type: "warning",
+                        message: "Access Restricted",
+                        subtitle: "Quick Serve is not allowed for Waiters.",
+                      });
+                      return;
+                    }
+                    router.push("/quick-serve" as any);
+                  }
+            }
+          />
 
           {/* CENTER — Section Tabs */}
           <ScrollView

@@ -108,17 +108,18 @@ const DishCard = React.memo(
   ({ dish, width, cartQty, onPress, isPhone, isTablet, isLandscape }: any) => {
     const isSC = (Number(dish.isServiceCharge) === 1 || dish.isServiceCharge === true) && useGeneralSettingsStore.getState().settings.SVCIdentification !== false;
     const isSoldOut = dish.IsSoldOut === true || String(dish.IsSoldOut) === "1" || dish.IsSoldOut === 1 || dish.isSoldOut === true || String(dish.isSoldOut) === "1" || dish.isSoldOut === 1;
+    const isOpenItem = Number(dish.IsOpenItem) === 1 || dish.IsOpenItem === true || dish.IsOpenItem === 'true' || dish.IsOpenItem === '1';
     return (
       <Pressable
         style={({ pressed }: { pressed: boolean }) => [
           styles.card,
           {
             width,
-            paddingVertical: isLandscape ? 4 : isPhone ? 8 : isTablet ? 12 : 10,
+            minHeight: isLandscape ? 104 : isPhone ? 140 : isTablet ? 172 : 160,
+            paddingVertical: isLandscape ? 6 : isPhone ? 10 : isTablet ? 14 : 12,
             paddingHorizontal: isLandscape ? 4 : isPhone ? 8 : isTablet ? 12 : 10,
           },
           isLandscape && {
-            maxHeight: 98,
             borderRadius: 12,
             borderWidth: 1,
             borderColor: isSC ? Theme.dangerBorder : "#F1F5F9",
@@ -247,32 +248,34 @@ const DishCard = React.memo(
         >
           {dish.Name}
         </Text>
-        <Text
-          style={[
-            styles.dishPrice,
-            isLandscape
-              ? { fontSize: 11.5, marginTop: 1 }
-              : isPhone
-              ? { fontSize: 12 }
-              : isTablet
-              ? { fontSize: 14 }
-              : null,
-          ]}
-        >
-          {(() => {
-            const currencySymbol = useCompanySettingsStore.getState().settings.currencySymbol || "$";
-            return (Number(dish.IsOpenItem) === 1 || dish.IsOpenItem === true || dish.IsOpenItem === 'true' || dish.IsOpenItem === '1') ? "Open Price" : `${currencySymbol}${(dish.Price || 0).toFixed(2)}`;
-          })()}
-        </Text>
-        {isSoldOut ? (
+        {isOpenItem ? (
+          <View style={{ backgroundColor: "#F59E0B22", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4, borderWidth: 1, borderColor: "#F59E0B44", alignSelf: "center" }}>
+            <Text style={{ fontSize: isLandscape ? 9 : isPhone ? 9.5 : 11, color: "#B45309", fontFamily: Fonts.bold }}>OPEN PRICE</Text>
+          </View>
+        ) : (
+          <Text
+            style={[
+              styles.dishPrice,
+              isLandscape
+                ? { fontSize: 11.5, marginTop: 1 }
+                : isPhone
+                ? { fontSize: 12 }
+                : isTablet
+                ? { fontSize: 14 }
+                : null,
+            ]}
+          >
+            {(() => {
+              const currencySymbol = useCompanySettingsStore.getState().settings.currencySymbol || "$";
+              return `${currencySymbol}${(dish.Price || 0).toFixed(2)}`;
+            })()}
+          </Text>
+        )}
+        {isSoldOut && (
           <View style={{ backgroundColor: "#EF444422", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, marginTop: 2, borderWidth: 1, borderColor: "#EF444444", alignSelf: "center" }}>
             <Text style={{ fontSize: 9, color: "#EF4444", fontFamily: Fonts.bold }}>SOLD OUT</Text>
           </View>
-        ) : (Number(dish.IsOpenItem) === 1 || dish.IsOpenItem === true || dish.IsOpenItem === 'true' || dish.IsOpenItem === '1') ? (
-          <View style={{ backgroundColor: "#F59E0B22", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, marginTop: 2, borderWidth: 1, borderColor: "#F59E0B44", alignSelf: "center" }}>
-            <Text style={{ fontSize: 9, color: "#B45309", fontFamily: Fonts.bold }}>OPEN</Text>
-          </View>
-        ) : null}
+        )}
       </Pressable>
     );
   },
