@@ -4996,7 +4996,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           <View
             style={[
               styles.promotionModalContainer,
-              activePromotions.length > 1 && { maxWidth: 800 },
+              activePromotions.length === 1 && { maxWidth: 540 },
             ]}
           >
             {/* Modal Header: [🏷️ Special Offers | Select an offer to apply]   [✕] */}
@@ -5022,7 +5022,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={[
                 styles.promotionScrollContent,
-                activePromotions.length <= 2 && { justifyContent: "center" },
+                activePromotions.length === 1 && { justifyContent: "center" },
               ]}
               style={styles.promotionScrollView}
             >
@@ -7313,8 +7313,8 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   promotionModalContainer: {
-    width: "92%",
-    maxWidth: 620,
+    width: "94%",
+    maxWidth: 760,
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     overflow: "hidden",
@@ -7379,15 +7379,15 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   promotionCard: {
-    width: 350,
-    height: 156,
+    width: 330,
+    height: 152,
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    padding: 12,
     overflow: "hidden",
   },
   promotionCardSelected: {
