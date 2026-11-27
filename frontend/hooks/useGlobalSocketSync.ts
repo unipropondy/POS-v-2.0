@@ -9,6 +9,7 @@ import { API_URL } from "../constants/Config";
 import UniversalPrinter from "../components/UniversalPrinter";
 import { useNotificationStore } from "../stores/notificationStore";
 import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
+import { useAuthStore } from "../stores/authStore";
 
 /**
  * useGlobalSocketSync
@@ -18,7 +19,31 @@ import { useTerminalPaymentStore } from "../stores/terminalPaymentStore";
  */
 const notifiedKioskOrders = new Set<string>();
 
+function isKioskInterface(): boolean {
+  if (typeof window !== "undefined" && window?.location) {
+    const path = (window.location.pathname || "").toLowerCase();
+    const href = (window.location.href || "").toLowerCase();
+    const hash = (window.location.hash || "").toLowerCase();
+    if (path.includes("/kiosk") || href.includes("/kiosk") || hash.includes("kiosk")) {
+      return true;
+    }
+  }
+  const user = useAuthStore.getState().user;
+  if (user) {
+    const role = String(user.role || "").toUpperCase();
+    const roleName = String(user.roleName || "").toUpperCase();
+    const userName = String(user.userName || "").toLowerCase();
+    const groupCode = String(user.userGroupCode || "").toUpperCase();
+    if (role === "KIOSK" || roleName === "KIOSK" || userName === "kiosk" || groupCode === "KIOSK") {
+      return true;
+    }
+  }
+  return false;
+}
+
 function handleKioskOrderNotification(payload: any) {
+  // 🛡️ RESTRICT TO POS ONLY: Never display or register on Kiosk screen
+  if (isKioskInterface()) return;
   const orderId = payload?.orderId;
   if (!orderId) return;
   const cleanId = String(orderId).replace(/^#/, "").trim();

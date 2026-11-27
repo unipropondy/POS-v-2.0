@@ -58,11 +58,37 @@ setApiUrl(API_URL);
 
 const notifiedToastKioskOrders = new Set<string>();
 
+function isKioskInterface(): boolean {
+  if (typeof window !== "undefined" && window?.location) {
+    const path = (window.location.pathname || "").toLowerCase();
+    const href = (window.location.href || "").toLowerCase();
+    const hash = (window.location.hash || "").toLowerCase();
+    if (path.includes("/kiosk") || href.includes("/kiosk") || hash.includes("kiosk")) {
+      return true;
+    }
+  }
+  const user = useAuthStore.getState().user;
+  if (user) {
+    const role = String(user.role || "").toUpperCase();
+    const roleName = String(user.roleName || "").toUpperCase();
+    const userName = String(user.userName || "").toLowerCase();
+    const groupCode = String(user.userGroupCode || "").toUpperCase();
+    if (role === "KIOSK" || roleName === "KIOSK" || userName === "kiosk" || groupCode === "KIOSK") {
+      return true;
+    }
+  }
+  return false;
+}
+
 function SocketToastListener() {
   const toast = useToast();
 
   useEffect(() => {
     const handleKioskNotification = (payload: any) => {
+      // 🛡️ RESTRICT TO POS ONLY: Never display "New KIOSK Order Placed!" on Kiosk screen/interface
+      if (isKioskInterface()) {
+        return;
+      }
       const user = useAuthStore.getState().user;
       if (!user || !payload?.orderId) return;
 
@@ -99,6 +125,8 @@ function SocketToastListener() {
     };
 
     const handleNewOrder = (payload: any) => {
+      // 🛡️ RESTRICT TO POS ONLY: Never display order toasts on Kiosk screens
+      if (isKioskInterface()) return;
       const user = useAuthStore.getState().user;
       if (!user) return;
 
