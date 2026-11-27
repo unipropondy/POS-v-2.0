@@ -185,7 +185,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Payment Modal State
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
-  const [openedFromCheckout, setOpenedFromCheckout] = useState(false);
   const [activePromotions, setActivePromotions] = useState<any[]>([]);
   const [checkingPromotions, setCheckingPromotions] = useState(false);
   const [selectedPromotion, setSelectedPromotion] = useState<any | null>(null);
@@ -258,31 +257,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       }
     };
     fetchPromoImages();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Pre-fetch Active Promotions from PromotionMaster (entry_status = 'K')
-  useEffect(() => {
-    let isMounted = true;
-    const fetchActivePromos = async () => {
-      try {
-        const res = await fetch(`${API}/promotions/active?entry_status=K`, {
-          headers: { "x-entry-status": "K" },
-        });
-        const data = await res.json();
-        if (isMounted && data.success && Array.isArray(data.promotions)) {
-          setActivePromotions(data.promotions);
-          if (data.promotions.length > 0) {
-            setSelectedPromotion((prev: any) => prev || data.promotions[0]);
-          }
-        }
-      } catch (err) {
-        console.warn("Active promotions pre-fetch error:", err);
-      }
-    };
-    fetchActivePromos();
     return () => {
       isMounted = false;
     };
@@ -2187,7 +2161,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       if (validPromos.length > 0) {
         setActivePromotions(validPromos);
         setSelectedPromotion(validPromos[0]);
-        setOpenedFromCheckout(true);
         // Display Promotion Popup FIRST (ensure other modals are closed)
         setShowTableModal(false);
         setShowPaymentPopup(false);
@@ -2205,30 +2178,19 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     proceedToCheckoutOption();
   };
 
-  // Apply selected promotion to current order, update bill immediately & prevent duplicate application
-  const handleApplyPromotion = async () => {
+  // Add selected promotion to cart & return to cart screen
+  const handleAddToCartPromotion = async () => {
     setPromoErrorMessage(null);
 
     if (!selectedPromotion) {
-      setPromoErrorMessage("Please select a promotion offer to apply.");
-      return;
-    }
-
-    // Prevent duplicate promotion application if already applied
-    if (appliedPromotion?.PromotionId === selectedPromotion.PromotionId) {
-      setPromoSuccessToast(`Promotion "${selectedPromotion.PromotionName}" is already applied to your order.`);
-      setTimeout(() => setPromoSuccessToast(null), 3000);
-      setShowPromotionModal(false);
-      if (openedFromCheckout) {
-        proceedToCheckoutOption();
-      }
+      setPromoErrorMessage("Please select a promotion offer to add.");
       return;
     }
 
     setIsAddingPromo(true);
 
     try {
-      // 1. Remove previously added promotional items to strictly prevent duplicate promotion entries
+      // 1. Remove previously added promotional items to prevent duplicate promotion entries
       const cleanCart = cart.filter(
         (item) => !item.isPromotionalItem && !item.isPromotion,
       );
@@ -2388,7 +2350,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       const updatedCart = promoItem ? [...cleanCart, promoItem] : cleanCart;
 
-      // 4. Update cart state and appliedPromotion state (updates bill amount immediately)
+      // 4. Update cart state and appliedPromotion state
       setCart(updatedCart);
       setAppliedPromotion(selectedPromotion);
 
@@ -2398,20 +2360,15 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         JSON.stringify(selectedPromotion),
       );
 
-      // 6. Show success toast and close modal
-      setPromoSuccessToast(`Promotion "${selectedPromotion.PromotionName}" applied successfully!`);
+      // 7. Show success toast, close modal, and return to cart screen
+      setPromoSuccessToast(`Offer "${selectedPromotion.PromotionName}" added to cart!`);
       setTimeout(() => setPromoSuccessToast(null), 3500);
 
       setShowPromotionModal(false);
-
-      if (openedFromCheckout) {
-        proceedToCheckoutOption();
-      } else {
-        setShowCartPage(true);
-      }
+      setShowCartPage(true);
     } catch (err: any) {
-      console.error("Error applying promotion to order:", err);
-      const errMsg = err?.message || "Failed to apply promotion to order. Please try again.";
+      console.error("Error adding promotion to cart:", err);
+      const errMsg = err?.message || "Failed to add promotion to cart. Please try again.";
       setPromoErrorMessage(errMsg);
       if (typeof window !== "undefined" && window.alert) {
         window.alert(errMsg);
@@ -2423,17 +2380,20 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
-  const handleAddToCartPromotion = handleApplyPromotion;
-
-  // Handler when customer clicks Close or dismisses the popup
-  const handleClosePromoModal = () => {
+  const handleNoThanks = async () => {
+    // Clear any promotional items from cart
+    setCart((prev) =>
+      prev.filter((item) => !item.isPromotionalItem && !item.isPromotion),
+    );
+    setSelectedPromotion(null);
+    setAppliedPromotion(null);
+    setPromoErrorMessage(null);
+    try {
+      await AsyncStorage.removeItem("kioskAppliedPromotion");
+    } catch {}
     setShowPromotionModal(false);
-    if (openedFromCheckout) {
-      proceedToCheckoutOption();
-    }
+    proceedToCheckoutOption();
   };
-
-  const handleNoThanks = handleClosePromoModal;
 
   // Step 2: Proceed to Checkout Option (Self Collect / Enter Tent Number) or Payment if Takeaway / prompt disabled
   const proceedToCheckoutOption = async () => {
@@ -4438,44 +4398,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               );
             })}
 
-            {/* Promotion Offers Entry / Banner in Cart */}
-            {activePromotions.length > 0 && (
-              <TouchableOpacity
-                style={styles.cartPromoOffersBar}
-                onPress={() => {
-                  setOpenedFromCheckout(false);
-                  setShowPromotionModal(true);
-                }}
-                activeOpacity={0.85}
-              >
-                <View style={styles.cartPromoOffersBarLeft}>
-                  <View style={styles.cartPromoOffersIconWrap}>
-                    <Ionicons name="pricetag" size={20} color="#DC2626" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cartPromoOffersBarTitle} numberOfLines={1}>
-                      {appliedPromotion
-                        ? `Promotion: ${appliedPromotion.PromotionName}`
-                        : `${activePromotions.length} Special Offer${activePromotions.length > 1 ? "s" : ""} Available`}
-                    </Text>
-                    <Text style={styles.cartPromoOffersBarSubtitle} numberOfLines={1}>
-                      {appliedPromotion
-                        ? "Tap to view details or change offer"
-                        : "Tap to view Promotion Master details & apply"}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.cartPromoOffersBarRight}>
-                  <View style={styles.cartPromoOffersPill}>
-                    <Text style={styles.cartPromoOffersPillText}>
-                      {appliedPromotion ? "Details" : "View"}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={16} color="#DC2626" />
-                  </View>
-                </View>
-              </TouchableOpacity>
-            )}
-
             {/* Applied Promotion Discount Entry in Cart (Only shown if promo is not already present as a cart line item) */}
             {appliedPromotion && promotionDiscount > 0 && !cart.some((it) => it.isPromotionalItem || it.isPromotion) && (
               <View style={styles.appliedPromoEntryCard}>
@@ -5063,322 +4985,185 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
-      {/* ── Promotion Master Details Popup Modal ── */}
+      {/* ── Promotion Popup Modal (Special Offers) ── */}
       <Modal
         visible={showPromotionModal && activePromotions.length > 0}
         transparent
         animationType="fade"
-        onRequestClose={handleClosePromoModal}
+        onRequestClose={handleNoThanks}
       >
         <View style={styles.promotionModalOverlay}>
-          <View style={styles.promotionModalContainer}>
-            {/* Modal Header: Title & Close Button */}
+          <View
+            style={[
+              styles.promotionModalContainer,
+              activePromotions.length > 1 && { maxWidth: 800 },
+            ]}
+          >
+            {/* Modal Header: [🏷️ Special Offers | Select an offer to apply]   [✕] */}
             <View style={styles.promotionModalHeader}>
               <View style={styles.promotionHeaderLeft}>
-                <View style={styles.promotionHeaderIconBadge}>
-                  <Ionicons name="pricetag" size={20} color="#FFFFFF" />
-                </View>
-                <View style={{ marginLeft: 12 }}>
-                  <Text style={styles.promotionTitleText}>Special Promotions</Text>
-                  <Text style={styles.promotionSubtitleText}>
-                    {activePromotions.length > 1
-                      ? `${activePromotions.length} available offers • Select to apply`
-                      : "Eligible Promotion Master offer"}
-                  </Text>
-                </View>
+                <Ionicons name="pricetag" size={26} color="#DC2626" style={{ marginRight: 10 }} />
+                <Text style={styles.promotionTitleText}>Special Offers</Text>
+                <View style={styles.promotionHeaderDivider} />
+                <Text style={styles.promotionSubtitleText}>Select an offer to apply</Text>
               </View>
               <TouchableOpacity
                 style={styles.promotionCloseBtn}
-                onPress={handleClosePromoModal}
+                onPress={handleNoThanks}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <Ionicons name="close" size={24} color="#0F172A" />
+                <Ionicons name="close" size={22} color="#0F172A" />
               </TouchableOpacity>
             </View>
 
-            {/* If multiple promotions available, horizontal selector bar */}
-            {activePromotions.length > 1 && (
-              <View style={styles.promoSelectorWrap}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.promoSelectorScroll}
-                >
-                  {activePromotions.map((p, idx) => {
-                    const isSel = selectedPromotion?.PromotionId === p.PromotionId;
-                    const pAmount = Number(p.PromotionAmount || 0);
-                    const dValue = Number(p.DiscountValue || 0);
-                    const tagLabel =
-                      pAmount > 0
-                        ? `${currencySymbol}${pAmount.toFixed(2)}`
-                        : dValue > 0
-                          ? String(p.PromotionType || "").toUpperCase().includes("PERCENT")
-                            ? `${dValue}% OFF`
-                            : `${currencySymbol}${dValue.toFixed(2)} OFF`
-                          : "Special Offer";
+            {/* Horizontal Offer Cards Row / Carousel */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={[
+                styles.promotionScrollContent,
+                activePromotions.length <= 2 && { justifyContent: "center" },
+              ]}
+              style={styles.promotionScrollView}
+            >
+              {activePromotions.map((promo, idx) => {
+                const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
+                const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
+                const promoDesc = (promo.Description || promo.PromotionDescription || "").trim();
+                const promoAmt =
+                  promo.PromotionAmount !== null &&
+                  promo.PromotionAmount !== undefined &&
+                  Number(promo.PromotionAmount) > 0
+                    ? Number(promo.PromotionAmount)
+                    : null;
+                const discVal =
+                  promo.DiscountValue !== null &&
+                  promo.DiscountValue !== undefined &&
+                  Number(promo.DiscountValue) > 0
+                    ? Number(promo.DiscountValue)
+                    : null;
+                const displayPrice =
+                  promoAmt !== null
+                    ? `${currencySymbol}${promoAmt.toFixed(2)}`
+                    : discVal !== null
+                      ? `${currencySymbol}${discVal.toFixed(2)}`
+                      : `${currencySymbol}0.00`;
 
-                    return (
-                      <TouchableOpacity
-                        key={p.PromotionId || idx}
-                        style={[styles.promoTabChip, isSel && styles.promoTabChipActive]}
-                        onPress={() => {
-                          setPromoErrorMessage(null);
-                          setSelectedPromotion(p);
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons
-                          name={isSel ? "checkmark-circle" : "pricetag-outline"}
-                          size={16}
-                          color={isSel ? "#FFFFFF" : "#DC2626"}
-                          style={{ marginRight: 6 }}
-                        />
-                        <Text
-                          style={[
-                            styles.promoTabChipText,
-                            isSel && styles.promoTabChipTextActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {p.PromotionName || `Offer #${idx + 1}`} ({tagLabel})
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* Promotion Master Details Body */}
-            {selectedPromotion && (
-              <ScrollView
-                style={styles.promotionDetailsScroll}
-                contentContainerStyle={styles.promotionDetailsContent}
-                showsVerticalScrollIndicator={true}
-              >
-                {/* 1. Promotion Image (if available) */}
-                {(() => {
-                  const promoImgUri = formatLogoUrl(selectedPromotion.PromotionImageUrl);
-                  const hasImgError = !!promoImageErrors[String(selectedPromotion.PromotionId)];
-                  if (promoImgUri && !hasImgError) {
-                    return (
-                      <View style={styles.promoDetailImageWrap}>
+                return (
+                  <TouchableOpacity
+                    key={promo.PromotionId || idx}
+                    style={[
+                      styles.promotionCard,
+                      isSelected && styles.promotionCardSelected,
+                    ]}
+                    onPress={() => {
+                      setPromoErrorMessage(null);
+                      setSelectedPromotion(isSelected ? null : promo);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    {/* Left Food Image */}
+                    <View style={styles.promotionImageWrap}>
+                      {promoImgUri && !promoImageErrors[String(promo.PromotionId)] ? (
                         <ExpoImage
                           source={{ uri: promoImgUri }}
-                          style={styles.promoDetailImage}
+                          style={styles.promotionImage}
                           contentFit="contain"
                           onError={() => {
                             setPromoImageErrors((prev) => ({
                               ...prev,
-                              [String(selectedPromotion.PromotionId)]: true,
+                              [String(promo.PromotionId)]: true,
                             }));
                           }}
                         />
-                      </View>
-                    );
-                  }
-                  return (
-                    <View style={styles.promoDetailImagePlaceholder}>
-                      <Ionicons name="fast-food-outline" size={48} color="#DC2626" />
-                      <Text style={styles.promoDetailPlaceholderText}>Special Promotion Offer</Text>
+                      ) : (
+                        <Ionicons name="fast-food" size={48} color="#DC2626" />
+                      )}
                     </View>
-                  );
-                })()}
 
-                {/* 2. Promotion Name & Type Badge */}
-                <View style={styles.promoDetailHeaderBlock}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.promoDetailNameText} numberOfLines={2}>
-                      {selectedPromotion.PromotionName || "Special Promotion"}
-                    </Text>
-                  </View>
-                  <View style={styles.promoDetailTypeBadge}>
-                    <Ionicons name="sparkles" size={14} color="#DC2626" style={{ marginRight: 4 }} />
-                    <Text style={styles.promoDetailTypeBadgeText}>
-                      {String(selectedPromotion.PromotionType || "OFFER").toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
+                    {/* Right Info: Dish Name, Radio Circle, Description, Price Pill */}
+                    <View style={styles.promotionInfoWrap}>
+                      <View style={styles.promotionCardTopContent}>
+                        <View style={styles.promotionCardTopRow}>
+                          <Text
+                            style={styles.promotionNameText}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {promo.PromotionName || "Special Combo"}
+                          </Text>
+                          <View
+                            style={[
+                              styles.promotionRadioCircle,
+                              isSelected && styles.promotionRadioCircleSelected,
+                            ]}
+                          >
+                            {isSelected && <View style={styles.promotionRadioDot} />}
+                          </View>
+                        </View>
 
-                {/* 3. Discount Amount or Percentage Highlight Card */}
-                {(() => {
-                  const promoAmt =
-                    selectedPromotion.PromotionAmount !== null &&
-                    selectedPromotion.PromotionAmount !== undefined &&
-                    Number(selectedPromotion.PromotionAmount) > 0
-                      ? Number(selectedPromotion.PromotionAmount)
-                      : null;
-                  const discVal =
-                    selectedPromotion.DiscountValue !== null &&
-                    selectedPromotion.DiscountValue !== undefined &&
-                    Number(selectedPromotion.DiscountValue) > 0
-                      ? Number(selectedPromotion.DiscountValue)
-                      : null;
-                  const pType = String(selectedPromotion.PromotionType || "").toUpperCase();
-
-                  let displayHighlight = "";
-                  let highlightSub = "";
-
-                  if (promoAmt !== null) {
-                    displayHighlight = `${currencySymbol}${promoAmt.toFixed(2)}`;
-                    highlightSub = "Special Promotional Price";
-                  } else if (pType.includes("PERCENT") || pType.includes("%")) {
-                    displayHighlight = `${discVal || 0}% OFF`;
-                    highlightSub = "Percentage discount on order";
-                  } else if (pType === "BOGO") {
-                    displayHighlight = "Buy 1 Get 1 Free";
-                    highlightSub = "Complimentary item promotion";
-                  } else if (discVal !== null) {
-                    displayHighlight = `${currencySymbol}${discVal.toFixed(2)} OFF`;
-                    highlightSub = "Flat discount on order";
-                  } else {
-                    displayHighlight = "Special Offer";
-                    highlightSub = "Active promotional savings";
-                  }
-
-                  const minSpend = Number(selectedPromotion.MinPurchaseAmount || 0);
-
-                  return (
-                    <View style={styles.promoHighlightCard}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.promoHighlightLabel}>{highlightSub}</Text>
-                        <Text style={styles.promoHighlightValue}>{displayHighlight}</Text>
-                        {minSpend > 0 && (
-                          <Text style={styles.promoMinSpendText}>
-                            Min. purchase required: {currencySymbol}{minSpend.toFixed(2)}
+                        {!!promoDesc && (
+                          <Text
+                            style={styles.promotionDescText}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {promoDesc}
                           </Text>
                         )}
                       </View>
-                      <View style={styles.promoHighlightBadgeIcon}>
-                        <Ionicons name="pricetag" size={26} color="#DC2626" />
-                      </View>
-                    </View>
-                  );
-                })()}
 
-                {/* 4. Promotion Description */}
-                {(() => {
-                  const promoDesc = (
-                    selectedPromotion.Description ||
-                    selectedPromotion.PromotionDescription ||
-                    ""
-                  ).trim();
-                  if (!promoDesc) return null;
-                  return (
-                    <View style={styles.promoSectionCard}>
-                      <View style={styles.promoSectionHeader}>
-                        <Ionicons name="document-text-outline" size={17} color="#DC2626" style={{ marginRight: 6 }} />
-                        <Text style={styles.promoSectionTitle}>Description</Text>
-                      </View>
-                      <Text style={styles.promoSectionBody}>{promoDesc}</Text>
-                    </View>
-                  );
-                })()}
-
-                {/* 5. Eligible Items / Services */}
-                {(() => {
-                  const rawDesc =
-                    selectedPromotion.Description ||
-                    selectedPromotion.PromotionDescription ||
-                    "";
-                  const includedDishes = parseDescriptionBullets(rawDesc);
-                  const pType = String(selectedPromotion.PromotionType || "").toUpperCase();
-
-                  return (
-                    <View style={styles.promoSectionCard}>
-                      <View style={styles.promoSectionHeader}>
-                        <Ionicons name="restaurant-outline" size={17} color="#DC2626" style={{ marginRight: 6 }} />
-                        <Text style={styles.promoSectionTitle}>Eligible Items / Services</Text>
-                      </View>
-
-                      {includedDishes.length > 0 ? (
-                        <View style={styles.promoEligibleChipsWrap}>
-                          {includedDishes.map((dishName, i) => (
-                            <View key={i} style={styles.promoEligibleChip}>
-                              <Ionicons name="checkmark-circle" size={16} color="#16A34A" style={{ marginRight: 6 }} />
-                              <Text style={styles.promoEligibleChipText}>{dishName}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      ) : (
-                        <View style={styles.promoEligibleChip}>
-                          <Ionicons name="checkmark-circle" size={16} color="#16A34A" style={{ marginRight: 6 }} />
-                          <Text style={styles.promoEligibleChipText}>
-                            {pType === "COMBO"
-                              ? "Combo package items included with this promotion"
-                              : "Applicable to all qualifying food and beverage items in cart"}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })()}
-
-                {/* 6. Promotion Validity (if applicable) */}
-                <View style={styles.promoSectionCard}>
-                  <View style={styles.promoSectionHeader}>
-                    <Ionicons name="calendar-outline" size={17} color="#DC2626" style={{ marginRight: 6 }} />
-                    <Text style={styles.promoSectionTitle}>Promotion Validity</Text>
-                  </View>
-                  <View style={styles.promoValidityRow}>
-                    <View style={styles.promoValidityItem}>
-                      <Ionicons name="calendar" size={16} color="#64748B" style={{ marginRight: 6 }} />
-                      <Text style={styles.promoValidityText}>
-                        {selectedPromotion.StartDateStr || selectedPromotion.EndDateStr
-                          ? `${selectedPromotion.StartDateStr || "Now"} — ${selectedPromotion.EndDateStr || "Ongoing"}`
-                          : "Available today"}
-                      </Text>
-                    </View>
-                    {(selectedPromotion.StartTimeStr || selectedPromotion.EndTimeStr) && (
-                      <View style={styles.promoValidityItem}>
-                        <Ionicons name="time-outline" size={16} color="#64748B" style={{ marginRight: 6 }} />
-                        <Text style={styles.promoValidityText}>
-                          {`${(selectedPromotion.StartTimeStr || "00:00").slice(0, 5)} — ${(selectedPromotion.EndTimeStr || "23:59").slice(0, 5)}`}
+                      {/* Red / Light-Red Price Pill Badge */}
+                      <View
+                        style={[
+                          styles.promotionPricePill,
+                          isSelected
+                            ? styles.promotionPricePillSelected
+                            : styles.promotionPricePillUnselected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.promotionPricePillText,
+                            isSelected
+                              ? styles.promotionPricePillTextSelected
+                              : styles.promotionPricePillTextUnselected,
+                          ]}
+                        >
+                          {displayPrice}
                         </Text>
                       </View>
-                    )}
-                  </View>
-                </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
-                {/* 7. Already Applied Notice (Duplicate Prevention indicator) */}
-                {appliedPromotion?.PromotionId === selectedPromotion.PromotionId && (
-                  <View style={styles.promoAlreadyAppliedBanner}>
-                    <Ionicons name="checkmark-circle" size={20} color="#16A34A" style={{ marginRight: 8 }} />
-                    <Text style={styles.promoAlreadyAppliedText}>
-                      This promotion is currently applied to your order.
-                    </Text>
-                  </View>
-                )}
-
-                {/* Error Banner */}
-                {promoErrorMessage && (
-                  <View style={styles.promotionErrorBanner}>
-                    <Ionicons name="alert-circle" size={20} color="#DC2626" style={{ marginRight: 8 }} />
-                    <Text style={styles.promotionErrorText}>{promoErrorMessage}</Text>
-                  </View>
-                )}
-              </ScrollView>
+            {/* Promotion Error Notification */}
+            {promoErrorMessage && (
+              <View style={styles.promotionErrorBanner}>
+                <Ionicons name="alert-circle" size={20} color="#DC2626" />
+                <Text style={styles.promotionErrorText}>{promoErrorMessage}</Text>
+              </View>
             )}
 
-            {/* Modal Footer: [ Close ]   [ Apply Promotion ] */}
+            {/* Modal Footer: [ No Thanks ]   [ 🛒 Add to Cart ] */}
             <View style={styles.promotionFooter}>
               <TouchableOpacity
-                style={styles.promotionCloseButton}
-                onPress={handleClosePromoModal}
+                style={styles.promotionSkipBtn}
+                onPress={handleNoThanks}
                 activeOpacity={0.85}
               >
-                <Ionicons name="close" size={20} color="#475569" style={{ marginRight: 6 }} />
-                <Text style={styles.promotionCloseButtonText}>Close</Text>
+                <Text style={styles.promotionSkipBtnText}>No Thanks</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.promotionApplyButton,
-                  isAddingPromo && styles.promotionApplyButtonDisabled,
-                  appliedPromotion?.PromotionId === selectedPromotion?.PromotionId && styles.promotionApplyButtonActive,
+                  styles.promotionAddToCartBtn,
+                  (!selectedPromotion || isAddingPromo) && styles.promotionAddToCartBtnDisabled,
                 ]}
-                onPress={handleApplyPromotion}
-                disabled={isAddingPromo}
+                onPress={handleAddToCartPromotion}
+                disabled={!selectedPromotion || isAddingPromo}
                 activeOpacity={0.85}
               >
                 {isAddingPromo ? (
@@ -5386,16 +5171,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
                 ) : (
                   <>
                     <Ionicons
-                      name={appliedPromotion?.PromotionId === selectedPromotion?.PromotionId ? "checkmark-done-circle" : "sparkles"}
-                      size={22}
+                      name="cart-outline"
+                      size={24}
                       color="#FFFFFF"
-                      style={{ marginRight: 8 }}
+                      style={{ marginRight: 6 }}
                     />
-                    <Text style={styles.promotionApplyButtonText}>
-                      {appliedPromotion?.PromotionId === selectedPromotion?.PromotionId
-                        ? "Promotion Applied"
-                        : "Apply Promotion"}
-                    </Text>
+                    <Text style={styles.promotionAddToCartBtnText}>Add to Cart</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -7523,339 +7304,234 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
   },
 
-  /* PROMOTION POPUP MODAL (PROMOTION MASTER) */
+  /* PROMOTION POPUP MODAL (SPECIAL OFFERS) */
   promotionModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.70)",
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 24,
   },
   promotionModalContainer: {
-    width: "100%",
+    width: "92%",
     maxWidth: 620,
-    maxHeight: "88%",
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     overflow: "hidden",
+    alignSelf: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.35,
-    shadowRadius: 28,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 10,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    display: "flex",
-    flexDirection: "column",
   },
   promotionModalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 22,
+    paddingHorizontal: 24,
     paddingTop: 18,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
-    backgroundColor: "#FFFFFF",
   },
   promotionHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
-  promotionHeaderIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#DC2626",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   promotionTitleText: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
     color: "#0F172A",
-    letterSpacing: -0.3,
+  },
+  promotionHeaderDivider: {
+    width: 1.5,
+    height: 22,
+    backgroundColor: "#CBD5E1",
+    marginHorizontal: 14,
   },
   promotionSubtitleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#64748B",
-    marginTop: 2,
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1E293B",
   },
   promotionCloseBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
-  promoSelectorWrap: {
-    backgroundColor: "#F8FAFC",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+  promotionScrollView: {
+    width: "100%",
+    flexGrow: 0,
   },
-  promoSelectorScroll: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  promoTabChip: {
+  promotionScrollContent: {
+    paddingHorizontal: 24,
+    paddingVertical: 22,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    flexGrow: 1,
+    gap: 16,
+  },
+  promotionCard: {
+    width: 350,
+    height: 156,
     backgroundColor: "#FFFFFF",
+    borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: "#FECACA",
-  },
-  promoTabChipActive: {
-    backgroundColor: "#DC2626",
-    borderColor: "#DC2626",
-  },
-  promoTabChipText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#DC2626",
-  },
-  promoTabChipTextActive: {
-    color: "#FFFFFF",
-  },
-  promotionDetailsScroll: {
-    flexGrow: 0,
-    maxHeight: 520,
-    width: "100%",
-  },
-  promotionDetailsContent: {
-    padding: 20,
-    gap: 14,
-  },
-  promoDetailImageWrap: {
-    width: "100%",
-    height: 180,
-    borderRadius: 16,
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
     borderColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
     overflow: "hidden",
+  },
+  promotionCardSelected: {
+    borderColor: "#DC2626",
+    borderWidth: 2,
+    backgroundColor: "#FFFFFF",
+  },
+  promotionImageWrap: {
+    width: 105,
+    height: 105,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "transparent",
+    borderRadius: 12,
+    overflow: "hidden",
   },
-  promoDetailImage: {
+  promotionImage: {
     width: "100%",
     height: "100%",
   },
-  promoDetailImagePlaceholder: {
+  promotionInfoWrap: {
+    flex: 1,
+    height: "100%",
+    justifyContent: "space-between",
+    paddingLeft: 14,
+    paddingVertical: 2,
+  },
+  promotionCardTopContent: {
     width: "100%",
-    height: 120,
-    borderRadius: 16,
-    backgroundColor: "#FEF2F2",
-    borderWidth: 1,
-    borderColor: "#FECACA",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
   },
-  promoDetailPlaceholderText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#DC2626",
-  },
-  promoDetailHeaderBlock: {
+  promotionCardTopRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
   },
-  promoDetailNameText: {
-    fontSize: 24,
+  promotionNameText: {
+    flex: 1,
+    fontSize: 22,
     fontWeight: "900",
     color: "#0F172A",
-    letterSpacing: -0.4,
+    lineHeight: 26,
+    paddingRight: 6,
   },
-  promoDetailTypeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FEF2F2",
-    borderWidth: 1,
-    borderColor: "#FCA5A5",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+  promotionDescText: {
+    fontSize: 16,
+    color: "#64748B",
+    fontWeight: "600",
+    lineHeight: 20,
+    marginTop: 3,
+    marginBottom: 6,
+    paddingRight: 4,
+  },
+  promotionRadioCircle: {
+    width: 24,
+    height: 24,
     borderRadius: 12,
-  },
-  promoDetailTypeBadgeText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#DC2626",
-    letterSpacing: 0.5,
-  },
-  promoHighlightCard: {
-    backgroundColor: "#FFF5F5",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: "#FECACA",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  promoHighlightLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#991B1B",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  promoHighlightValue: {
-    fontSize: 30,
-    fontWeight: "900",
-    color: "#DC2626",
-    letterSpacing: -0.5,
-  },
-  promoMinSpendText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#B91C1C",
-    marginTop: 4,
-  },
-  promoHighlightBadgeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#FEE2E2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  promoSectionCard: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  promoSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  promoSectionTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#1E293B",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  promoSectionBody: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#334155",
-    lineHeight: 22,
-  },
-  promoEligibleChipsWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  promoEligibleChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "#CBD5E1",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  promoEligibleChipText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  promoValidityRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 14,
-  },
-  promoValidityItem: {
-    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
   },
-  promoValidityText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#475569",
+  promotionRadioCircleSelected: {
+    borderColor: "#DC2626",
   },
-  promoAlreadyAppliedBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F0FDF4",
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    borderRadius: 12,
-    padding: 12,
+  promotionRadioDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#DC2626",
   },
-  promoAlreadyAppliedText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#16A34A",
+  promotionPricePill: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignSelf: "flex-start",
+  },
+  promotionPricePillSelected: {
+    backgroundColor: "#DC2626",
+  },
+  promotionPricePillUnselected: {
+    backgroundColor: "#FEE2E2",
+  },
+  promotionPricePillText: {
+    fontSize: 21,
+    fontWeight: "900",
+  },
+  promotionPricePillTextSelected: {
+    color: "#FFFFFF",
+  },
+  promotionPricePillTextUnselected: {
+    color: "#DC2626",
   },
   promotionFooter: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    justifyContent: "flex-end",
+    gap: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 18,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
     backgroundColor: "#FFFFFF",
   },
-  promotionCloseButton: {
-    flex: 1,
-    height: 54,
-    borderRadius: 14,
+  promotionSkipBtn: {
+    minWidth: 170,
+    paddingHorizontal: 28,
+    height: 58,
+    borderRadius: 12,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
     borderWidth: 1.5,
     borderColor: "#CBD5E1",
   },
-  promotionCloseButtonText: {
-    color: "#475569",
-    fontSize: 18,
+  promotionSkipBtnText: {
+    color: "#0F172A",
+    fontSize: 21,
     fontWeight: "800",
   },
-  promotionApplyButton: {
-    flex: 1.5,
-    height: 54,
-    borderRadius: 14,
+  promotionAddToCartBtn: {
+    minWidth: 240,
+    paddingHorizontal: 32,
+    height: 58,
+    borderRadius: 12,
     backgroundColor: "#DC2626",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 10,
     shadowColor: "#DC2626",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 4,
   },
-  promotionApplyButtonActive: {
-    backgroundColor: "#16A34A",
-    shadowColor: "#16A34A",
-  },
-  promotionApplyButtonDisabled: {
+  promotionAddToCartBtnDisabled: {
     backgroundColor: "#CBD5E1",
     shadowOpacity: 0,
     elevation: 0,
   },
-  promotionApplyButtonText: {
+  promotionAddToCartBtnText: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 21,
     fontWeight: "900",
     letterSpacing: 0.3,
   },
@@ -7866,9 +7542,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEF2F2",
     borderWidth: 1,
     borderColor: "#FECACA",
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     paddingVertical: 10,
+    marginHorizontal: 20,
+    marginBottom: 8,
   },
   promotionErrorText: {
     flex: 1,
@@ -7876,62 +7554,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#DC2626",
     lineHeight: 18,
-  },
-  cartPromoOffersBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#FFF5F5",
-    borderWidth: 1.5,
-    borderColor: "#FECACA",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
-  },
-  cartPromoOffersBarLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    gap: 12,
-  },
-  cartPromoOffersIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FEE2E2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cartPromoOffersBarTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  cartPromoOffersBarSubtitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#64748B",
-    marginTop: 1,
-  },
-  cartPromoOffersBarRight: {
-    marginLeft: 8,
-  },
-  cartPromoOffersPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#FCA5A5",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-  },
-  cartPromoOffersPillText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#DC2626",
   },
   promoAppliedBadgePill: {
     flexDirection: "row",
