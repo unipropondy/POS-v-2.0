@@ -12,11 +12,13 @@ export default function KioskScreen() {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
+    (globalThis as any).__IS_KIOSK_ACTIVE__ = true;
     let mounted = true;
     fetchSettings().finally(() => {
       if (mounted) setChecked(true);
     });
     return () => {
+      (globalThis as any).__IS_KIOSK_ACTIVE__ = false;
       mounted = false;
     };
   }, [fetchSettings]);

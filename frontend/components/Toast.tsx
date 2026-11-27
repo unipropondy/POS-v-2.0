@@ -162,6 +162,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
   const showToast = useCallback((config: ToastConfig) => {
+    // 🛡️ CRITICAL REQUIREMENT: Never display Kiosk order alerts on Kiosk screen
+    if (
+      config.message?.includes("KIOSK") &&
+      ((typeof globalThis !== "undefined" && (globalThis as any).__IS_KIOSK_ACTIVE__ === true) ||
+        (typeof window !== "undefined" &&
+          (window.location?.pathname?.toLowerCase().includes("kiosk") ||
+            window.location?.href?.toLowerCase().includes("kiosk") ||
+            window.location?.hash?.toLowerCase().includes("kiosk"))))
+    ) {
+      return;
+    }
     const id = ++_id;
     setToasts((prev) => [...prev, { ...config, id }]);
   }, []);

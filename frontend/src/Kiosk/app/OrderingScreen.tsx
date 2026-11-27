@@ -432,6 +432,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     };
 
     if (Platform.OS === "web" && typeof window !== "undefined") {
+      (globalThis as any).__IS_KIOSK_ACTIVE__ = true;
       window.addEventListener("pointerdown", handleGlobalInteraction, true);
       window.addEventListener("touchstart", handleGlobalInteraction, true);
       window.addEventListener("mousedown", handleGlobalInteraction, true);
@@ -441,6 +442,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
 
     return () => {
+      (globalThis as any).__IS_KIOSK_ACTIVE__ = false;
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (countdownIntervalRef.current)
         clearInterval(countdownIntervalRef.current);

@@ -36,6 +36,7 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
+    (globalThis as any).__IS_KIOSK_ACTIVE__ = true;
     // Initial launch: ensure clean state and session check before revealing screen
     const checkSession = async () => {
       try {
@@ -88,6 +89,9 @@ export default function Index({ onBackToPOS }: IndexProps = {}) {
       }
     };
     checkSession();
+    return () => {
+      (globalThis as any).__IS_KIOSK_ACTIVE__ = false;
+    };
   }, []);
 
   if (isInitializing) {

@@ -20,11 +20,15 @@ import { useAuthStore } from "../stores/authStore";
 const notifiedKioskOrders = new Set<string>();
 
 function isKioskInterface(): boolean {
+  if (typeof globalThis !== "undefined" && (globalThis as any).__IS_KIOSK_ACTIVE__ === true) {
+    return true;
+  }
   if (typeof window !== "undefined" && window?.location) {
     const path = (window.location.pathname || "").toLowerCase();
     const href = (window.location.href || "").toLowerCase();
     const hash = (window.location.hash || "").toLowerCase();
-    if (path.includes("/kiosk") || href.includes("/kiosk") || hash.includes("kiosk")) {
+    const search = (window.location.search || "").toLowerCase();
+    if (path.includes("kiosk") || href.includes("kiosk") || hash.includes("kiosk") || search.includes("kiosk")) {
       return true;
     }
   }

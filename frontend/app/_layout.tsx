@@ -24,7 +24,7 @@ import { useEffect } from "react";
 import { useWindowDimensions, Alert, LogBox } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as SystemUI from "expo-system-ui";
-import { useRouter, useSegments, Slot } from "expo-router";
+import { useRouter, useSegments, usePathname, Slot } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -58,12 +58,22 @@ setApiUrl(API_URL);
 
 const notifiedToastKioskOrders = new Set<string>();
 
-function isKioskInterface(): boolean {
+export function isKioskInterface(segments?: any, pathname?: string): boolean {
+  if (typeof globalThis !== "undefined" && (globalThis as any).__IS_KIOSK_ACTIVE__ === true) {
+    return true;
+  }
+  if (Array.isArray(segments) && segments.some((s) => String(s).toLowerCase().includes("kiosk"))) {
+    return true;
+  }
+  if (typeof pathname === "string" && pathname.toLowerCase().includes("kiosk")) {
+    return true;
+  }
   if (typeof window !== "undefined" && window?.location) {
     const path = (window.location.pathname || "").toLowerCase();
     const href = (window.location.href || "").toLowerCase();
     const hash = (window.location.hash || "").toLowerCase();
-    if (path.includes("/kiosk") || href.includes("/kiosk") || hash.includes("kiosk")) {
+    const search = (window.location.search || "").toLowerCase();
+    if (path.includes("kiosk") || href.includes("kiosk") || hash.includes("kiosk") || search.includes("kiosk")) {
       return true;
     }
   }
@@ -82,11 +92,16 @@ function isKioskInterface(): boolean {
 
 function SocketToastListener() {
   const toast = useToast();
+  const segments = useSegments();
+  const pathname = usePathname();
+
+  const isKioskRef = React.useRef(false);
+  isKioskRef.current = isKioskInterface(segments, pathname);
 
   useEffect(() => {
     const handleKioskNotification = (payload: any) => {
       // 🛡️ RESTRICT TO POS ONLY: Never display "New KIOSK Order Placed!" on Kiosk screen/interface
-      if (isKioskInterface()) {
+      if (isKioskRef.current || isKioskInterface(segments, pathname)) {
         return;
       }
       const user = useAuthStore.getState().user;
@@ -126,7 +141,7 @@ function SocketToastListener() {
 
     const handleNewOrder = (payload: any) => {
       // 🛡️ RESTRICT TO POS ONLY: Never display order toasts on Kiosk screens
-      if (isKioskInterface()) return;
+      if (isKioskRef.current || isKioskInterface(segments, pathname)) return;
       const user = useAuthStore.getState().user;
       if (!user) return;
 
@@ -156,6 +171,7 @@ function SocketToastListener() {
         String(payload?.context?.entryStatus || "").trim().toUpperCase() === "K";
 
       if (isKioskOrder) {
+        if (isKioskRef.current || isKioskInterface(segments, pathname)) return;
         handleKioskNotification(payload);
       }
     };
