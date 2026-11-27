@@ -4057,12 +4057,32 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
       `);
     const items = itemsRes.recordset;
 
-    // 4. Resolve Paymode
-    const cleanPayMode = (payModeName || 'Yeahpay Paynow').trim();
-    const pmRes = await transaction.request()
-      .input('pmName', sql.NVarChar(100), cleanPayMode)
-      .query("SELECT TOP 1 Position, PayMode, Description FROM [dbo].[Paymode] WHERE Active = 1 AND (PayMode LIKE '%' + @pmName + '%' OR Description LIKE '%' + @pmName + '%')");
-    const paymode = pmRes.recordset[0] || { Position: 7, PayMode: 'Yeahpay Paynow', Description: 'Yeahpay Paynow' };
+    // 4. Resolve Paymode accurately
+    const rawMode = (payModeName || 'PAYNOW').trim().toUpperCase();
+    const pmRes = await transaction.request().query("SELECT Position, PayMode, Description FROM [dbo].[Paymode] WHERE Active = 1 ORDER BY Position");
+    const allPaymodes = pmRes.recordset || [];
+    
+    let paymode = null;
+    if (rawMode === 'CASH') {
+      paymode = allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase() === 'CASH' || (p.Description || '').trim().toUpperCase() === 'CASH')
+             || allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase().includes('CASH'))
+             || { Position: 1, PayMode: 'CASH', Description: 'CASH' };
+    } else if (rawMode === 'CARD' || rawMode.includes('CARD')) {
+      paymode = allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase() === 'CARD' || (p.Description || '').trim().toUpperCase() === 'CARD')
+             || allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase().includes('YEAHPAY CARD'))
+             || allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase().includes('CARD'))
+             || { Position: 10, PayMode: 'CARD', Description: 'CARD' };
+    } else if (rawMode === 'PAYNOW' || rawMode.includes('PAYNOW')) {
+      paymode = allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase() === 'PAYNOW' || (p.Description || '').trim().toUpperCase() === 'PAYNOW')
+             || allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase().includes('YEAHPAY PAYNOW'))
+             || allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase().includes('PAYNOW'))
+             || { Position: 3, PayMode: 'PAYNOW', Description: 'PAYNOW' };
+    } else {
+      paymode = allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase() === rawMode || (p.Description || '').trim().toUpperCase() === rawMode)
+             || allPaymodes.find(p => (p.PayMode || '').trim().toUpperCase().includes(rawMode) || (p.Description || '').trim().toUpperCase().includes(rawMode))
+             || { Position: 7, PayMode: payModeName, Description: payModeName };
+    }
+    const effectivePaymodeName = (paymode.Description || paymode.PayMode || rawMode).trim();
 
     const settlementId = crypto.randomUUID();
     let totalAmount = Number(order.TotalAmount || 0);
@@ -4080,21 +4100,33 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
     const receiptCount = items.reduce((sum, it) => sum + (Number(it.Quantity) || 1), 0);
     let cashierId = order.CreatedBy;
     const isNilCashier = !cashierId || String(cashierId).trim() === '' || String(cashierId).trim() === DEFAULT_GUID;
-    if (isNilCashier && String(order.entry_status || '').trim().toUpperCase() === 'K') {
+    if (isNilCashier || String(order.entry_status || '').trim().toUpperCase() === 'K') {
       const kioskUserRes = await transaction.request().query(`
         SELECT TOP 1 um.UserId
         FROM UserMaster um
         LEFT JOIN UserGroupMaster g ON um.UserGroupid = g.UserGroupId
         WHERE LOWER(LTRIM(RTRIM(ISNULL(um.UserName, '')))) = 'kiosk'
            OR UPPER(LTRIM(RTRIM(ISNULL(g.UserGroupCode, '')))) = 'KIOSK'
+           OR LOWER(LTRIM(RTRIM(ISNULL(um.UserCode, '')))) = 'kiosk'
       `);
-      if (kioskUserRes.recordset.length > 0) {
+      if (kioskUserRes.recordset.length > 0 && kioskUserRes.recordset[0].UserId) {
         cashierId = kioskUserRes.recordset[0].UserId;
+      } else {
+        cashierId = 'E1C268A2-8DA4-4CD6-8D54-5CDD800D3260';
       }
     }
     if (!cashierId) {
       cashierId = DEFAULT_GUID;
     }
+
+    let terminalCode = 'SR';
+    try {
+      const termRes = await transaction.request().query("SELECT TOP 1 TerminalCode FROM TerminalMaster WHERE Active = 1");
+      if (termRes.recordset.length > 0 && termRes.recordset[0].TerminalCode) {
+        terminalCode = termRes.recordset[0].TerminalCode;
+      }
+    } catch (_) {}
+
     let cleanTableNo = String(order.Tableno || 'TAKEAWAY').trim();
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTableNo.replace(/[{}]/g, ""))) {
       const tmLookup = await transaction.request()
@@ -4123,18 +4155,19 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
       .input('serviceCharge', sql.Money, serviceCharge)
       .input('roundedBy', sql.Money, roundedBy)
       .input('startDate', sql.Date, formattedStartDate)
-      .input('entryStatus', sql.VarChar(50), order.entry_status || null)
+      .input('entryStatus', sql.VarChar(50), order.entry_status || 'K')
+      .input('terminalCode', sql.VarChar(50), terminalCode)
       .query(`
         INSERT INTO SettlementHeader (
           SettlementID, LastSettlementDate, LastDayEndDate, SubTotal, TotalTax, DiscountAmount, DiscountType, 
           BillNo, OrderType, TableNo, Section, CashierID, BusinessUnitId, 
-          SysAmount, ManualAmount, CreatedBy, CreatedOn, 
-          VoidItemQty, VoidItemAmount, RoundedBy, ServiceCharge, GuestName, Pax, TotalPax, TakeawayCharge, start_date, IsCancelled, entry_status
+          SysAmount, ManualAmount, CreatedBy, CreatedOn, SER_NAME,
+          VoidItemQty, VoidItemAmount, RoundedBy, ServiceCharge, GuestName, Pax, TotalPax, TakeawayCharge, start_date, IsCancelled, entry_status, TerminalCode
         ) VALUES (
           @sid, GETDATE(), GETDATE(), @subTotal, @totalTax, @discountAmount, 'fixed', 
           @billNo, @orderType, @tableNo, @section, @cashierId, @bizId, 
-          @sysAmount, @sysAmount, @cashierId, GETDATE(), 
-          0, 0, @roundedBy, @serviceCharge, @guestName, 1, 1, @takeawayCharge, @startDate, 0, @entryStatus
+          @sysAmount, @sysAmount, @cashierId, GETDATE(), 'Kiosk',
+          0, 0, @roundedBy, @serviceCharge, @guestName, 1, 1, @takeawayCharge, @startDate, 0, @entryStatus, @terminalCode
         )
       `);
 
@@ -4182,7 +4215,7 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
     // 7. Insert SettlementTotalSales, SettlementDetail, SettlementTranDetail
     await transaction.request()
       .input('sid', sql.UniqueIdentifier, settlementId)
-      .input('pmName', sql.VarChar(50), (paymode.Description || paymode.PayMode || 'Yeahpay Paynow').trim())
+      .input('pmName', sql.VarChar(50), effectivePaymodeName)
       .input('amount', sql.Decimal(18, 2), totalAmount)
       .input('receiptCount', sql.Int, receiptCount)
       .query(`
@@ -4196,27 +4229,61 @@ async function settlePaidQROrder(pool, orderNumber, payModeName = 'Yeahpay Payno
         VALUES (@sid, @pmName, @amount, 0);
       `);
 
-    // 8. Insert PaymentDetailCur
-    const paymentId = crypto.randomUUID();
+    // 7b. Insert SettlementDiscountDetail if discount was applied
+    if (discountAmount > 0) {
+      await transaction.request()
+        .input('sid', sql.UniqueIdentifier, settlementId)
+        .input('discId', sql.UniqueIdentifier, DEFAULT_GUID)
+        .input('discDesc', sql.VarChar(255), 'Promotion Discount')
+        .input('discAmt', sql.Money, discountAmount)
+        .query(`
+          INSERT INTO SettlementDiscountDetail (SettlementId, DiscountId, Description, SysAmount, ManualAmount, SortageOrExces)
+          VALUES (@sid, @discId, @discDesc, @discAmt, @discAmt, 0);
+        `);
+    }
+
+    // 8. Insert PaymentDetailCur, PaymentDetail (Master Table), and PaymentTransactionDetails
+    const paymentId = settlementId;
     await transaction.request()
       .input('pid', sql.UniqueIdentifier, paymentId)
       .input('sid', sql.UniqueIdentifier, settlementId)
+      .input('orderId', sql.UniqueIdentifier, order.OrderId)
       .input('pmCode', sql.Int, paymode.Position)
       .input('amount', sql.Decimal(18, 2), totalAmount)
-      .input('pmName', sql.VarChar(50), (paymode.Description || paymode.PayMode || 'Yeahpay Paynow').trim())
+      .input('refNo', sql.VarChar(100), actualOrderNo)
+      .input('pmName', sql.VarChar(500), effectivePaymodeName)
       .input('bizId', sql.UniqueIdentifier, order.BusinessUnitId || DEFAULT_GUID)
       .input('userId', sql.UniqueIdentifier, cashierId)
       .input('startDate', sql.Date, formattedStartDate)
       .query(`
-        INSERT INTO PaymentDetailCur (
-          PaymentId, BilledFor, RestaurantBillId, PaymentCollectedOn, PaymentType, Paymode, 
-          Amount, Remarks, BusinessUnitId, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn, 
+        -- 1. Current Table (for POS views)
+        INSERT INTO [dbo].[PaymentDetailCur] (
+          PaymentId, RestaurantBillId, BilledFor, PaymentCollectedOn, PaymentType, Paymode, 
+          Amount, ReferenceNumber, Remarks, BusinessUnitId, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn, 
           isSettlement, isUploadHQ, start_date
         ) VALUES (
-          @pid, 1, @sid, GETDATE(), 1, @pmCode, 
-          @amount, @pmName, @bizId, @userId, GETDATE(), @userId, GETDATE(), 
+          @pid, @sid, 1, GETDATE(), 1, @pmCode, 
+          @amount, @refNo, @pmName, @bizId, @userId, GETDATE(), @userId, GETDATE(), 
           1, 0, @startDate
-        )
+        );
+
+        -- 2. Master Table (CRITICAL for Backoffice Reports: vw_PaymentDetail)
+        INSERT INTO [dbo].[PaymentDetail] (
+          PaymentId, RestaurantBillId, SettlementId, InvoiceId, OrderId, BilledFor, PaymentCollectedOn, 
+          PaymentType, Paymode, Amount, ReferenceNumber, Remarks, BusinessUnitId, 
+          CreatedBy, CreatedOn, ModifiedBy, ModifiedOn, isSettlement, start_date
+        ) VALUES (
+          @pid, @sid, @sid, @sid, @orderId, 1, GETDATE(), 
+          1, @pmCode, @amount, @refNo, @pmName, @bizId, 
+          @userId, GETDATE(), @userId, GETDATE(), 1, @startDate
+        );
+
+        -- 3. PaymentTransactionDetails (CRITICAL for Settlement Screen and Payment Details breakdown)
+        INSERT INTO [dbo].[PaymentTransactionDetails] (
+          PaymentTransactionId, ReferenceType, ReferenceId, PayModeId, Amount, ReferenceNo, CreatedBy, CreatedDate, start_date
+        ) VALUES (
+          NEWID(), 'BILL', @sid, @pmCode, @amount, @refNo, @userId, GETDATE(), @startDate
+        );
       `);
 
     // 9. Insert SettlementItemDetail
@@ -4446,55 +4513,59 @@ router.post("/complete-online-payment", async (req, res) => {
       orderNo = await getOrGenerateOrderId(req, cleanId || "TAKEAWAY");
     }
     
-    // 🛡️ KIOSK SAFETY: If cart items are provided and DB doesn't have items for this order yet, save them first!
+    // 🛡️ KIOSK / CASHIER RESOLUTION
+    let kioskCashierId = "E1C268A2-8DA4-4CD6-8D54-5CDD800D3260";
+    try {
+      const kioskUserRes = await pool.request().query(`
+        SELECT TOP 1 UserId FROM UserMaster 
+        WHERE LOWER(LTRIM(RTRIM(ISNULL(UserName, '')))) = 'kiosk'
+           OR LOWER(LTRIM(RTRIM(ISNULL(UserCode, '')))) = 'kiosk'
+      `);
+      if (kioskUserRes.recordset.length > 0 && kioskUserRes.recordset[0].UserId) {
+        kioskCashierId = kioskUserRes.recordset[0].UserId;
+      }
+    } catch (_) {}
+
+    // 🛡️ KIOSK DATABASE INSERTION:
+    // Guarantee that RestaurantOrderCur, RestaurantOrderDetailCur, and RestaurantmodifierdetailCur
+    // are correctly populated for CASH, PAYNOW, and CARD payments upon payment confirmation.
     if (cart && Array.isArray(cart) && cart.length > 0) {
       try {
-        console.log(`[complete-online-payment] Ensuring ${cart.length} cart items are saved to DB for order: ${orderNo || cleanId}`);
-        // Check if items already exist in RestaurantOrderDetailCur
-        const existingItems = await pool.request()
-          .input("chkOrderNo", sql.NVarChar(50), orderNo || "")
-          .query(`
-            SELECT COUNT(*) AS ItemCount 
-            FROM RestaurantOrderDetailCur 
-            WHERE OrderNumber = @chkOrderNo AND StatusCode <> 0
-          `);
+        console.log(`[complete-online-payment] Ensuring ${cart.length} cart items and modifiers are saved to DB for order: ${orderNo || cleanId}`);
+        const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
+        const activeStartDate = activeDayRes.recordset[0]?.StartDate;
+        const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : activeStartDate;
 
-        if ((existingItems.recordset[0]?.ItemCount || 0) === 0) {
-          console.log(`[complete-online-payment] Order ${orderNo} has 0 items in RestaurantOrderDetailCur. Inserting cart directly...`);
-          const activeDayRes = await pool.request().query("SELECT TOP 1 StartDate FROM DateEntry ORDER BY CreatedDate DESC");
-          const activeStartDate = activeDayRes.recordset[0]?.StartDate;
-          const formattedStartDate = activeStartDate instanceof Date ? activeStartDate.toISOString().split("T")[0] : activeStartDate;
+        const paidCart = cart.map((item) => ({
+          ...item,
+          status: "SENT",
+          Status: "SENT",
+          StatusCode: 2,
+        }));
 
-          const paidCart = cart.map((item) => ({
-            ...item,
-            status: "SENT",
-            Status: "SENT",
-          }));
-
-          const syncTx = new sql.Transaction(pool);
-          await syncTx.begin();
-          try {
-            await syncToProfessionalTables(
-              syncTx,
-              cleanId || "TAKEAWAY",
-              orderNo,
-              paidCart,
-              "00000000-0000-0000-0000-000000000000",
-              formattedStartDate,
-              resolvedEntryStatus,
-              req.body.discountAmount || req.body.discount || 0,
-              req.body.discountRemarks || null,
-              null,
-              null,
-              resolvedEntryStatus
-            );
-            await syncTx.commit();
-            console.log(`✅ [complete-online-payment] Cart successfully synced to RestaurantOrderDetailCur`);
-          } catch (syncErr) {
-            if (syncTx._isStarted) await syncTx.rollback();
-            console.error("❌ [complete-online-payment] Failed to sync cart items to RestaurantOrderDetailCur:", syncErr.message);
-            throw syncErr;
-          }
+        const syncTx = new sql.Transaction(pool);
+        await syncTx.begin();
+        try {
+          await syncToProfessionalTables(
+            syncTx,
+            cleanId || "TAKEAWAY",
+            orderNo,
+            paidCart,
+            isKioskOrder ? kioskCashierId : "00000000-0000-0000-0000-000000000000",
+            formattedStartDate,
+            resolvedEntryStatus,
+            req.body.discountAmount || req.body.discount || 0,
+            req.body.discountRemarks || null,
+            null,
+            null,
+            resolvedEntryStatus
+          );
+          await syncTx.commit();
+          console.log(`✅ [complete-online-payment] Cart & modifiers successfully synced to RestaurantOrderCur, RestaurantOrderDetailCur, and RestaurantmodifierdetailCur`);
+        } catch (syncErr) {
+          if (syncTx._isStarted) await syncTx.rollback();
+          console.error("❌ [complete-online-payment] Failed to sync cart items to RestaurantOrderDetailCur:", syncErr.message);
+          throw syncErr;
         }
       } catch (checkErr) {
         console.error("⚠️ [complete-online-payment] Error checking/saving cart items:", checkErr.message);
