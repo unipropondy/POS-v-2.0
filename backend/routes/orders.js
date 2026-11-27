@@ -1498,6 +1498,13 @@ router.post("/save-cart", async (req, res) => {
       req.body.orderSource === "kiosk";
     const resolvedEntryStatus = isKioskOrder ? "K" : (entryStatus === "q" ? "q" : (entryStatus || null));
 
+    if (isKioskOrder) {
+      // 🛡️ CRITICAL REQUIREMENT: For Kiosk orders, NO records are inserted into Order, Detail, Modifier, Payment, or Settlement tables
+      // until payment has been successfully completed and confirmed (in /complete-online-payment).
+      console.log(`[SAVE-CART] Kiosk cart operation received for ${cleanId}. Deferring database insertion until payment success confirmation.`);
+      return res.json({ success: true, orderId: currentOrderId || "KIOSK-TEMP", deferred: true });
+    }
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
     try {
@@ -4511,6 +4518,27 @@ router.post("/complete-online-payment", async (req, res) => {
     }
     if (!orderNo || orderNo === "NEW" || orderNo === "#NEW" || orderNo === "PENDING" || orderNo.length < 5) {
       orderNo = await getOrGenerateOrderId(req, cleanId || "TAKEAWAY");
+    }
+    
+    // 🛡️ IDEMPOTENCY GUARD: Prevent duplicate records caused by multiple payment callbacks, repeated API requests, or multiple clicks
+    if (orderNo && orderNo !== "NEW" && orderNo !== "#NEW" && !orderNo.startsWith("TEMP-")) {
+      const existingSettlement = await pool.request()
+        .input("chkOrderNo", sql.NVarChar(50), String(orderNo).trim())
+        .query(`
+          SELECT TOP 1 SettlementID, BillNo 
+          FROM SettlementHeader 
+          WHERE BillNo = @chkOrderNo
+        `);
+      if (existingSettlement.recordset.length > 0) {
+        console.log(`[complete-online-payment] Order ${orderNo} is already settled with SettlementID: ${existingSettlement.recordset[0].SettlementID}. Returning existing settlement to prevent duplicate insertion.`);
+        return res.json({
+          success: true,
+          settlementId: existingSettlement.recordset[0].SettlementID,
+          billNo: existingSettlement.recordset[0].BillNo,
+          orderId: orderNo,
+          isDuplicatePrevented: true,
+        });
+      }
     }
     
     // 🛡️ KIOSK / CASHIER RESOLUTION

@@ -218,6 +218,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [inactivityCountdown, setInactivityCountdown] = useState(15);
   const idleTimerRef = useRef<any>(null);
   const countdownIntervalRef = useRef<any>(null);
+  // 🛡️ Mutex guard to strictly prevent double submissions, repeated callbacks, or multiple clicks
+  const isPaymentExecutingRef = useRef<boolean>(false);
 
   // ── Cart Clearance & Single Item Deletion Confirmations ──
   const [showClearCartConfirm, setShowClearCartConfirm] = useState(false);
@@ -2081,7 +2083,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setShowClearCartConfirm(false);
   };
 
-  // Remove applied promotion completely from cart, state, and database
+  // Remove applied promotion completely from cart, state, and storage
   const handleRemovePromotion = async () => {
     setAppliedPromotion(null);
     setSelectedPromotion(null);
@@ -2093,33 +2095,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       (item) => !item.isPromotionalItem && !item.isPromotion,
     );
     setCart(cleanCart);
-
-    try {
-      const orderId = currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
-      if (orderId) {
-        const storedOrderType = (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
-        const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
-        const activeTableId = tableId || "TAKEAWAY";
-        await fetch(`${API}/order/save-cart`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tableId: activeTableId,
-            orderId: orderId,
-            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
-            isTakeaway: isTakeaway,
-            items: cleanCart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
-            userId: "00000000-0000-0000-0000-000000000000",
-            isKiosk: true,
-            entryStatus: "K",
-            discountAmount: 0,
-            discountRemarks: null,
-          }),
-        });
-      }
-    } catch (delErr) {
-      console.warn("Sync cart after promo removal error:", delErr);
-    }
   };
 
   const confirmDeleteItem = async () => {
@@ -2383,62 +2358,6 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         JSON.stringify(selectedPromotion),
       );
 
-      // 6. Cart Persistence: Sync to Database via /order/save-cart immediately
-      try {
-        const nonPromoSubtotal = cleanCart.reduce(
-          (sum, item) =>
-            sum +
-            Number(item.Price || item.finalPrice || item.price || 0) *
-              Number(item.qty || 1),
-          0,
-        );
-        let calculatedDisc = 0;
-        if (pType.includes("PERCENT") || pType.includes("%")) {
-          calculatedDisc = (nonPromoSubtotal * discVal) / 100;
-        } else if (pType === "FLAT") {
-          calculatedDisc = discVal;
-        }
-
-        const orderId =
-          currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
-        const storedOrderType =
-          (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
-        const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
-        const activeTableId = tableId || "TAKEAWAY";
-
-        const saveRes = await fetch(`${API}/order/save-cart`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tableId: activeTableId,
-            orderId: orderId,
-            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
-            isTakeaway: isTakeaway,
-            items: updatedCart.map((item) => ({
-              ...item,
-              status: "SENT",
-              Status: "SENT",
-              StatusCode: 2,
-            })),
-            userId: "00000000-0000-0000-0000-000000000000",
-            isKiosk: true,
-            entryStatus: "K",
-            discountAmount: calculatedDisc,
-            discountRemarks: selectedPromotion.PromotionName,
-            promotionId: selectedPromotion.PromotionId,
-            promotionName: selectedPromotion.PromotionName,
-          }),
-        });
-
-        const saveJson = await saveRes.json();
-        if (saveJson?.orderId && saveJson.orderId !== orderId) {
-          setCurrentOrderId(saveJson.orderId);
-          await AsyncStorage.setItem("kioskOrderId", saveJson.orderId);
-        }
-      } catch (saveErr) {
-        console.warn("⚠️ [handleAddToCartPromotion] Save cart sync warning:", saveErr);
-      }
-
       // 7. Show success toast, close modal, and return to cart screen
       setPromoSuccessToast(`Offer "${selectedPromotion.PromotionName}" added to cart!`);
       setTimeout(() => setPromoSuccessToast(null), 3500);
@@ -2612,50 +2531,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     console.log("Calculated Total:", calculatedTotal);
     setTotalAmount(calculatedTotal);
 
-    const activeTableId = overrideTableId || tableId || "TAKEAWAY";
-
-    // Save cart items to database (RestaurantOrderCur & RestaurantOrderDetailCur) immediately
-    if (cart.length > 0) {
-      try {
-        const orderId =
-          currentOrderId || (await AsyncStorage.getItem("kioskOrderId"));
-        const storedOrderType =
-          (await AsyncStorage.getItem("kioskOrderType")) || "DINE_IN";
-        const isTakeaway = storedOrderType.toUpperCase().includes("TAKEAWAY");
-        console.log(
-          `[Checkout] Saving cart for table: ${activeTableId}, order: ${orderId}, items: ${cart.length}`,
-        );
-        const saveRes = await fetch(`${API}/order/save-cart`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tableId: activeTableId,
-            orderId: orderId,
-            orderType: isTakeaway ? "TAKEAWAY" : "DINE_IN",
-            isTakeaway: isTakeaway,
-            items: cart.map((item) => ({ ...item, status: "SENT", Status: "SENT", StatusCode: 2 })),
-            userId: "00000000-0000-0000-0000-000000000000",
-            isKiosk: true,
-            entryStatus: "K",
-            isSelfCollect: isSelfCollect,
-            isTentNumber: isTentNumber,
-            tentNumber: isTentNumber ? tableNo : undefined,
-            discountAmount: promotionDiscount || 0,
-            discountRemarks: appliedPromotion ? appliedPromotion.PromotionName : null,
-            promotionId: appliedPromotion?.PromotionId || undefined,
-            promotionName: appliedPromotion?.PromotionName || undefined,
-          }),
-        });
-        const saveJson = await saveRes.json();
-        console.log("✅ [Checkout] Cart synced response:", saveJson);
-        if (saveJson?.orderId && saveJson.orderId !== orderId) {
-          setCurrentOrderId(saveJson.orderId);
-          await AsyncStorage.setItem("kioskOrderId", saveJson.orderId);
-        }
-      } catch (err) {
-        console.warn("⚠️ [Checkout] Cart sync error:", err);
-      }
-    }
+    // 🛡️ CRITICAL REQUIREMENT: Do NOT save or insert any records to the database during checkout opening.
+    // Cart and selections are retained purely in client-side state/AsyncStorage.
+    // All Order, Order Detail, Modifier, Payment, and Settlement table insertions occur
+    // ONLY AFTER the payment is verified as SUCCESS / COMPLETED.
 
     // Ensure previous modals are closed, then open payment modal
     setShowPromotionModal(false);
@@ -2671,6 +2550,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const handlePaymodeClick = (method: string) => {
+    if (isPaymentExecutingRef.current) {
+      console.warn("Payment already in progress. Ignoring duplicate click.");
+      return;
+    }
     const extra = getExtraChargeForPaymode(method);
     if (extra > 0) {
       setPendingPaymentAction({ method, extraCharge: extra });
@@ -2681,6 +2564,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const executePaymentDecision = (method: string, extraCharge = 0) => {
+    if (isPaymentExecutingRef.current) {
+      console.warn("Payment already in progress. Ignoring duplicate execution.");
+      return;
+    }
     const finalPayable = (
       Number(calculatedTotal) + Number(extraCharge)
     ).toFixed(2);
@@ -2697,6 +2584,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     payWay: "CARD" | "PAYNOW",
     extraCharge = 0,
   ) => {
+    if (isPaymentExecutingRef.current) {
+      console.warn("Payment already in progress. Ignoring duplicate terminal initiation.");
+      return;
+    }
     const finalPayable = (
       Number(calculatedTotal) + Number(extraCharge)
     ).toFixed(2);
@@ -2744,7 +2635,10 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       }
       console.log("💳 YeahPay Pay API Response:", data);
 
+      // 🛡️ CRITICAL RULE: Insert records ONLY AFTER payment is confirmed SUCCESS / COMPLETED
       if (data.success || data.status === 104) {
+        if (isPaymentExecutingRef.current) return;
+        isPaymentExecutingRef.current = true;
         setYeahPayStatus("SUCCESS");
         setYeahPayMsg("Transaction Approved by YeahPay Terminal!");
         setYeahPayDetails(data);
@@ -2766,6 +2660,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           pollCount++;
           if (pollCount > maxPolls) {
             clearInterval(pollInterval);
+            isPaymentExecutingRef.current = false;
             setYeahPayStatus("FAILED");
             setYeahPayMsg("Payment timeout on POS terminal. Please try again.");
             return;
@@ -2781,6 +2676,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             const queryData = await queryRes.json();
             console.log("🔍 YeahPay Query Status:", queryData);
 
+            // 🛡️ CRITICAL RULE: ZERO database insertion if pending, failed, or cancelled
             if (
               queryData.success ||
               queryData.status === 104 ||
@@ -2788,6 +2684,8 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               queryData.status === 2
             ) {
               clearInterval(pollInterval);
+              if (isPaymentExecutingRef.current) return;
+              isPaymentExecutingRef.current = true;
               setYeahPayStatus("SUCCESS");
               setYeahPayMsg("Transaction Approved by YeahPay Terminal!");
               setYeahPayDetails(queryData);
@@ -2798,6 +2696,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               }, 1200);
             } else if (queryData.status === 105 || queryData.status === -1) {
               clearInterval(pollInterval);
+              isPaymentExecutingRef.current = false;
               setYeahPayStatus("FAILED");
               setYeahPayMsg(
                 queryData.msg || "Payment Failed or Cancelled on POS terminal.",
@@ -2808,6 +2707,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           }
         }, 2000);
       } else {
+        isPaymentExecutingRef.current = false;
         setYeahPayStatus("FAILED");
         setYeahPayMsg(
           data.msg || "Failed to initiate payment on YeahPay terminal.",
@@ -2815,6 +2715,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       }
     } catch (err: any) {
       console.error("handleYeahPayPayment Error:", err);
+      isPaymentExecutingRef.current = false;
       setYeahPayStatus("FAILED");
       setYeahPayMsg(
         err?.message || "Network error connecting to YeahPay gateway.",
@@ -2823,6 +2724,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   };
 
   const executeCompletePayment = async (method: string, extraCharge = 0) => {
+    isPaymentExecutingRef.current = true;
     setIsCartLoading(true);
     setShowPaymentPopup(false);
 
@@ -2963,6 +2865,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         });
       }
     } catch (err: any) {
+      isPaymentExecutingRef.current = false;
       setIsCartLoading(false);
       Alert.alert("Settlement Error", err?.message || "Payment Failed");
     } finally {
@@ -5465,6 +5368,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         transparent
         animationType="fade"
         onRequestClose={async () => {
+          isPaymentExecutingRef.current = false;
           try {
             await fetch(`${API}/yeahpay/cancel`, { method: "POST" });
           } catch {}
@@ -5544,6 +5448,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
             <TouchableOpacity
               style={styles.yeahPayCancelBtn}
               onPress={async () => {
+                isPaymentExecutingRef.current = false;
                 try {
                   await fetch(`${API}/yeahpay/cancel`, { method: "POST" });
                 } catch {}
