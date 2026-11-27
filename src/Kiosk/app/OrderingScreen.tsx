@@ -7558,7 +7558,7 @@ const styles = StyleSheet.create({
   promotionSkipBtn: {
     minWidth: 180,
     height: 52,
-    borderRadius: 26,
+    borderRadius: 12,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
@@ -7574,7 +7574,7 @@ const styles = StyleSheet.create({
     flex: 1,
     maxWidth: 280,
     height: 52,
-    borderRadius: 26,
+    borderRadius: 12,
     backgroundColor: "#DC2626",
     flexDirection: "row",
     alignItems: "center",
