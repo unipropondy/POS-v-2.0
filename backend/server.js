@@ -506,6 +506,10 @@ app.get(["/dishgroups/:id", "/api/dishgroups/:id"], (req, res) =>
 app.get(["/dishes/all", "/api/dishes/all"], (req, res) =>
   res.redirect("/api/menu/dishes/all"),
 );
+app.get(["/dishes/favourites", "/api/dishes/favourites"], (req, res) => {
+  const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  return res.redirect(`/api/menu/dishes/favourites${qs}`);
+});
 app.get(["/dishes/group/:id", "/api/dishes/group/:id"], (req, res) =>
   res.redirect(`/api/menu/dishes/group/${req.params.id}`),
 );

@@ -3840,7 +3840,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               {/* Hero Banner matching reference design */}
               <View style={styles.heroBanner}>
                 <View style={styles.heroIconCircle}>
-                  <Ionicons name="restaurant" size={32} color="#ea580c" />
+                  <Ionicons
+                    name={isCategoryFavourite(activeCategory) ? "heart" : "restaurant"}
+                    size={32}
+                    color={isCategoryFavourite(activeCategory) ? "#FF5A16" : "#ea580c"}
+                  />
                 </View>
                 <View style={styles.heroTextWrap}>
                   <Text style={styles.heroCategoryTitle}>

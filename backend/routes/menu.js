@@ -340,9 +340,12 @@ router.get("/dishes/group/:DishGroupId", async (req, res) => {
         FROM DishMaster d
         LEFT JOIN DishGroupMaster dgm ON d.DishGroupId = dgm.DishGroupId
         LEFT JOIN CategoryMaster cat ON dgm.CategoryId = cat.CategoryId
-        LEFT JOIN CenterKitchenType ckt ON d.CenterKitchen = ckt.KitchenTypeCode
-        LEFT JOIN PrinterMaster pm ON ckt.KitchenTypeCode = pm.KitchenTypeCode
-        WHERE ${favClause.whereCondition}
+        LEFT JOIN CategoryKitchenType ckt ON dgm.CategoryId = ckt.CategoryId
+        LEFT JOIN (
+          SELECT *, ROW_NUMBER() OVER(PARTITION BY LOWER(TRIM(KitchenTypeName)) ORDER BY PrinterId) as rn
+          FROM PrintMaster WHERE IsActive = 1 AND IsEnabled = 1 AND PrinterType = 2
+        ) pm ON LOWER(TRIM(ISNULL(ckt.KitchenTypeName, cat.CategoryName))) = LOWER(TRIM(pm.KitchenTypeName)) AND pm.rn = 1
+        WHERE d.IsActive = 1 AND ${favClause.whereExpr}
           AND ISNULL(d.IsSoldOut, 0) = 0
           ${filterClause}
         ORDER BY ISNULL(d.SordCode, 0) ASC, d.Name ASC
