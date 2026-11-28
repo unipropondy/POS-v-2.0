@@ -189,6 +189,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [checkingPromotions, setCheckingPromotions] = useState(false);
   const [selectedPromotions, setSelectedPromotions] = useState<any[]>([]);
   const [appliedPromotion, setAppliedPromotion] = useState<any | null>(null);
+  const [promoDismissedInCart, setPromoDismissedInCart] = useState(false);
   const [isAddingPromo, setIsAddingPromo] = useState(false);
   const [promoErrorMessage, setPromoErrorMessage] = useState<string | null>(null);
   const [promoSuccessToast, setPromoSuccessToast] = useState<string | null>(null);
@@ -2137,12 +2138,18 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     }
   };
 
+  useEffect(() => {
+    if (!showCartPage) {
+      setPromoDismissedInCart(false);
+    }
+  }, [showCartPage]);
+
   // Step 1: Checkout button click handler - Checks PromotionMaster FIRST
   const handleCheckoutClick = async () => {
     if (cart.length === 0) return;
 
-    // If a promotion has already been added to the cart, proceed directly to Checkout Option
-    if (appliedPromotion) {
+    // Only skip if user already selected/added promotions during this Cart visit
+    if (promoDismissedInCart) {
       proceedToCheckoutOption();
       return;
     }
@@ -2160,7 +2167,16 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       if (validPromos.length > 0) {
         setActivePromotions(validPromos);
-        setSelectedPromotions([validPromos[0]]);
+        const alreadyInCartPromos = validPromos.filter((vp: any) =>
+          cart.some(
+            (c: any) =>
+              (c.isPromotionalItem || c.isPromotion) &&
+              c.PromotionId === vp.PromotionId,
+          ),
+        );
+        setSelectedPromotions(
+          alreadyInCartPromos.length > 0 ? alreadyInCartPromos : [validPromos[0]],
+        );
         // Display Promotion Popup FIRST (ensure other modals are closed)
         setShowTableModal(false);
         setShowPaymentPopup(false);
@@ -2369,6 +2385,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       setPromoSuccessToast(toastMsg);
       setTimeout(() => setPromoSuccessToast(null), 3500);
 
+      setPromoDismissedInCart(true);
       setShowPromotionModal(false);
       setShowCartPage(true);
     } catch (err: any) {
