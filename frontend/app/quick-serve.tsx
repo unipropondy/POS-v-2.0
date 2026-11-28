@@ -1588,6 +1588,7 @@ export default function QuickServePOSScreen() {
   };
 
   const executePaymentFinalize = async () => {
+    if (isProcessingPayment) return;
     setIsProcessingPayment(true);
     try {
       const activeTableId = selectedTable ? String(selectedTable.id || selectedTable.TableId || "") : "";
@@ -1598,6 +1599,13 @@ export default function QuickServePOSScreen() {
 
       // ⚡ SNAPSHOT CART BEFORE CLEARING (for printing)
       const currentCartSnapshot = [...cartItems];
+
+      // ⚡ Unique checkout session ID for idempotency & deduplication
+      const quickServeSettlementId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
 
       // ⚡ INSTANT OPTIMISTIC CLEAR — wipe cart immediately so UI feels instant with ZERO delay
       const targetCtx = useCartStore.getState().currentContextId || getContextId(useOrderContextStore.getState().currentOrder);
@@ -1626,6 +1634,7 @@ export default function QuickServePOSScreen() {
       });
 
       const saleData = {
+        settlementId: quickServeSettlementId,
         totalAmount: finalTotal,
         subTotal: subtotal,
         discountAmount: discountAmount,
@@ -1666,6 +1675,7 @@ export default function QuickServePOSScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Request-ID": quickServeSettlementId,
           ...(useAuthStore.getState().token ? { Authorization: `Bearer ${useAuthStore.getState().token}` } : {}),
         },
         body: JSON.stringify(saleData),

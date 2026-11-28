@@ -2633,8 +2633,22 @@ router.get("/daily-order-count", async (req, res) => {
   }
 });
 
+// 🛡️ IN-MEMORY DEDUPLICATION CACHE FOR SALES FINALIZATION
+// Prevents duplicate sales creation caused by rapid button taps, socket echos, or concurrent browser tabs.
+const recentSalesDeduplicationCache = new Map(); // key -> { status: 'processing' | 'resolved', timestamp, response }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of recentSalesDeduplicationCache.entries()) {
+    if (now - val.timestamp > 30000) { // 30 seconds TTL
+      recentSalesDeduplicationCache.delete(key);
+    }
+  }
+}, 30000);
+
 /* ================= SAVE SALE ================= */
 router.post("/save", async (req, res) => {
+  let dedupKey = null;
   try {
     const pool = await poolPromise;
 
@@ -2699,6 +2713,42 @@ router.post("/save", async (req, res) => {
     if (validationError) {
       console.warn(`[SAVE SALE] Validation failed: ${validationError}`);
       return res.status(400).json({ error: validationError });
+    }
+
+    // 🛡️ IN-MEMORY CONCURRENT REQUEST & RAPID DUPLICATE DEDUPLICATION GUARD
+    const isQuickServeParsed = req.body.isQuickServe === true || req.body.isQuickServe === "true";
+    const normTable = (tableId || tableNo || "DIRECT").toString().trim().toLowerCase();
+    const normAmount = Number(totalAmount || 0).toFixed(2);
+
+    if (clientSettlementId) {
+      dedupKey = `sale_sid_${String(clientSettlementId).trim().toLowerCase()}`;
+    } else if (!isSplitParsed && !isQuickServeParsed && normTable !== "direct") {
+      dedupKey = `sale_tbl_${normTable}_amt_${normAmount}`;
+    } else {
+      dedupKey = null;
+    }
+
+    if (dedupKey) {
+      const existingSale = recentSalesDeduplicationCache.get(dedupKey);
+      if (existingSale) {
+        if (existingSale.status === 'processing') {
+          console.log(`[SAVE SALE DEDUP] Concurrent save request for ${dedupKey} is already in-flight. Awaiting resolution...`);
+          for (let i = 0; i < 30; i++) {
+            await new Promise((r) => setTimeout(r, 200));
+            const resolved = recentSalesDeduplicationCache.get(dedupKey);
+            if (resolved && resolved.status === 'resolved') {
+              console.log(`[SAVE SALE DEDUP] Returning resolved bill ${resolved.response.billNo} for duplicate request.`);
+              return res.json(resolved.response);
+            }
+          }
+          return res.status(409).json({ error: "Sale is already being finalized for this table." });
+        } else if (existingSale.status === 'resolved') {
+          console.log(`[SAVE SALE DEDUP] Returning cached response for duplicate request: ${dedupKey} (Bill: ${existingSale.response.billNo})`);
+          return res.json(existingSale.response);
+        }
+      }
+
+      recentSalesDeduplicationCache.set(dedupKey, { status: 'processing', timestamp: Date.now() });
     }
 
     // 1. Idempotency Check: Verify if this settlement already exists
@@ -3122,6 +3172,12 @@ router.post("/save", async (req, res) => {
           }
         }
 
+        const totalLineItemDisc = Number(itemDiscountAmount) || 0;
+        const billOrderDisc = Number(orderDiscountAmount) || 0;
+        // SettlementHeader.DiscountAmount should reflect only the bill-level discount because SubTotal is already post-item-discount.
+        // If there is no bill-level discount, DiscountAmount is 0 (so views and calculations don't double-deduct item discounts).
+        const settlementDiscountAmount = billOrderDisc > 0 ? billOrderDisc : 0;
+
         const headerResult = await transaction
           .request()
           .input("SettlementID", sql.UniqueIdentifier, settlementId)
@@ -3131,8 +3187,7 @@ router.post("/save", async (req, res) => {
           .input(
             "DiscountAmount",
             sql.Money,
-            (Number(orderDiscountAmount) || 0) +
-              (Number(itemDiscountAmount) || 0),
+            settlementDiscountAmount,
           )
           .input("DiscountType", sql.NVarChar(50), discountType || "fixed")
           .input("BillNo", sql.NVarChar(50), finalBillNo)
@@ -3171,7 +3226,7 @@ router.post("/save", async (req, res) => {
             discountPercentage || null,
           )
           .input("DiscountRemarks", sql.NVarChar(1000), discountRemarks || null)
-          .input("TotalDiscountAmount", sql.Decimal(18, 2), discountAmount || 0)
+          .input("TotalDiscountAmount", sql.Decimal(18, 2), settlementDiscountAmount)
           .input(
             "TotalLineItemDiscountAmount",
             sql.Decimal(18, 2),
@@ -3244,7 +3299,7 @@ router.post("/save", async (req, res) => {
         );
 
         if (payments && Array.isArray(payments) && payments.length > 0) {
-          if (Number(discountAmount) > 0) {
+          if (Number(settlementDiscountAmount) > 0) {
             const discReq = transaction
               .request()
               .input("SettlementID", sql.UniqueIdentifier, settlementId)
@@ -3254,7 +3309,7 @@ router.post("/save", async (req, res) => {
                 sql.VarChar(255),
                 String(discountType || "Fixed") + " Discount",
               )
-              .input("DiscAmount", sql.Money, discountAmount);
+              .input("DiscAmount", sql.Money, settlementDiscountAmount);
             await discReq.query(`
             INSERT INTO SettlementDiscountDetail (SettlementId, DiscountId, Description, SysAmount, ManualAmount, SortageOrExces)
             VALUES (@SettlementID, @DiscountID, @DiscountDesc, @DiscAmount, @DiscAmount, 0);
@@ -3279,7 +3334,7 @@ router.post("/save", async (req, res) => {
           `;
           }
 
-          if (Number(discountAmount) > 0) {
+          if (Number(settlementDiscountAmount) > 0) {
             settlementSql += `
             INSERT INTO SettlementDiscountDetail (SettlementId, DiscountId, Description, SysAmount, ManualAmount, SortageOrExces)
             VALUES (@SettlementID, @DiscountID, @DiscountDesc, @DiscAmount, @DiscAmount, 0);
@@ -3295,7 +3350,7 @@ router.post("/save", async (req, res) => {
             .input("AmountDiff", sql.Money, 0)
             .input("ReceiptCount", sql.Numeric(18, 0), receiptCount);
 
-          if (Number(discountAmount) > 0) {
+          if (Number(settlementDiscountAmount) > 0) {
             settlementReq
               .input("DiscountID", sql.UniqueIdentifier, DEFAULT_GUID)
               .input(
@@ -3303,7 +3358,7 @@ router.post("/save", async (req, res) => {
                 sql.VarChar(255),
                 String(discountType || "Fixed") + " Discount",
               )
-              .input("DiscAmount", sql.Money, discountAmount);
+              .input("DiscAmount", sql.Money, settlementDiscountAmount);
           }
 
           await settlementReq.query(settlementSql);
@@ -4742,7 +4797,7 @@ router.post("/save", async (req, res) => {
       }
     }
 
-    res.json({
+    const successPayload = {
       success: true,
       settlementId,
       billNo: finalBillNo || displayOrderId,
@@ -4750,8 +4805,21 @@ router.post("/save", async (req, res) => {
       rewardPointsEarned,
       memberRewardBalance,
       isOrderClosed: !hasRemaining,
-    });
+    };
+
+    if (dedupKey) {
+      recentSalesDeduplicationCache.set(dedupKey, {
+        status: 'resolved',
+        timestamp: Date.now(),
+        response: successPayload,
+      });
+    }
+
+    res.json(successPayload);
   } catch (err) {
+    if (dedupKey) {
+      recentSalesDeduplicationCache.delete(dedupKey);
+    }
     console.error("SAVE SALE ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }

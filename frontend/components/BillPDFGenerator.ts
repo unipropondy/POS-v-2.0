@@ -426,7 +426,15 @@ class BillPDFGenerator {
     const focAmt = focPayment
       ? Number(focPayment.amount ?? focPayment.Amount ?? 0)
       : 0;
-    const orderDiscount = finalDiscountInfo?.amount || 0;
+    let orderDiscount = finalDiscountInfo?.amount || 0;
+    if (
+      totalItemDiscount > 0 &&
+      Math.abs(orderDiscount - totalItemDiscount) < 0.01
+    ) {
+      orderDiscount = 0;
+    } else if (totalItemDiscount > 0 && orderDiscount > totalItemDiscount) {
+      orderDiscount = orderDiscount - totalItemDiscount;
+    }
     const normalDiscount = Math.max(0, orderDiscount - focAmt);
     const hasOrderDiscount = normalDiscount > 0;
     const hasAnyDiscount = totalItemDiscount > 0 || orderDiscount > 0;

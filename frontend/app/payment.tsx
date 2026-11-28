@@ -159,6 +159,10 @@ const ongoingPayments: Record<string, {
   onUpdate?: (status: "idle" | "processing" | "success" | "cancelled" | "failed", message: string, result: any, error: any) => void;
 }> = {};
 
+// 🛡️ GLOBAL MODULE-LEVEL FINALIZATION LOCK:
+// Survives component re-renders, unmounts, and multiple socket/HTTP triggers.
+const globalTerminalFinalizationLocks = new Set<string>();
+
 export default function PaymentScreen() {
   const pathname = usePathname();
   const params = useLocalSearchParams();
@@ -337,7 +341,7 @@ export default function PaymentScreen() {
 
       if (terminalSession.status === "success") {
         const lockKey = (context?.tableId || displayOrderId || "MAIN_PAYMENT_LOCK").toString();
-        if (!finalizationLockRef.current[lockKey]) {
+        if (!globalTerminalFinalizationLocks.has(lockKey) && !finalizationLockRef.current[lockKey]) {
           handleTerminalPaymentSuccess(
             terminalSession.method || method,
             terminalSession.total || total,
@@ -391,11 +395,16 @@ export default function PaymentScreen() {
 
   const handleTerminalPaymentSuccess = React.useCallback((methodName: string, totalAmt: number, msg?: string) => {
     const lockKey = (context?.tableId || displayOrderId || "MAIN_PAYMENT_LOCK").toString();
-    if (finalizationLockRef.current[lockKey]) {
+    if (globalTerminalFinalizationLocks.has(lockKey) || finalizationLockRef.current[lockKey]) {
       console.log(`[YeahPay] Already finalizing payment for ${lockKey}, skipping duplicate call.`);
       return;
     }
+    globalTerminalFinalizationLocks.add(lockKey);
     finalizationLockRef.current[lockKey] = true;
+    setTimeout(() => {
+      globalTerminalFinalizationLocks.delete(lockKey);
+      delete finalizationLockRef.current[lockKey];
+    }, 20000);
 
     showToast({
       type: 'success',
@@ -416,6 +425,7 @@ export default function PaymentScreen() {
     const execFn = executeFinalPaymentRef.current || executeFinalPayment;
     execFn(undefined, undefined, undefined, true).catch((err: any) => {
       console.error("❌ executeFinalPayment error:", err);
+      globalTerminalFinalizationLocks.delete(lockKey);
       delete finalizationLockRef.current[lockKey];
     });
   }, [cacheKey, context?.tableId, displayOrderId, currencySymbol]);
@@ -1797,6 +1807,7 @@ export default function PaymentScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Request-ID": checkoutSessionId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           ...(useAuthStore.getState().token ? { "Authorization": `Bearer ${useAuthStore.getState().token}` } : {})
         },
         body: JSON.stringify(saleData),

@@ -491,11 +491,13 @@ export default function SalesReport() {
   };
 
   const finalBillAmount = selectedOrder
-    ? Number(selectedOrder.SubTotal || 0) -
-      Number(selectedOrder.DiscountAmount || 0) +
-      Number(selectedOrder.ServiceCharge || 0) +
-      Number(selectedOrder.TakeawayCharge || 0) +
-      Number(selectedOrder.TotalTax || 0)
+    ? (Number(selectedOrder.SysAmount) > 0
+        ? Number(selectedOrder.SysAmount)
+        : Number(selectedOrder.SubTotal || 0) -
+          Number(selectedOrder.DiscountAmount || 0) +
+          Number(selectedOrder.ServiceCharge || 0) +
+          Number(selectedOrder.TakeawayCharge || 0) +
+          Number(selectedOrder.TotalTax || 0))
     : 0;
 
   const allocatedSplitsSum = useMemo(() => {
@@ -2324,16 +2326,29 @@ export default function SalesReport() {
         isCombo: item.isCombo,
       }));
 
+      const sub = Number(selectedOrder.SubTotal || 0);
+      const sc = Number(selectedOrder.ServiceCharge || 0);
+      const tax = Number(selectedOrder.TotalTax || 0);
+      const tc = Number(selectedOrder.TakeawayCharge || 0);
+      const sysAmt = Number(selectedOrder.SysAmount || 0);
+      const isRedundantItemDiscount =
+        Number(selectedOrder?.DiscountAmount || 0) > 0 &&
+        Math.abs(sub + sc + tax + tc - sysAmt) < 0.05;
+
+      const effectiveBillDiscount = isRedundantItemDiscount
+        ? 0
+        : Number(selectedOrder.DiscountAmount ?? 0);
+
       const isPercentage = selectedOrder.DiscountType === "percentage";
       const discountValue = isPercentage
         ? Number(selectedOrder.DiscountPercentage ?? 0)
-        : Number(selectedOrder.DiscountAmount ?? 0);
+        : effectiveBillDiscount;
 
       const discountInfo = {
-        applied: Number(selectedOrder.DiscountAmount ?? 0) > 0,
+        applied: effectiveBillDiscount > 0,
         type: (selectedOrder.DiscountType || "fixed") as "fixed" | "percentage",
         value: discountValue,
-        amount: Number(selectedOrder.DiscountAmount ?? 0),
+        amount: effectiveBillDiscount,
         subtotal: Number(selectedOrder.SubTotal ?? 0),
       };
 
@@ -2387,7 +2402,7 @@ export default function SalesReport() {
           selectedOrder.CashierName ||
           "",
         // Sunmi template details
-        discountAmount: Number(selectedOrder.DiscountAmount ?? 0),
+        discountAmount: effectiveBillDiscount,
         discountType: selectedOrder.DiscountType || null,
         discountValue: discountValue,
         subTotal: Number(selectedOrder.SubTotal ?? 0),
@@ -5724,10 +5739,18 @@ export default function SalesReport() {
                     const regularDiscountAmt = Number(
                       selectedOrder?.DiscountAmount || 0,
                     );
+                    const sub = Number(selectedOrder?.SubTotal || 0);
+                    const sc = Number(selectedOrder?.ServiceCharge || 0);
+                    const tax = Number(selectedOrder?.TotalTax || 0);
+                    const tc = Number(selectedOrder?.TakeawayCharge || 0);
+                    const sysAmt = Number(selectedOrder?.SysAmount || 0);
+                    const isRedundantItemDiscount =
+                      regularDiscountAmt > 0 &&
+                      Math.abs(sub + sc + tax + tc - sysAmt) < 0.05;
 
                     return (
                       <>
-                        {regularDiscountAmt > 0 && (
+                        {regularDiscountAmt > 0 && !isRedundantItemDiscount && (
                           <View
                             style={{
                               flexDirection: "row",
