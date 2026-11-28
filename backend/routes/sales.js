@@ -2720,10 +2720,10 @@ router.post("/save", async (req, res) => {
     const normTable = (tableId || tableNo || "DIRECT").toString().trim().toLowerCase();
     const normAmount = Number(totalAmount || 0).toFixed(2);
 
-    if (clientSettlementId) {
-      dedupKey = `sale_sid_${String(clientSettlementId).trim().toLowerCase()}`;
-    } else if (!isSplitParsed && !isQuickServeParsed && normTable !== "direct") {
+    if (!isSplitParsed && !isQuickServeParsed && normTable !== "direct") {
       dedupKey = `sale_tbl_${normTable}_amt_${normAmount}`;
+    } else if (clientSettlementId) {
+      dedupKey = `sale_sid_${String(clientSettlementId).trim().toLowerCase()}`;
     } else {
       dedupKey = null;
     }
@@ -2769,6 +2769,34 @@ router.post("/save", async (req, res) => {
           settlementId: existing.SettlementID,
           billNo: existing.BillNo,
           orderId: existing.BillNo,
+        });
+      }
+    }
+
+    // 1b. Database-level Duplicate Prevention Guard for Dining Tables (within 60 seconds)
+    if (!isSplitParsed && !isQuickServeParsed && normTable !== "direct" && tableNo) {
+      const dbDupeCheck = await pool
+        .request()
+        .input("TableNo", sql.NVarChar(50), String(tableNo).trim())
+        .input("SysAmount", sql.Money, Number(totalAmount || 0))
+        .query(`
+          SELECT TOP 1 SettlementID, BillNo, CreatedOn 
+          FROM SettlementHeader WITH (NOLOCK)
+          WHERE TableNo = @TableNo 
+            AND ABS(SysAmount - @SysAmount) < 0.01
+            AND CreatedOn >= DATEADD(second, -60, GETDATE())
+            AND IsCancelled = 0
+          ORDER BY CreatedOn DESC
+        `);
+      if (dbDupeCheck.recordset.length > 0) {
+        const existing = dbDupeCheck.recordset[0];
+        console.warn(`[SAVE SALE DEDUP] Database guard caught duplicate settlement for Table ${tableNo} ($${totalAmount}). Existing Bill: ${existing.BillNo}`);
+        return res.json({
+          success: true,
+          settlementId: existing.SettlementID,
+          billNo: existing.BillNo,
+          orderId: existing.BillNo,
+          isOrderClosed: true,
         });
       }
     }
