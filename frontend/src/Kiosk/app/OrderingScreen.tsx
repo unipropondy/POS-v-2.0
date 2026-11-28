@@ -187,7 +187,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [activePromotions, setActivePromotions] = useState<any[]>([]);
   const [checkingPromotions, setCheckingPromotions] = useState(false);
-  const [selectedPromotion, setSelectedPromotion] = useState<any | null>(null);
+  const [selectedPromotions, setSelectedPromotions] = useState<any[]>([]);
   const [appliedPromotion, setAppliedPromotion] = useState<any | null>(null);
   const [isAddingPromo, setIsAddingPromo] = useState(false);
   const [promoErrorMessage, setPromoErrorMessage] = useState<string | null>(null);
@@ -315,7 +315,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
     setCart([]);
     setAppliedPromotion(null);
-    setSelectedPromotion(null);
+    setSelectedPromotions([]);
     setShowPromotionModal(false);
     setShowCartPage(false);
     setShowModifier(false);
@@ -1153,13 +1153,13 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
           await AsyncStorage.removeItem("kioskAppliedPromotion");
           setCart([]);
           setAppliedPromotion(null);
-          setSelectedPromotion(null);
+          setSelectedPromotions([]);
           setShowCartPage(false);
         } else {
           // If continuing same session, only load if there are genuinely active unclosed items
           setCart([]);
           setAppliedPromotion(null);
-          setSelectedPromotion(null);
+          setSelectedPromotions([]);
           setShowCartPage(false);
           if (storedOrderId) {
             await loadCart(storedOrderId);
@@ -2078,7 +2078,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   const handleClearCart = async () => {
     setCart([]);
     setAppliedPromotion(null);
-    setSelectedPromotion(null);
+    setSelectedPromotions([]);
     try {
       await AsyncStorage.removeItem("kioskAppliedPromotion");
     } catch {}
@@ -2088,7 +2088,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
   // Remove applied promotion completely from cart, state, and storage
   const handleRemovePromotion = async () => {
     setAppliedPromotion(null);
-    setSelectedPromotion(null);
+    setSelectedPromotions([]);
     try {
       await AsyncStorage.removeItem("kioskAppliedPromotion");
     } catch {}
@@ -2160,7 +2160,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
 
       if (validPromos.length > 0) {
         setActivePromotions(validPromos);
-        setSelectedPromotion(validPromos[0]);
+        setSelectedPromotions([validPromos[0]]);
         // Display Promotion Popup FIRST (ensure other modals are closed)
         setShowTableModal(false);
         setShowPaymentPopup(false);
@@ -2178,12 +2178,12 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     proceedToCheckoutOption();
   };
 
-  // Add selected promotion to cart & return to cart screen
+  // Add selected promotions (multiselect) to cart & return to cart screen
   const handleAddToCartPromotion = async () => {
     setPromoErrorMessage(null);
 
-    if (!selectedPromotion) {
-      setPromoErrorMessage("Please select a promotion offer to add.");
+    if (!selectedPromotions || selectedPromotions.length === 0) {
+      setPromoErrorMessage("Please select at least one promotion offer to add.");
       return;
     }
 
@@ -2195,173 +2195,178 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         (item) => !item.isPromotionalItem && !item.isPromotion,
       );
 
-      const pType = String(selectedPromotion.PromotionType || "")
-        .trim()
-        .toUpperCase();
-      const discVal = Number(selectedPromotion.DiscountValue || 0);
-      const comboPrice = Number(selectedPromotion.PromotionAmount || 0);
+      const promoItems: any[] = [];
+      for (const promo of selectedPromotions) {
+        const pType = String(promo.PromotionType || "")
+          .trim()
+          .toUpperCase();
+        const discVal = Number(promo.DiscountValue || 0);
+        const comboPrice = Number(promo.PromotionAmount || 0);
+        const promoGuid = `00000000-0000-0000-0000-${String(promo.PromotionId).padStart(12, "0")}`;
 
-      // 3. Add separate promotional item entry according to PromotionType
-      const promoGuid = `00000000-0000-0000-0000-${String(selectedPromotion.PromotionId).padStart(12, "0")}`;
-      let promoItem: any = null;
+        if (pType === "COMBO") {
+          const rawDesc =
+            promo.Description ||
+            promo.PromotionDescription ||
+            "";
+          const includedDishNames = parseDescriptionBullets(rawDesc);
+          const comboItems = includedDishNames.map((name) => {
+            const trimmed = name.trim();
+            const matched = (dishes || []).find(
+              (d: any) =>
+                (d.Name && d.Name.trim().toLowerCase() === trimmed.toLowerCase()) ||
+                (d.name && d.name.trim().toLowerCase() === trimmed.toLowerCase())
+            );
+            return {
+              dishId: matched?.DishId || matched?.id || null,
+              name: matched?.Name || matched?.name || trimmed,
+              dishName: matched?.Name || matched?.name || trimmed,
+              surcharge: 0,
+              dishPrice: 0,
+            };
+          });
 
-      if (pType === "COMBO") {
-        const rawDesc =
-          selectedPromotion.Description ||
-          selectedPromotion.PromotionDescription ||
-          "";
-        const includedDishNames = parseDescriptionBullets(rawDesc);
-        const comboItems = includedDishNames.map((name) => {
-          const trimmed = name.trim();
-          const matched = (dishes || []).find(
-            (d: any) =>
-              (d.Name && d.Name.trim().toLowerCase() === trimmed.toLowerCase()) ||
-              (d.name && d.name.trim().toLowerCase() === trimmed.toLowerCase())
-          );
-          return {
-            dishId: matched?.DishId || matched?.id || null,
-            name: matched?.Name || matched?.name || trimmed,
-            dishName: matched?.Name || matched?.name || trimmed,
-            surcharge: 0,
-            dishPrice: 0,
-          };
-        });
+          const comboSelections = [
+            {
+              groupId: `PROMO_COMBO_${promo.PromotionId}`,
+              groupName: "Included Items",
+              items: comboItems,
+            },
+          ];
 
-        const comboSelections = [
-          {
-            groupId: `PROMO_COMBO_${selectedPromotion.PromotionId}`,
-            groupName: "Included Items",
-            items: comboItems,
-          },
-        ];
+          const formattedDesc =
+            includedDishNames.length > 0
+              ? includedDishNames.join(" • ")
+              : rawDesc || "Special Combo Promotion";
 
-        const formattedDesc =
-          includedDishNames.length > 0
-            ? includedDishNames.join(" • ")
-            : rawDesc || "Special Combo Promotion";
-
-        promoItem = {
-          id: promoGuid,
-          DishId: promoGuid,
-          lineItemId: generateUniqueLineItemId(),
-          isPromotionalItem: true,
-          isPromotion: true,
-          isCombo: true,
-          IsCombo: true,
-          CategoryName: "Food",
-          SubCategoryName: "Set Meal",
-          categoryName: "Food",
-          subCategoryName: "Set Meal",
-          comboSelections: comboSelections,
-          PromotionId: selectedPromotion.PromotionId,
-          Name: selectedPromotion.PromotionName,
-          name: selectedPromotion.PromotionName,
-          dishName: selectedPromotion.PromotionName,
-          DishName: selectedPromotion.PromotionName,
-          KitchenTypeName: "Combo Offer",
-          Description: formattedDesc,
-          Price: comboPrice,
-          finalPrice: comboPrice,
-          price: comboPrice,
-          basePrice: comboPrice,
-          qty: 1,
-          PromotionType: "Combo",
-          isTakeaway: false,
-          isServiceCharge: true,
-        };
-      } else if (pType === "BOGO") {
-        const baseItem = cleanCart[0];
-        const bogoGuid = `00000000-0000-0000-b090-${String(selectedPromotion.PromotionId).padStart(12, "0")}`;
-        promoItem = {
-          id: bogoGuid,
-          DishId: bogoGuid,
-          lineItemId: generateUniqueLineItemId(),
-          isPromotionalItem: true,
-          isPromotion: true,
-          isBogoFree: true,
-          PromotionId: selectedPromotion.PromotionId,
-          Name: `${baseItem?.Name || "Selected Item"} (BOGO Free)`,
-          DishName: `${baseItem?.Name || "Selected Item"} (BOGO Free)`,
-          KitchenTypeName: "BOGO Offer",
-          Description:
-            selectedPromotion.Description ||
-            selectedPromotion.PromotionDescription ||
-            "Buy 1 Get 1 Free Offer",
-          Price: 0,
-          finalPrice: 0,
-          price: 0,
-          qty: 1,
-          PromotionType: "BOGO",
-          isTakeaway: baseItem?.isTakeaway || false,
-          isServiceCharge: false,
-        };
-      } else if (pType === "FLAT") {
-        promoItem = {
-          id: promoGuid,
-          DishId: promoGuid,
-          lineItemId: generateUniqueLineItemId(),
-          isPromotionalItem: true,
-          isPromotion: true,
-          isFlatDiscount: true,
-          PromotionId: selectedPromotion.PromotionId,
-          Name: selectedPromotion.PromotionName,
-          DishName: selectedPromotion.PromotionName,
-          KitchenTypeName: "Special Discount",
-          Description:
-            selectedPromotion.Description ||
-            selectedPromotion.PromotionDescription ||
-            `Special Flat Discount (${currencySymbol}${discVal.toFixed(2)} OFF)`,
-          Price: 0,
-          finalPrice: 0,
-          price: 0,
-          discountValue: discVal,
-          qty: 1,
-          PromotionType: "Flat",
-          isTakeaway: false,
-          isServiceCharge: false,
-        };
-      } else {
-        // Percentage
-        promoItem = {
-          id: promoGuid,
-          DishId: promoGuid,
-          lineItemId: generateUniqueLineItemId(),
-          isPromotionalItem: true,
-          isPromotion: true,
-          isPercentageDiscount: true,
-          PromotionId: selectedPromotion.PromotionId,
-          Name: selectedPromotion.PromotionName,
-          DishName: selectedPromotion.PromotionName,
-          KitchenTypeName: "Special Discount",
-          Description:
-            selectedPromotion.Description ||
-            selectedPromotion.PromotionDescription ||
-            `Special ${discVal}% Discount`,
-          Price: 0,
-          finalPrice: 0,
-          price: 0,
-          discountValue: discVal,
-          qty: 1,
-          PromotionType: "Percentage",
-          isTakeaway: false,
-          isServiceCharge: false,
-        };
+          promoItems.push({
+            id: promoGuid,
+            DishId: promoGuid,
+            lineItemId: generateUniqueLineItemId(),
+            isPromotionalItem: true,
+            isPromotion: true,
+            isCombo: true,
+            IsCombo: true,
+            CategoryName: "Food",
+            SubCategoryName: "Set Meal",
+            categoryName: "Food",
+            subCategoryName: "Set Meal",
+            comboSelections: comboSelections,
+            PromotionId: promo.PromotionId,
+            Name: promo.PromotionName,
+            name: promo.PromotionName,
+            dishName: promo.PromotionName,
+            DishName: promo.PromotionName,
+            KitchenTypeName: "Combo Offer",
+            Description: formattedDesc,
+            Price: comboPrice,
+            finalPrice: comboPrice,
+            price: comboPrice,
+            basePrice: comboPrice,
+            qty: 1,
+            PromotionType: "Combo",
+            isTakeaway: false,
+            isServiceCharge: true,
+          });
+        } else if (pType === "BOGO") {
+          const baseItem = cleanCart[0];
+          const bogoGuid = `00000000-0000-0000-b090-${String(promo.PromotionId).padStart(12, "0")}`;
+          promoItems.push({
+            id: bogoGuid,
+            DishId: bogoGuid,
+            lineItemId: generateUniqueLineItemId(),
+            isPromotionalItem: true,
+            isPromotion: true,
+            isBogoFree: true,
+            PromotionId: promo.PromotionId,
+            Name: `${baseItem?.Name || "Selected Item"} (BOGO Free)`,
+            DishName: `${baseItem?.Name || "Selected Item"} (BOGO Free)`,
+            KitchenTypeName: "BOGO Offer",
+            Description:
+              promo.Description ||
+              promo.PromotionDescription ||
+              "Buy 1 Get 1 Free Offer",
+            Price: 0,
+            finalPrice: 0,
+            price: 0,
+            qty: 1,
+            PromotionType: "BOGO",
+            isTakeaway: baseItem?.isTakeaway || false,
+            isServiceCharge: false,
+          });
+        } else if (pType === "FLAT") {
+          promoItems.push({
+            id: promoGuid,
+            DishId: promoGuid,
+            lineItemId: generateUniqueLineItemId(),
+            isPromotionalItem: true,
+            isPromotion: true,
+            isFlatDiscount: true,
+            PromotionId: promo.PromotionId,
+            Name: promo.PromotionName,
+            DishName: promo.PromotionName,
+            KitchenTypeName: "Special Discount",
+            Description:
+              promo.Description ||
+              promo.PromotionDescription ||
+              `Special Flat Discount (${currencySymbol}${discVal.toFixed(2)} OFF)`,
+            Price: 0,
+            finalPrice: 0,
+            price: 0,
+            discountValue: discVal,
+            qty: 1,
+            PromotionType: "Flat",
+            isTakeaway: false,
+            isServiceCharge: false,
+          });
+        } else {
+          // Percentage
+          promoItems.push({
+            id: promoGuid,
+            DishId: promoGuid,
+            lineItemId: generateUniqueLineItemId(),
+            isPromotionalItem: true,
+            isPromotion: true,
+            isPercentageDiscount: true,
+            PromotionId: promo.PromotionId,
+            Name: promo.PromotionName,
+            DishName: promo.PromotionName,
+            KitchenTypeName: "Special Discount",
+            Description:
+              promo.Description ||
+              promo.PromotionDescription ||
+              `Special ${discVal}% Discount`,
+            Price: 0,
+            finalPrice: 0,
+            price: 0,
+            discountValue: discVal,
+            qty: 1,
+            PromotionType: "Percentage",
+            isTakeaway: false,
+            isServiceCharge: false,
+          });
+        }
       }
 
-      const updatedCart = promoItem ? [...cleanCart, promoItem] : cleanCart;
+      const updatedCart = [...cleanCart, ...promoItems];
+      const primaryPromo = selectedPromotions[0];
 
       // 4. Update cart state and appliedPromotion state
       setCart(updatedCart);
-      setAppliedPromotion(selectedPromotion);
+      setAppliedPromotion(primaryPromo);
 
       // 5. Cart Persistence: Save to AsyncStorage
       await AsyncStorage.setItem(
         "kioskAppliedPromotion",
-        JSON.stringify(selectedPromotion),
+        JSON.stringify(primaryPromo),
       );
 
       // 7. Show success toast, close modal, and return to cart screen
-      setPromoSuccessToast(`Offer "${selectedPromotion.PromotionName}" added to cart!`);
+      const toastMsg =
+        selectedPromotions.length > 1
+          ? `${selectedPromotions.length} offers added to cart!`
+          : `Offer "${primaryPromo.PromotionName}" added to cart!`;
+      setPromoSuccessToast(toastMsg);
       setTimeout(() => setPromoSuccessToast(null), 3500);
 
       setShowPromotionModal(false);
@@ -2385,7 +2390,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setCart((prev) =>
       prev.filter((item) => !item.isPromotionalItem && !item.isPromotion),
     );
-    setSelectedPromotion(null);
+    setSelectedPromotions([]);
     setAppliedPromotion(null);
     setPromoErrorMessage(null);
     try {
@@ -2394,6 +2399,215 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
     setShowPromotionModal(false);
     proceedToCheckoutOption();
   };
+
+  const renderPromotionOverlay = () => (
+    <View style={styles.promotionModalOverlay}>
+      <View
+        style={[
+          styles.promotionModalContainer,
+          activePromotions.length === 1 && { maxWidth: 540 },
+        ]}
+      >
+        {/* Modal Header: [🏷️ Special Offers | Select offers to apply]   [✕] */}
+        <View style={styles.promotionModalHeader}>
+          <View style={styles.promotionHeaderLeft}>
+            <Ionicons name="pricetag" size={26} color="#DC2626" style={{ marginRight: 10 }} />
+            <Text style={styles.promotionTitleText}>Special Offers</Text>
+            <View style={styles.promotionHeaderDivider} />
+            <Text style={styles.promotionSubtitleText}>Select offers to apply</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.promotionCloseBtn}
+            onPress={handleNoThanks}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="close" size={22} color="#0F172A" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Horizontal Offer Cards Row / Carousel (Multiselect) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.promotionScrollContent,
+            activePromotions.length === 1 && { justifyContent: "center" },
+          ]}
+          style={styles.promotionScrollView}
+        >
+          {activePromotions.map((promo, idx) => {
+            const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
+            const isSelected = selectedPromotions.some(
+              (p) => p.PromotionId === promo.PromotionId,
+            );
+            const promoDesc = (promo.Description || promo.PromotionDescription || "").trim();
+            const promoAmt =
+              promo.PromotionAmount !== null &&
+              promo.PromotionAmount !== undefined &&
+              Number(promo.PromotionAmount) > 0
+                ? Number(promo.PromotionAmount)
+                : null;
+            const discVal =
+              promo.DiscountValue !== null &&
+              promo.DiscountValue !== undefined &&
+              Number(promo.DiscountValue) > 0
+                ? Number(promo.DiscountValue)
+                : null;
+            const displayPrice =
+              promoAmt !== null
+                ? `${currencySymbol}${promoAmt.toFixed(2)}`
+                : discVal !== null
+                  ? `${currencySymbol}${discVal.toFixed(2)}`
+                  : `${currencySymbol}0.00`;
+
+            return (
+              <TouchableOpacity
+                key={promo.PromotionId || idx}
+                style={[
+                  styles.promotionCard,
+                  isSelected && styles.promotionCardSelected,
+                ]}
+                onPress={() => {
+                  setPromoErrorMessage(null);
+                  setSelectedPromotions((prev) =>
+                    prev.some((p) => p.PromotionId === promo.PromotionId)
+                      ? prev.filter((p) => p.PromotionId !== promo.PromotionId)
+                      : [...prev, promo],
+                  );
+                }}
+                activeOpacity={0.88}
+              >
+                {/* Left Food Image */}
+                <View style={styles.promotionImageWrap}>
+                  {promoImgUri && !promoImageErrors[String(promo.PromotionId)] ? (
+                    <ExpoImage
+                      source={{ uri: promoImgUri }}
+                      style={styles.promotionImage}
+                      contentFit="contain"
+                      onError={() => {
+                        setPromoImageErrors((prev) => ({
+                          ...prev,
+                          [String(promo.PromotionId)]: true,
+                        }));
+                      }}
+                    />
+                  ) : (
+                    <Ionicons name="fast-food" size={48} color="#DC2626" />
+                  )}
+                </View>
+
+                {/* Right Info: Dish Name, Multiselect Checkbox, Description, Price Pill */}
+                <View style={styles.promotionInfoWrap}>
+                  <View style={styles.promotionCardTopContent}>
+                    <View style={styles.promotionCardTopRow}>
+                      <Text
+                        style={styles.promotionNameText}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {promo.PromotionName || "Special Combo"}
+                      </Text>
+                      <View
+                        style={[
+                          styles.promotionRadioCircle,
+                          { borderRadius: 6 },
+                          isSelected && {
+                            borderColor: "#DC2626",
+                            backgroundColor: "#DC2626",
+                          },
+                        ]}
+                      >
+                        {isSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                      </View>
+                    </View>
+
+                    {!!promoDesc && (
+                      <Text
+                        style={styles.promotionDescText}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
+                        {promoDesc}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Red / Light-Red Price Pill Badge */}
+                  <View
+                    style={[
+                      styles.promotionPricePill,
+                      isSelected
+                        ? styles.promotionPricePillSelected
+                        : styles.promotionPricePillUnselected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.promotionPricePillText,
+                        isSelected
+                          ? styles.promotionPricePillTextSelected
+                          : styles.promotionPricePillTextUnselected,
+                      ]}
+                    >
+                      {displayPrice}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Promotion Error Notification */}
+        {promoErrorMessage && (
+          <View style={styles.promotionErrorBanner}>
+            <Ionicons name="alert-circle" size={20} color="#DC2626" />
+            <Text style={styles.promotionErrorText}>{promoErrorMessage}</Text>
+          </View>
+        )}
+
+        {/* Modal Footer: [ No Thanks ]   [ 🛒 Add to Cart ] */}
+        <View style={styles.promotionFooter}>
+          <TouchableOpacity
+            style={styles.promotionSkipBtn}
+            onPress={handleNoThanks}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.promotionSkipBtnText}>No Thanks</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.promotionAddToCartBtn,
+              (selectedPromotions.length === 0 || isAddingPromo) &&
+                styles.promotionAddToCartBtnDisabled,
+            ]}
+            onPress={handleAddToCartPromotion}
+            disabled={selectedPromotions.length === 0 || isAddingPromo}
+            activeOpacity={0.85}
+          >
+            {isAddingPromo ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons
+                  name="cart-outline"
+                  size={24}
+                  color="#FFFFFF"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.promotionAddToCartBtnText}>
+                  {selectedPromotions.length > 1
+                    ? `Add ${selectedPromotions.length} to Cart`
+                    : "Add to Cart"}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
 
   // Step 2: Proceed to Checkout Option (Self Collect / Enter Tent Number) or Payment if Takeaway / prompt disabled
   const proceedToCheckoutOption = async () => {
@@ -2825,7 +3039,7 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
       setShowCartPage(false);
       setCart([]);
       setAppliedPromotion(null);
-      setSelectedPromotion(null);
+      setSelectedPromotions([]);
 
       // Clear session completely so next session starts with an empty cart
       await AsyncStorage.multiRemove([
@@ -4624,6 +4838,11 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
               </View>
             </View>
           </View>
+          {showPromotionModal && activePromotions.length > 0 && (
+            <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}>
+              {renderPromotionOverlay()}
+            </View>
+          )}
         </View>
       </Modal>
 
@@ -4985,204 +5204,14 @@ export default function OrderingScreen({ onOrderCompleted, onLogout }: Props) {
         </View>
       </Modal>
 
-      {/* ── Promotion Popup Modal (Special Offers) ── */}
+      {/* ── Promotion Popup Modal (Special Offers) — standalone fallback when Cart Modal is closed ── */}
       <Modal
-        visible={showPromotionModal && activePromotions.length > 0}
+        visible={!showCartPage && showPromotionModal && activePromotions.length > 0}
         transparent
         animationType="fade"
         onRequestClose={handleNoThanks}
       >
-        <View style={styles.promotionModalOverlay}>
-          <View
-            style={[
-              styles.promotionModalContainer,
-              activePromotions.length === 1 && { maxWidth: 540 },
-            ]}
-          >
-            {/* Modal Header: [🏷️ Special Offers | Select an offer to apply]   [✕] */}
-            <View style={styles.promotionModalHeader}>
-              <View style={styles.promotionHeaderLeft}>
-                <Ionicons name="pricetag" size={26} color="#DC2626" style={{ marginRight: 10 }} />
-                <Text style={styles.promotionTitleText}>Special Offers</Text>
-                <View style={styles.promotionHeaderDivider} />
-                <Text style={styles.promotionSubtitleText}>Select an offer to apply</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.promotionCloseBtn}
-                onPress={handleNoThanks}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons name="close" size={22} color="#0F172A" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Horizontal Offer Cards Row / Carousel */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={[
-                styles.promotionScrollContent,
-                activePromotions.length === 1 && { justifyContent: "center" },
-              ]}
-              style={styles.promotionScrollView}
-            >
-              {activePromotions.map((promo, idx) => {
-                const promoImgUri = formatLogoUrl(promo.PromotionImageUrl);
-                const isSelected = selectedPromotion?.PromotionId === promo.PromotionId;
-                const promoDesc = (promo.Description || promo.PromotionDescription || "").trim();
-                const promoAmt =
-                  promo.PromotionAmount !== null &&
-                  promo.PromotionAmount !== undefined &&
-                  Number(promo.PromotionAmount) > 0
-                    ? Number(promo.PromotionAmount)
-                    : null;
-                const discVal =
-                  promo.DiscountValue !== null &&
-                  promo.DiscountValue !== undefined &&
-                  Number(promo.DiscountValue) > 0
-                    ? Number(promo.DiscountValue)
-                    : null;
-                const displayPrice =
-                  promoAmt !== null
-                    ? `${currencySymbol}${promoAmt.toFixed(2)}`
-                    : discVal !== null
-                      ? `${currencySymbol}${discVal.toFixed(2)}`
-                      : `${currencySymbol}0.00`;
-
-                return (
-                  <TouchableOpacity
-                    key={promo.PromotionId || idx}
-                    style={[
-                      styles.promotionCard,
-                      isSelected && styles.promotionCardSelected,
-                    ]}
-                    onPress={() => {
-                      setPromoErrorMessage(null);
-                      setSelectedPromotion(isSelected ? null : promo);
-                    }}
-                    activeOpacity={0.88}
-                  >
-                    {/* Left Food Image */}
-                    <View style={styles.promotionImageWrap}>
-                      {promoImgUri && !promoImageErrors[String(promo.PromotionId)] ? (
-                        <ExpoImage
-                          source={{ uri: promoImgUri }}
-                          style={styles.promotionImage}
-                          contentFit="contain"
-                          onError={() => {
-                            setPromoImageErrors((prev) => ({
-                              ...prev,
-                              [String(promo.PromotionId)]: true,
-                            }));
-                          }}
-                        />
-                      ) : (
-                        <Ionicons name="fast-food" size={48} color="#DC2626" />
-                      )}
-                    </View>
-
-                    {/* Right Info: Dish Name, Radio Circle, Description, Price Pill */}
-                    <View style={styles.promotionInfoWrap}>
-                      <View style={styles.promotionCardTopContent}>
-                        <View style={styles.promotionCardTopRow}>
-                          <Text
-                            style={styles.promotionNameText}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                          >
-                            {promo.PromotionName || "Special Combo"}
-                          </Text>
-                          <View
-                            style={[
-                              styles.promotionRadioCircle,
-                              isSelected && styles.promotionRadioCircleSelected,
-                            ]}
-                          >
-                            {isSelected && <View style={styles.promotionRadioDot} />}
-                          </View>
-                        </View>
-
-                        {!!promoDesc && (
-                          <Text
-                            style={styles.promotionDescText}
-                            numberOfLines={2}
-                            ellipsizeMode="tail"
-                          >
-                            {promoDesc}
-                          </Text>
-                        )}
-                      </View>
-
-                      {/* Red / Light-Red Price Pill Badge */}
-                      <View
-                        style={[
-                          styles.promotionPricePill,
-                          isSelected
-                            ? styles.promotionPricePillSelected
-                            : styles.promotionPricePillUnselected,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.promotionPricePillText,
-                            isSelected
-                              ? styles.promotionPricePillTextSelected
-                              : styles.promotionPricePillTextUnselected,
-                          ]}
-                        >
-                          {displayPrice}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            {/* Promotion Error Notification */}
-            {promoErrorMessage && (
-              <View style={styles.promotionErrorBanner}>
-                <Ionicons name="alert-circle" size={20} color="#DC2626" />
-                <Text style={styles.promotionErrorText}>{promoErrorMessage}</Text>
-              </View>
-            )}
-
-            {/* Modal Footer: [ No Thanks ]   [ 🛒 Add to Cart ] */}
-            <View style={styles.promotionFooter}>
-              <TouchableOpacity
-                style={styles.promotionSkipBtn}
-                onPress={handleNoThanks}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.promotionSkipBtnText}>No Thanks</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.promotionAddToCartBtn,
-                  (!selectedPromotion || isAddingPromo) && styles.promotionAddToCartBtnDisabled,
-                ]}
-                onPress={handleAddToCartPromotion}
-                disabled={!selectedPromotion || isAddingPromo}
-                activeOpacity={0.85}
-              >
-                {isAddingPromo ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="cart-outline"
-                      size={24}
-                      color="#FFFFFF"
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text style={styles.promotionAddToCartBtnText}>Add to Cart</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+        {renderPromotionOverlay()}
       </Modal>
 
       {/* ── Payment Mode Full Screen ── */}

@@ -201,6 +201,20 @@ export class UsbPrinterDriver {
     config?: UniversalPrinterConfig,
   ): Promise<boolean> {
     if (Platform.OS === "android" && UniversalPrinterModule?.printUsbRaw) {
+      try {
+        const devices = await this.listDevices();
+        const cfg = this.resolveConfig(config);
+        const preferred =
+          (cfg.usbDeviceId != null
+            ? devices.find((d) => d.deviceId === cfg.usbDeviceId)
+            : undefined) ||
+          devices.find((d) => d.isPrinter) ||
+          devices[0];
+        if (preferred && !preferred.hasPermission) {
+          await this.requestPermission(preferred.deviceId);
+        }
+      } catch (_) {}
+
       const chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
       let base64 = "";

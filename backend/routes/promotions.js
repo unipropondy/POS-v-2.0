@@ -40,15 +40,18 @@ router.get("/active", async (req, res) => {
     `);
 
     const rows = result.recordset || [];
-    const now = new Date();
+    // Use Singapore local time (UTC+8) so StartDate/EndDate and StartTime/EndTime match POS/Kiosk local time even on UTC servers (e.g. Railway)
+    const sgNow = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" })
+    );
 
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
+    const year = sgNow.getFullYear();
+    const month = String(sgNow.getMonth() + 1).padStart(2, "0");
+    const day = String(sgNow.getDate()).padStart(2, "0");
     const todayStr = `${year}-${month}-${day}`;
-    const curMinutes = now.getHours() * 60 + now.getMinutes();
+    const curMinutes = sgNow.getHours() * 60 + sgNow.getMinutes();
 
-    console.log(`[Promotions API] Today: ${todayStr}, CurMinutes: ${curMinutes} (${now.getHours()}:${now.getMinutes()}), Total records: ${rows.length}`);
+    console.log(`[Promotions API] SG Today: ${todayStr}, CurMinutes: ${curMinutes} (${sgNow.getHours()}:${sgNow.getMinutes()}), Total records: ${rows.length}`);
 
     const activePromotions = rows.filter((promo) => {
       // 1. Date Check: Current date between StartDate and EndDate

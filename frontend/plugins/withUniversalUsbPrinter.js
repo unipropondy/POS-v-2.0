@@ -292,22 +292,43 @@ class UniversalPrinterModule(private val reactContext: ReactApplicationContext) 
 
                 var targetDevice: UsbDevice? = null
                 var outEndpoint: UsbEndpoint? = null
+                var fallbackDevice: UsbDevice? = null
+                var fallbackInterface: UsbInterface? = null
+                var fallbackEndpoint: UsbEndpoint? = null
 
                 for ((_, device) in deviceList) {
+                    var isPrinterDevice = device.deviceClass == UsbConstants.USB_CLASS_PRINTER ||
+                        device.deviceName.contains("printer", ignoreCase = true) ||
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+                            (device.productName?.contains("printer", ignoreCase = true) == true))
+
                     for (i in 0 until device.interfaceCount) {
                         val intf = device.getInterface(i)
+                        val isPrinterIntf = isPrinterDevice || intf.interfaceClass == UsbConstants.USB_CLASS_PRINTER
                         for (j in 0 until intf.endpointCount) {
                             val ep = intf.getEndpoint(j)
                             if (ep.direction == UsbConstants.USB_DIR_OUT) {
-                                targetDevice = device
-                                usbInterface = intf
-                                outEndpoint = ep
-                                break
+                                if (isPrinterIntf) {
+                                    targetDevice = device
+                                    usbInterface = intf
+                                    outEndpoint = ep
+                                    break
+                                } else if (fallbackEndpoint == null) {
+                                    fallbackDevice = device
+                                    fallbackInterface = intf
+                                    fallbackEndpoint = ep
+                                }
                             }
                         }
                         if (outEndpoint != null) break
                     }
                     if (outEndpoint != null) break
+                }
+
+                if (outEndpoint == null && fallbackEndpoint != null) {
+                    targetDevice = fallbackDevice
+                    usbInterface = fallbackInterface
+                    outEndpoint = fallbackEndpoint
                 }
 
                 if (targetDevice == null || usbInterface == null || outEndpoint == null) {
